@@ -1,6 +1,8 @@
 import glob
 import json
 import re
+import subprocess
+import time
 from typing import Dict, Any
 
 import pam
@@ -12,9 +14,19 @@ import socket
 from PiFinder import utils
 import logging
 
-BACKUP_PATH = "/home/pifinder/PiFinder_data/PiFinder_backup.zip"
+BACKUP_PATH = str(utils.data_dir / "PiFinder_backup.zip")
 
 logger = logging.getLogger("SysUtils")
+
+BLUETOOTHCTL_COMMAND = "bluetoothctl"
+BLUETOOTH_DEVICE_RE = re.compile(
+    r"(?:\[[^\]]+\]\s*)?Device\s+([0-9A-Fa-f:]{17})\s+(.+)"
+)
+BLUETOOTH_DEVICE_FIELD_RE = re.compile(
+    r"(?:\[[^\]]+\]\s*)?Device\s+([0-9A-Fa-f:]{17})\s+([^:]+):\s+(.+)"
+)
+BLUETOOTH_MAC_RE = re.compile(r"^[0-9A-Fa-f:]{17}$")
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 class Network:
@@ -236,14 +248,275 @@ class Network:
 
 def go_wifi_ap():
     logger.info("SYS: Switching to AP")
-    sh.sudo("/home/pifinder/PiFinder/switch-ap.sh")
+    sh.sudo(str(utils.pifinder_dir / "switch-ap.sh"))
     return True
 
 
 def go_wifi_cli():
     logger.info("SYS: Switching to Client")
-    sh.sudo("/home/pifinder/PiFinder/switch-cli.sh")
+    sh.sudo(str(utils.pifinder_dir / "switch-cli.sh"))
     return True
+
+
+def _clean_bluetoothctl_output(output: str) -> str:
+    output = ANSI_ESCAPE_RE.sub("", output)
+    return output.replace("\r", "\n")
+
+
+def _bluetoothctl(commands: list[str], timeout: int = 20) -> str:
+    script = "\n".join(commands + ["quit"]) + "\n"
+    result = subprocess.run(
+        [BLUETOOTHCTL_COMMAND],
+        input=script,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    return _clean_bluetoothctl_output(result.stdout + result.stderr)
+
+
+def _parse_bluetooth_bool(value: str) -> bool:
+    return value.strip().lower() == "yes"
+
+
+def _new_bluetooth_device(address: str, name: str = "") -> dict[str, Any]:
+    return {
+        "address": address,
+        "name": name,
+        "paired": False,
+        "trusted": False,
+        "connected": False,
+        "blocked": False,
+        "icon": "",
+    }
+
+
+def _has_bluetooth_name(device: dict[str, Any]) -> bool:
+    name = str(device.get("name", "")).strip()
+    return bool(name) and not BLUETOOTH_MAC_RE.match(name)
+
+
+def _merge_bluetooth_device_name(device: dict[str, Any], name: str) -> None:
+    name = name.strip()
+    if not name or BLUETOOTH_MAC_RE.match(name):
+        return
+    if not _has_bluetooth_name(device):
+        device["name"] = name
+
+
+def _parse_bluetooth_devices(output: str) -> dict[str, dict[str, Any]]:
+    devices: dict[str, dict[str, Any]] = {}
+    for line in _clean_bluetoothctl_output(output).splitlines():
+        field_match = BLUETOOTH_DEVICE_FIELD_RE.search(line)
+        if field_match:
+            address = field_match.group(1).upper()
+            field = field_match.group(2).strip().lower()
+            value = field_match.group(3).strip()
+            device = devices.setdefault(address, _new_bluetooth_device(address))
+            if field in ["name", "alias"]:
+                _merge_bluetooth_device_name(device, value)
+                continue
+            elif field in ["paired", "trusted", "connected", "blocked"]:
+                device[field] = _parse_bluetooth_bool(value)
+                continue
+            elif field == "icon":
+                device["icon"] = value
+                continue
+            elif field in ["rssi", "txpower", "uuids", "servicesresolved"]:
+                continue
+
+        match = BLUETOOTH_DEVICE_RE.search(line)
+        if not match:
+            continue
+        address = match.group(1).upper()
+        name = match.group(2).strip()
+        device = devices.setdefault(address, _new_bluetooth_device(address))
+        _merge_bluetooth_device_name(device, name)
+    return devices
+
+
+def _parse_bluetooth_info(output: str) -> dict[str, Any]:
+    info: dict[str, Any] = {}
+    for raw_line in _clean_bluetoothctl_output(output).splitlines():
+        line = raw_line.strip()
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        value = value.strip()
+        if key in ["Name", "Alias", "Icon"]:
+            info[key.lower()] = value
+        elif key in ["Paired", "Trusted", "Connected", "Blocked"]:
+            info[key.lower()] = _parse_bluetooth_bool(value)
+    return info
+
+
+def is_bluetooth_keyboard(device: dict[str, Any]) -> bool:
+    """
+    Best-effort keyboard detection for reconnect filtering.
+    """
+    name = str(device.get("name", "")).lower()
+    icon = str(device.get("icon", "")).lower()
+    return "keyboard" in name or "keys" in name or icon == "input-keyboard"
+
+
+def list_bluetooth_devices(scan_output: str = "") -> list[dict[str, Any]]:
+    """
+    Return cached Bluetooth devices with paired/trusted/connected status.
+    """
+    logger.info("SYS: Listing Bluetooth devices")
+    devices = _parse_bluetooth_devices(scan_output)
+    output = _bluetoothctl(["power on", "devices", "paired-devices"], timeout=12)
+    for address, scanned_device in _parse_bluetooth_devices(output).items():
+        device = devices.setdefault(address, _new_bluetooth_device(address))
+        _merge_bluetooth_device_name(device, str(scanned_device.get("name", "")))
+
+    for address, device in devices.items():
+        info = _parse_bluetooth_info(
+            _bluetoothctl([f"info {address}"], timeout=8)
+        )
+        for key, value in info.items():
+            if key in ["name", "alias"]:
+                _merge_bluetooth_device_name(device, str(value))
+            else:
+                device[key] = value
+        device["address"] = address
+        device["name"] = device.get("name") or device.get("alias") or address
+
+    return sorted(
+        devices.values(),
+        key=lambda item: (
+            not bool(item.get("connected")),
+            not bool(item.get("paired")),
+            str(item.get("name", "")).lower(),
+        ),
+    )
+
+
+def scan_bluetooth_devices(scan_seconds: int = 12) -> list[dict[str, Any]]:
+    """
+    Scan for nearby Bluetooth devices and return the refreshed cached device list.
+    """
+    logger.info("SYS: Scanning for Bluetooth devices for %s seconds", scan_seconds)
+    process = subprocess.Popen(
+        [BLUETOOTHCTL_COMMAND],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert process.stdin is not None
+    scan_output = ""
+    try:
+        for command in [
+            "power on",
+            "agent KeyboardDisplay",
+            "default-agent",
+            "pairable on",
+            "scan on",
+        ]:
+            process.stdin.write(command + "\n")
+            process.stdin.flush()
+
+        time.sleep(scan_seconds)
+
+        for command in ["scan off", "devices", "paired-devices", "quit"]:
+            process.stdin.write(command + "\n")
+            process.stdin.flush()
+        scan_output, _ = process.communicate(timeout=8)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        scan_output, _ = process.communicate()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
+    return list_bluetooth_devices(scan_output)
+
+
+def connect_bluetooth_device(address: str, timeout: int = 25) -> str:
+    logger.info("SYS: Connecting Bluetooth device %s", address)
+    return _bluetoothctl(
+        [
+            "power on",
+            "agent KeyboardDisplay",
+            "default-agent",
+            f"trust {address}",
+            f"connect {address}",
+        ],
+        timeout=timeout,
+    )
+
+
+def disconnect_bluetooth_device(address: str) -> str:
+    logger.info("SYS: Disconnecting Bluetooth device %s", address)
+    return _bluetoothctl([f"disconnect {address}"], timeout=15)
+
+
+def remove_bluetooth_device(address: str) -> str:
+    logger.info("SYS: Removing Bluetooth device %s", address)
+    return _bluetoothctl([f"remove {address}"], timeout=15)
+
+
+def reconnect_bluetooth_keyboards(connect_timeout: int = 25) -> int:
+    """
+    Connect paired keyboard-like devices. If none are identifiable as keyboards,
+    try all paired devices so generic HID names still work.
+    """
+    devices = [
+        d for d in list_bluetooth_devices() if d.get("paired") or d.get("trusted")
+    ]
+    targets = [d for d in devices if is_bluetooth_keyboard(d)] or devices
+    count = 0
+    for device in targets:
+        if device.get("connected"):
+            continue
+        connect_bluetooth_device(str(device["address"]), timeout=connect_timeout)
+        count += 1
+    return count
+
+
+def auto_reconnect_bluetooth_keyboards(
+    attempts: int = 12,
+    delay_seconds: int = 5,
+    connect_timeout: int = 10,
+) -> int:
+    """
+    Retry Bluetooth keyboard reconnection in the background during startup.
+
+    Bluetooth controllers and HID devices can appear a few seconds after the
+    PiFinder service starts, especially after a reboot. This helper is designed
+    for a daemon thread: it logs failures and keeps retrying without raising.
+    """
+    total_attempted = 0
+    for attempt in range(1, attempts + 1):
+        try:
+            logger.info(
+                "SYS: Bluetooth keyboard reconnect attempt %s/%s",
+                attempt,
+                attempts,
+            )
+            total_attempted += reconnect_bluetooth_keyboards(connect_timeout)
+            devices = [
+                d
+                for d in list_bluetooth_devices()
+                if d.get("paired") or d.get("trusted")
+            ]
+            targets = [d for d in devices if is_bluetooth_keyboard(d)] or devices
+            if targets and any(d.get("connected") for d in targets):
+                logger.info("SYS: Bluetooth keyboard reconnect complete")
+                return total_attempted
+        except Exception as e:
+            logger.warning("SYS: Bluetooth keyboard reconnect failed: %s", e)
+
+        if attempt < attempts:
+            time.sleep(delay_seconds)
+
+    logger.info(
+        "SYS: Bluetooth keyboard reconnect finished after %s attempts",
+        attempts,
+    )
+    return total_attempted
 
 
 def remove_backup():
@@ -269,9 +542,9 @@ def backup_userdata():
     _zip = sh.Command("zip")
     _zip(
         BACKUP_PATH,
-        "/home/pifinder/PiFinder_data/config.json",
-        "/home/pifinder/PiFinder_data/observations.db",
-        glob.glob("/home/pifinder/PiFinder_data/obslists/*"),
+        str(utils.data_dir / "config.json"),
+        str(utils.data_dir / "observations.db"),
+        glob.glob(str(utils.data_dir / "obslists" / "*")),
     )
 
     return BACKUP_PATH
@@ -317,7 +590,7 @@ def update_software():
     service
     """
     logger.info("SYS: Running update")
-    sh.bash("/home/pifinder/PiFinder/pifinder_update.sh")
+    sh.bash(str(utils.pifinder_dir / "pifinder_update.sh"))
     return True
 
 
@@ -362,42 +635,60 @@ def switch_cam_imx462() -> None:
     sh.sudo("python", "-m", "PiFinder.switch_camera", "imx462")
 
 
-def check_and_sync_gpsd_config(baud_rate: int) -> bool:
+DEFAULT_GPSD_DEVICE = "/dev/ttyAMA1"
+
+
+def _gpsd_options_line(baud_rate: int) -> str:
+    if baud_rate == 115200:
+        # NOTE: the space before -s in the next line is really needed
+        return 'GPSD_OPTIONS=" -s 115200"'
+    return 'GPSD_OPTIONS=""'
+
+
+def _gpsd_devices_line(device: str) -> str:
+    return f'DEVICES="{device}"'
+
+
+def check_and_sync_gpsd_config(
+    baud_rate: int, device: str = DEFAULT_GPSD_DEVICE
+) -> bool:
     """
-    Checks if GPSD configuration matches the desired baud rate,
+    Checks if GPSD configuration matches the desired serial device and baud rate,
     and updates it only if necessary.
 
     Args:
         baud_rate: The desired baud rate (9600 or 115200)
+        device: The serial device path to configure for gpsd
 
     Returns:
         True if configuration was updated, False if already correct
     """
-    logger.info(f"SYS: Checking GPSD config for baud rate {baud_rate}")
+    logger.info(f"SYS: Checking GPSD config for device {device}, baud rate {baud_rate}")
 
     try:
         # Read current config
         with open("/etc/default/gpsd", "r") as f:
             content = f.read()
 
-        # Determine expected GPSD_OPTIONS
-        if baud_rate == 115200:
-            # NOTE: the space before -s in the next line is really needed
-            expected_options = 'GPSD_OPTIONS=" -s 115200"'
-        else:
-            expected_options = 'GPSD_OPTIONS=""'
+        expected_devices = _gpsd_devices_line(device)
+        expected_options = _gpsd_options_line(baud_rate)
 
         # Check if update is needed
         current_match = re.search(r"^GPSD_OPTIONS=.*$", content, re.MULTILINE)
-        if current_match:
-            current_options = current_match.group(0)
-            if current_options == expected_options:
-                logger.info("SYS: GPSD config already correct, no update needed")
-                return False
+        current_options = current_match.group(0) if current_match else ""
+        current_match = re.search(r"^DEVICES=.*$", content, re.MULTILINE)
+        current_devices = current_match.group(0) if current_match else ""
+        if current_options == expected_options and current_devices == expected_devices:
+            logger.info("SYS: GPSD config already correct, no update needed")
+            return False
 
         # Update is needed
-        logger.info(f"SYS: GPSD config mismatch, updating to {expected_options}")
-        update_gpsd_config(baud_rate)
+        logger.info(
+            "SYS: GPSD config mismatch, updating to %s, %s",
+            expected_devices,
+            expected_options,
+        )
+        update_gpsd_config(baud_rate, device)
         return True
 
     except Exception as e:
@@ -405,32 +696,42 @@ def check_and_sync_gpsd_config(baud_rate: int) -> bool:
         return False
 
 
-def update_gpsd_config(baud_rate: int) -> None:
+def update_gpsd_config(baud_rate: int, device: str = DEFAULT_GPSD_DEVICE) -> None:
     """
-    Updates the GPSD configuration file with the specified baud rate
+    Updates the GPSD configuration file with the specified device and baud rate
     and restarts the GPSD service.
 
     Args:
         baud_rate: The baud rate to configure (9600 or 115200)
+        device: The serial device path to configure for gpsd
     """
-    logger.info(f"SYS: Updating GPSD config with baud rate {baud_rate}")
+    logger.info(f"SYS: Updating GPSD config with device {device}, baud rate {baud_rate}")
 
     try:
         # Read the current config
         with open("/etc/default/gpsd", "r") as f:
             lines = f.readlines()
 
-        # Update GPSD_OPTIONS line
+        expected_devices = _gpsd_devices_line(device)
+        expected_options = _gpsd_options_line(baud_rate)
+
+        # Update DEVICES and GPSD_OPTIONS lines
         updated_lines = []
+        saw_devices = False
+        saw_options = False
         for line in lines:
-            if line.startswith("GPSD_OPTIONS="):
-                if baud_rate == 115200:
-                    # NOTE: the space before -s in the next line is really needed
-                    updated_lines.append('GPSD_OPTIONS=" -s 115200"\n')
-                else:
-                    updated_lines.append('GPSD_OPTIONS=""\n')
+            if line.startswith("DEVICES="):
+                updated_lines.append(f"{expected_devices}\n")
+                saw_devices = True
+            elif line.startswith("GPSD_OPTIONS="):
+                updated_lines.append(f"{expected_options}\n")
+                saw_options = True
             else:
                 updated_lines.append(line)
+        if not saw_devices:
+            updated_lines.append(f"{expected_devices}\n")
+        if not saw_options:
+            updated_lines.append(f"{expected_options}\n")
 
         # Write the updated config to a temporary file
         with open("/tmp/gpsd.conf", "w") as f:
@@ -454,7 +755,7 @@ def update_gpsd_config(baud_rate: int) -> None:
 # ---------------------------------------------------------------------------
 
 MIGRATION_PROGRESS_FILE = "/tmp/nixos_migration_progress"
-MIGRATION_SCRIPT = "/home/pifinder/PiFinder/python/scripts/nixos_migration.sh"
+MIGRATION_SCRIPT = str(utils.pifinder_dir / "python/scripts/nixos_migration.sh")
 
 
 def _fetch_migration_sha256(version_info: dict) -> str:

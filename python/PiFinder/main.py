@@ -25,6 +25,7 @@ import uuid
 import logging
 import argparse
 import pickle
+import threading
 from pathlib import Path
 from PIL import Image, ImageOps
 from multiprocessing import Process, Queue
@@ -339,6 +340,32 @@ def _build_pygame_keymaps():
     return key_map, ctrl_key_map
 
 
+def start_bluetooth_keyboard_autoreconnect() -> None:
+    """
+    Start non-blocking Bluetooth keyboard reconnection for paired devices.
+    """
+    if hardware_platform != "Pi":
+        return
+
+    try:
+        from PiFinder import sys_utils
+
+        reconnect_thread = threading.Thread(
+            target=sys_utils.auto_reconnect_bluetooth_keyboards,
+            kwargs={
+                "attempts": 12,
+                "delay_seconds": 5,
+                "connect_timeout": 10,
+            },
+            name="BluetoothKeyboardReconnect",
+            daemon=True,
+        )
+        reconnect_thread.start()
+        logger.info("Bluetooth keyboard auto-reconnect started")
+    except Exception as e:
+        logger.warning("Could not start Bluetooth keyboard auto-reconnect: %s", e)
+
+
 def main(
     log_helper: MultiprocLogging,
     script_name=None,
@@ -569,6 +596,8 @@ def main(
         )
         posserver_process.start()
 
+        start_bluetooth_keyboard_autoreconnect()
+
         # Initialize Catalogs
         console.write("   Catalogs")
         logger.info("   Catalogs")
@@ -779,7 +808,10 @@ def main(
                 # state changes.  If so, we DO NOT process this keystroke
                 if keycode is not None and power_manager.register_activity() is False:
                     # ignore keystroke if we have been asleep
-                    if keycode > 99:
+                    if keyboard_base.is_text_key(keycode):
+                        menu_manager.key_text(keyboard_base.text_from_keycode(keycode))
+
+                    elif keycode > 99:
                         # Long left is return to top
                         if keycode == keyboard_base.LNG_LEFT:
                             menu_manager.key_long_left()
@@ -1109,15 +1141,16 @@ if __name__ == "__main__":
         imu = importlib.import_module("PiFinder.imu_pi")
         integrator = importlib.import_module("PiFinder.integrator")
 
-        # verify and sync GPSD baud rate
+        # verify and sync GPSD serial device and baud rate
         try:
             from PiFinder import sys_utils
 
             baud_rate = cfg.get_option(
                 "gps_baud_rate", 9600
             )  # Default to 9600 if not set
-            if sys_utils.check_and_sync_gpsd_config(baud_rate):
-                logger.info(f"GPSD configuration updated to {baud_rate} baud")
+            gps_port = cfg.get_option("gps_port", sys_utils.DEFAULT_GPSD_DEVICE)
+            if sys_utils.check_and_sync_gpsd_config(baud_rate, gps_port):
+                logger.info(f"GPSD configuration updated to {gps_port} @ {baud_rate} baud")
         except Exception as e:
             logger.warning(f"Could not check/sync GPSD configuration: {e}")
 
@@ -1167,7 +1200,7 @@ if __name__ == "__main__":
         rlogger.warning("using no keyboard")
 
     if args.lang:
-        if args.lang.lower() not in ["en", "de", "fr", "es"]:
+        if args.lang.lower() not in ["en", "de", "fr", "es", "ko", "zh"]:
             raise Exception(f"Unknown language '{args.lang}' passed via command line.")
         else:
             config.Config().set_option("language", args.lang)

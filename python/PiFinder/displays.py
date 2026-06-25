@@ -1,4 +1,5 @@
 import functools
+from pathlib import Path
 from collections import namedtuple
 
 import numpy as np
@@ -12,6 +13,13 @@ from luma.lcd.device import st7789
 from PiFinder.ssd1333_device import ssd1333
 
 from PiFinder.ui.fonts import Fonts
+
+
+def display_spi(bus_speed_hz: int):
+    for port, device in ((0, 0), (10, 0)):
+        if Path(f"/dev/spidev{port}.{device}").exists():
+            return spi(device=device, port=port, bus_speed_hz=bus_speed_hz)
+    return spi(device=0, port=0, bus_speed_hz=bus_speed_hz)
 
 
 ColorMask = namedtuple("ColorMask", ["mask", "mode"])
@@ -132,9 +140,9 @@ class DisplayPygame_320(Layout320, DisplayBase):
 class DisplaySSD1351(DisplayBase):
     resolution = (128, 128)
 
-    def __init__(self):
+    def __init__(self, bus_speed_hz=32000000):
         # init display  (SPI hardware)
-        serial = spi(device=0, port=0, bus_speed_hz=40000000)
+        serial = display_spi(bus_speed_hz=bus_speed_hz)
         device_serial = ssd1351(serial, rotate=0, bgr=True)
 
         device_serial.capabilities(
@@ -186,7 +194,7 @@ class Layout176:
 class DisplaySSD1333(Layout176, DisplayBase):
     def __init__(self):
         # init display  (SPI hardware)
-        serial = spi(device=0, port=0, bus_speed_hz=40000000)
+        serial = display_spi(bus_speed_hz=40000000)
         device_serial = ssd1333(serial, width=176, height=176, rotate=0, bgr=True)
         self.device = device_serial
         super().__init__()
@@ -238,7 +246,7 @@ class DisplayST7789_128(DisplayBase):
 
     def __init__(self):
         # init display  (SPI hardware)
-        serial = spi(device=0, port=0, bus_speed_hz=52000000)
+        serial = display_spi(bus_speed_hz=52000000)
         device_serial = st7789(serial, bgr=True)
 
         device_serial.capabilities(
@@ -251,7 +259,7 @@ class DisplayST7789_128(DisplayBase):
 class DisplayST7789(Layout320, DisplayBase):
     def __init__(self):
         # init display  (SPI hardware)
-        serial = spi(device=0, port=0, bus_speed_hz=52000000)
+        serial = display_spi(bus_speed_hz=52000000)
         device_serial = st7789(serial, bgr=True)
 
         device_serial.capabilities(

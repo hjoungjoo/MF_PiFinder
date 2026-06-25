@@ -7,6 +7,7 @@ logger = logging.getLogger("Keyboard.Interface")
 
 
 class KeyboardInterface:
+    TEXT_BASE = 1000
     NA = 10
     PLUS = 11
     MINUS = 12
@@ -28,6 +29,18 @@ class KeyboardInterface:
     LNG_DOWN = 202
     LNG_RIGHT = 203
     LNG_SQUARE = 204
+
+    @classmethod
+    def text_key(cls, char: str) -> int:
+        return cls.TEXT_BASE + ord(char)
+
+    @classmethod
+    def is_text_key(cls, keycode: int) -> bool:
+        return cls.TEXT_BASE <= keycode < cls.TEXT_BASE + 256
+
+    @classmethod
+    def text_from_keycode(cls, keycode: int) -> str:
+        return chr(keycode - cls.TEXT_BASE)
 
     def __init__(self, q=None):
         self.q = q
