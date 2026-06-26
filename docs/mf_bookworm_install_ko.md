@@ -1,8 +1,13 @@
-# Raspberry Pi CM5 Bookworm 64-bit PiFinder 설치 매뉴얼
+# MF_PiFinder Bookworm 64-bit 설치 매뉴얼
 
 이 문서는 Raspberry Pi Compute Module 5(CM5), Raspberry Pi OS Bookworm
 64-bit 환경에 brickbots/PiFinder `release` 브랜치를 설치한 절차를 정리한
-것입니다.
+것입니다. CM5 실기 설치를 기준으로 작성했으며, `mf_pifinder` 브랜치의 Pi4/Pi5/CM5
+호환성 작업에서 기준 설치 문서로 사용합니다.
+
+Raspberry Pi 4, Raspberry Pi 5, CM5를 같은 `mf_pifinder` 브랜치에서 설치/운영할
+때의 보드별 profile과 자동 설정값은
+`docs/mf_pifinder_rpi4_pi5_compatibility_ko.md`에 정리되어 있습니다.
 
 공식 PiFinder 문서는 안정적인 사용에는 배포 이미지를 권장하고, 직접 설치는
 주로 이미지 제작자/개발자용 절차라고 설명합니다. 또한 공식 직접 설치 절차는

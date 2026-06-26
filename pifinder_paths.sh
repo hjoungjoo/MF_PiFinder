@@ -56,3 +56,54 @@ pifinder_boot_config_path() {
         printf "%s\n" "/boot/config.txt"
     fi
 }
+
+pifinder_board_model() {
+    if [[ -r /proc/device-tree/model ]]; then
+        tr -d '\0' </proc/device-tree/model
+    fi
+}
+
+pifinder_board_profile() {
+    local model="${1:-}"
+
+    if [[ -z "${model}" ]]; then
+        model="$(pifinder_board_model)"
+    fi
+
+    case "${model}" in
+        *"Raspberry Pi 5"*|*"Compute Module 5"*)
+            printf "%s\n" "pi5_class"
+            ;;
+        *"Raspberry Pi 4"*)
+            printf "%s\n" "pi4"
+            ;;
+        *)
+            printf "%s\n" "legacy"
+            ;;
+    esac
+}
+
+pifinder_uart_overlay() {
+    case "$(pifinder_board_profile)" in
+        pi5_class)
+            printf "%s\n" "dtoverlay=uart2-pi5"
+            ;;
+        *)
+            printf "%s\n" "dtoverlay=uart3"
+            ;;
+    esac
+}
+
+pifinder_gps_device() {
+    case "$(pifinder_board_profile)" in
+        pi5_class)
+            printf "%s\n" "/dev/ttyAMA2"
+            ;;
+        pi4)
+            printf "%s\n" "/dev/ttyAMA3"
+            ;;
+        *)
+            printf "%s\n" "/dev/ttyAMA1"
+            ;;
+    esac
+}

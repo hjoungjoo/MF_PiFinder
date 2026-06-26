@@ -11,6 +11,7 @@ import sh
 from sh import wpa_cli, unzip, passwd
 
 import socket
+from PiFinder import board_config
 from PiFinder import utils
 import logging
 
@@ -47,6 +48,9 @@ class Network:
         try:
             with open(wpa_supplicant_path, "r") as wpa_conf:
                 contents = wpa_conf.readlines()
+        except FileNotFoundError:
+            logger.info("wpa_supplicant.conf not found; no saved Wi-Fi networks")
+            return
         except IOError as e:
             logger.error(f"Error reading wpa_supplicant.conf: {e}")
             return
@@ -366,7 +370,7 @@ def list_bluetooth_devices(scan_output: str = "") -> list[dict[str, Any]]:
     """
     logger.info("SYS: Listing Bluetooth devices")
     devices = _parse_bluetooth_devices(scan_output)
-    output = _bluetoothctl(["power on", "devices", "paired-devices"], timeout=12)
+    output = _bluetoothctl(["power on", "devices", "devices Paired"], timeout=12)
     for address, scanned_device in _parse_bluetooth_devices(output).items():
         device = devices.setdefault(address, _new_bluetooth_device(address))
         _merge_bluetooth_device_name(device, str(scanned_device.get("name", "")))
@@ -420,7 +424,7 @@ def scan_bluetooth_devices(scan_seconds: int = 12) -> list[dict[str, Any]]:
 
         time.sleep(scan_seconds)
 
-        for command in ["scan off", "devices", "paired-devices", "quit"]:
+        for command in ["scan off", "devices", "devices Paired", "quit"]:
             process.stdin.write(command + "\n")
             process.stdin.flush()
         scan_output, _ = process.communicate(timeout=8)
@@ -635,7 +639,17 @@ def switch_cam_imx462() -> None:
     sh.sudo("python", "-m", "PiFinder.switch_camera", "imx462")
 
 
-DEFAULT_GPSD_DEVICE = "/dev/ttyAMA1"
+def get_default_gpsd_device() -> str:
+    return board_config.get_default_gpsd_device()
+
+
+DEFAULT_GPSD_DEVICE = get_default_gpsd_device()
+
+
+def resolve_gpsd_device(device: str | None) -> str:
+    if not device or device == "auto":
+        return get_default_gpsd_device()
+    return device
 
 
 def _gpsd_options_line(baud_rate: int) -> str:
@@ -663,6 +677,7 @@ def check_and_sync_gpsd_config(
     Returns:
         True if configuration was updated, False if already correct
     """
+    device = resolve_gpsd_device(device)
     logger.info(f"SYS: Checking GPSD config for device {device}, baud rate {baud_rate}")
 
     try:
@@ -705,6 +720,7 @@ def update_gpsd_config(baud_rate: int, device: str = DEFAULT_GPSD_DEVICE) -> Non
         baud_rate: The baud rate to configure (9600 or 115200)
         device: The serial device path to configure for gpsd
     """
+    device = resolve_gpsd_device(device)
     logger.info(f"SYS: Updating GPSD config with device {device}, baud rate {baud_rate}")
 
     try:

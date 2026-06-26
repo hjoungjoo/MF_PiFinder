@@ -1206,12 +1206,20 @@ pifinder_menu = {
                                     "post_callback": callbacks.update_gpsd_baud_rate,
                                     "items": [
                                         {
+                                            "name": _("Auto"),
+                                            "value": "auto",
+                                        },
+                                        {
                                             "name": _("ttyAMA1"),
                                             "value": "/dev/ttyAMA1",
                                         },
                                         {
                                             "name": _("ttyAMA2"),
                                             "value": "/dev/ttyAMA2",
+                                        },
+                                        {
+                                            "name": _("ttyAMA3"),
+                                            "value": "/dev/ttyAMA3",
                                         },
                                         {
                                             "name": _("serial0"),

@@ -1,8 +1,14 @@
-# Raspberry Pi CM5 Bookworm 64-bit PiFinder Installation Manual
+# MF_PiFinder Bookworm 64-bit Installation Manual
 
 This document records the installation procedure used to install the
 brickbots/PiFinder `release` branch on a Raspberry Pi Compute Module 5 (CM5)
-running Raspberry Pi OS Bookworm 64-bit.
+running Raspberry Pi OS Bookworm 64-bit. It is based on CM5 hardware testing and
+is used as the baseline install document for the `mf_pifinder` Pi4/Pi5/CM5
+compatibility work.
+
+For board profiles and automatic defaults when installing the `mf_pifinder`
+branch across Raspberry Pi 4, Raspberry Pi 5, and CM5, see
+`docs/mf_pifinder_rpi4_pi5_compatibility_ko.md`.
 
 The official PiFinder documentation recommends using the distributed image for
 normal stable use, and treats direct installation mainly as a procedure for

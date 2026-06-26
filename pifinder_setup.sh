@@ -24,7 +24,19 @@ fi
 
 cd "${PIFINDER_HOME}"
 
-sudo apt-get install -y git python3-pip samba samba-common-bin dnsmasq hostapd dhcpd gpsd
+sudo bash -c '
+set -e
+trap "rm -f /usr/sbin/policy-rc.d" EXIT
+printf "%s\n" "#!/bin/sh" "exit 101" > /usr/sbin/policy-rc.d
+chmod 755 /usr/sbin/policy-rc.d
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    git python3-pip python3-venv python3-dev build-essential pkg-config \
+    samba samba-common-bin dnsmasq hostapd dhcpcd gpsd wget \
+    libinput10 libcap2-bin libjpeg-dev zlib1g-dev libfreetype6-dev \
+    liblcms2-dev libopenjp2-7-dev libtiff-dev libffi-dev libssl-dev \
+    python3-picamera2 rpicam-apps i2c-tools spi-tools
+'
 
 if [[ -d PiFinder/ ]]; then
     cd PiFinder/ && git config pull.rebase false && git pull
@@ -39,11 +51,11 @@ cd "${PIFINDER_REPO_DIR}"
 sudo python3 -m pip install --break-system-packages -r python/requirements.txt
 
 # Setup GPSD
-sudo dpkg-reconfigure -plow gpsd
 sudo cp "${PIFINDER_REPO_DIR}/pi_config_files/gpsd.conf" /etc/default/gpsd
+sudo sed -i "s|^DEVICES=.*|DEVICES=\"$(pifinder_gps_device)\"|" /etc/default/gpsd
 
 # data dirs
-mkdir -p \
+sudo install -d -o "${PIFINDER_USER}" -g "${PIFINDER_USER}" -m 755 \
     "${PIFINDER_DATA_DIR}" \
     "${PIFINDER_DATA_DIR}/captures" \
     "${PIFINDER_DATA_DIR}/obslists" \
@@ -51,7 +63,6 @@ mkdir -p \
     "${PIFINDER_DATA_DIR}/solver_debug_dumps" \
     "${PIFINDER_DATA_DIR}/logs" \
     "${PIFINDER_DATA_DIR}/migrations"
-find "${PIFINDER_DATA_DIR}" -type d -exec chmod 755 {} \;
 
 # Wifi config
 sudo cp "${PIFINDER_REPO_DIR}"/pi_config_files/dhcpcd.* /etc
@@ -61,8 +72,18 @@ sudo cp "${PIFINDER_REPO_DIR}/pi_config_files/hostapd.conf" /etc/hostapd/hostapd
 echo -n "Client" > "${PIFINDER_REPO_DIR}/wifi_status.txt"
 sudo systemctl unmask hostapd
 
-# open permissisons on wpa_supplicant file so we can adjust network config
+# open permissions on wpa_supplicant file so we can adjust network config
+sudo install -d -m 755 /etc/wpa_supplicant
+sudo touch /etc/wpa_supplicant/wpa_supplicant.conf
 sudo chmod 666 /etc/wpa_supplicant/wpa_supplicant.conf
+
+# Bluetooth HID keyboards
+if [[ -f /etc/bluetooth/input.conf ]]; then
+    sudo sed -i \
+        -e 's/^#\?UserspaceHID=.*/UserspaceHID=true/' \
+        -e 's/^#\?LEAutoSecurity=.*/LEAutoSecurity=true/' \
+        /etc/bluetooth/input.conf
+fi
 
 # Samba config
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/smb.conf" /etc/samba/smb.conf
@@ -75,20 +96,23 @@ fi
 
 # Enable interfaces
 BOOT_CONFIG="$(pifinder_boot_config_path)"
-grep -q "dtparam=spi=on" "${BOOT_CONFIG}" || \
-   echo "dtparam=spi=on" | sudo tee -a "${BOOT_CONFIG}"
-grep -q "dtparam=i2c_arm=on" "${BOOT_CONFIG}" || \
-   echo "dtparam=i2c_arm=on" | sudo tee -a "${BOOT_CONFIG}"
-grep -q "dtparam=i2c_arm_baudrate=10000" "${BOOT_CONFIG}" || \
-   echo "dtparam=i2c_arm_baudrate=10000" | sudo tee -a "${BOOT_CONFIG}"
-grep -q "dtoverlay=pwm,pin=13,func=4" "${BOOT_CONFIG}" || \
-   echo "dtoverlay=pwm,pin=13,func=4" | sudo tee -a "${BOOT_CONFIG}"
-grep -q "dtoverlay=uart3" "${BOOT_CONFIG}" || \
-   echo "dtoverlay=uart3" | sudo tee -a "${BOOT_CONFIG}"
+for line in \
+    "dtparam=spi=on" \
+    "dtparam=i2c_arm=on" \
+    "dtparam=i2c_arm_baudrate=10000" \
+    "dtoverlay=pwm,pin=13,func=4" \
+    "$(pifinder_uart_overlay)"
+do
+    grep -qxF "${line}" "${BOOT_CONFIG}" || echo "${line}" | sudo tee -a "${BOOT_CONFIG}"
+done
+if [[ "$(pifinder_uart_overlay)" == "dtoverlay=uart2-pi5" ]]; then
+    sudo sed -i 's/^dtoverlay=uart3/#dtoverlay=uart3/' "${BOOT_CONFIG}"
+fi
 # Note: camera types are added lateron by python/PiFinder/switch_camera.py
 
 # Disable unwanted services
-sudo systemctl disable ModemManager
+sudo systemctl disable ModemManager 2>/dev/null || true
+sudo systemctl disable dhcpcd dnsmasq hostapd 2>/dev/null || true
 
 # Enable service
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/pifinder.service" /lib/systemd/system/pifinder.service

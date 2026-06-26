@@ -3,23 +3,26 @@
 작성일: 2026-06-26
 
 이 문서는 `hjoungjoo/MF_PiFinder` fork의 `mf_pifinder` 브랜치를 새 Raspberry Pi
-디바이스, 특히 Raspberry Pi 4 테스트 장비에서 설치하고 검증하기 위한 실행 순서이다.
+디바이스에서 설치하고 검증하기 위한 실행 순서이다. Raspberry Pi 4, Raspberry Pi 5,
+CM5는 `docs/mf_pifinder_rpi4_pi5_compatibility_ko.md`의 보드 profile 기준으로
+확인한다.
 
 상세 배경은 다음 문서를 참고한다.
 
 ```text
-docs/mf_pifinder_next_steps_ko.md
-docs/cm5_change_history_ko.md
-docs/cm5_bookworm_install_ko.md
+docs/mf_pifinder_rpi4_pi5_compatibility_ko.md
+docs/mf_change_history_ko.md
+docs/mf_bookworm_install_ko.md
 ```
 
 ## 목표
 
-새 디바이스에서 확인할 핵심 목표는 세 가지이다.
+새 디바이스에서 확인할 핵심 목표는 네 가지이다.
 
 1. `mf_pifinder` 브랜치가 새 OS에서 설치되는지 확인한다.
 2. CM5/Bookworm 대응 수정이 Raspberry Pi 4 동작을 깨지 않는지 확인한다.
-3. 문제가 생기면 로그를 남기고 같은 브랜치에 수정 커밋을 반영한다.
+3. Raspberry Pi 5 계열은 `pi5_class` profile의 UART/GPS/SPI 경로를 타는지 확인한다.
+4. 문제가 생기면 로그를 남기고 같은 브랜치에 수정 커밋을 반영한다.
 
 ## 시작 전 준비
 
@@ -118,22 +121,22 @@ branch: mf_pifinder
 remote: hjoungjoo/MF_PiFinder
 ```
 
-## 3. 이어가기 문서 읽기
+## 3. 호환성/변경 이력 문서 읽기
 
 ```bash
 cd ~/PiFinder
-sed -n '1,220p' docs/mf_pifinder_next_steps_ko.md
-sed -n '1,180p' docs/cm5_change_history_ko.md
+sed -n '1,220p' docs/mf_pifinder_rpi4_pi5_compatibility_ko.md
+sed -n '1,180p' docs/mf_change_history_ko.md
 ```
 
 새 대화에서 Codex와 이어서 작업할 때는 아래 문장을 먼저 전달한다.
 
 ```text
-PiFinder CM5/Bookworm 작업을 새 Pi4 디바이스에서 이어서 테스트하려고 해.
+PiFinder CM5/Bookworm 작업을 새 Raspberry Pi 디바이스에서 테스트하려고 해.
 작업 브랜치는 hjoungjoo/MF_PiFinder의 mf_pifinder야.
+docs/mf_pifinder_rpi4_pi5_compatibility_ko.md,
 docs/mf_pifinder_new_device_tasks_ko.md,
-docs/mf_pifinder_next_steps_ko.md,
-docs/cm5_change_history_ko.md를 읽고 이어서 진행해줘.
+docs/mf_change_history_ko.md를 읽고 이어서 진행해줘.
 설치/하드웨어 테스트 중 생기는 문제를 같은 브랜치에 반영하고 싶어.
 ```
 
@@ -170,7 +173,7 @@ cd ~/PiFinder
 설치 중 확인할 것:
 
 - `apt-get install` 실패 여부
-- `dhcpd` 패키지 설치 성공 여부
+- `dhcpcd` 패키지 설치 성공 여부
 - `gpsd` 설정 단계가 입력을 요구하거나 멈추는지
 - `pip install --break-system-packages` 실패 여부
 - `hip_main.dat` 다운로드 성공 여부
@@ -335,6 +338,15 @@ Settings > GPS Settings > GPS Port
 - `gpsd`가 재시작 또는 재연결되는지
 - GPS lock 상태가 PiFinder UI에 반영되는지
 
+Pi4 + `uart3` overlay 기준:
+
+- 내장 UART GPS는 `/dev/ttyAMA3`로 확인한다.
+- `GPS Port` 기본값 `auto`는 Pi4에서 `/dev/ttyAMA3`로 해석된다.
+- u-blox 수신기가 115200bps로 설정된 장비에서는 `GPS Baud Rate`도 `115200`으로
+  맞춘 뒤 gpsd가 `driver:"u-blox"`로 인식하는지 확인한다.
+- 수신기는 인식되지만 `TPV mode=1`, `nSat=0/uSat=0`이면 통신 문제보다는
+  안테나/하늘 시야/cold start 문제로 보고 야외에서 다시 확인한다.
+
 로그 저장:
 
 ```bash
@@ -358,7 +370,10 @@ Bluetooth 상태:
 ```bash
 bluetoothctl show
 bluetoothctl devices
-bluetoothctl paired-devices
+bluetoothctl devices Paired
+bluetoothctl info <MAC>
+ls -l /dev/input /dev/input/by-id /dev/input/by-path 2>/dev/null
+journalctl -u bluetooth -b -n 120 --no-pager
 ```
 
 PiFinder 메뉴:
@@ -377,6 +392,17 @@ Settings > Advanced > Keyboard
 - Space는 Space로 처리되는지
 - 실제 길게 누르는 long key가 동작하는지
 - USB 키보드와 GPIO 키패드가 서로 방해하지 않는지
+- 연결됐다고 보이는데 키 입력이 없으면 `/dev/input/event*`가 새로 생겼는지
+  먼저 확인한다.
+- `/dev/input`에 키보드 event 장치가 없고 `bluetoothd`에 HID Information 또는
+  Report Reference read 실패가 보이면 PiFinder 입력 매핑 이전의 BlueZ/HID
+  연결 문제로 분류한다.
+- Pi4 Bookworm에서 `K06 BLE Keyboard`는 `/etc/bluetooth/input.conf`의
+  `UserspaceHID=true`, `LEAutoSecurity=true` 적용 후 event 장치가 생성됐다.
+  기존 설치에서는 설정 변경 뒤 `sudo systemctl restart bluetooth`와
+  `sudo systemctl restart pifinder`를 실행한다.
+- `libinput debug-events --device /dev/input/eventX`로 실제 키 이벤트가 들어오는지
+  확인한다.
 
 ## 13. 한국어 메뉴 확인
 

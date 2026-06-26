@@ -1,14 +1,15 @@
-# PiFinder CM5 Source Change History
+# MF_PiFinder Source Change History
 
 Date: 2026-06-25
 
 This document records the source changes applied inside the PiFinder repository
-to make PiFinder work on Raspberry Pi CM5 + Bookworm 64-bit hardware.
+to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
+Raspberry Pi 5-class Bookworm 64-bit hardware.
 
 Scope:
 
 - Code and documentation inside the PiFinder repository
-- PiFinder changes for CM5, Bookworm, IMX462, and SSD1351 OLED support
+- PiFinder changes for CM5/Pi4/Pi5, Bookworm, IMX462, and SSD1351 OLED support
 - Detail useful for future review or possible upstreaming
 
 Not covered:
@@ -25,6 +26,7 @@ Changed or added PiFinder files:
 
 ```text
 python/PiFinder/boot_config.py
+python/PiFinder/board_config.py
 python/PiFinder/api_extensions.py
 python/PiFinder/camera_interface.py
 python/PiFinder/main.py
@@ -63,10 +65,14 @@ migration_source/v2.6.0.sh
 migrate_db.sql
 default_config.json
 scripts/camera_lcd_preview.py
-docs/cm5_bookworm_install_ko.md
-docs/cm5_bookworm_install_en.md
-docs/cm5_change_history_ko.md
-docs/cm5_change_history_en.md
+docs/mf_bookworm_install_ko.md
+docs/mf_bookworm_install_en.md
+docs/mf_change_history_ko.md
+docs/mf_change_history_en.md
+docs/mf_pifinder_new_device_tasks_ko.md
+docs/mf_pifinder_new_device_tasks_en.md
+docs/mf_pifinder_rpi4_pi5_compatibility_ko.md
+docs/mf_pifinder_rpi4_pi5_compatibility_en.md
 ```
 
 Comparison against the original source:
@@ -109,10 +115,10 @@ python/locale/ko/LC_MESSAGES/messages.po
 python/locale/ko/LC_MESSAGES/messages.mo
 pifinder_paths.sh
 scripts/camera_lcd_preview.py
-docs/cm5_bookworm_install_ko.md
-docs/cm5_bookworm_install_en.md
-docs/cm5_change_history_ko.md
-docs/cm5_change_history_en.md
+docs/mf_bookworm_install_ko.md
+docs/mf_bookworm_install_en.md
+docs/mf_change_history_ko.md
+docs/mf_change_history_en.md
 ```
 
 No PiFinder source changes outside this list were found during the recheck. The
@@ -126,8 +132,8 @@ SSD1351 SPI speed: 32000000 Hz
 Focus bright-background threshold: 220.0
 Pi camera startup gain: camera profile analog_gain
 camera_exp config value in use: auto
-Default gps_port: /dev/ttyAMA1
-Current CM5 gps_port: /dev/ttyAMA2
+Default gps_port: auto
+Resolved gps_port: CM5/Pi5 -> /dev/ttyAMA2, Pi4 -> /dev/ttyAMA3, fallback -> /dev/ttyAMA1
 Keyboard HID input: GPIO keypad + USB/Bluetooth libinput
 Menu languages: en, de, fr, es, ko, zh
 Install user/path model: current OS user, not hard-coded pifinder
@@ -286,7 +292,7 @@ GPSD synchronization now checks both serial device and baud rate.
 
 ### After
 
-- Added `DEFAULT_GPSD_DEVICE = "/dev/ttyAMA1"`.
+- Added a `DEFAULT_GPSD_DEVICE` fallback.
 - Extended the API to `check_and_sync_gpsd_config(baud_rate, device=DEFAULT_GPSD_DEVICE)`.
 - Compares both `DEVICES` and `GPSD_OPTIONS` in `/etc/default/gpsd`.
 - Calls `update_gpsd_config(baud_rate, device)` when either value differs.
@@ -300,7 +306,9 @@ GPSD synchronization now checks both serial device and baud rate.
   through the UI.
 - On PiFinder restart, `/etc/default/gpsd` is automatically synchronized to the
   selected port and baud rate.
-- The original `/dev/ttyAMA1` default is retained for existing PiFinder wiring.
+- After the Pi4/Pi5 compatibility cleanup, the default config uses
+  `gps_port: auto`; the `board_config` profile selects the board-specific
+  default port.
 
 ### Added Bluetooth Keyboard Helpers
 
@@ -790,7 +798,7 @@ added Korean to the language menu.
 ### Added Language Menu Entry
 
 ```text
-Settings > User Pref... > Language > 한국어
+Settings > User Pref... > Language > Korean
 ```
 
 Implementation:
@@ -899,10 +907,9 @@ Added a new gettext catalog for the Korean UI.
 
 ### Translation Policy
 
-- Common astronomy terms were translated into Korean.
-- Terms such as `은하`, `산개성단`, `구상성단`, `성운`, `암흑성운`,
-  `행성상성운`, `이중성`, `삼중성`, `시상`, `투명도`, `극축정렬`, and
-  `성도` are used where they are natural.
+- Common astronomy terms were translated into Korean where natural, including
+  galaxy, open cluster, globular cluster, nebula, dark nebula, planetary nebula,
+  double star, seeing, transparency, polar alignment, and chart.
 - Terms that are clearer as-is, such as `RA/DEC`, `DSO`, `SQM`, `Gain`,
   `Profile`, `T9`, `Multi-Tap`, catalog names, device names, and port names,
   remain in English.
@@ -980,12 +987,11 @@ Expected effect:
 Added the default GPS port option.
 
 ```json
-"gps_port": "/dev/ttyAMA1"
+"gps_port": "auto"
 ```
 
-The default remains `/dev/ttyAMA1` for compatibility with existing PiFinder
-wiring. This CM5 unit uses `/dev/ttyAMA2` in
-`/home/pifinder/PiFinder_data/config.json`.
+The `auto` default resolves by board model: CM5/Pi5 use `/dev/ttyAMA2`, Pi4 uses
+`/dev/ttyAMA3`, and other boards fall back to `/dev/ttyAMA1`.
 
 ## `python/PiFinder/ui/preview.py`
 
@@ -1200,9 +1206,10 @@ sudo systemctl start pifinder
 
 ## Documentation Files
 
-### `docs/cm5_bookworm_install_ko.md`
+### `docs/mf_bookworm_install_ko.md`
 
-Korean installation guide for PiFinder on CM5 Bookworm 64-bit.
+Korean Bookworm installation flow for the `mf_pifinder` branch, based on the CM5
+Bookworm 64-bit install procedure.
 
 PiFinder-specific content includes:
 
@@ -1215,17 +1222,35 @@ PiFinder-specific content includes:
 - PiFinder peripheral check commands
 - The Bookworm boot config path PiFinder needs to handle
 
-### `docs/cm5_bookworm_install_en.md`
+### `docs/mf_bookworm_install_en.md`
 
-English version of `cm5_bookworm_install_ko.md`.
+English version of `mf_bookworm_install_ko.md`.
 
-### `docs/cm5_change_history_ko.md`
+### `docs/mf_change_history_ko.md`
 
 The Korean source change history document.
 
-### `docs/cm5_change_history_en.md`
+### `docs/mf_change_history_en.md`
 
 The English source change history document.
+
+### `docs/mf_pifinder_new_device_tasks_ko.md`
+
+Korean checklist for installing and verifying the `mf_pifinder` branch on a new
+Raspberry Pi device.
+
+### `docs/mf_pifinder_new_device_tasks_en.md`
+
+English version of `mf_pifinder_new_device_tasks_ko.md`.
+
+### `docs/mf_pifinder_rpi4_pi5_compatibility_ko.md`
+
+Korean summary of Pi4/Pi5/CM5 board profiles, automatic defaults, and
+verification steps.
+
+### `docs/mf_pifinder_rpi4_pi5_compatibility_en.md`
+
+English version of `mf_pifinder_rpi4_pi5_compatibility_ko.md`.
 
 ## Final Behavior Baseline
 
@@ -1262,13 +1287,45 @@ With the current source changes, PiFinder is expected to behave as follows:
   compatibility.
 - Paired/trusted Bluetooth keyboards are automatically reconnected in the
   background when the PiFinder service starts.
-- `Settings > User Pref... > Language` can select `한국어`.
+- `Settings > User Pref... > Language` can select Korean.
 - Korean UI uses the Sarasa CJK font, and PiFinder restarts immediately after
   the language change so the font is reloaded.
 - Keyboard character input remains English alphabet input in Korean UI.
 - Bright Focus screen frames use the raw-derived display fallback.
 - Dark observation Focus screen frames keep the existing focus-stretch path.
 - `scripts/camera_lcd_preview.py` provides isolated camera-to-LCD diagnostics.
+
+## Pi4 Bookworm Compatibility Follow-Up
+
+Raspberry Pi 4 Bookworm 64-bit hardware testing showed that the CM5 GPS default
+port did not match Pi4, so GPS port selection now has a board-aware automatic
+default.
+
+- Changed the `default_config.json` `gps_port` default to `auto`.
+- Added `python/PiFinder/board_config.py`, defining `pi5_class`, `pi4`, and
+  `legacy` profiles for board-specific UART overlays and default GPS ports.
+- `sys_utils.get_default_gpsd_device()` now resolves through the `board_config`
+  profile: CM5/Pi5 use `/dev/ttyAMA2`, Pi4 uses `/dev/ttyAMA3`, and other
+  boards use `/dev/ttyAMA1`.
+- `pifinder_paths.sh` uses matching `pi5_class`/`pi4`/`legacy` helpers so install
+  time UART overlays and gpsd `DEVICES` defaults follow the same model.
+- Added `Auto` and `/dev/ttyAMA3` entries to `GPS Settings > GPS Port`.
+- The setup script uses the same board detection when writing the initial
+  `/etc/default/gpsd` `DEVICES` value.
+- On the Pi4 test unit, gpsd identified the u-blox receiver on `/dev/ttyAMA3` at
+  115200bps. Indoor testing still had no GPS fix, so outdoor antenna testing is
+  still pending.
+- Bookworm BlueZ did not accept `bluetoothctl paired-devices`, so Bluetooth
+  listing now uses `bluetoothctl devices Paired`.
+- The tested `K06 BLE Keyboard` stayed paired/trusted/connected but did not
+  create a `/dev/input/event*` device with the default BlueZ input settings.
+- Enabling `UserspaceHID=true` and `LEAutoSecurity=true` in
+  `/etc/bluetooth/input.conf`, then restarting Bluetooth, created
+  `/dev/input/event4`; `libinput debug-events` confirmed arrow-key input.
+- The setup script now applies the same BlueZ input settings during new
+  installs.
+- Added `docs/mf_pifinder_rpi4_pi5_compatibility_ko.md` to summarize Pi4/Pi5/CM5
+  profiles, install-time defaults, and verification steps in one place.
 
 ## Verified Items
 
