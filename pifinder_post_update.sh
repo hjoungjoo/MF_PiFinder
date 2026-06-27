@@ -58,5 +58,21 @@ then
     touch "${PIFINDER_DATA_DIR}/migrations/v2.6.0"
 fi
 
+# mf_apsta_wifi
+# Install AP+STA Wi-Fi support files and systemd units.
+if ! [ -f "${PIFINDER_DATA_DIR}/migrations/mf_apsta_wifi" ]
+then
+    source "${PIFINDER_REPO_DIR}/migration_source/mf_apsta_wifi.sh"
+    touch "${PIFINDER_DATA_DIR}/migrations/mf_apsta_wifi"
+fi
+
+# mf_wifi_settings
+# Import OS-provisioned Wi-Fi profiles into PiFinder's editable STA list.
+if ! [ -f "${PIFINDER_DATA_DIR}/migrations/mf_wifi_settings" ]
+then
+    source "${PIFINDER_REPO_DIR}/migration_source/mf_wifi_settings.sh"
+    touch "${PIFINDER_DATA_DIR}/migrations/mf_wifi_settings"
+fi
+
 # DONE
 echo "Post Update Complete"

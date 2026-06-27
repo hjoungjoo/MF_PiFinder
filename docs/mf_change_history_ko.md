@@ -35,6 +35,7 @@
 | Bluetooth/USB HID 키보드 지원 | Draft PR 있음 | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput 키 매핑, 텍스트 입력 키코드, Bluetooth keyboard scan/pair/connect UI, 재연결 |
 | INDI 마운트 제어 | Draft PR 있음 | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, 설치 스크립트, INDI 문서 |
 | GPS/NTP/RTC/Software PPS 통합 시간 동기화 | Draft PR 있음 | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source 선택, helper service, dry-run/real clock sync, status UI, time sync 문서 |
+| Wi-Fi AP+STA 동시 모드 및 AP 설정 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | `wlan0` STA + `uap0` AP, STA 채널 추적, AP IP 설정, AP WPA2 암호 설정, AP+STA 인터넷 공유 옵션, OS Wi-Fi 프로파일 가져오기, 스캔된 SSID 선택, Pi 4/5 공통 Wi-Fi 모드 |
 | Web UI 적색 야간 테마 및 PWA 전체화면 앱 모드 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | red night theme, 브라우저별 theme 저장, PWA manifest, service worker, PWA icon |
 | 변경 히스토리/PR 재편성 문서화 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | 이 문서의 작업 단위 목차, PR 상태, 재편성 기준 |
 | 최종 통합 브랜치 | Upstream PR 아님 | `origin/mf_pifinder` + 로컬 미커밋 Web UI/PWA 변경 | 위 기능들을 통합해 실제 장치에서 설치/테스트하는 기준 브랜치 |
@@ -51,6 +52,7 @@
 | Input devices | Bluetooth keyboard, USB HID key mapping, keyboard mapping docs | #506 중심으로 정리 |
 | Optional INDI mount integration | INDI mount process, install script, object sync, keyboard mapping의 INDI 항목 | #503 유지 |
 | Integrated time sync | GPS/NTP/RTC/software PPS, helper service, status UI | #504 유지 |
+| Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, AP IP 설정, AP 보안/암호, 선택형 AP+STA 인터넷 공유, OS Wi-Fi 프로파일 가져오기, 스캔된 SSID 선택, web/device network UI | 새 Draft PR 필요 |
 | Web observing UI | red night theme, PWA/fullscreen app mode | 새 Draft PR 필요 |
 | Korean localization | Korean locale and CJK language handling | #500은 파일 규모가 커서 별도 유지 권장 |
 
@@ -73,6 +75,7 @@ python/PiFinder/gps_ubx_parser.py
 python/PiFinder/gps_time_sync.py
 python/PiFinder/gps_time_sync_helper.py
 python/PiFinder/mountcontrol_indi.py
+python/PiFinder/server.py
 python/PiFinder/sys_utils.py
 python/PiFinder/switch_camera.py
 python/PiFinder/keyboard_interface.py
@@ -98,8 +101,13 @@ python/views/service-worker.js
 python/views/images/pwa-icon-192.png
 python/views/images/pwa-icon-512.png
 python/tests/test_web_theme_static.py
+python/tests/test_wifi_apsta_static.py
+python/tests/test_sys_utils.py
+python/views/network.html
 python/views/tools.html
 pi_config_files/pifinder.service
+pi_config_files/pifinder_apsta_prepare.service
+pi_config_files/pifinder_apsta_monitor.service
 pi_config_files/pifinder_gps_time_sync.service
 pi_config_files/pifinder_splash.service
 pi_config_files/cedar_detect.service
@@ -109,6 +117,7 @@ pifinder_setup.sh
 pifinder_update.sh
 pifinder_post_update.sh
 switch-ap.sh
+switch-apsta.sh
 switch-cli.sh
 migration_source/v1.x.x.sh
 migration_source/v2.1.0.sh
@@ -116,9 +125,13 @@ migration_source/v2.2.1.sh
 migration_source/v2.2.2.sh
 migration_source/v2.4.0.sh
 migration_source/v2.6.0.sh
+migration_source/mf_apsta_wifi.sh
+migration_source/mf_wifi_settings.sh
 migrate_db.sql
 default_config.json
 scripts/camera_lcd_preview.py
+scripts/import_initial_wifi_networks.py
+scripts/pifinder_apsta.sh
 scripts/install_indi_mount.sh
 scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
@@ -128,6 +141,8 @@ docs/mf_change_history_ko.md
 docs/mf_change_history_en.md
 docs/mf_indi_mount_install_ko.md
 docs/mf_indi_mount_install_en.md
+docs/mf_wifi_apsta_ko.md
+docs/mf_wifi_apsta_en.md
 docs/mf_keyboard_mapping_ko.md
 docs/mf_keyboard_mapping_en.md
 docs/mf_pifinder_new_device_tasks_ko.md
@@ -1007,6 +1022,35 @@ docs/mf_time_sync_en.md
 pi_config_files/pifinder_gps_time_sync.service
 scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
+```
+
+## Wi-Fi AP+STA 동시 모드
+
+기존 `Client` 또는 `AP` 단일 선택 구조에 `AP+STA` 모드를 추가했다.
+이 모드는 `wlan0`을 STA로 유지해 인터넷/업데이트에 사용하고, `uap0` 가상 AP
+인터페이스로 스마트폰/태블릿 제어용 PiFinder AP를 동시에 제공한다.
+
+### 주요 동작
+
+- 웹 `Tools > Network`와 기기 `Settings > WiFi Mode`에 `AP+STA` 선택지를 추가했다.
+- `switch-apsta.sh`는 `/etc/dhcpcd.conf.apsta`를 적용하고 `pifinder_apsta_prepare`,
+  `pifinder_apsta_monitor`, `dnsmasq`, `hostapd`를 활성화한다.
+- `scripts/pifinder_apsta.sh prepare`는 `uap0`를 만들고 `10.10.10.1/24`를 설정한다.
+- `scripts/pifinder_apsta.sh monitor`는 STA 채널을 감시하고 채널이 바뀌면
+  `hostapd.conf`의 `channel`/`hw_mode`를 갱신한 뒤 `hostapd`를 재시작한다.
+- `switch-ap.sh`와 `switch-cli.sh`는 AP+STA monitor service를 중지하고 `uap0`를 정리한다.
+- Pi 4와 Pi 5 모두 기본 `wlan0` 위에 `uap0`를 추가하는 동일 구조를 사용한다.
+
+### 문서/설치 파일
+
+```text
+docs/mf_wifi_apsta_ko.md
+docs/mf_wifi_apsta_en.md
+pi_config_files/dhcpcd.conf.apsta
+pi_config_files/pifinder_apsta_prepare.service
+pi_config_files/pifinder_apsta_monitor.service
+scripts/pifinder_apsta.sh
+switch-apsta.sh
 ```
 
 ## Web UI 적색 야간 테마 및 PWA 앱 모드

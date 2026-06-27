@@ -45,10 +45,34 @@ class Network:
         """
         pass
 
+    def scan_wifi_networks(self):
+        return []
+
     def get_ap_name(self):
         return "UNKN"
 
     def set_ap_name(self, ap_name):
+        pass
+
+    def get_ap_security(self):
+        return "OPEN"
+
+    def get_ap_password(self):
+        return ""
+
+    def set_ap_security(self, security, password):
+        pass
+
+    def get_ap_ip(self):
+        return "10.10.10.1"
+
+    def set_ap_ip(self, ap_ip):
+        pass
+
+    def get_apsta_internet_sharing(self):
+        return False
+
+    def set_apsta_internet_sharing(self, enabled):
         pass
 
     def get_host_name(self):
@@ -249,6 +273,11 @@ def go_wifi_ap():
 
 def go_wifi_cli():
     logger.info("SYS: Switching to Client")
+    return True
+
+
+def go_wifi_apsta():
+    logger.info("SYS: Switching to AP+STA")
     return True
 
 

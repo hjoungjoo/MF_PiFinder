@@ -49,6 +49,22 @@ pifinder_render_config() {
         "${source_file}" | sudo tee "${target_file}" >/dev/null
 }
 
+pifinder_prepare_wpa_supplicant_config() {
+    sudo install -d -m 755 /etc/wpa_supplicant
+    sudo touch /etc/wpa_supplicant/wpa_supplicant.conf
+    sudo chown "${PIFINDER_USER}:${PIFINDER_USER}" /etc/wpa_supplicant/wpa_supplicant.conf
+    sudo chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
+}
+
+pifinder_prepare_apsta_nat_config() {
+    if [[ ! -f /etc/pifinder_apsta_nat.conf ]]; then
+        printf "%s\n" \
+            "# PiFinder AP+STA internet sharing setting" \
+            "PIFINDER_APSTA_SHARE_INTERNET=0" | sudo tee /etc/pifinder_apsta_nat.conf >/dev/null
+    fi
+    sudo chmod 644 /etc/pifinder_apsta_nat.conf
+}
+
 pifinder_boot_config_path() {
     if [[ -e /boot/firmware/config.txt ]]; then
         printf "%s\n" "/boot/firmware/config.txt"

@@ -1,4 +1,6 @@
 import glob
+import configparser
+import ipaddress
 import json
 import re
 import subprocess
@@ -18,6 +20,26 @@ import logging
 BACKUP_PATH = str(utils.data_dir / "PiFinder_backup.zip")
 
 logger = logging.getLogger("SysUtils")
+
+WIFI_MODE_AP = "AP"
+WIFI_MODE_CLIENT = "Client"
+WIFI_MODE_APSTA = "AP+STA"
+WPA_SUPPLICANT_PATH = "/etc/wpa_supplicant/wpa_supplicant.conf"
+BOOT_WPA_SUPPLICANT_PATHS = [
+    "/boot/firmware/wpa_supplicant.conf",
+    "/boot/wpa_supplicant.conf",
+]
+NETWORKMANAGER_CONNECTION_GLOB = "/etc/NetworkManager/system-connections/*.nmconnection"
+HOSTAPD_CONF_PATH = "/etc/hostapd/hostapd.conf"
+HOSTAPD_TMP_PATH = "/tmp/hostapd.conf"
+DHCPD_AP_CONF_PATH = "/etc/dhcpcd.conf.ap"
+DHCPD_APSTA_CONF_PATH = "/etc/dhcpcd.conf.apsta"
+DHCPD_ACTIVE_CONF_PATH = "/etc/dhcpcd.conf"
+DNSMASQ_CONF_PATH = "/etc/dnsmasq.conf"
+PIFINDER_APSTA_NAT_CONF_PATH = "/etc/pifinder_apsta_nat.conf"
+DEFAULT_AP_IP = "10.10.10.1"
+AP_SECURITY_OPEN = "OPEN"
+AP_SECURITY_WPA2 = "WPA2-PSK"
 
 BLUETOOTHCTL_COMMAND = "bluetoothctl"
 BLUETOOTH_DEVICE_RE = re.compile(
@@ -43,19 +65,115 @@ class Network:
         self.populate_wifi_networks()
 
     def populate_wifi_networks(self) -> None:
-        wpa_supplicant_path = "/etc/wpa_supplicant/wpa_supplicant.conf"
         self._wifi_networks = []
-        try:
-            with open(wpa_supplicant_path, "r") as wpa_conf:
-                contents = wpa_conf.readlines()
-        except FileNotFoundError:
-            logger.info("wpa_supplicant.conf not found; no saved Wi-Fi networks")
-            return
-        except IOError as e:
-            logger.error(f"Error reading wpa_supplicant.conf: {e}")
-            return
 
-        self._wifi_networks = Network._parse_wpa_supplicant(contents)
+        parsed_networks = []
+        for path in [WPA_SUPPLICANT_PATH, *BOOT_WPA_SUPPLICANT_PATHS]:
+            try:
+                with open(path, "r") as wpa_conf:
+                    parsed_networks.extend(Network._parse_wpa_supplicant(wpa_conf))
+            except FileNotFoundError:
+                if path == WPA_SUPPLICANT_PATH:
+                    logger.info("wpa_supplicant.conf not found")
+                continue
+            except IOError as e:
+                logger.error(f"Error reading {path}: {e}")
+
+        for path in glob.glob(NETWORKMANAGER_CONNECTION_GLOB):
+            try:
+                with open(path, "r") as nm_conf:
+                    parsed = Network._parse_networkmanager_connection(nm_conf.read())
+                    if parsed:
+                        parsed_networks.append(parsed)
+            except PermissionError:
+                logger.info(
+                    "Skipping unreadable NetworkManager connection %s; "
+                    "setup migration imports these profiles when run with sudo",
+                    path,
+                )
+            except IOError as e:
+                logger.error(f"Error reading NetworkManager connection {path}: {e}")
+
+        self._wifi_networks = Network._dedupe_wifi_networks(parsed_networks)
+
+    @staticmethod
+    def _dedupe_wifi_networks(networks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        wifi_networks = []
+        seen_ssids = set()
+        for network in networks:
+            ssid = (network.get("ssid") or "").strip()
+            if not ssid or ssid in seen_ssids:
+                continue
+            key_mgmt = network.get("key_mgmt") or "NONE"
+            wifi_networks.append(
+                {
+                    "id": len(wifi_networks),
+                    "ssid": ssid,
+                    "psk": network.get("psk"),
+                    "key_mgmt": key_mgmt,
+                }
+            )
+            seen_ssids.add(ssid)
+        return wifi_networks
+
+    @staticmethod
+    def _decode_networkmanager_ssid(ssid: str) -> str:
+        ssid = ssid.strip()
+        if (
+            len(ssid) >= 2
+            and len(ssid) % 2 == 0
+            and re.fullmatch(r"[0-9A-Fa-f]+", ssid)
+        ):
+            try:
+                decoded = bytes.fromhex(ssid).decode("utf-8")
+                if decoded.isprintable():
+                    return decoded
+            except ValueError:
+                pass
+            except UnicodeDecodeError:
+                pass
+        return ssid.strip('"')
+
+    @staticmethod
+    def _parse_networkmanager_connection(contents: str) -> dict[str, Any] | None:
+        parser = configparser.ConfigParser(interpolation=None, strict=False)
+        try:
+            parser.read_string(contents)
+        except configparser.Error as e:
+            logger.error(f"Error parsing NetworkManager connection: {e}")
+            return None
+
+        wifi_section = None
+        for section in ("wifi", "802-11-wireless"):
+            if parser.has_section(section):
+                wifi_section = section
+                break
+        if not wifi_section:
+            return None
+
+        ssid = Network._decode_networkmanager_ssid(
+            parser.get(wifi_section, "ssid", fallback="")
+        )
+        if not ssid:
+            return None
+
+        security_section = None
+        for section in ("wifi-security", "802-11-wireless-security"):
+            if parser.has_section(section):
+                security_section = section
+                break
+
+        key_mgmt = "NONE"
+        psk = None
+        if security_section:
+            nm_key_mgmt = parser.get(security_section, "key-mgmt", fallback="")
+            psk = parser.get(security_section, "psk", fallback=None)
+            if nm_key_mgmt.lower() in ("wpa-psk", "sae") and psk:
+                key_mgmt = "WPA-PSK"
+            elif nm_key_mgmt:
+                key_mgmt = nm_key_mgmt.upper()
+
+        return {"id": 0, "ssid": ssid, "psk": psk, "key_mgmt": key_mgmt}
 
     @staticmethod
     def _parse_wpa_supplicant(contents: list[str]) -> list:
@@ -94,16 +212,20 @@ class Network:
     def get_wifi_networks(self):
         return self._wifi_networks
 
+    @staticmethod
+    def _quote_wpa_value(value: str) -> str:
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+
     def delete_wifi_network(self, network_id):
         """
         Immediately deletes a wifi network
         """
         self._wifi_networks.pop(network_id)
 
-        with open("/etc/wpa_supplicant/wpa_supplicant.conf", "r") as wpa_conf:
+        with open(WPA_SUPPLICANT_PATH, "r") as wpa_conf:
             wpa_contents = list(wpa_conf)
 
-        with open("/etc/wpa_supplicant/wpa_supplicant.conf", "w") as wpa_conf:
+        with open(WPA_SUPPLICANT_PATH, "w") as wpa_conf:
             in_networks = False
             for line in wpa_contents:
                 if not in_networks:
@@ -113,13 +235,13 @@ class Network:
                         wpa_conf.write(line)
 
             for network in self._wifi_networks:
-                ssid = network["ssid"]
+                ssid = Network._quote_wpa_value(network["ssid"])
                 key_mgmt = network["key_mgmt"]
-                psk = network["psk"]
+                psk = Network._quote_wpa_value(network["psk"] or "")
 
                 wpa_conf.write("\nnetwork={\n")
                 wpa_conf.write(f'\tssid="{ssid}"\n')
-                if key_mgmt == "WPA-PSK":
+                if key_mgmt == "WPA-PSK" and psk:
                     wpa_conf.write(f'\tpsk="{psk}"\n')
                 wpa_conf.write(f"\tkey_mgmt={key_mgmt}\n")
 
@@ -131,37 +253,346 @@ class Network:
         """
         Add a wifi network
         """
-        with open("/etc/wpa_supplicant/wpa_supplicant.conf", "a") as wpa_conf:
+        ssid = (ssid or "").strip()
+        psk = (psk or "").strip()
+        if not ssid:
+            raise ValueError("SSID is required")
+        if key_mgmt == "WPA-PSK" and len(psk) < 8:
+            raise ValueError("Wi-Fi password must be at least 8 characters")
+
+        with open(WPA_SUPPLICANT_PATH, "a") as wpa_conf:
             wpa_conf.write("\nnetwork={\n")
-            wpa_conf.write(f'\tssid="{ssid}"\n')
+            wpa_conf.write(f'\tssid="{Network._quote_wpa_value(ssid)}"\n')
             if key_mgmt == "WPA-PSK":
-                wpa_conf.write(f'\tpsk="{psk}"\n')
+                wpa_conf.write(f'\tpsk="{Network._quote_wpa_value(psk)}"\n')
             wpa_conf.write(f"\tkey_mgmt={key_mgmt}\n")
 
             wpa_conf.write("}\n")
 
         self.populate_wifi_networks()
-        if self._wifi_mode == "Client":
+        if self._wifi_mode in (WIFI_MODE_CLIENT, WIFI_MODE_APSTA):
             # Restart the supplicant
             wpa_cli("reconfigure")
 
+    @staticmethod
+    def _parse_iw_scan(output: str) -> list[str]:
+        networks = []
+        seen = set()
+        for line in output.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("SSID:"):
+                continue
+            ssid = stripped[5:].strip()
+            if not ssid or ssid in seen:
+                continue
+            networks.append(ssid)
+            seen.add(ssid)
+        return networks
+
+    def scan_wifi_networks(self) -> list[str]:
+        """
+        Scan nearby Wi-Fi networks and return a deduplicated SSID list.
+        """
+        scan_commands = [
+            ["iw", "dev", "wlan0", "scan"],
+            ["sudo", "-n", "iw", "dev", "wlan0", "scan"],
+            ["iwlist", "wlan0", "scan"],
+            ["sudo", "-n", "iwlist", "wlan0", "scan"],
+        ]
+        for command in scan_commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    check=False,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+            output = result.stdout + result.stderr
+            if "iwlist" in command:
+                networks = Network._parse_iwlist_scan(output)
+            else:
+                networks = Network._parse_iw_scan(output)
+            if networks:
+                return networks
+        return []
+
+    @staticmethod
+    def _parse_iwlist_scan(output: str) -> list[str]:
+        networks = []
+        seen = set()
+        for match in re.finditer(r'ESSID:"([^"]*)"', output):
+            ssid = match.group(1).strip()
+            if not ssid or ssid in seen:
+                continue
+            networks.append(ssid)
+            seen.add(ssid)
+        return networks
+
     def get_ap_name(self):
-        with open("/etc/hostapd/hostapd.conf", "r") as conf:
+        with open(HOSTAPD_CONF_PATH, "r") as conf:
             for line in conf:
                 if line.startswith("ssid="):
                     return line[5:-1]
         return "UNKN"
 
+    @staticmethod
+    def _rewrite_key_value_lines(
+        lines: list[str], updates: dict[str, str], remove_keys: set[str] | None = None
+    ) -> list[str]:
+        remove_keys = remove_keys or set()
+        remaining_updates = dict(updates)
+        rewritten = []
+        for line in lines:
+            key = line.split("=", 1)[0].strip() if "=" in line else ""
+            if key in remove_keys:
+                continue
+            if key in remaining_updates:
+                rewritten.append(f"{key}={remaining_updates.pop(key)}\n")
+                continue
+            rewritten.append(line)
+        for key, value in remaining_updates.items():
+            rewritten.append(f"{key}={value}\n")
+        return rewritten
+
+    def _write_hostapd_config(
+        self, updates: dict[str, str], remove_keys: set[str] | None = None
+    ) -> None:
+        with open(HOSTAPD_CONF_PATH, "r") as conf:
+            lines = list(conf)
+        lines = Network._rewrite_key_value_lines(lines, updates, remove_keys)
+        with open(HOSTAPD_TMP_PATH, "w") as new_conf:
+            new_conf.writelines(lines)
+        sh.sudo("cp", HOSTAPD_TMP_PATH, HOSTAPD_CONF_PATH)
+
     def set_ap_name(self, ap_name):
         if ap_name == self.get_ap_name():
             return
-        with open("/tmp/hostapd.conf", "w") as new_conf:
-            with open("/etc/hostapd/hostapd.conf", "r") as conf:
-                for line in conf:
-                    if line.startswith("ssid="):
-                        line = f"ssid={ap_name}\n"
-                    new_conf.write(line)
-        sh.sudo("cp", "/tmp/hostapd.conf", "/etc/hostapd/hostapd.conf")
+        ap_name = (ap_name or "").strip()
+        if not ap_name or "\n" in ap_name:
+            raise ValueError("AP network name is invalid")
+        self._write_hostapd_config({"ssid": ap_name})
+
+    def _get_hostapd_value(self, key: str) -> str:
+        with open(HOSTAPD_CONF_PATH, "r") as conf:
+            for line in conf:
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip()
+        return ""
+
+    def get_ap_security(self):
+        if self._get_hostapd_value("wpa") or self._get_hostapd_value(
+            "wpa_passphrase"
+        ):
+            return AP_SECURITY_WPA2
+        return AP_SECURITY_OPEN
+
+    def get_ap_password(self):
+        return self._get_hostapd_value("wpa_passphrase")
+
+    def set_ap_security(self, security, password):
+        security = (security or AP_SECURITY_OPEN).strip().upper()
+        password = (password or "").strip()
+        if security in ("OPEN", "NONE"):
+            self._write_hostapd_config(
+                {},
+                {
+                    "wpa",
+                    "wpa_passphrase",
+                    "wpa_key_mgmt",
+                    "wpa_pairwise",
+                    "rsn_pairwise",
+                },
+            )
+            return
+
+        if security not in (AP_SECURITY_WPA2, "WPA2"):
+            raise ValueError("Unsupported AP security mode")
+
+        if not password:
+            password = self.get_ap_password()
+        if len(password) < 8 or len(password) > 63:
+            raise ValueError("AP password must be 8 to 63 characters")
+        if "\n" in password:
+            raise ValueError("AP password is invalid")
+
+        self._write_hostapd_config(
+            {
+                "wpa": "2",
+                "wpa_passphrase": password,
+                "wpa_key_mgmt": "WPA-PSK",
+                "rsn_pairwise": "CCMP",
+            },
+            {"wpa_pairwise"},
+        )
+
+    @staticmethod
+    def _validate_ap_ip(ap_ip: str) -> ipaddress.IPv4Address:
+        try:
+            ip = ipaddress.IPv4Address((ap_ip or "").strip())
+        except ipaddress.AddressValueError as e:
+            raise ValueError("AP IP address is invalid") from e
+
+        if (
+            not ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise ValueError("AP IP address must be a private IPv4 address")
+        return ip
+
+    @staticmethod
+    def _ap_ip_cidr(ap_ip: str) -> str:
+        ip = Network._validate_ap_ip(ap_ip)
+        return f"{ip}/24"
+
+    @staticmethod
+    def _ap_dhcp_range(ap_ip: str) -> tuple[str, str]:
+        interface = ipaddress.IPv4Interface(Network._ap_ip_cidr(ap_ip))
+        ap_address = interface.ip
+        candidates = [host for host in interface.network.hosts() if host != ap_address]
+        if len(candidates) < 2:
+            raise ValueError("AP network is too small")
+        end_index = min(19, len(candidates))
+        return str(candidates[0]), str(candidates[end_index - 1])
+
+    @staticmethod
+    def _rewrite_dhcpcd_static_ip(contents: str, interface: str, ap_ip: str) -> str:
+        lines = contents.splitlines(keepends=True)
+        target_line = f"    static ip_address={Network._ap_ip_cidr(ap_ip)}\n"
+        in_interface = False
+        saw_interface = False
+        replaced = False
+        output = []
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("interface "):
+                if in_interface and not replaced:
+                    output.append(target_line)
+                    replaced = True
+                in_interface = stripped == f"interface {interface}"
+                saw_interface = saw_interface or in_interface
+                output.append(line)
+                continue
+
+            if in_interface and stripped.startswith("static ip_address="):
+                if not replaced:
+                    output.append(target_line)
+                    replaced = True
+                continue
+
+            output.append(line)
+
+        if in_interface and not replaced:
+            output.append(target_line)
+        if not saw_interface:
+            if output and not output[-1].endswith("\n"):
+                output[-1] += "\n"
+            output.extend([f"\ninterface {interface}\n", target_line])
+        return "".join(output)
+
+    @staticmethod
+    def _write_root_file(path: str, contents: str) -> None:
+        tmp_path = f"/tmp/{path.strip('/').replace('/', '_')}"
+        with open(tmp_path, "w") as tmp_file:
+            tmp_file.write(contents)
+        sh.sudo("cp", tmp_path, path)
+
+    def _update_dhcpcd_ap_file(self, path: str, interface: str, ap_ip: str) -> None:
+        try:
+            with open(path, "r") as conf:
+                contents = conf.read()
+        except FileNotFoundError:
+            contents = ""
+        Network._write_root_file(
+            path, Network._rewrite_dhcpcd_static_ip(contents, interface, ap_ip)
+        )
+
+    @staticmethod
+    def _rewrite_dnsmasq_ap_network(contents: str, ap_ip: str) -> str:
+        start, end = Network._ap_dhcp_range(ap_ip)
+        return "".join(
+            Network._rewrite_key_value_lines(
+                contents.splitlines(keepends=True),
+                {
+                    "dhcp-range": f"{start},{end},255.255.255.0,24h",
+                    "address": f"/gw.wlan/{ap_ip}",
+                },
+            )
+        )
+
+    def _update_dnsmasq_ap_network(self, ap_ip: str) -> None:
+        try:
+            with open(DNSMASQ_CONF_PATH, "r") as conf:
+                contents = conf.read()
+        except FileNotFoundError:
+            contents = ""
+        Network._write_root_file(
+            DNSMASQ_CONF_PATH, Network._rewrite_dnsmasq_ap_network(contents, ap_ip)
+        )
+
+    @staticmethod
+    def _parse_dhcpcd_static_ip(contents: str, interface: str) -> str:
+        in_interface = False
+        for line in contents.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("interface "):
+                in_interface = stripped == f"interface {interface}"
+                continue
+            if in_interface and stripped.startswith("static ip_address="):
+                cidr = stripped.split("=", 1)[1]
+                return str(ipaddress.IPv4Interface(cidr).ip)
+        return DEFAULT_AP_IP
+
+    def get_ap_ip(self):
+        try:
+            with open(DHCPD_AP_CONF_PATH, "r") as conf:
+                return Network._parse_dhcpcd_static_ip(conf.read(), "wlan0")
+        except Exception:
+            return DEFAULT_AP_IP
+
+    def set_ap_ip(self, ap_ip):
+        ap_ip = str(Network._validate_ap_ip(ap_ip))
+        if ap_ip == self.get_ap_ip():
+            return
+
+        self._update_dhcpcd_ap_file(DHCPD_AP_CONF_PATH, "wlan0", ap_ip)
+        self._update_dhcpcd_ap_file(DHCPD_APSTA_CONF_PATH, "uap0", ap_ip)
+        if self._wifi_mode == WIFI_MODE_AP:
+            self._update_dhcpcd_ap_file(DHCPD_ACTIVE_CONF_PATH, "wlan0", ap_ip)
+        elif self._wifi_mode == WIFI_MODE_APSTA:
+            self._update_dhcpcd_ap_file(DHCPD_ACTIVE_CONF_PATH, "uap0", ap_ip)
+        self._update_dnsmasq_ap_network(ap_ip)
+
+    @staticmethod
+    def _parse_apsta_nat_config(contents: str) -> bool:
+        for line in contents.splitlines():
+            if line.strip() == "PIFINDER_APSTA_SHARE_INTERNET=1":
+                return True
+        return False
+
+    def get_apsta_internet_sharing(self):
+        try:
+            with open(PIFINDER_APSTA_NAT_CONF_PATH, "r") as conf:
+                return Network._parse_apsta_nat_config(conf.read())
+        except FileNotFoundError:
+            return False
+        except IOError as e:
+            logger.error(f"Error reading AP+STA internet sharing config: {e}")
+            return False
+
+    def set_apsta_internet_sharing(self, enabled):
+        enabled_value = "1" if enabled else "0"
+        contents = (
+            "# PiFinder AP+STA internet sharing setting\n"
+            f"PIFINDER_APSTA_SHARE_INTERNET={enabled_value}\n"
+        )
+        Network._write_root_file(PIFINDER_APSTA_NAT_CONF_PATH, contents)
 
     def get_host_name(self):
         return socket.gethostname()
@@ -171,12 +602,14 @@ class Network:
         Returns the SSID of the connected wifi network or
         None if not connected or in AP mode
         """
-        if self.wifi_mode() == "AP":
+        if self.wifi_mode() == WIFI_MODE_AP:
             return ""
         # get output from iwgetid
         try:
             iwgetid = sh.Command("iwgetid")
-            _t = iwgetid(_ok_code=(0, 255)).strip()
+            _t = iwgetid("wlan0", _ok_code=(0, 255)).strip()
+            if not _t:
+                _t = iwgetid(_ok_code=(0, 255)).strip()
             return _t.split(":")[-1].strip('"')
         except sh.CommandNotFound:
             return "ssid_not_found"
@@ -229,25 +662,35 @@ class Network:
     def set_wifi_mode(self, mode):
         if mode == self._wifi_mode:
             return
-        if mode == "AP":
+        if mode == WIFI_MODE_AP:
             go_wifi_ap()
 
-        if mode == "Client":
+        if mode == WIFI_MODE_CLIENT:
             go_wifi_cli()
 
-    def local_ip(self):
-        if self._wifi_mode == "AP":
-            return "10.10.10.1"
+        if mode == WIFI_MODE_APSTA:
+            go_wifi_apsta()
 
+    def _route_ip(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             s.connect(("192.255.255.255", 1))
-            ip = s.getsockname()[0]
+            return s.getsockname()[0]
         except Exception:
-            ip = "NONE"
+            return "NONE"
         finally:
             s.close()
-        return ip
+
+    def local_ip(self):
+        if self._wifi_mode == WIFI_MODE_AP:
+            return "10.10.10.1"
+        if self._wifi_mode == WIFI_MODE_APSTA:
+            sta_ip = self._route_ip()
+            if sta_ip == "NONE":
+                return "10.10.10.1"
+            return f"{sta_ip} / 10.10.10.1"
+
+        return self._route_ip()
 
 
 def go_wifi_ap():
@@ -259,6 +702,12 @@ def go_wifi_ap():
 def go_wifi_cli():
     logger.info("SYS: Switching to Client")
     sh.sudo(str(utils.pifinder_dir / "switch-cli.sh"))
+    return True
+
+
+def go_wifi_apsta():
+    logger.info("SYS: Switching to AP+STA")
+    sh.sudo(str(utils.pifinder_dir / "switch-apsta.sh"))
     return True
 
 

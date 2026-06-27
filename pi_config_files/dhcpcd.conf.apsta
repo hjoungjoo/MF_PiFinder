@@ -1,0 +1,30 @@
+# A sample configuration for dhcpcd.
+# See dhcpcd.conf(5) for details.
+
+# Allow users of this group to interact with dhcpcd via the control socket.
+#controlgroup wheel
+
+# Inform the DHCP server of our hostname for DDNS.
+hostname
+
+# Use the hardware address of the interface for the Client ID.
+clientid
+
+# Persist interface configuration when dhcpcd exits.
+persistent
+
+# Rapid commit support.
+option rapid_commit
+
+# A list of options to request from the DHCP server.
+option domain_name_servers, domain_name, domain_search, host_name
+option classless_static_routes
+option interface_mtu
+require dhcp_server_identifier
+slaac private
+
+# AP+STA mode keeps wlan0 under wpa_supplicant/DHCP for internet access and
+# serves the PiFinder access point on the virtual AP interface.
+interface uap0
+    static ip_address=10.10.10.1/24
+    nohook wpa_supplicant

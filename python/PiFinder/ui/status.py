@@ -51,7 +51,7 @@ class UIStatus(UIModule):
 
         with open(f"{utils.pifinder_dir}/wifi_status.txt", "r") as wfs:
             wifi_mode = wfs.read()
-        self.status_dict["WIFI"] = "Client" if wifi_mode == "Client" else "AP"
+        self.status_dict["WIFI"] = wifi_mode if wifi_mode else "--"
 
         self.last_temp_time = 0
         self.last_IP_time = 0

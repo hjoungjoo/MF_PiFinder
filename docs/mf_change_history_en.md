@@ -35,6 +35,7 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Bluetooth/USB HID keyboard support | Draft PR exists | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput key mapping, text-entry keycodes, Bluetooth keyboard scan/pair/connect UI, reconnect |
 | INDI mount control | Draft PR exists | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, install script, INDI docs |
 | Integrated GPS/NTP/RTC/software PPS time sync | Draft PR exists | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source selection, helper service, dry-run/real clock sync, status UI, time-sync docs |
+| Wi-Fi AP+STA simultaneous mode and AP settings | No Draft PR yet | local `mf_pifinder` worktree | `wlan0` STA + `uap0` AP, STA channel tracking, configurable AP IP, AP WPA2 password setting, AP+STA internet sharing option, OS Wi-Fi profile import, scanned SSID selection, shared Pi 4/5 Wi-Fi mode |
 | Web UI red night theme and PWA fullscreen app mode | No Draft PR yet | local `mf_pifinder` worktree | red night theme, per-browser theme storage, PWA manifest, service worker, PWA icons |
 | Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |
 | Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted Web UI/PWA changes | integration branch used for install and hardware testing across the features above |
@@ -51,6 +52,7 @@ to follow. The following grouping is easier to maintain.
 | Input devices | Bluetooth keyboard, USB HID key mapping, keyboard mapping docs | Use #506 as the base |
 | Optional INDI mount integration | INDI mount process, install script, object sync, INDI keyboard mapping notes | Keep #503 |
 | Integrated time sync | GPS/NTP/RTC/software PPS, helper service, status UI | Keep #504 |
+| Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, configurable AP IP, AP security/password, optional AP+STA internet sharing, OS Wi-Fi profile import, scanned SSID selection, web/device network UI | New Draft PR needed |
 | Web observing UI | red night theme, PWA/fullscreen app mode | New Draft PR needed |
 | Korean localization | Korean locale and CJK language handling | Keep #500 separate because the locale file is large |
 
@@ -73,6 +75,7 @@ python/PiFinder/gps_ubx_parser.py
 python/PiFinder/gps_time_sync.py
 python/PiFinder/gps_time_sync_helper.py
 python/PiFinder/mountcontrol_indi.py
+python/PiFinder/server.py
 python/PiFinder/sys_utils.py
 python/PiFinder/switch_camera.py
 python/PiFinder/keyboard_interface.py
@@ -98,8 +101,13 @@ python/views/service-worker.js
 python/views/images/pwa-icon-192.png
 python/views/images/pwa-icon-512.png
 python/tests/test_web_theme_static.py
+python/tests/test_wifi_apsta_static.py
+python/tests/test_sys_utils.py
+python/views/network.html
 python/views/tools.html
 pi_config_files/pifinder.service
+pi_config_files/pifinder_apsta_prepare.service
+pi_config_files/pifinder_apsta_monitor.service
 pi_config_files/pifinder_gps_time_sync.service
 pi_config_files/pifinder_splash.service
 pi_config_files/cedar_detect.service
@@ -109,6 +117,7 @@ pifinder_setup.sh
 pifinder_update.sh
 pifinder_post_update.sh
 switch-ap.sh
+switch-apsta.sh
 switch-cli.sh
 migration_source/v1.x.x.sh
 migration_source/v2.1.0.sh
@@ -116,9 +125,13 @@ migration_source/v2.2.1.sh
 migration_source/v2.2.2.sh
 migration_source/v2.4.0.sh
 migration_source/v2.6.0.sh
+migration_source/mf_apsta_wifi.sh
+migration_source/mf_wifi_settings.sh
 migrate_db.sql
 default_config.json
 scripts/camera_lcd_preview.py
+scripts/import_initial_wifi_networks.py
+scripts/pifinder_apsta.sh
 scripts/install_indi_mount.sh
 scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
@@ -128,6 +141,8 @@ docs/mf_change_history_ko.md
 docs/mf_change_history_en.md
 docs/mf_indi_mount_install_ko.md
 docs/mf_indi_mount_install_en.md
+docs/mf_wifi_apsta_ko.md
+docs/mf_wifi_apsta_en.md
 docs/mf_keyboard_mapping_ko.md
 docs/mf_keyboard_mapping_en.md
 docs/mf_pifinder_new_device_tasks_ko.md
@@ -1126,6 +1141,38 @@ docs/mf_time_sync_en.md
 pi_config_files/pifinder_gps_time_sync.service
 scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
+```
+
+## Wi-Fi AP+STA Simultaneous Mode
+
+The previous `Client` or `AP` single-mode selection was extended with `AP+STA`.
+This mode keeps `wlan0` as the STA for internet access and updates while the
+virtual `uap0` AP interface serves the PiFinder AP for phone/tablet control.
+
+### Behavior
+
+- Added `AP+STA` to the web `Tools > Network` page and the device
+  `Settings > WiFi Mode` menu.
+- `switch-apsta.sh` applies `/etc/dhcpcd.conf.apsta` and enables
+  `pifinder_apsta_prepare`, `pifinder_apsta_monitor`, `dnsmasq`, and `hostapd`.
+- `scripts/pifinder_apsta.sh prepare` creates `uap0` and assigns
+  `10.10.10.1/24`.
+- `scripts/pifinder_apsta.sh monitor` watches the STA channel. When it changes,
+  it updates `hostapd.conf` `channel`/`hw_mode` and restarts `hostapd`.
+- `switch-ap.sh` and `switch-cli.sh` stop the AP+STA monitor and remove `uap0`.
+- Pi 4 and Pi 5 use the same layout: `uap0` is added on top of the default
+  `wlan0` interface.
+
+### Docs and Install Files
+
+```text
+docs/mf_wifi_apsta_ko.md
+docs/mf_wifi_apsta_en.md
+pi_config_files/dhcpcd.conf.apsta
+pi_config_files/pifinder_apsta_prepare.service
+pi_config_files/pifinder_apsta_monitor.service
+scripts/pifinder_apsta.sh
+switch-apsta.sh
 ```
 
 ## Web UI Red Night Theme and PWA App Mode

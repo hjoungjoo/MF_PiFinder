@@ -1076,6 +1076,11 @@ pifinder_menu = {
                             "value": "AP",
                             "callback": callbacks.go_wifi_ap,
                         },
+                        {
+                            "name": _("AP+STA Mode"),
+                            "value": "AP+STA",
+                            "callback": callbacks.go_wifi_apsta,
+                        },
                     ],
                 },
                 {

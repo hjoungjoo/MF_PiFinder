@@ -47,8 +47,9 @@ then
     sudo systemctl enable pifinder_splash
 fi
 
-# open permissisons on wpa_supplicant file so we can adjust network config
-sudo chmod 666 /etc/wpa_supplicant/wpa_supplicant.conf
+# allow the PiFinder service user to adjust network config without exposing
+# saved Wi-Fi credentials to every local user
+pifinder_prepare_wpa_supplicant_config
 
 # DONE
 echo "Post Update Complete"

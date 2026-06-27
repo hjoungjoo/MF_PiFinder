@@ -309,11 +309,21 @@ class Server:
         @auth_required
         def network_page():
             show_new_form = request.args.get("add_new", 0)
+            scanned_networks = []
+            scan_error = ""
+            if show_new_form:
+                try:
+                    scanned_networks = self.network.scan_wifi_networks()
+                except Exception as e:
+                    logger.warning("Wi-Fi scan failed: %s", e)
+                    scan_error = _("Wi-Fi scan failed")
 
             return app.jinja_env.get_template("network.html").render(
                 title=_("Network"),
                 net=self.network,
                 show_new_form=show_new_form,
+                scanned_networks=scanned_networks,
+                scan_error=scan_error,
             )
 
         @app.route("/gps")
@@ -510,15 +520,25 @@ class Server:
         @app.route("/network/add", methods=["POST"])
         @auth_required
         def network_add():
-            ssid = request.form.get("ssid")
-            psk = request.form.get("psk")
-            if len(psk) < 8:
-                key_mgmt = "NONE"
-            else:
-                key_mgmt = "WPA-PSK"
+            ssid = (request.form.get("ssid") or "").strip()
+            scanned_ssid = (request.form.get("ssid_select") or "").strip()
+            if not ssid and scanned_ssid != "__manual__":
+                ssid = scanned_ssid
+            psk = (request.form.get("psk") or "").strip()
+            key_mgmt = "WPA-PSK" if psk else "NONE"
 
-            self.network.add_wifi_network(ssid, key_mgmt, psk)
-            return redirect("/network")
+            try:
+                self.network.add_wifi_network(ssid, key_mgmt, psk)
+                return redirect("/network")
+            except ValueError as e:
+                return app.jinja_env.get_template("network.html").render(
+                    title=_("Network"),
+                    net=self.network,
+                    show_new_form=1,
+                    scanned_networks=self.network.scan_wifi_networks(),
+                    scan_error="",
+                    error_message=str(e),
+                )
 
         @app.route("/network/delete/<int:network_id>")
         @auth_required
@@ -531,12 +551,31 @@ class Server:
         def network_update():
             wifi_mode = request.form.get("wifi_mode")
             ap_name = request.form.get("ap_name")
+            ap_ip = request.form.get("ap_ip")
+            ap_security = request.form.get("ap_security")
+            ap_password = request.form.get("ap_password")
+            apsta_share_internet = request.form.get("apsta_share_internet") == "1"
             host_name = request.form.get("host_name")
 
-            self.network.set_wifi_mode(wifi_mode)
-            self.network.set_ap_name(ap_name)
-            self.network.set_host_name(host_name)
-            return app.jinja_env.get_template("restart.html").render(title=_("Restart"))
+            try:
+                self.network.set_ap_name(ap_name)
+                self.network.set_ap_ip(ap_ip)
+                self.network.set_ap_security(ap_security, ap_password)
+                self.network.set_apsta_internet_sharing(apsta_share_internet)
+                self.network.set_host_name(host_name)
+                self.network.set_wifi_mode(wifi_mode)
+                return app.jinja_env.get_template("restart.html").render(
+                    title=_("Restart")
+                )
+            except ValueError as e:
+                return app.jinja_env.get_template("network.html").render(
+                    title=_("Network"),
+                    net=self.network,
+                    show_new_form=0,
+                    scanned_networks=[],
+                    scan_error="",
+                    error_message=str(e),
+                )
 
         @app.route("/tools/pwchange", methods=["POST"])
         @auth_required

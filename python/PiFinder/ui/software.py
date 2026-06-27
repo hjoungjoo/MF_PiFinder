@@ -230,7 +230,7 @@ class UISoftware(UIModule):
         msg_top = self.display_class.resY - 2 * msg_pitch - 6
         msg_bottom = msg_top + msg_pitch
 
-        if self._wifi_mode != "Client":
+        if self._wifi_mode not in ("Client", "AP+STA"):
             self.draw.text(
                 (10, msg_top),
                 _("WiFi must be"),

@@ -6,6 +6,13 @@
         <h5 class="grey-text">{{ _('Network Settings') }}</h5>
   </div>
 </div>
+{% if error_message %}
+<div class="card red darken-4">
+  <div class="card-content white-text">
+    {{ error_message }}
+  </div>
+</div>
+{% endif %}
 <div class="card grey darken-2">
   <div class="card-content">
     <form action="/network/update" method="post" id="network_form" class="col s12">
@@ -14,6 +21,7 @@
                 <select name="wifi_mode">
                     <option value="AP" {% if net.wifi_mode() == "AP" %}selected{% endif %}>{{ _('Access Point') }}</option>
                     <option value="Client" {% if net.wifi_mode() == "Client" %}selected{% endif %}>{{ _('Client') }}</option>
+                    <option value="AP+STA" {% if net.wifi_mode() == "AP+STA" %}selected{% endif %}>{{ _('AP+STA') }}</option>
                 </select>
                 <label>{{ _('Wifi Mode') }}</label>
             </div>
@@ -22,6 +30,38 @@
             <div class="input-field col s12">
                 <input value="{{ net.get_ap_name() }}" id="ap_name" type="text" name="ap_name">
                 <label for="ap_name">{{ _('AP Network Name') }}</label>
+            </div>
+        </div>
+        <div class="row">
+            <div class="input-field col s12">
+                <input value="{{ net.get_ap_ip() }}" id="ap_ip" type="text" name="ap_ip" pattern="(?:10|172|192)\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}">
+                <label for="ap_ip">{{ _('AP IP Address') }}</label>
+                <span class="helper-text">{{ _('Clients will reconnect using this address after restart') }}</span>
+            </div>
+        </div>
+        <div class="row">
+            <div class="input-field col s12 m6">
+                <select name="ap_security" id="ap_security">
+                    <option value="OPEN" {% if net.get_ap_security() == "OPEN" %}selected{% endif %}>{{ _('Open') }}</option>
+                    <option value="WPA2-PSK" {% if net.get_ap_security() == "WPA2-PSK" %}selected{% endif %}>{{ _('WPA2 Password') }}</option>
+                </select>
+                <label>{{ _('AP Security') }}</label>
+            </div>
+            <div class="input-field col s12 m6">
+                <input value="" placeholder="{{ _('Unchanged') if net.get_ap_password() else '' }}" id="ap_password" type="password" name="ap_password" minlength="8" maxlength="63">
+                <label for="ap_password">{{ _('AP Password') }}</label>
+                <span class="helper-text">{{ _('8-63 characters; leave blank to keep current password') }}</span>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col s12">
+                <label>
+                    <input type="checkbox" name="apsta_share_internet" value="1" {% if net.get_apsta_internet_sharing() %}checked{% endif %}>
+                    <span>{{ _('Share STA internet in AP+STA mode') }}</span>
+                </label>
+                <p class="grey-text text-lighten-1" style="margin-top: 4px;">
+                    {{ _('Off by default. Internet sharing may add system load and can be slow.') }}
+                </p>
             </div>
         </div>
         <div class="row">
@@ -63,6 +103,25 @@
       <tr class="grey-text text-lighten-1">
         <td> 
         <form class="col s12" action="/network/add" method="post" id="new_network_form">
+          {% if scan_error %}
+          <div class="row">
+            <div class="col s12 red-text text-lighten-2">{{ scan_error }}</div>
+          </div>
+          {% endif %}
+          {% if scanned_networks %}
+          <div class="row">
+            <div class="input-field col s12">
+              <select name="ssid_select" id="ssid_select">
+                <option value="" disabled selected>{{ _('Select scanned SSID') }}</option>
+                {% for ssid in scanned_networks %}
+                <option value="{{ ssid }}">{{ ssid }}</option>
+                {% endfor %}
+                <option value="__manual__">{{ _('Manual entry') }}</option>
+              </select>
+              <label>{{ _('Nearby Wi-Fi') }}</label>
+            </div>
+          </div>
+          {% endif %}
           <div class="row">
             <div class="input-field col s12">
               <input placeholder="SSID" id="ssid" type="text" name="ssid">
@@ -105,5 +164,34 @@ document.addEventListener('DOMContentLoaded', function() {
     var elems = document.querySelectorAll('.modal');
         var instances = M.Modal.init(elems);
           });
+
+document.addEventListener('DOMContentLoaded', function() {
+    var ssidSelect = document.getElementById('ssid_select');
+    var ssidInput = document.getElementById('ssid');
+    if (ssidSelect && ssidInput) {
+        ssidSelect.addEventListener('change', function() {
+            if (ssidSelect.value && ssidSelect.value !== '__manual__') {
+                ssidInput.value = ssidSelect.value;
+                M.updateTextFields();
+            }
+        });
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    var securitySelect = document.getElementById('ap_security');
+    var passwordInput = document.getElementById('ap_password');
+    function updateApPasswordState() {
+        if (!securitySelect || !passwordInput) {
+            return;
+        }
+        passwordInput.disabled = securitySelect.value === 'OPEN';
+        M.updateTextFields();
+    }
+    if (securitySelect && passwordInput) {
+        securitySelect.addEventListener('change', updateApPasswordState);
+        updateApPasswordState();
+    }
+});
 </script>
 {% endblock %}

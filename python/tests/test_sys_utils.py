@@ -84,6 +84,156 @@ try:
         assert network.get_wifi_networks() == []
 
     @pytest.mark.unit
+    def test_networkmanager_connection_parsing_hex_ssid():
+        nmconnection = """
+        [connection]
+        id=Home WiFi
+        type=wifi
+
+        [wifi]
+        mode=infrastructure
+        ssid=486f6d652057694669
+
+        [wifi-security]
+        key-mgmt=wpa-psk
+        psk=secretpass
+        """
+
+        result = sys_utils.Network._parse_networkmanager_connection(nmconnection)
+
+        assert result["ssid"] == "Home WiFi"
+        assert result["psk"] == "secretpass"
+        assert result["key_mgmt"] == "WPA-PSK"
+
+    @pytest.mark.unit
+    def test_dedupe_wifi_networks_reassigns_ids():
+        networks = sys_utils.Network._dedupe_wifi_networks(
+            [
+                {"id": 99, "ssid": "Home", "psk": "secretpass", "key_mgmt": "WPA-PSK"},
+                {"id": 1, "ssid": "Home", "psk": "otherpass", "key_mgmt": "WPA-PSK"},
+                {"id": 2, "ssid": "Open", "key_mgmt": "NONE"},
+            ]
+        )
+
+        assert networks == [
+            {"id": 0, "ssid": "Home", "psk": "secretpass", "key_mgmt": "WPA-PSK"},
+            {"id": 1, "ssid": "Open", "psk": None, "key_mgmt": "NONE"},
+        ]
+
+    @pytest.mark.unit
+    def test_iw_scan_parsing_dedupes_ssids():
+        output = """
+        BSS 00:11:22:33:44:55(on wlan0)
+                SSID: Cafe
+        BSS 66:77:88:99:aa:bb(on wlan0)
+                SSID: Cafe
+        BSS cc:dd:ee:ff:00:11(on wlan0)
+                SSID:
+        BSS 22:33:44:55:66:77(on wlan0)
+                SSID: Observatory
+        """
+
+        assert sys_utils.Network._parse_iw_scan(output) == ["Cafe", "Observatory"]
+
+    @pytest.mark.unit
+    def test_hostapd_security_rewrite_adds_wpa2_and_removes_pairwise():
+        lines = [
+            "interface=wlan0\n",
+            "ssid=PiFinderAP\n",
+            "channel=7\n",
+            "wpa_pairwise=TKIP\n",
+        ]
+
+        result = sys_utils.Network._rewrite_key_value_lines(
+            lines,
+            {
+                "wpa": "2",
+                "wpa_passphrase": "observing",
+                "wpa_key_mgmt": "WPA-PSK",
+                "rsn_pairwise": "CCMP",
+            },
+            {"wpa_pairwise"},
+        )
+
+        assert "wpa_pairwise=TKIP\n" not in result
+        assert "wpa=2\n" in result
+        assert "wpa_passphrase=observing\n" in result
+        assert "wpa_key_mgmt=WPA-PSK\n" in result
+        assert "rsn_pairwise=CCMP\n" in result
+
+    @pytest.mark.unit
+    def test_hostapd_security_rewrite_removes_wpa_for_open_ap():
+        lines = [
+            "interface=wlan0\n",
+            "ssid=PiFinderAP\n",
+            "wpa=2\n",
+            "wpa_passphrase=observing\n",
+            "wpa_key_mgmt=WPA-PSK\n",
+            "rsn_pairwise=CCMP\n",
+        ]
+
+        result = sys_utils.Network._rewrite_key_value_lines(
+            lines,
+            {},
+            {"wpa", "wpa_passphrase", "wpa_key_mgmt", "rsn_pairwise"},
+        )
+
+        assert result == ["interface=wlan0\n", "ssid=PiFinderAP\n"]
+
+    @pytest.mark.unit
+    def test_ap_dhcp_range_avoids_ap_ip():
+        assert sys_utils.Network._ap_dhcp_range("10.10.10.1") == (
+            "10.10.10.2",
+            "10.10.10.20",
+        )
+        start, end = sys_utils.Network._ap_dhcp_range("10.10.10.2")
+        assert start == "10.10.10.1"
+        assert end == "10.10.10.20"
+
+    @pytest.mark.unit
+    def test_ap_ip_validation_rejects_public_and_link_local():
+        with pytest.raises(ValueError):
+            sys_utils.Network._validate_ap_ip("8.8.8.8")
+        with pytest.raises(ValueError):
+            sys_utils.Network._validate_ap_ip("169.254.1.1")
+
+    @pytest.mark.unit
+    def test_dhcpcd_static_ip_rewrite_for_ap_interface():
+        contents = "interface wlan0\n    static ip_address=10.10.10.1/24\n"
+        result = sys_utils.Network._rewrite_dhcpcd_static_ip(
+            contents, "wlan0", "192.168.50.1"
+        )
+
+        assert "interface wlan0\n" in result
+        assert "static ip_address=192.168.50.1/24" in result
+        assert "10.10.10.1" not in result
+
+    @pytest.mark.unit
+    def test_dnsmasq_ap_network_rewrite():
+        contents = (
+            "interface=uap0 # Listening interface\n"
+            "dhcp-range=10.10.10.2,10.10.10.20,255.255.255.0,24h\n"
+            "address=/gw.wlan/10.10.10.1\n"
+        )
+        result = sys_utils.Network._rewrite_dnsmasq_ap_network(
+            contents, "192.168.50.1"
+        )
+
+        assert "interface=uap0 # Listening interface\n" in result
+        assert "dhcp-range=192.168.50.2,192.168.50.20,255.255.255.0,24h\n" in result
+        assert "address=/gw.wlan/192.168.50.1\n" in result
+
+    @pytest.mark.unit
+    def test_apsta_nat_config_parse_defaults_off():
+        assert not sys_utils.Network._parse_apsta_nat_config("")
+        assert not sys_utils.Network._parse_apsta_nat_config(
+            "PIFINDER_APSTA_SHARE_INTERNET=0\n"
+        )
+        assert sys_utils.Network._parse_apsta_nat_config(
+            "PIFINDER_APSTA_SHARE_INTERNET=1\n"
+        )
+
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("model", "profile", "gps_device", "uart_overlay"),
         [

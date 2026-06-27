@@ -362,6 +362,12 @@ def go_wifi_cli(ui_module: UIModule) -> None:
     restart_system(ui_module)
 
 
+def go_wifi_apsta(ui_module: UIModule) -> None:
+    ui_module.message(_("WiFi to AP+STA"), 2)
+    sys_utils.go_wifi_apsta()
+    restart_system(ui_module)
+
+
 def get_wifi_mode(ui_module: UIModule) -> list[str]:
     wifi_txt = f"{utils.pifinder_dir}/wifi_status.txt"
     with open(wifi_txt, "r") as wfs:

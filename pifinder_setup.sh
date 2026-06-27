@@ -32,7 +32,7 @@ chmod 755 /usr/sbin/policy-rc.d
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     git python3-pip python3-venv python3-dev build-essential pkg-config \
-    samba samba-common-bin dnsmasq hostapd dhcpcd gpsd wget \
+    samba samba-common-bin dnsmasq hostapd dhcpcd gpsd wget iw nftables \
     libinput10 libcap2-bin libjpeg-dev zlib1g-dev libfreetype6-dev \
     liblcms2-dev libopenjp2-7-dev libtiff-dev libffi-dev libssl-dev \
     python3-picamera2 rpicam-apps i2c-tools spi-tools
@@ -72,10 +72,10 @@ sudo cp "${PIFINDER_REPO_DIR}/pi_config_files/hostapd.conf" /etc/hostapd/hostapd
 echo -n "Client" > "${PIFINDER_REPO_DIR}/wifi_status.txt"
 sudo systemctl unmask hostapd
 
-# open permissions on wpa_supplicant file so we can adjust network config
-sudo install -d -m 755 /etc/wpa_supplicant
-sudo touch /etc/wpa_supplicant/wpa_supplicant.conf
-sudo chmod 666 /etc/wpa_supplicant/wpa_supplicant.conf
+# allow the PiFinder service user to adjust network config
+pifinder_prepare_wpa_supplicant_config
+pifinder_prepare_apsta_nat_config
+sudo python3 "${PIFINDER_REPO_DIR}/scripts/import_initial_wifi_networks.py"
 
 # Bluetooth HID keyboards
 if [[ -f /etc/bluetooth/input.conf ]]; then
@@ -118,6 +118,8 @@ sudo systemctl disable dhcpcd dnsmasq hostapd 2>/dev/null || true
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/pifinder.service" /lib/systemd/system/pifinder.service
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/pifinder_splash.service" /lib/systemd/system/pifinder_splash.service
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/cedar_detect.service" /lib/systemd/system/cedar_detect.service
+pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/pifinder_apsta_prepare.service" /lib/systemd/system/pifinder_apsta_prepare.service
+pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/pifinder_apsta_monitor.service" /lib/systemd/system/pifinder_apsta_monitor.service
 sudo systemctl daemon-reload
 sudo systemctl enable cedar_detect
 sudo systemctl enable pifinder
