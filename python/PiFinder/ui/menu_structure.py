@@ -1353,15 +1353,12 @@ pifinder_menu = {
                                         {
                                             "name": _("Custom"),
                                             "value": "custom",
+                                            "callback": callbacks.edit_custom_ntp_server,
+                                            "name_suffix_callback": (
+                                                callbacks.get_custom_ntp_server_display
+                                            ),
                                         },
                                     ],
-                                },
-                                {
-                                    "name": _("Custom NTP Server"),
-                                    "callback": callbacks.edit_custom_ntp_server,
-                                    "name_suffix_callback": (
-                                        callbacks.get_custom_ntp_server_display
-                                    ),
                                 },
                                 {
                                     "name": _("Software PPS"),
