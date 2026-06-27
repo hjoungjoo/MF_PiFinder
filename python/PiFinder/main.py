@@ -38,6 +38,7 @@ from PiFinder import pos_server
 from PiFinder import utils
 from PiFinder import server
 from PiFinder import keyboard_interface
+from PiFinder import gps_time_sync
 
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.catalogs import CatalogBuilder, CatalogFilter, Catalogs
@@ -430,6 +431,8 @@ def main(
         "integrator": integrator_command_queue,
     }
     cfg = config.Config()
+    gps_time_monitor = gps_time_sync.GpsTimeSyncMonitor.from_config(cfg)
+    gps_time_monitor.write_startup_status()
 
     # init screen
     screen_brightness = cfg.get_option("display_brightness")
@@ -679,6 +682,8 @@ def main(
                     # handles power-save by sleeping longer when asleep.
                     sleep_for_framerate(shared_state)
 
+                gps_time_monitor.poll()
+
                 # GPS
                 try:
                     while True:  # Consume from gps_queue until empty
@@ -740,6 +745,9 @@ def main(
                                 gps_dt = gps_content
                             else:
                                 gps_dt = gps_content["time"]
+                            gps_time_monitor.observe_time(
+                                gps_content, shared_state.datetime()
+                            )
                             shared_state.set_datetime(
                                 gps_dt, force=(gps_msg == "time_force")
                             )
@@ -751,6 +759,7 @@ def main(
                             shared_state.set_location(location)
                         if gps_msg == "reset_datetime":
                             shared_state.reset_datetime()
+                            gps_time_monitor.note_reset()
                         if gps_msg == "satellites":
                             # logger.debug("Main: GPS nr sats seen: %s", gps_content)
                             shared_state.set_sats(gps_content)
@@ -768,6 +777,7 @@ def main(
                     menu_manager.jump_to_label("recent")
                 elif ui_command == "reload_config":
                     cfg.load_config()
+                    gps_time_monitor.update_config(cfg)
                 elif ui_command == "catalogs_fully_loaded":
                     logger.info(
                         "All catalogs loaded - WDS and extended catalogs available"
