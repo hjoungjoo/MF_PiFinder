@@ -33,11 +33,12 @@ def test_gps_time_sync_settings_menu_entries_exist():
     expected_options = {
         "time_sync_enabled",
         "time_sync_source_mode",
+        "time_sync_clock_manager",
+        "chrony_time_sync",
         "gps_time_sync",
         "ntp_time_sync",
         "ntp_server",
         "software_pps",
-        "time_sync_system_clock",
         "rtc_sync",
     }
     entries = {
@@ -50,10 +51,10 @@ def test_gps_time_sync_settings_menu_entries_exist():
 
     for option in (
         "time_sync_enabled",
+        "chrony_time_sync",
         "gps_time_sync",
         "ntp_time_sync",
         "software_pps",
-        "time_sync_system_clock",
         "rtc_sync",
     ):
         node = entries[option]
@@ -63,9 +64,15 @@ def test_gps_time_sync_settings_menu_entries_exist():
         assert node["post_callback"] is menu_structure.callbacks.reload_config
 
     assert [item["value"] for item in entries["time_sync_source_mode"]["items"]] == [
+        "chrony",
         "best",
         "gps",
         "ntp",
+    ]
+    assert [item["value"] for item in entries["time_sync_clock_manager"]["items"]] == [
+        "chrony",
+        "pifinder",
+        "off",
     ]
     assert [item["value"] for item in entries["ntp_server"]["items"]] == [
         "pool.ntp.org",
@@ -109,7 +116,12 @@ def test_gps_time_sync_status_summary_lines():
     screen = _screen()
     status = {
         "state": "low_quality",
+        "clock_manager": "chrony",
         "selected": None,
+        "chrony": {
+            "state": "stable",
+            "reference_name": "121.134.215.104",
+        },
         "latest": {
             "valid": False,
             "source": "GPS",
@@ -126,7 +138,10 @@ def test_gps_time_sync_status_summary_lines():
     lines = screen._summary_lines(status, helper, request_present=False)
 
     assert "State: low_quality" in lines
+    assert "Clock: chrony" in lines
     assert "Selected: --" in lines
+    assert "Chrony: stable" in lines
+    assert "Ref: 121.134.215.104" in lines
     assert "GPS valid: No" in lines
     assert "Source: GPS NAV-PVT" in lines
     assert "NTP: unavailable" in lines
@@ -142,6 +157,7 @@ def test_gps_time_sync_status_detail_lines_include_helper_results():
     status = {
         "state": "stable",
         "message": "Selected GPS time source",
+        "clock_manager": "chrony",
         "selected": {
             "source": "GPS",
             "time": "2026-06-27T01:58:23+00:00",
@@ -159,6 +175,12 @@ def test_gps_time_sync_status_detail_lines_include_helper_results():
             "server": "pool.ntp.org",
             "time": "2026-06-27T01:58:22+00:00",
             "delay_seconds": 0.08,
+        },
+        "chrony": {
+            "state": "stable",
+            "reference_id": "7986D768 (121.134.215.104)",
+            "reference_name": "121.134.215.104",
+            "system_time_offset_seconds": 0.000058,
         },
         "samples": {"count": 5, "min_required": 5},
         "system_clock_sync": {"state": "requested"},
@@ -178,10 +200,14 @@ def test_gps_time_sync_status_detail_lines_include_helper_results():
     lines = screen._detail_lines(status, helper, request_present=True)
 
     assert "State: stable" in lines
+    assert "Clock: chrony" in lines
     assert "Selected: GPS" in lines
     assert "Sel time: 2026-06-27 01:58:23" in lines
     assert "GPS: 2026-06-27 01:58:23" in lines
     assert "NTP: stable" in lines
+    assert "Chrony: stable" in lines
+    assert "Chrony ref: 121.134.215.104" in lines
+    assert "Chrony off: 0ms" in lines
     assert "Valid: Yes" in lines
     assert "Sys req: requested" in lines
     assert "RTC req: requested" in lines

@@ -120,6 +120,7 @@ migrate_db.sql
 default_config.json
 scripts/camera_lcd_preview.py
 scripts/install_indi_mount.sh
+scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
 docs/mf_bookworm_install_ko.md
 docs/mf_bookworm_install_en.md
@@ -971,28 +972,30 @@ docs/mf_keyboard_mapping_en.md
 
 ## `python/PiFinder/gps_time_sync.py`, 통합 시간 동기화
 
-GPS, NTP, RTC, software PPS를 하나의 Time Sync 기능으로 관리하도록 추가했다.
-기본값은 전체 `Off`이며, 사용자가 UI에서 켰을 때만 GPS/NTP 시간 후보를 평가한다.
+GPS, Chrony, PiFinder SNTP, RTC, software PPS를 하나의 Time Sync 기능으로 관리하도록 추가했다.
+기본값은 전체 `Off`이며, 사용자가 UI에서 켰을 때 기본 system clock 관리는 `chronyd`가 담당한다.
 
 ### 주요 설정
 
 ```json
 "time_sync_enabled": false,
-"time_sync_source_mode": "best",
+"time_sync_source_mode": "chrony",
+"time_sync_clock_manager": "chrony",
+"chrony_time_sync": true,
 "gps_time_sync": true,
-"ntp_time_sync": true,
+"ntp_time_sync": false,
 "ntp_server": "pool.ntp.org",
-"time_sync_system_clock": true,
 "software_pps": false,
 "rtc_sync": false
 ```
 
 ### 동작 방식
 
-- GPS 시간 후보와 NTP 시간 후보를 비교해 `best`, `gps`, `ntp` 모드에 따라 선택한다.
-- NTP 네트워크가 느리거나 끊긴 경우에는 NTP를 `unavailable` 또는 `low_quality`로 표시하고 GPS 후보를 계속 사용할 수 있다.
-- PiFinder 본체는 일반 권한으로 실행하고, system clock/RTC 쓰기는 `gps_time_sync_helper.py` root helper service가 처리한다.
-- helper는 dry-run 모드와 실제 적용 모드를 분리한다.
+- 기본 `chrony` 모드에서는 `chronyc tracking` 상태를 읽고, Linux system clock은 chronyd가 관리한다.
+- `best` 모드에서는 Chrony, GPS, PiFinder SNTP 후보를 비교한다.
+- PiFinder 자체 SNTP는 chronyd와 중복되지 않도록 기본 `Off`이며 fallback/check 용도로 사용할 수 있다.
+- PiFinder 본체는 일반 권한으로 실행하고, RTC 쓰기와 명시적 `Clock Manager = PiFinder` fallback system clock 쓰기는 `gps_time_sync_helper.py` root helper service가 처리한다.
+- helper는 dry-run 모드와 실제 적용 모드를 분리하며, 기본 chrony 구성에서는 system clock을 직접 쓰지 않는다.
 - 상태 UI는 `Tools > Place & Time > Time Sync`에서 확인한다.
 - 설정 UI는 `Settings > Advanced > Time Sync`에 추가했다.
 
@@ -1002,6 +1005,7 @@ GPS, NTP, RTC, software PPS를 하나의 Time Sync 기능으로 관리하도록 
 docs/mf_time_sync_ko.md
 docs/mf_time_sync_en.md
 pi_config_files/pifinder_gps_time_sync.service
+scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
 ```
 

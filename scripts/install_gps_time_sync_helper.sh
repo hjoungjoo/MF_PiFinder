@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Install or manage the optional privileged GPS time-sync helper service.
+# Install or manage the optional privileged PiFinder time-sync helper service.
+#
+# chronyd is the preferred default system-clock manager. This helper is still
+# useful for RTC writes and for the explicit `time_sync_clock_manager=pifinder`
+# fallback mode.
 
 set -euo pipefail
 
@@ -17,6 +21,8 @@ install_service() {
     pifinder_render_config "${SERVICE_TEMPLATE}" "${SERVICE_TARGET}"
     sudo systemctl daemon-reload
     echo "Installed ${SERVICE_NAME}"
+    echo "Note: chronyd remains the preferred system-clock manager."
+    echo "      PiFinder helper writes the system clock only in pifinder clock-manager mode."
 }
 
 install_dry_run_override() {
@@ -45,6 +51,7 @@ case "${1:-install}" in
     enable)
         install_service
         remove_dry_run_override
+        echo "Enabling helper. Keep time_sync_clock_manager=chrony for normal installs."
         sudo systemctl enable --now "${SERVICE_NAME}"
         ;;
     enable-dry-run)

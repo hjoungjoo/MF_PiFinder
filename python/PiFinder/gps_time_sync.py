@@ -17,6 +17,7 @@ import math
 import os
 import socket
 import struct
+import subprocess
 import threading
 import time
 from collections import deque
@@ -189,6 +190,99 @@ class NtpClient:
         }
 
 
+def _first_float(value: Any) -> Optional[float]:
+    if not isinstance(value, str):
+        return None
+    for word in value.replace(",", " ").split():
+        try:
+            return float(word)
+        except ValueError:
+            continue
+    return None
+
+
+class ChronyClient:
+    """Read chronyd tracking state through chronyc."""
+
+    def __init__(
+        self,
+        time_fn: Callable[[], float] = time.time,
+        run_fn: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    ):
+        self.time_fn = time_fn
+        self.run_fn = run_fn
+
+    def _parse_tracking(self, output: str) -> dict[str, Any]:
+        fields = {}
+        for line in output.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            fields[key.strip()] = value.strip()
+
+        reference = fields.get("Reference ID", "")
+        reference_name = None
+        if "(" in reference and reference.endswith(")"):
+            reference_name = reference.rsplit("(", 1)[1][:-1]
+
+        leap_status = fields.get("Leap status", "")
+        system_time = fields.get("System time", "")
+        system_offset = _first_float(system_time)
+        if system_offset is not None and "slow" in system_time.lower():
+            system_offset = -abs(system_offset)
+
+        state = "stable"
+        message = "chronyd is tracking a time source"
+        if not reference or reference.startswith("00000000"):
+            state = "unsynced"
+            message = "chronyd is not synchronized"
+        elif leap_status and leap_status.lower() != "normal":
+            state = "unsynced"
+            message = f"chronyd leap status is {leap_status}"
+
+        return {
+            "ok": True,
+            "state": state,
+            "message": message,
+            "reference_id": reference,
+            "reference_name": reference_name,
+            "stratum": _as_int(fields.get("Stratum"), 0),
+            "ref_time_utc": fields.get("Ref time (UTC)"),
+            "system_time_offset_seconds": system_offset,
+            "last_offset_seconds": _first_float(fields.get("Last offset")),
+            "rms_offset_seconds": _first_float(fields.get("RMS offset")),
+            "root_delay_seconds": _first_float(fields.get("Root delay")),
+            "root_dispersion_seconds": _first_float(fields.get("Root dispersion")),
+            "skew_ppm": _first_float(fields.get("Skew")),
+            "leap_status": leap_status,
+            "raw": fields,
+            "received_unix": self.time_fn(),
+        }
+
+    def query(self, timeout_seconds: float = 1.0) -> dict[str, Any]:
+        try:
+            result = self.run_fn(
+                ["chronyc", "-n", "tracking"],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=timeout_seconds,
+            )
+        except FileNotFoundError:
+            return {"ok": False, "state": "missing", "message": "chronyc not found"}
+        except Exception as exc:
+            return {"ok": False, "state": "unavailable", "message": str(exc)}
+
+        output = (result.stdout or "") + (result.stderr or "")
+        if result.returncode != 0:
+            return {
+                "ok": False,
+                "state": "unavailable",
+                "message": output.strip() or f"chronyc exited {result.returncode}",
+            }
+        return self._parse_tracking(output)
+
+
 class GpsTimeSyncMonitor:
     """Evaluate GPS time quality and optional software PPS ticks."""
 
@@ -197,16 +291,21 @@ class GpsTimeSyncMonitor:
         time_sync_enabled: Optional[bool] = None,
         enabled: bool = False,
         ntp_enabled: bool = False,
+        chrony_enabled: bool = False,
         software_pps_enabled: bool = False,
         system_clock_sync_enabled: bool = False,
         rtc_sync_enabled: bool = False,
         source_mode: str = "best",
+        clock_manager: str = "pifinder",
         ntp_server: str = DEFAULT_NTP_SERVERS[0],
         ntp_server_custom: str = "",
         ntp_poll_interval_seconds: float = 300.0,
         ntp_timeout_seconds: float = 1.0,
         ntp_max_delay_ms: float = 1500.0,
         ntp_stale_seconds: float = 900.0,
+        chrony_poll_interval_seconds: float = 30.0,
+        chrony_timeout_seconds: float = 1.0,
+        chrony_stale_seconds: float = 120.0,
         min_samples: int = 5,
         sample_window_seconds: float = 120.0,
         stale_seconds: float = 30.0,
@@ -224,12 +323,20 @@ class GpsTimeSyncMonitor:
         monotonic_fn: Callable[[], float] = time.monotonic,
         request_writer: Optional[ClockSyncRequestWriter] = None,
         ntp_client: Optional[NtpClient] = None,
+        chrony_client: Optional[ChronyClient] = None,
         ntp_async: bool = True,
     ):
+        self.clock_manager = (
+            clock_manager if clock_manager in ("chrony", "pifinder", "off") else "chrony"
+        )
+        system_clock_sync_enabled = (
+            system_clock_sync_enabled and self.clock_manager == "pifinder"
+        )
         if time_sync_enabled is None:
             time_sync_enabled = (
                 enabled
                 or ntp_enabled
+                or chrony_enabled
                 or software_pps_enabled
                 or system_clock_sync_enabled
                 or rtc_sync_enabled
@@ -237,16 +344,22 @@ class GpsTimeSyncMonitor:
         self.time_sync_enabled = time_sync_enabled
         self.enabled = enabled
         self.ntp_enabled = ntp_enabled
+        self.chrony_enabled = chrony_enabled
         self.software_pps_enabled = software_pps_enabled
         self.system_clock_sync_enabled = system_clock_sync_enabled
         self.rtc_sync_enabled = rtc_sync_enabled
-        self.source_mode = source_mode if source_mode in ("best", "gps", "ntp") else "best"
+        self.source_mode = (
+            source_mode if source_mode in ("chrony", "best", "gps", "ntp") else "best"
+        )
         self.ntp_server = ntp_server
         self.ntp_server_custom = ntp_server_custom
         self.ntp_poll_interval_seconds = max(5.0, ntp_poll_interval_seconds)
         self.ntp_timeout_seconds = max(0.1, ntp_timeout_seconds)
         self.ntp_max_delay_seconds = max(0.001, ntp_max_delay_ms / 1000.0)
         self.ntp_stale_seconds = max(5.0, ntp_stale_seconds)
+        self.chrony_poll_interval_seconds = max(5.0, chrony_poll_interval_seconds)
+        self.chrony_timeout_seconds = max(0.1, chrony_timeout_seconds)
+        self.chrony_stale_seconds = max(5.0, chrony_stale_seconds)
         self.min_samples = max(1, min_samples)
         self.sample_window_seconds = max(1.0, sample_window_seconds)
         self.stale_seconds = max(1.0, stale_seconds)
@@ -268,6 +381,7 @@ class GpsTimeSyncMonitor:
         self.monotonic_fn = monotonic_fn
         self.request_writer = request_writer or ClockSyncRequestWriter()
         self.ntp_client = ntp_client or NtpClient(time_fn=time_fn)
+        self.chrony_client = chrony_client or ChronyClient(time_fn=time_fn)
         self.ntp_async = ntp_async
 
         self.samples: Deque[dict[str, Any]] = deque()
@@ -286,6 +400,11 @@ class GpsTimeSyncMonitor:
         self.ntp_query_started_monotonic: Optional[float] = None
         self.ntp_pending_result: Optional[dict[str, Any]] = None
         self.ntp_lock = threading.Lock()
+
+        self.chrony_state = "disabled"
+        self.chrony_message = "chronyd time source disabled"
+        self.latest_chrony_sample: Optional[dict[str, Any]] = None
+        self.last_chrony_poll_monotonic: Optional[float] = None
 
         self.selected_source: Optional[dict[str, Any]] = None
 
@@ -314,19 +433,20 @@ class GpsTimeSyncMonitor:
         status_file: Path = STATUS_FILE,
         helper_status_file: Path = HELPER_STATUS_FILE,
     ) -> "GpsTimeSyncMonitor":
+        clock_manager = str(cfg.get_option("time_sync_clock_manager", "chrony"))
         return cls(
             time_sync_enabled=_as_bool(cfg.get_option("time_sync_enabled", False)),
             enabled=_as_bool(cfg.get_option("gps_time_sync", True)),
-            ntp_enabled=_as_bool(cfg.get_option("ntp_time_sync", True)),
+            ntp_enabled=_as_bool(cfg.get_option("ntp_time_sync", False)),
+            chrony_enabled=_as_bool(cfg.get_option("chrony_time_sync", True)),
             software_pps_enabled=_as_bool(cfg.get_option("software_pps", False)),
-            system_clock_sync_enabled=_as_bool(
-                cfg.get_option(
-                    "time_sync_system_clock",
-                    cfg.get_option("gps_time_sync_system_clock", True),
-                )
+            system_clock_sync_enabled=(
+                clock_manager == "pifinder"
+                and _as_bool(cfg.get_option("time_sync_system_clock", True), True)
             ),
             rtc_sync_enabled=_as_bool(cfg.get_option("rtc_sync", False)),
-            source_mode=str(cfg.get_option("time_sync_source_mode", "best")),
+            source_mode=str(cfg.get_option("time_sync_source_mode", "chrony")),
+            clock_manager=clock_manager,
             ntp_server=str(cfg.get_option("ntp_server", DEFAULT_NTP_SERVERS[0])),
             ntp_server_custom=str(cfg.get_option("ntp_server_custom", "")),
             ntp_poll_interval_seconds=_as_float(
@@ -340,6 +460,15 @@ class GpsTimeSyncMonitor:
             ),
             ntp_stale_seconds=_as_float(
                 cfg.get_option("ntp_stale_seconds", 900.0), 900.0
+            ),
+            chrony_poll_interval_seconds=_as_float(
+                cfg.get_option("chrony_poll_interval_seconds", 30.0), 30.0
+            ),
+            chrony_timeout_seconds=_as_float(
+                cfg.get_option("chrony_timeout_seconds", 1.0), 1.0
+            ),
+            chrony_stale_seconds=_as_float(
+                cfg.get_option("chrony_stale_seconds", 120.0), 120.0
             ),
             min_samples=_as_int(cfg.get_option("gps_time_sync_min_samples", 5), 5),
             sample_window_seconds=_as_float(
@@ -395,16 +524,21 @@ class GpsTimeSyncMonitor:
         self.time_sync_enabled = updated.time_sync_enabled
         self.enabled = updated.enabled
         self.ntp_enabled = updated.ntp_enabled
+        self.chrony_enabled = updated.chrony_enabled
         self.software_pps_enabled = updated.software_pps_enabled
         self.system_clock_sync_enabled = updated.system_clock_sync_enabled
         self.rtc_sync_enabled = updated.rtc_sync_enabled
         self.source_mode = updated.source_mode
+        self.clock_manager = updated.clock_manager
         self.ntp_server = updated.ntp_server
         self.ntp_server_custom = updated.ntp_server_custom
         self.ntp_poll_interval_seconds = updated.ntp_poll_interval_seconds
         self.ntp_timeout_seconds = updated.ntp_timeout_seconds
         self.ntp_max_delay_seconds = updated.ntp_max_delay_seconds
         self.ntp_stale_seconds = updated.ntp_stale_seconds
+        self.chrony_poll_interval_seconds = updated.chrony_poll_interval_seconds
+        self.chrony_timeout_seconds = updated.chrony_timeout_seconds
+        self.chrony_stale_seconds = updated.chrony_stale_seconds
         self.min_samples = updated.min_samples
         self.sample_window_seconds = updated.sample_window_seconds
         self.stale_seconds = updated.stale_seconds
@@ -427,6 +561,7 @@ class GpsTimeSyncMonitor:
         return self.time_sync_enabled and (
             self.enabled
             or self.ntp_enabled
+            or self.chrony_enabled
             or self.software_pps_enabled
             or self.system_clock_sync_enabled
             or self.rtc_sync_enabled
@@ -435,6 +570,8 @@ class GpsTimeSyncMonitor:
     def write_startup_status(self) -> None:
         if not self.time_sync_enabled:
             self._set_state("disabled", "Time sync disabled")
+        elif self.chrony_enabled:
+            self._set_state("waiting_for_time_source", "Waiting for chronyd")
         elif self.enabled:
             self._set_state("waiting_for_time_source", "Waiting for time source")
         elif self.software_pps_enabled:
@@ -462,6 +599,12 @@ class GpsTimeSyncMonitor:
         changed = state != self.ntp_state or message != self.ntp_message
         self.ntp_state = state
         self.ntp_message = message
+        return changed
+
+    def _set_chrony_state(self, state: str, message: str) -> bool:
+        changed = state != self.chrony_state or message != self.chrony_message
+        self.chrony_state = state
+        self.chrony_message = message
         return changed
 
     def _prune_samples(self, now_monotonic: float) -> None:
@@ -631,13 +774,31 @@ class GpsTimeSyncMonitor:
             return max(jitter, self.stable_jitter_seconds)
         return self.stable_jitter_seconds
 
+    def _sample_time_for_now(
+        self, sample: dict[str, Any], key: str
+    ) -> Optional[datetime.datetime]:
+        sample_time = sample.get(key)
+        if not isinstance(sample_time, str) or not sample_time:
+            return None
+        try:
+            sample_dt = _utc_datetime(datetime.datetime.fromisoformat(sample_time))
+        except ValueError:
+            return None
+
+        sample_monotonic = sample.get("monotonic")
+        if isinstance(sample_monotonic, (int, float)):
+            age = self.monotonic_fn() - sample_monotonic
+            if age > 0:
+                sample_dt += datetime.timedelta(seconds=age)
+        return sample_dt
+
     def _gps_candidate(self) -> Optional[dict[str, Any]]:
         if self.gps_state != "stable" or self.latest_sample is None:
             return None
         age = self.monotonic_fn() - self.latest_sample["monotonic"]
         if age > self.stale_seconds:
             return None
-        gps_dt = self._latest_gps_datetime()
+        gps_dt = self._sample_time_for_now(self.latest_sample, "gps_time")
         if gps_dt is None:
             return None
         quality_seconds = self._gps_quality_seconds()
@@ -652,18 +813,42 @@ class GpsTimeSyncMonitor:
             "server": None,
         }
 
+    def _chrony_candidate(self) -> Optional[dict[str, Any]]:
+        if self.chrony_state != "stable" or self.latest_chrony_sample is None:
+            return None
+        age = self.monotonic_fn() - self.latest_chrony_sample["monotonic"]
+        if age > self.chrony_stale_seconds:
+            return None
+
+        quality_seconds = self.latest_chrony_sample.get("rms_offset_seconds")
+        if not isinstance(quality_seconds, (int, float)):
+            quality_seconds = self.latest_chrony_sample.get("root_dispersion_seconds")
+        if not isinstance(quality_seconds, (int, float)):
+            offset = self.latest_chrony_sample.get("system_time_offset_seconds")
+            quality_seconds = abs(offset) if isinstance(offset, (int, float)) else None
+
+        return {
+            "source": "Chrony",
+            "time": datetime.datetime.fromtimestamp(
+                self.time_fn(), tz=pytz.UTC
+            ).isoformat(),
+            "valid": True,
+            "quality_seconds": quality_seconds,
+            "age_seconds": age,
+            "reference_id": self.latest_chrony_sample.get("reference_id"),
+            "reference_name": self.latest_chrony_sample.get("reference_name"),
+            "stratum": self.latest_chrony_sample.get("stratum"),
+            "leap_status": self.latest_chrony_sample.get("leap_status"),
+        }
+
     def _ntp_candidate(self) -> Optional[dict[str, Any]]:
         if self.ntp_state != "stable" or self.latest_ntp_sample is None:
             return None
         age = self.monotonic_fn() - self.latest_ntp_sample["monotonic"]
         if age > self.ntp_stale_seconds:
             return None
-        ntp_time = self.latest_ntp_sample.get("time")
-        if not ntp_time:
-            return None
-        try:
-            ntp_dt = _utc_datetime(datetime.datetime.fromisoformat(ntp_time))
-        except ValueError:
+        ntp_dt = self._sample_time_for_now(self.latest_ntp_sample, "time")
+        if ntp_dt is None:
             return None
         return {
             "source": "NTP",
@@ -677,15 +862,18 @@ class GpsTimeSyncMonitor:
         }
 
     def _candidate_for_mode(self) -> list[dict[str, Any]]:
+        chrony_candidate = self._chrony_candidate()
         gps_candidate = self._gps_candidate()
         ntp_candidate = self._ntp_candidate()
+        if self.source_mode == "chrony":
+            return [chrony_candidate] if chrony_candidate else []
         if self.source_mode == "gps":
             return [gps_candidate] if gps_candidate else []
         if self.source_mode == "ntp":
             return [ntp_candidate] if ntp_candidate else []
         return [
             candidate
-            for candidate in (gps_candidate, ntp_candidate)
+            for candidate in (chrony_candidate, gps_candidate, ntp_candidate)
             if candidate is not None
         ]
 
@@ -721,10 +909,19 @@ class GpsTimeSyncMonitor:
             return self._set_state(self.gps_state, self.gps_message) or changed
         if self.source_mode == "ntp" and self.ntp_enabled:
             return self._set_state(self.ntp_state, self.ntp_message) or changed
+        if self.source_mode == "chrony" and self.chrony_enabled:
+            return self._set_state(self.chrony_state, self.chrony_message) or changed
+        if self.chrony_enabled and self.chrony_state not in (
+            "disabled",
+            "waiting_for_chrony",
+        ):
+            return self._set_state(self.chrony_state, self.chrony_message) or changed
         if self.enabled and self.gps_state not in ("disabled", "waiting_for_gps_time"):
             return self._set_state(self.gps_state, self.gps_message) or changed
         if self.ntp_enabled:
             return self._set_state(self.ntp_state, self.ntp_message) or changed
+        if self.chrony_enabled:
+            return self._set_state(self.chrony_state, self.chrony_message) or changed
         if self.enabled:
             return self._set_state(self.gps_state, self.gps_message) or changed
         if self.software_pps_enabled:
@@ -738,6 +935,7 @@ class GpsTimeSyncMonitor:
             self.selected_source = None
             self._set_gps_state("disabled", "GPS time source disabled")
             self._set_ntp_state("disabled", "NTP time source disabled")
+            self._set_chrony_state("disabled", "chronyd time source disabled")
             return self._set_state("disabled", "Time sync disabled")
 
         changed = self._evaluate_gps_state()
@@ -792,6 +990,48 @@ class GpsTimeSyncMonitor:
                 return custom
         server = self.ntp_server.strip()
         return server if server and server != "custom" else DEFAULT_NTP_SERVERS[0]
+
+    def _apply_chrony_result(self, result: dict[str, Any]) -> bool:
+        now_monotonic = self.monotonic_fn()
+        sample = {
+            "valid": False,
+            "state": result.get("state", "unavailable"),
+            "message": result.get("message", "chronyd status unavailable"),
+            "monotonic": now_monotonic,
+            "received_unix": result.get("received_unix", self.time_fn()),
+        }
+        sample.update(
+            {
+                key: result.get(key)
+                for key in (
+                    "reference_id",
+                    "reference_name",
+                    "stratum",
+                    "ref_time_utc",
+                    "system_time_offset_seconds",
+                    "last_offset_seconds",
+                    "rms_offset_seconds",
+                    "root_delay_seconds",
+                    "root_dispersion_seconds",
+                    "skew_ppm",
+                    "leap_status",
+                )
+            }
+        )
+
+        if not result.get("ok", True):
+            self.latest_chrony_sample = sample
+            return self._set_chrony_state(
+                str(result.get("state") or "unavailable"),
+                str(result.get("message") or "chronyd status unavailable"),
+            )
+
+        sample["valid"] = result.get("state") == "stable"
+        self.latest_chrony_sample = sample
+        return self._set_chrony_state(
+            str(result.get("state") or "stable"),
+            str(result.get("message") or "chronyd is tracking a time source"),
+        )
 
     def _apply_ntp_result(self, result: dict[str, Any]) -> bool:
         now_monotonic = self.monotonic_fn()
@@ -921,6 +1161,30 @@ class GpsTimeSyncMonitor:
         self._run_ntp_query(server)
         return self._consume_ntp_result() or changed
 
+    def _poll_chrony(self, now_monotonic: float) -> bool:
+        if not self.time_sync_enabled or not self.chrony_enabled:
+            return self._set_chrony_state("disabled", "chronyd time source disabled")
+
+        changed = False
+        if (
+            self.latest_chrony_sample is not None
+            and now_monotonic - self.latest_chrony_sample["monotonic"]
+            > self.chrony_stale_seconds
+        ):
+            changed = self._set_chrony_state("stale", "chronyd sample is stale")
+
+        due = (
+            self.last_chrony_poll_monotonic is None
+            or now_monotonic - self.last_chrony_poll_monotonic
+            >= self.chrony_poll_interval_seconds
+        )
+        if not due:
+            return changed
+
+        self.last_chrony_poll_monotonic = now_monotonic
+        result = self.chrony_client.query(self.chrony_timeout_seconds)
+        return self._apply_chrony_result(result) or changed
+
     def _sync_block_reason(self) -> Optional[tuple[str, str]]:
         if not self.time_sync_enabled:
             return "disabled", "Time sync disabled"
@@ -1029,6 +1293,8 @@ class GpsTimeSyncMonitor:
                 "server": selected.get("server"),
                 "delay_seconds": selected.get("delay_seconds"),
                 "tAcc_ns": selected.get("tAcc_ns"),
+                "reference_id": selected.get("reference_id"),
+                "reference_name": selected.get("reference_name"),
             },
             "latest": {
                 "source": latest.get("source"),
@@ -1037,6 +1303,7 @@ class GpsTimeSyncMonitor:
                 "message_class": latest.get("message_class"),
             },
             "sources": {
+                "chrony": self._chrony_candidate(),
                 "gps": self._gps_candidate(),
                 "ntp": self._ntp_candidate(),
             },
@@ -1186,6 +1453,7 @@ class GpsTimeSyncMonitor:
             return
 
         now_monotonic = self.monotonic_fn()
+        chrony_changed = self._poll_chrony(now_monotonic)
         ntp_changed = self._poll_ntp(now_monotonic)
         ticked = self._poll_software_pps(now_monotonic)
         changed = False
@@ -1206,7 +1474,7 @@ class GpsTimeSyncMonitor:
                 self._set_state("software_pps_only", "Software PPS enabled") or changed
             )
 
-        changed = self._evaluate_state() or changed or ntp_changed
+        changed = self._evaluate_state() or changed or chrony_changed or ntp_changed
         changed = self._maybe_apply_sync_actions() or changed
         self.write_status(force=changed or ticked)
 
@@ -1235,12 +1503,16 @@ class GpsTimeSyncMonitor:
         stats = self._offset_stats()
         latest = self.latest_sample or {}
         ntp_latest = self.latest_ntp_sample or {}
+        chrony_latest = self.latest_chrony_sample or {}
         age = None
         if latest.get("monotonic") is not None:
             age = self.monotonic_fn() - latest["monotonic"]
         ntp_age = None
         if ntp_latest.get("monotonic") is not None:
             ntp_age = self.monotonic_fn() - ntp_latest["monotonic"]
+        chrony_age = None
+        if chrony_latest.get("monotonic") is not None:
+            chrony_age = self.monotonic_fn() - chrony_latest["monotonic"]
 
         return {
             "enabled": self.time_sync_enabled,
@@ -1249,6 +1521,7 @@ class GpsTimeSyncMonitor:
             "message": self.message,
             "updated_unix": self.time_fn(),
             "source_mode": self.source_mode,
+            "clock_manager": self.clock_manager,
             "selected": self.selected_source,
             "gps_time_sync_enabled": self.enabled,
             "gps_time_sync_state": self.gps_state,
@@ -1256,6 +1529,9 @@ class GpsTimeSyncMonitor:
             "ntp_time_sync_enabled": self.ntp_enabled,
             "ntp_time_sync_state": self.ntp_state,
             "ntp_time_sync_message": self.ntp_message,
+            "chrony_time_sync_enabled": self.chrony_enabled,
+            "chrony_time_sync_state": self.chrony_state,
+            "chrony_time_sync_message": self.chrony_message,
             "system_clock_sync_enabled": self.system_clock_sync_enabled,
             "system_clock_sync_state": self.system_clock_sync_state,
             "rtc_sync_enabled": self.rtc_sync_enabled,
@@ -1307,7 +1583,37 @@ class GpsTimeSyncMonitor:
                 "max_delay_seconds": self.ntp_max_delay_seconds,
                 "error": ntp_latest.get("error"),
             },
+            "chrony": {
+                "enabled": self.chrony_enabled,
+                "state": self.chrony_state,
+                "message": self.chrony_message,
+                "reference_id": chrony_latest.get("reference_id"),
+                "reference_name": chrony_latest.get("reference_name"),
+                "stratum": chrony_latest.get("stratum"),
+                "ref_time_utc": chrony_latest.get("ref_time_utc"),
+                "leap_status": chrony_latest.get("leap_status"),
+                "system_time_offset_seconds": chrony_latest.get(
+                    "system_time_offset_seconds"
+                ),
+                "last_offset_seconds": chrony_latest.get("last_offset_seconds"),
+                "rms_offset_seconds": chrony_latest.get("rms_offset_seconds"),
+                "root_delay_seconds": chrony_latest.get("root_delay_seconds"),
+                "root_dispersion_seconds": chrony_latest.get(
+                    "root_dispersion_seconds"
+                ),
+                "skew_ppm": chrony_latest.get("skew_ppm"),
+                "age_seconds": chrony_age,
+                "poll_interval_seconds": self.chrony_poll_interval_seconds,
+                "timeout_seconds": self.chrony_timeout_seconds,
+                "stale_seconds": self.chrony_stale_seconds,
+            },
             "sources": {
+                "chrony": {
+                    "enabled": self.chrony_enabled,
+                    "state": self.chrony_state,
+                    "message": self.chrony_message,
+                    "candidate": self._chrony_candidate(),
+                },
                 "gps": {
                     "enabled": self.enabled,
                     "state": self.gps_state,
@@ -1378,8 +1684,10 @@ class GpsTimeSyncMonitor:
 
         try:
             utils.create_path(self.status_file.parent)
-            with open(self.status_file, "w", encoding="utf-8") as status_out:
+            tmp_file = self.status_file.with_name(self.status_file.name + ".tmp")
+            with open(tmp_file, "w", encoding="utf-8") as status_out:
                 json.dump(self.status_payload(), status_out, indent=2, sort_keys=True)
+            tmp_file.replace(self.status_file)
             self.last_status_write_monotonic = now_monotonic
         except Exception:
             logger.exception("Could not write time sync status")

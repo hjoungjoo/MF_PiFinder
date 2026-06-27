@@ -3,7 +3,7 @@ import json
 
 import pytz
 
-from PiFinder.gps_time_sync import GpsTimeSyncMonitor
+from PiFinder.gps_time_sync import ChronyClient, GpsTimeSyncMonitor
 
 
 class FakeClock:
@@ -49,6 +49,16 @@ class FakeNtpClient:
         if isinstance(result, Exception):
             raise result
         return result
+
+
+class FakeChronyClient:
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
+
+    def query(self, timeout_seconds=1.0):
+        self.calls.append(timeout_seconds)
+        return self.results.pop(0)
 
 
 def utc(second):
@@ -371,6 +381,79 @@ def test_ntp_time_source_selected_when_gps_unavailable(tmp_path):
     assert ntp_client.calls == [("pool.ntp.org", 1.0)]
 
 
+def test_chrony_time_source_selected_by_default_mode(tmp_path):
+    clock = FakeClock(unix=utc(20).timestamp(), monotonic=100.0)
+    chrony_client = FakeChronyClient(
+        [
+            {
+                "ok": True,
+                "state": "stable",
+                "message": "chronyd is tracking a time source",
+                "reference_id": "7986D768 (121.134.215.104)",
+                "reference_name": "121.134.215.104",
+                "stratum": 3,
+                "leap_status": "Normal",
+                "rms_offset_seconds": 0.0007,
+            }
+        ]
+    )
+    status_file = tmp_path / "gps_time_status.json"
+    monitor = GpsTimeSyncMonitor(
+        time_sync_enabled=True,
+        chrony_enabled=True,
+        source_mode="chrony",
+        clock_manager="chrony",
+        status_file=status_file,
+        time_fn=clock.time,
+        monotonic_fn=clock.monotonic_time,
+        chrony_client=chrony_client,
+    )
+
+    monitor.poll()
+
+    status = read_status(status_file)
+    assert status["state"] == "stable"
+    assert status["clock_manager"] == "chrony"
+    assert status["selected"]["source"] == "Chrony"
+    assert status["selected"]["time"] == utc(20).isoformat()
+    assert status["chrony"]["state"] == "stable"
+    assert status["chrony"]["reference_name"] == "121.134.215.104"
+    assert chrony_client.calls == [1.0]
+
+
+def test_chrony_clock_manager_blocks_pifinder_system_clock_request(tmp_path):
+    gps_dt = utc(1)
+    clock = FakeClock(unix=gps_dt.timestamp() - 5.0)
+    request_writer = FakeRequestWriter()
+    status_file = tmp_path / "gps_time_status.json"
+    monitor = GpsTimeSyncMonitor(
+        enabled=True,
+        system_clock_sync_enabled=True,
+        clock_manager="chrony",
+        min_samples=2,
+        stable_jitter_ms=100,
+        stable_offset_ms=500,
+        status_file=status_file,
+        time_fn=clock.time,
+        monotonic_fn=clock.monotonic_time,
+        request_writer=request_writer,
+    )
+
+    for second in [1, 2]:
+        sample_dt = utc(second)
+        monitor.observe_time(
+            {"time": sample_dt, "source": "GPS"},
+            sample_dt - datetime.timedelta(seconds=0.05),
+        )
+        clock.advance(1)
+
+    status = read_status(status_file)
+    assert status["state"] == "stable"
+    assert status["clock_manager"] == "chrony"
+    assert status["system_clock_sync"]["state"] == "disabled"
+    assert request_writer.requests == []
+
+
 def test_best_source_prefers_lower_quality_value(tmp_path):
     clock = FakeClock(unix=utc(1).timestamp(), monotonic=100.0)
     ntp_dt = utc(3)
@@ -505,3 +588,28 @@ def test_system_clock_request_uses_selected_ntp_time(tmp_path):
     assert request["sync_time"] == ntp_dt.isoformat()
     assert request["selected"]["source"] == "NTP"
     assert request["actions"]["system_clock"]["offset_seconds"] == 3.0
+
+
+def test_chrony_tracking_parser_reads_offsets():
+    output = """\
+Reference ID    : 7986D768 (121.134.215.104)
+Stratum         : 3
+Ref time (UTC)  : Sat Jun 27 08:53:12 2026
+System time     : 0.000058003 seconds fast of NTP time
+Last offset     : -0.000031634 seconds
+RMS offset      : 0.000702867 seconds
+Root delay      : 0.003410386 seconds
+Root dispersion : 0.001339925 seconds
+Skew            : 0.135 ppm
+Leap status     : Normal
+"""
+    client = ChronyClient(time_fn=lambda: 1000.0)
+
+    result = client._parse_tracking(output)
+
+    assert result["state"] == "stable"
+    assert result["reference_name"] == "121.134.215.104"
+    assert result["stratum"] == 3
+    assert result["system_time_offset_seconds"] == 0.000058003
+    assert result["last_offset_seconds"] == -0.000031634
+    assert result["rms_offset_seconds"] == 0.000702867

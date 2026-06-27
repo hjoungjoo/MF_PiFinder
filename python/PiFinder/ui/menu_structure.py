@@ -1280,6 +1280,10 @@ pifinder_menu = {
                                     "post_callback": callbacks.reload_config,
                                     "items": [
                                         {
+                                            "name": _("Chrony"),
+                                            "value": "chrony",
+                                        },
+                                        {
                                             "name": _("Best"),
                                             "value": "best",
                                         },
@@ -1290,6 +1294,44 @@ pifinder_menu = {
                                         {
                                             "name": _("NTP"),
                                             "value": "ntp",
+                                        },
+                                    ],
+                                },
+                                {
+                                    "name": _("Clock Manager"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "config_option": "time_sync_clock_manager",
+                                    "post_callback": callbacks.reload_config,
+                                    "items": [
+                                        {
+                                            "name": _("Chrony"),
+                                            "value": "chrony",
+                                        },
+                                        {
+                                            "name": _("PiFinder"),
+                                            "value": "pifinder",
+                                        },
+                                        {
+                                            "name": _("Off"),
+                                            "value": "off",
+                                        },
+                                    ],
+                                },
+                                {
+                                    "name": _("Chrony Source"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "config_option": "chrony_time_sync",
+                                    "post_callback": callbacks.reload_config,
+                                    "items": [
+                                        {
+                                            "name": _("Off"),
+                                            "value": False,
+                                        },
+                                        {
+                                            "name": _("On"),
+                                            "value": True,
                                         },
                                     ],
                                 },
@@ -1311,7 +1353,7 @@ pifinder_menu = {
                                     ],
                                 },
                                 {
-                                    "name": _("NTP Source"),
+                                    "name": _("PiFinder NTP"),
                                     "class": UITextMenu,
                                     "select": "single",
                                     "config_option": "ntp_time_sync",
@@ -1328,7 +1370,7 @@ pifinder_menu = {
                                     ],
                                 },
                                 {
-                                    "name": _("NTP Server"),
+                                    "name": _("PiFinder NTP Server"),
                                     "class": UITextMenu,
                                     "select": "single",
                                     "config_option": "ntp_server",
@@ -1365,23 +1407,6 @@ pifinder_menu = {
                                     "class": UITextMenu,
                                     "select": "single",
                                     "config_option": "software_pps",
-                                    "post_callback": callbacks.reload_config,
-                                    "items": [
-                                        {
-                                            "name": _("Off"),
-                                            "value": False,
-                                        },
-                                        {
-                                            "name": _("On"),
-                                            "value": True,
-                                        },
-                                    ],
-                                },
-                                {
-                                    "name": _("System Clock"),
-                                    "class": UITextMenu,
-                                    "select": "single",
-                                    "config_option": "time_sync_system_clock",
                                     "post_callback": callbacks.reload_config,
                                     "items": [
                                         {

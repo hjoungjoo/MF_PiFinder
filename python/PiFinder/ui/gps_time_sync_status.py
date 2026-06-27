@@ -132,6 +132,7 @@ class UIGPSTimeSyncStatus(UIModule):
         latest = _get(status, "latest", default={})
         selected = _get(status, "selected", default={})
         ntp = _get(status, "ntp", default={})
+        chrony = _get(status, "chrony", default={})
         system_clock = _get(status, "system_clock_sync", default={})
         rtc = _get(status, "rtc_sync", default={})
         software_pps = _get(status, "software_pps", default={})
@@ -147,8 +148,16 @@ class UIGPSTimeSyncStatus(UIModule):
 
         return [
             _("State: {state}").format(state=_get(status, "state", default="--")),
+            _("Clock: {manager}").format(
+                manager=_get(status, "clock_manager", default="--")
+            ),
             _("Selected: {source}").format(
                 source=_get(selected, "source", default="--")
+            ),
+            _("Chrony: {state}").format(state=_get(chrony, "state", default="--")),
+            _("Ref: {ref}").format(
+                ref=_get(chrony, "reference_name", default=None)
+                or _get(chrony, "reference_id", default="--")
             ),
             _("GPS valid: {valid}").format(
                 valid=self._format_bool(_get(latest, "valid"))
@@ -188,6 +197,7 @@ class UIGPSTimeSyncStatus(UIModule):
         latest = _get(status, "latest", default={})
         selected = _get(status, "selected", default={})
         ntp = _get(status, "ntp", default={})
+        chrony = _get(status, "chrony", default={})
         samples = _get(status, "samples", default={})
         system_clock = _get(status, "system_clock_sync", default={})
         rtc = _get(status, "rtc_sync", default={})
@@ -197,6 +207,9 @@ class UIGPSTimeSyncStatus(UIModule):
         lines = [
             _("State: {state}").format(state=_get(status, "state", default="--")),
             _("Msg: {message}").format(message=_get(status, "message", default="--")),
+            _("Clock: {manager}").format(
+                manager=_get(status, "clock_manager", default="--")
+            ),
             _("Selected: {source}").format(
                 source=_get(selected, "source", default="--")
             ),
@@ -214,6 +227,16 @@ class UIGPSTimeSyncStatus(UIModule):
             ),
             _("Sys off: {offset}").format(
                 offset=self._format_offset(_get(latest, "system_offset_seconds"))
+            ),
+            _("Chrony: {state}").format(state=_get(chrony, "state", default="--")),
+            _("Chrony ref: {ref}").format(
+                ref=_get(chrony, "reference_name", default=None)
+                or _get(chrony, "reference_id", default="--")
+            ),
+            _("Chrony off: {offset}").format(
+                offset=self._format_offset(
+                    _get(chrony, "system_time_offset_seconds")
+                )
             ),
             _("NTP: {state}").format(state=_get(ntp, "state", default="--")),
             _("NTP srv: {server}").format(server=_get(ntp, "server", default="--")),

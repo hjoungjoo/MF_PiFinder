@@ -120,6 +120,7 @@ migrate_db.sql
 default_config.json
 scripts/camera_lcd_preview.py
 scripts/install_indi_mount.sh
+scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
 docs/mf_bookworm_install_ko.md
 docs/mf_bookworm_install_en.md
@@ -1084,32 +1085,36 @@ docs/mf_keyboard_mapping_en.md
 
 ## `python/PiFinder/gps_time_sync.py`, Integrated Time Sync
 
-GPS, NTP, RTC, and software PPS are managed as one Time Sync feature. The master
-switch is `Off` by default; GPS/NTP candidates are evaluated only after the user
-enables the feature in the UI.
+GPS, Chrony, PiFinder SNTP, RTC, and software PPS are managed as one Time Sync
+feature. The master switch is `Off` by default; when enabled, chronyd is the
+default Linux system-clock manager.
 
 ### Main Settings
 
 ```json
 "time_sync_enabled": false,
-"time_sync_source_mode": "best",
+"time_sync_source_mode": "chrony",
+"time_sync_clock_manager": "chrony",
+"chrony_time_sync": true,
 "gps_time_sync": true,
-"ntp_time_sync": true,
+"ntp_time_sync": false,
 "ntp_server": "pool.ntp.org",
-"time_sync_system_clock": true,
 "software_pps": false,
 "rtc_sync": false
 ```
 
 ### Behavior
 
-- GPS and NTP candidates are compared according to `best`, `gps`, or `ntp`
-  source mode.
-- If NTP networking is slow or unavailable, NTP is marked `unavailable` or
-  `low_quality` while usable GPS candidates can still be selected.
-- The main PiFinder process keeps normal user permissions. System clock and RTC
-  writes are handled by the root `gps_time_sync_helper.py` service.
-- The helper has separate dry-run and real-write modes.
+- In the default `chrony` mode, PiFinder reads `chronyc tracking` and chronyd
+  owns the Linux system clock.
+- In `best` mode, PiFinder compares Chrony, GPS, and PiFinder SNTP candidates.
+- PiFinder's built-in SNTP check is `Off` by default to avoid duplicating
+  chronyd; it can be enabled as a fallback/check source.
+- The main PiFinder process keeps normal user permissions. RTC writes and the
+  explicit `Clock Manager = PiFinder` fallback system-clock mode are handled by
+  the root `gps_time_sync_helper.py` service.
+- The helper has separate dry-run and real-write modes, and it does not write
+  the system clock in the default chrony configuration.
 - Status UI is available at `Tools > Place & Time > Time Sync`.
 - Settings UI is available at `Settings > Advanced > Time Sync`.
 
@@ -1119,6 +1124,7 @@ enables the feature in the UI.
 docs/mf_time_sync_ko.md
 docs/mf_time_sync_en.md
 pi_config_files/pifinder_gps_time_sync.service
+scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
 ```
 

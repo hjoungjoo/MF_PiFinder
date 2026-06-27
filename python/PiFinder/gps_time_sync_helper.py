@@ -1,11 +1,15 @@
 #!/usr/bin/python
 # -*- coding:utf-8 -*-
 """
-Privileged helper for time-source disciplined system clock and RTC updates.
+Optional privileged helper for RTC updates and legacy PiFinder clock writes.
 
 PiFinder itself runs as the normal PiFinder user and writes a constrained JSON
 request. This helper is intended to run as root under systemd and performs only
 the requested clock operations after validating the request.
+
+chronyd is the preferred default owner of the Linux system clock. This helper
+should only write the system clock when PiFinder is explicitly configured with
+the `pifinder` clock manager.
 """
 
 from __future__ import annotations
