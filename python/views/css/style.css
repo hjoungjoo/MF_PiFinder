@@ -2,6 +2,39 @@ body {
      display: flex;
      min-height: 100vh;
      flex-direction: column;
+     background-color: var(--pf-bg);
+     color: var(--pf-text);
+}
+
+:root {
+  color-scheme: dark;
+  --pf-bg: #424242;
+  --pf-bar: #757575;
+  --pf-surface: #616161;
+  --pf-surface-alt: #555;
+  --pf-button: #555;
+  --pf-button-hover: #777;
+  --pf-button-pressed: #000;
+  --pf-text: #e0e0e0;
+  --pf-text-muted: #9e9e9e;
+  --pf-border: #777;
+  --pf-input-bg: #4a4a4a;
+  --pf-link: #d0d0d0;
+}
+
+html[data-theme="red"] {
+  --pf-bg: #080000;
+  --pf-bar: #260303;
+  --pf-surface: #170303;
+  --pf-surface-alt: #230505;
+  --pf-button: #3a0606;
+  --pf-button-hover: #590b0b;
+  --pf-button-pressed: #000;
+  --pf-text: #e84b3f;
+  --pf-text-muted: #b3362f;
+  --pf-border: #5a1512;
+  --pf-input-bg: #120202;
+  --pf-link: #ff6a5c;
 }
 
 main {
@@ -17,7 +50,109 @@ main {
 }
 
 .pf-logo {
-  height: 50px;   
+  height: 50px;
+}
+
+.pf-theme-menu {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  margin-left: 0.5rem;
+}
+
+.pf-fullscreen-menu {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  margin-left: 0.25rem;
+}
+
+.pf-nav-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--pf-border);
+  border-radius: 3px;
+  background-color: var(--pf-input-bg);
+  color: var(--pf-text);
+  cursor: pointer;
+}
+
+.pf-nav-icon-button:focus,
+.pf-nav-icon-button:hover {
+  background-color: var(--pf-button-hover);
+}
+
+.pf-theme-select {
+  width: auto;
+  min-width: 7.5rem;
+  height: 2.25rem;
+  padding: 0 1.75rem 0 0.5rem;
+  border: 1px solid var(--pf-border);
+  border-radius: 3px;
+  background-color: var(--pf-input-bg);
+  color: var(--pf-text);
+}
+
+.pf-sidenav-theme {
+  padding: 0 32px 18px;
+}
+
+.pf-sidenav-action {
+  padding: 0 32px 12px;
+}
+
+.pf-sidenav-button {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--pf-border);
+  border-radius: 3px;
+  background-color: var(--pf-input-bg);
+  color: var(--pf-text);
+  cursor: pointer;
+}
+
+.pf-sidenav-button i.left {
+  margin-right: 0.75rem;
+}
+
+.pf-fullscreen-restore {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 10000;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid var(--pf-border);
+  border-radius: 4px;
+  background-color: var(--pf-button);
+  color: var(--pf-text);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.pf-fullscreen-restore[hidden] {
+  display: none;
+}
+
+.pf-fullscreen-restore i.left {
+  margin-right: 0.5rem;
+}
+
+.pf-sidenav-theme span {
+  display: block;
+  color: var(--pf-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6rem;
+  padding-top: 0.75rem;
 }
 
 .pifinder-screen {
@@ -32,21 +167,105 @@ main {
 }
 
 .pressed {
-  background-color: #000 !important;
+  background-color: var(--pf-button-pressed) !important;
 }
 
 .btn, .btn:focus {
-  background-color: #555;
+  background-color: var(--pf-button);
+  color: var(--pf-text);
 }
 
 @media (hover: hover) {
   .btn:hover {
-    background-color: #777;
+    background-color: var(--pf-button-hover);
   }
 }
 
 @media (hover: none) {
   .btn:hover {
-    background-color: #555;
+    background-color: var(--pf-button);
   }
+}
+
+html[data-theme="red"] body.grey.darken-3,
+html[data-theme="red"] .grey.darken-3 {
+  background-color: var(--pf-bg) !important;
+}
+
+html[data-theme="red"] nav.grey.darken-1,
+html[data-theme="red"] footer.grey.darken-1,
+html[data-theme="red"] .grey.darken-1 {
+  background-color: var(--pf-bar) !important;
+}
+
+html[data-theme="red"] .grey.darken-2,
+html[data-theme="red"] .card.grey.darken-2,
+html[data-theme="red"] table.grey.darken-2 {
+  background-color: var(--pf-surface) !important;
+}
+
+html[data-theme="red"] .grey {
+  background-color: var(--pf-surface-alt) !important;
+}
+
+html[data-theme="red"] .grey-text,
+html[data-theme="red"] .grey-text.text-lighten-1,
+html[data-theme="red"] .white-text,
+html[data-theme="red"] .card,
+html[data-theme="red"] table,
+html[data-theme="red"] th,
+html[data-theme="red"] td,
+html[data-theme="red"] label {
+  color: var(--pf-text) !important;
+}
+
+html[data-theme="red"] a,
+html[data-theme="red"] a.grey-text,
+html[data-theme="red"] .btn-flat {
+  color: var(--pf-link) !important;
+}
+
+html[data-theme="red"] .sidenav,
+html[data-theme="red"] .modal,
+html[data-theme="red"] .modal .modal-footer {
+  background-color: var(--pf-surface) !important;
+  color: var(--pf-text) !important;
+}
+
+html[data-theme="red"] .sidenav li > a {
+  color: var(--pf-text) !important;
+}
+
+html[data-theme="red"] input,
+html[data-theme="red"] textarea,
+html[data-theme="red"] select {
+  background-color: var(--pf-input-bg);
+  border-color: var(--pf-border);
+  color: var(--pf-text);
+}
+
+html[data-theme="red"] input:not([type]):focus:not([readonly]),
+html[data-theme="red"] input[type=text]:not(.browser-default):focus:not([readonly]),
+html[data-theme="red"] input[type=password]:not(.browser-default):focus:not([readonly]),
+html[data-theme="red"] input[type=number]:not(.browser-default):focus:not([readonly]),
+html[data-theme="red"] input[type=date]:not(.browser-default):focus:not([readonly]),
+html[data-theme="red"] input[type=time]:not(.browser-default):focus:not([readonly]),
+html[data-theme="red"] textarea.materialize-textarea:focus:not([readonly]) {
+  border-bottom-color: var(--pf-link);
+  box-shadow: 0 1px 0 0 var(--pf-link);
+}
+
+html[data-theme="red"] input:not([type]):focus:not([readonly]) + label,
+html[data-theme="red"] input[type=text]:not(.browser-default):focus:not([readonly]) + label,
+html[data-theme="red"] input[type=password]:not(.browser-default):focus:not([readonly]) + label,
+html[data-theme="red"] input[type=number]:not(.browser-default):focus:not([readonly]) + label,
+html[data-theme="red"] input[type=date]:not(.browser-default):focus:not([readonly]) + label,
+html[data-theme="red"] input[type=time]:not(.browser-default):focus:not([readonly]) + label,
+html[data-theme="red"] textarea.materialize-textarea:focus:not([readonly]) + label {
+  color: var(--pf-link);
+}
+
+html[data-theme="red"] select option {
+  background-color: var(--pf-input-bg);
+  color: var(--pf-text);
 }

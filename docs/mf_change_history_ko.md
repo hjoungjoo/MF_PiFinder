@@ -1,6 +1,7 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
+최종 업데이트: 2026-06-27
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
@@ -20,6 +21,42 @@
 - 재부팅, 서비스 시작/중지 같은 운영 절차
 - 중간 테스트값과 폐기한 설정
 
+## 작업 단위 목차 및 PR 상태
+
+상태 기준: 2026-06-27 현재 `brickbots/PiFinder`에 열린 `hjoungjoo` Draft PR과
+로컬 `mf_pifinder` 통합 브랜치 기준이다.
+
+| 작업 단위 | 현재 상태 | PR/브랜치 | 주요 범위 |
+| --- | --- | --- | --- |
+| Bookworm 설치/경로 기반 | Draft PR 있음 | [#499](https://github.com/brickbots/PiFinder/pull/499), `pr/bookworm-install-foundation` | `pifinder_paths.sh`, 설치/업데이트/마이그레이션 스크립트, systemd 서비스, Bookworm 경로 문서 |
+| Raspberry Pi 4/5/CM5 보드 및 GPS/UART 프로파일 | Draft PR 있음 | [#505](https://github.com/brickbots/PiFinder/pull/505), `pr/board-gps-uart-profile` | `board_config.py`, `gps_port=auto`, GPSD 장치/baud 동기화, GPS Port 메뉴 |
+| 카메라 preview/focus/gain 제어 | Draft PR 있음 | [#501](https://github.com/brickbots/PiFinder/pull/501), `pr/focus-gain-preview` | focus preview, 밝은 배경 threshold, camera gain profile/runtime 제어, LCD preview script |
+| 한국어 UI localization | Draft PR 있음 | [#500](https://github.com/brickbots/PiFinder/pull/500), `pr/korean-localization` | `python/locale/ko`, 언어 메뉴의 `ko`, CJK font/restart 처리 |
+| Bluetooth/USB HID 키보드 지원 | Draft PR 있음 | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput 키 매핑, 텍스트 입력 키코드, Bluetooth keyboard scan/pair/connect UI, 재연결 |
+| INDI 마운트 제어 | Draft PR 있음 | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, 설치 스크립트, INDI 문서 |
+| GPS/NTP/RTC/Software PPS 통합 시간 동기화 | Draft PR 있음 | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source 선택, helper service, dry-run/real clock sync, status UI, time sync 문서 |
+| Web UI 적색 야간 테마 및 PWA 전체화면 앱 모드 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | red night theme, 브라우저별 theme 저장, PWA manifest, service worker, PWA icon |
+| 변경 히스토리/PR 재편성 문서화 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | 이 문서의 작업 단위 목차, PR 상태, 재편성 기준 |
+| 최종 통합 브랜치 | Upstream PR 아님 | `origin/mf_pifinder` + 로컬 미커밋 Web UI/PWA 변경 | 위 기능들을 통합해 실제 장치에서 설치/테스트하는 기준 브랜치 |
+
+## PR 재편성 제안
+
+기존 Draft PR은 기능을 매우 작게 나누었기 때문에 리뷰 맥락을 보존하기 어렵다.
+다음 기준으로 재정리하면 관리하기 쉽다.
+
+| 새 PR 묶음 제안 | 포함 후보 | 기존 Draft PR 처리 |
+| --- | --- | --- |
+| Platform/Bookworm/RPi4-RPi5 compatibility | Bookworm 설치/경로 기반 + 보드/GPS UART 프로파일 | #499와 #505를 하나로 합치거나, #499를 확장하고 #505를 닫는 방식 |
+| Camera usability | focus preview, camera gain, camera LCD preview | #501 유지 또는 camera 관련 문서와 함께 확장 |
+| Input devices | Bluetooth keyboard, USB HID key mapping, keyboard mapping docs | #506 중심으로 정리 |
+| Optional INDI mount integration | INDI mount process, install script, object sync, keyboard mapping의 INDI 항목 | #503 유지 |
+| Integrated time sync | GPS/NTP/RTC/software PPS, helper service, status UI | #504 유지 |
+| Web observing UI | red night theme, PWA/fullscreen app mode | 새 Draft PR 필요 |
+| Korean localization | Korean locale and CJK language handling | #500은 파일 규모가 커서 별도 유지 권장 |
+
+문서는 각 기능 PR에 필요한 설치/사용 문서를 함께 넣는 방식을 권장한다. 예를 들어
+INDI 문서는 INDI PR에, Time Sync 문서는 Time Sync PR에 포함한다.
+
 ## 최종 소스 변경 목록
 
 변경 또는 추가된 PiFinder 파일:
@@ -30,6 +67,12 @@ python/PiFinder/board_config.py
 python/PiFinder/api_extensions.py
 python/PiFinder/camera_interface.py
 python/PiFinder/main.py
+python/PiFinder/gps_gpsd.py
+python/PiFinder/gps_ubx.py
+python/PiFinder/gps_ubx_parser.py
+python/PiFinder/gps_time_sync.py
+python/PiFinder/gps_time_sync_helper.py
+python/PiFinder/mountcontrol_indi.py
 python/PiFinder/sys_utils.py
 python/PiFinder/switch_camera.py
 python/PiFinder/keyboard_interface.py
@@ -40,13 +83,24 @@ python/PiFinder/ui/fonts.py
 python/PiFinder/ui/bluetooth_keyboard.py
 python/PiFinder/ui/menu_manager.py
 python/PiFinder/ui/menu_structure.py
+python/PiFinder/ui/gps_time_sync_status.py
+python/PiFinder/ui/object_details.py
 python/PiFinder/ui/textentry.py
 python/PiFinder/displays.py
 python/PiFinder/ui/preview.py
 python/locale/ko/LC_MESSAGES/messages.po
 python/locale/ko/LC_MESSAGES/messages.mo
+python/views/base.html
+python/views/css/style.css
+python/views/js/init.js
+python/views/manifest.webmanifest
+python/views/service-worker.js
+python/views/images/pwa-icon-192.png
+python/views/images/pwa-icon-512.png
+python/tests/test_web_theme_static.py
 python/views/tools.html
 pi_config_files/pifinder.service
+pi_config_files/pifinder_gps_time_sync.service
 pi_config_files/pifinder_splash.service
 pi_config_files/cedar_detect.service
 pi_config_files/smb.conf
@@ -65,14 +119,22 @@ migration_source/v2.6.0.sh
 migrate_db.sql
 default_config.json
 scripts/camera_lcd_preview.py
+scripts/install_indi_mount.sh
+scripts/install_gps_time_sync_helper.sh
 docs/mf_bookworm_install_ko.md
 docs/mf_bookworm_install_en.md
 docs/mf_change_history_ko.md
 docs/mf_change_history_en.md
+docs/mf_indi_mount_install_ko.md
+docs/mf_indi_mount_install_en.md
+docs/mf_keyboard_mapping_ko.md
+docs/mf_keyboard_mapping_en.md
 docs/mf_pifinder_new_device_tasks_ko.md
 docs/mf_pifinder_new_device_tasks_en.md
 docs/mf_pifinder_rpi4_pi5_compatibility_ko.md
 docs/mf_pifinder_rpi4_pi5_compatibility_en.md
+docs/mf_time_sync_ko.md
+docs/mf_time_sync_en.md
 ```
 
 원본 대비 재검토 결과:
@@ -874,6 +936,103 @@ Cancel
 
 - 원격 접속 없이 PiFinder 화면과 키패드만으로 Bluetooth 키보드 연결을 시도할 수 있다.
 - Bluetooth 연결 뒤에는 해당 키보드가 `/dev/input/event*`로 나타나며 `keyboard_pi.py`의 libinput 매핑을 통해 PiFinder 입력으로 동작한다.
+
+## `python/PiFinder/mountcontrol_indi.py`, INDI 마운트 제어
+
+INDI 마운트 제어는 선택 기능이다. 기본 PiFinder 설치만으로는 기존 기능이 동작하고,
+`scripts/install_indi_mount.sh`를 실행해 INDI 의존성을 추가 설치한 사용자가
+`mount_control`을 켰을 때만 별도 process가 시작된다.
+
+### 주요 설정
+
+```json
+"mount_control": false,
+"mount_control_indi_host": "localhost",
+"mount_control_indi_port": 7624
+```
+
+### 동작 방식
+
+- `main.py`가 `mount_control` 설정을 확인한 뒤 `mountcontrol_indi.run()` process를 시작한다.
+- INDI 서버 접속 실패, PyIndi 미설치, 마운트 미검출 상태는 상태 파일과 console 메시지로 기록하고 PiFinder 본 기능은 계속 실행한다.
+- `mount_control_status.json`에 compact 상태를 기록해 로그/디버그/웹 확인에 사용할 수 있게 했다.
+- object details 화면에서 현재 대상에 대한 sync/goto/stop/manual step 명령을 mount queue로 보낸다.
+- 종료 시 mount-control process에 shutdown command를 보내고, 응답하지 않으면 terminate한다.
+
+### 문서/설치 파일
+
+```text
+docs/mf_indi_mount_install_ko.md
+docs/mf_indi_mount_install_en.md
+scripts/install_indi_mount.sh
+docs/mf_keyboard_mapping_ko.md
+docs/mf_keyboard_mapping_en.md
+```
+
+## `python/PiFinder/gps_time_sync.py`, 통합 시간 동기화
+
+GPS, NTP, RTC, software PPS를 하나의 Time Sync 기능으로 관리하도록 추가했다.
+기본값은 전체 `Off`이며, 사용자가 UI에서 켰을 때만 GPS/NTP 시간 후보를 평가한다.
+
+### 주요 설정
+
+```json
+"time_sync_enabled": false,
+"time_sync_source_mode": "best",
+"gps_time_sync": true,
+"ntp_time_sync": true,
+"ntp_server": "pool.ntp.org",
+"time_sync_system_clock": true,
+"software_pps": false,
+"rtc_sync": false
+```
+
+### 동작 방식
+
+- GPS 시간 후보와 NTP 시간 후보를 비교해 `best`, `gps`, `ntp` 모드에 따라 선택한다.
+- NTP 네트워크가 느리거나 끊긴 경우에는 NTP를 `unavailable` 또는 `low_quality`로 표시하고 GPS 후보를 계속 사용할 수 있다.
+- PiFinder 본체는 일반 권한으로 실행하고, system clock/RTC 쓰기는 `gps_time_sync_helper.py` root helper service가 처리한다.
+- helper는 dry-run 모드와 실제 적용 모드를 분리한다.
+- 상태 UI는 `Tools > Place & Time > Time Sync`에서 확인한다.
+- 설정 UI는 `Settings > Advanced > Time Sync`에 추가했다.
+
+### 문서/설치 파일
+
+```text
+docs/mf_time_sync_ko.md
+docs/mf_time_sync_en.md
+pi_config_files/pifinder_gps_time_sync.service
+scripts/install_gps_time_sync_helper.sh
+```
+
+## Web UI 적색 야간 테마 및 PWA 앱 모드
+
+관측 중 웹 UI가 암시야를 덜 해치도록 적색 야간 테마를 추가했고, 모바일/태블릿에서
+홈 화면에 추가해 앱처럼 열 수 있도록 PWA 구성을 추가했다.
+
+### 주요 파일
+
+```text
+python/PiFinder/server.py
+python/views/base.html
+python/views/css/style.css
+python/views/js/init.js
+python/views/manifest.webmanifest
+python/views/service-worker.js
+python/views/images/pwa-icon-192.png
+python/views/images/pwa-icon-512.png
+python/tests/test_web_theme_static.py
+```
+
+### 동작 방식
+
+- `Gray`와 `Red Night` 테마를 선택할 수 있다.
+- 선택값은 브라우저 `localStorage`에 저장되므로 장치별로 유지된다.
+- 상단 메뉴와 모바일 메뉴에 `Fullscreen` 버튼을 추가해 사용자가 직접 전체화면 모드에 진입할 수 있다.
+- Fullscreen API는 페이지 이동 시 해제될 수 있으므로, 전체화면 상태에서 내부 메뉴로 이동하면 다음 페이지에 `Resume Fullscreen` 복구 버튼을 표시한다.
+- 로그 페이지의 로그 본문 색상은 기존 level 색상 그대로 유지한다.
+- manifest는 `display: fullscreen`을 사용하되, PiFinder 웹 UI 내부의 nav/footer는 유지한다.
+- service worker는 캐싱 없이 네트워크 요청을 통과시키는 최소 형태로 두어 실시간 UI 동작에 영향을 주지 않는다.
 
 ## `default_config.json`
 

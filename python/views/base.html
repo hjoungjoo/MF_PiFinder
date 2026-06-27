@@ -1,11 +1,36 @@
 <!DOCTYPE html>
-<html>
+<html data-theme="grey">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0"/>
+  <meta name="theme-color" id="pf-theme-color" content="#757575"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="PiFinder"/>
   <title>PiFinder - {% block title %}{{ title }}{% endblock %}</title>
 
+  <script>
+    (function() {
+      let storedTheme = null;
+      try {
+        storedTheme = localStorage.getItem('pifinderWebTheme');
+      } catch (error) {
+        storedTheme = null;
+      }
+      const theme = ['grey', 'red'].indexOf(storedTheme) === -1 ? 'grey' : storedTheme;
+      document.documentElement.setAttribute('data-theme', theme);
+      document.addEventListener('DOMContentLoaded', function() {
+        const themeColor = document.getElementById('pf-theme-color');
+        if (themeColor) {
+          themeColor.setAttribute('content', theme === 'red' ? '#260303' : '#757575');
+        }
+      });
+    })();
+  </script>
   <!-- CSS  -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/images/pwa-icon-192.png">
   <link href="/css/material_icons.css" rel="stylesheet">
   <link href="/css/materialize.css" type="text/css" rel="stylesheet" media="screen,projection"/>
   <link href="/css/style.css" type="text/css" rel="stylesheet" media="screen,projection"/>
@@ -22,6 +47,17 @@
         <li><a href="/equipment">{{ _('Equipment') }}</a></li>
         <li><a href="/tools">{{ _('Tools') }}</a></li>
         <li><a href="/logs">{{ _('Logs') }}</a></li>
+        <li class="pf-fullscreen-menu">
+          <button type="button" class="pf-nav-icon-button pf-fullscreen-button" title="{{ _('Fullscreen') }}" aria-label="{{ _('Fullscreen') }}">
+            <i class="material-icons">fullscreen</i>
+          </button>
+        </li>
+        <li class="pf-theme-menu">
+          <select class="browser-default pf-theme-select" aria-label="{{ _('Web theme') }}">
+            <option value="grey">{{ _('Gray') }}</option>
+            <option value="red">{{ _('Red Night') }}</option>
+          </select>
+        </li>
       </ul>
 
       <ul id="nav-mobile" class="sidenav">
@@ -33,6 +69,18 @@
         <li><a href="/equipment">{{ _('Equipment') }}</a></li>
         <li><a href="/tools">{{ _('Tools') }}</a></li>
         <li><a href="/logs">{{ _('Logs') }}</a></li>
+        <li class="pf-sidenav-action">
+          <button type="button" class="pf-sidenav-button pf-fullscreen-button">
+            <i class="material-icons left">fullscreen</i>{{ _('Fullscreen') }}
+          </button>
+        </li>
+        <li class="pf-sidenav-theme">
+          <span>{{ _('Theme') }}</span>
+          <select class="browser-default pf-theme-select" aria-label="{{ _('Web theme') }}">
+            <option value="grey">{{ _('Gray') }}</option>
+            <option value="red">{{ _('Red Night') }}</option>
+          </select>
+        </li>
       </ul>
       <a href="#" data-target="nav-mobile" class="sidenav-trigger"><i class="material-icons">menu</i></a>
     </div>
@@ -42,6 +90,9 @@
       {% block content %}{% endblock %}
     </div>
   </main>
+  <button type="button" id="pf-fullscreen-restore" class="pf-fullscreen-restore pf-fullscreen-button" hidden>
+    <i class="material-icons left">fullscreen</i>{{ _('Resume Fullscreen') }}
+  </button>
   <footer class="page-footer grey darken-1">
     <div class="container">
       <div class="row">

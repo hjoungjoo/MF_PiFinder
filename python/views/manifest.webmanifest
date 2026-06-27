@@ -1,0 +1,38 @@
+{
+  "name": "PiFinder",
+  "short_name": "PiFinder",
+  "description": "PiFinder web control interface",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "background_color": "#080000",
+  "theme_color": "#260303",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/images/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Remote",
+      "short_name": "Remote",
+      "url": "/remote"
+    },
+    {
+      "name": "Logs",
+      "short_name": "Logs",
+      "url": "/logs"
+    }
+  ]
+}

@@ -195,6 +195,22 @@ class Server:
         def send_css(filename):
             return send_file(os.path.join(views2_path, "css", filename))
 
+        @app.route("/manifest.webmanifest")
+        def send_manifest():
+            return send_file(
+                os.path.join(views2_path, "manifest.webmanifest"),
+                mimetype="application/manifest+json",
+            )
+
+        @app.route("/service-worker.js")
+        def send_service_worker():
+            response = send_file(
+                os.path.join(views2_path, "service-worker.js"),
+                mimetype="text/javascript",
+            )
+            response.headers["Service-Worker-Allowed"] = "/"
+            return response
+
         @app.route("/")
         def home():
             # logger.debug("/ called")

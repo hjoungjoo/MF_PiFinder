@@ -1,6 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
+Last updated: 2026-06-27
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -20,6 +21,42 @@ Not covered:
 - Reboots, service start/stop operations, and other runtime procedures
 - Intermediate test values and discarded settings
 
+## Work-Area Table of Contents and PR Status
+
+Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the local
+`mf_pifinder` integration branch as of 2026-06-27.
+
+| Work area | Current status | PR/branch | Main scope |
+| --- | --- | --- | --- |
+| Bookworm install and path foundation | Draft PR exists | [#499](https://github.com/brickbots/PiFinder/pull/499), `pr/bookworm-install-foundation` | `pifinder_paths.sh`, install/update/migration scripts, systemd units, Bookworm path docs |
+| Raspberry Pi 4/5/CM5 board and GPS/UART profile | Draft PR exists | [#505](https://github.com/brickbots/PiFinder/pull/505), `pr/board-gps-uart-profile` | `board_config.py`, `gps_port=auto`, GPSD device/baud sync, GPS Port menu |
+| Camera preview/focus/gain control | Draft PR exists | [#501](https://github.com/brickbots/PiFinder/pull/501), `pr/focus-gain-preview` | focus preview, bright-background threshold, camera gain profile/runtime control, LCD preview script |
+| Korean UI localization | Draft PR exists | [#500](https://github.com/brickbots/PiFinder/pull/500), `pr/korean-localization` | `python/locale/ko`, `ko` language menu entry, CJK font/restart handling |
+| Bluetooth/USB HID keyboard support | Draft PR exists | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput key mapping, text-entry keycodes, Bluetooth keyboard scan/pair/connect UI, reconnect |
+| INDI mount control | Draft PR exists | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, install script, INDI docs |
+| Integrated GPS/NTP/RTC/software PPS time sync | Draft PR exists | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source selection, helper service, dry-run/real clock sync, status UI, time-sync docs |
+| Web UI red night theme and PWA fullscreen app mode | No Draft PR yet | local `mf_pifinder` worktree | red night theme, per-browser theme storage, PWA manifest, service worker, PWA icons |
+| Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |
+| Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted Web UI/PWA changes | integration branch used for install and hardware testing across the features above |
+
+## Suggested PR Regrouping
+
+The current Draft PRs were split very narrowly, which makes review context harder
+to follow. The following grouping is easier to maintain.
+
+| Suggested new PR group | Include | Existing Draft PR handling |
+| --- | --- | --- |
+| Platform/Bookworm/RPi4-RPi5 compatibility | Bookworm install/path foundation + board/GPS UART profile | Combine #499 and #505, or expand #499 and close #505 |
+| Camera usability | focus preview, camera gain, camera LCD preview | Keep #501 or expand it with camera-specific docs |
+| Input devices | Bluetooth keyboard, USB HID key mapping, keyboard mapping docs | Use #506 as the base |
+| Optional INDI mount integration | INDI mount process, install script, object sync, INDI keyboard mapping notes | Keep #503 |
+| Integrated time sync | GPS/NTP/RTC/software PPS, helper service, status UI | Keep #504 |
+| Web observing UI | red night theme, PWA/fullscreen app mode | New Draft PR needed |
+| Korean localization | Korean locale and CJK language handling | Keep #500 separate because the locale file is large |
+
+Documentation should travel with the feature PR that needs it. For example, INDI
+docs belong with the INDI PR, and Time Sync docs belong with the Time Sync PR.
+
 ## Final Source Change List
 
 Changed or added PiFinder files:
@@ -30,6 +67,12 @@ python/PiFinder/board_config.py
 python/PiFinder/api_extensions.py
 python/PiFinder/camera_interface.py
 python/PiFinder/main.py
+python/PiFinder/gps_gpsd.py
+python/PiFinder/gps_ubx.py
+python/PiFinder/gps_ubx_parser.py
+python/PiFinder/gps_time_sync.py
+python/PiFinder/gps_time_sync_helper.py
+python/PiFinder/mountcontrol_indi.py
 python/PiFinder/sys_utils.py
 python/PiFinder/switch_camera.py
 python/PiFinder/keyboard_interface.py
@@ -40,13 +83,24 @@ python/PiFinder/ui/fonts.py
 python/PiFinder/ui/bluetooth_keyboard.py
 python/PiFinder/ui/menu_manager.py
 python/PiFinder/ui/menu_structure.py
+python/PiFinder/ui/gps_time_sync_status.py
+python/PiFinder/ui/object_details.py
 python/PiFinder/ui/textentry.py
 python/PiFinder/displays.py
 python/PiFinder/ui/preview.py
 python/locale/ko/LC_MESSAGES/messages.po
 python/locale/ko/LC_MESSAGES/messages.mo
+python/views/base.html
+python/views/css/style.css
+python/views/js/init.js
+python/views/manifest.webmanifest
+python/views/service-worker.js
+python/views/images/pwa-icon-192.png
+python/views/images/pwa-icon-512.png
+python/tests/test_web_theme_static.py
 python/views/tools.html
 pi_config_files/pifinder.service
+pi_config_files/pifinder_gps_time_sync.service
 pi_config_files/pifinder_splash.service
 pi_config_files/cedar_detect.service
 pi_config_files/smb.conf
@@ -65,14 +119,22 @@ migration_source/v2.6.0.sh
 migrate_db.sql
 default_config.json
 scripts/camera_lcd_preview.py
+scripts/install_indi_mount.sh
+scripts/install_gps_time_sync_helper.sh
 docs/mf_bookworm_install_ko.md
 docs/mf_bookworm_install_en.md
 docs/mf_change_history_ko.md
 docs/mf_change_history_en.md
+docs/mf_indi_mount_install_ko.md
+docs/mf_indi_mount_install_en.md
+docs/mf_keyboard_mapping_ko.md
+docs/mf_keyboard_mapping_en.md
 docs/mf_pifinder_new_device_tasks_ko.md
 docs/mf_pifinder_new_device_tasks_en.md
 docs/mf_pifinder_rpi4_pi5_compatibility_ko.md
 docs/mf_pifinder_rpi4_pi5_compatibility_en.md
+docs/mf_time_sync_ko.md
+docs/mf_time_sync_en.md
 ```
 
 Comparison against the original source:
@@ -981,6 +1043,120 @@ Expected effect:
   keypad without an SSH terminal.
 - After connection, the keyboard appears as `/dev/input/event*` and is handled
   through the `keyboard_pi.py` libinput mapping.
+
+## `python/PiFinder/mountcontrol_indi.py`, INDI Mount Control
+
+INDI mount control is optional. A basic PiFinder install continues to work
+without it. The separate process starts only after the user installs the INDI
+dependencies with `scripts/install_indi_mount.sh` and enables `mount_control`.
+
+### Main Settings
+
+```json
+"mount_control": false,
+"mount_control_indi_host": "localhost",
+"mount_control_indi_port": 7624
+```
+
+### Behavior
+
+- `main.py` checks `mount_control` and starts the `mountcontrol_indi.run()`
+  process only when enabled.
+- INDI server connection failures, missing PyIndi, and missing mount devices are
+  recorded in the status file and console messages while the rest of PiFinder
+  continues running.
+- `mount_control_status.json` stores a compact status snapshot for logs, debug,
+  and web inspection.
+- The object details screen sends sync/goto/stop/manual-step commands through
+  the mount queue.
+- Shutdown sends a mount-control shutdown command first, then terminates the
+  process if it does not exit.
+
+### Docs and Install Files
+
+```text
+docs/mf_indi_mount_install_ko.md
+docs/mf_indi_mount_install_en.md
+scripts/install_indi_mount.sh
+docs/mf_keyboard_mapping_ko.md
+docs/mf_keyboard_mapping_en.md
+```
+
+## `python/PiFinder/gps_time_sync.py`, Integrated Time Sync
+
+GPS, NTP, RTC, and software PPS are managed as one Time Sync feature. The master
+switch is `Off` by default; GPS/NTP candidates are evaluated only after the user
+enables the feature in the UI.
+
+### Main Settings
+
+```json
+"time_sync_enabled": false,
+"time_sync_source_mode": "best",
+"gps_time_sync": true,
+"ntp_time_sync": true,
+"ntp_server": "pool.ntp.org",
+"time_sync_system_clock": true,
+"software_pps": false,
+"rtc_sync": false
+```
+
+### Behavior
+
+- GPS and NTP candidates are compared according to `best`, `gps`, or `ntp`
+  source mode.
+- If NTP networking is slow or unavailable, NTP is marked `unavailable` or
+  `low_quality` while usable GPS candidates can still be selected.
+- The main PiFinder process keeps normal user permissions. System clock and RTC
+  writes are handled by the root `gps_time_sync_helper.py` service.
+- The helper has separate dry-run and real-write modes.
+- Status UI is available at `Tools > Place & Time > Time Sync`.
+- Settings UI is available at `Settings > Advanced > Time Sync`.
+
+### Docs and Install Files
+
+```text
+docs/mf_time_sync_ko.md
+docs/mf_time_sync_en.md
+pi_config_files/pifinder_gps_time_sync.service
+scripts/install_gps_time_sync_helper.sh
+```
+
+## Web UI Red Night Theme and PWA App Mode
+
+A red night theme was added so the web UI is less disruptive during observing,
+and PWA metadata was added so phones and tablets can launch the web UI from the
+home screen like an app.
+
+### Main Files
+
+```text
+python/PiFinder/server.py
+python/views/base.html
+python/views/css/style.css
+python/views/js/init.js
+python/views/manifest.webmanifest
+python/views/service-worker.js
+python/views/images/pwa-icon-192.png
+python/views/images/pwa-icon-512.png
+python/tests/test_web_theme_static.py
+```
+
+### Behavior
+
+- The web UI offers `Gray` and `Red Night` themes.
+- Theme choice is stored in browser `localStorage`, so each client device keeps
+  its own preference.
+- A `Fullscreen` button was added to the desktop and mobile menus so users can
+  explicitly enter fullscreen mode.
+- Because the Fullscreen API can exit fullscreen on navigation, internal menu
+  navigation from fullscreen mode shows a `Resume Fullscreen` recovery button on
+  the next page.
+- Log page log-line colors remain the original level colors.
+- The manifest uses `display: fullscreen`, while PiFinder's internal nav/footer
+  stay visible.
+- The service worker is a minimal pass-through worker with no caching, so live
+  UI behavior is not changed.
 
 ## `default_config.json`
 
