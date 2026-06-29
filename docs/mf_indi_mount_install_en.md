@@ -59,22 +59,66 @@ http://<pifinder-ip>:8624
 
 Create a profile, choose the correct telescope driver, enable Auto Start and Auto Connect if desired, then start the profile. Common drivers include EQMod, LX200, iOptron, Celestron, and Telescope Simulator.
 
+LX200 OnStep connection settings can be configured from the PiFinder web UI:
+
+```text
+INDI > LX200 OnStep Driver Setup
+```
+
+For USB connections, choose a detected `/dev/serial/by-id`, `/dev/ttyUSB*`, or `/dev/ttyACM*` port, or enter the serial port manually. For network connections, choose an IP from the AP connected-device list, or enter a host/IP and TCP port manually when the device is not listed. The default OnStep network TCP port is `9999`.
+
+## PiFinder INDI Web Menu
+
+The PiFinder web UI now has a dedicated `INDI` top-level menu. This page links to INDI Web Manager, shows LX200 OnStep driver state, and provides basic OnStep control actions.
+
+### Current INDI Driver State
+
+This section shows the current INDI driver connection mode, serial/network settings, OnStep location, and OnStep UTC time. These values appear after the INDI profile is started and the LX200 OnStep driver is loaded.
+
+### Location And Time
+
+The `Location and Time` section sends PiFinder's current location and UTC time to OnStep.
+
+- If PiFinder has a GPS lock, it uses the GPS/loaded location.
+- If there is no GPS lock, it uses the default location from PiFinder `Locations`.
+- The UTC time field keeps ticking while the page is open.
+- `Reload Current Values` refreshes the PiFinder location/time and the displayed OnStep location/time without leaving the page.
+- When `Send Location and Time` is pressed, the server recalculates PiFinder system UTC at the moment the request is received and sends that value to OnStep. The final transmitted time is therefore based on PiFinder, not on the phone or browser clock.
+
+### Mount Control
+
+The `Mount Control` section provides simple LX200 OnStep initialize/park/manual-motion controls.
+
+- The current Park/Unpark state is displayed.
+- `At Home`, `Return Home`, `Park`, `Unpark`, and `Set-Park` commands are available.
+- Slew Rate uses OnStep's native 0-9 scale. `0` is Off, `1` is `1/2x`, and `9` is `Max`.
+- Direction buttons move while held and send a stop command when released.
+- Diagonal buttons send the paired North/South and East/West commands together.
+
+This web control page sends commands directly to the INDI driver. It can be used alongside the Object Details numeric-key Sync/GoTo flow.
+
 ## Enable PiFinder Control
 
 On the PiFinder UI:
 
 ```text
-Settings > Experimental > Mount Control > On
+Tools > Experimental > Mount Control > On
 ```
 
 Changing this option restarts PiFinder so the optional `MountControl` process can start or stop cleanly.
+
+The Mount Control process no longer connects to INDI immediately at PiFinder startup. It initializes the INDI connection when a mount command is sent from Object Details, such as `1`, Sync, or GoTo.
 
 Advanced config keys in `default_config.json`:
 
 ```json
 "mount_control": false,
 "mount_control_indi_host": "localhost",
-"mount_control_indi_port": 7624
+"mount_control_indi_port": 7624,
+"onstep_connection_type": "network",
+"onstep_serial_port": "",
+"onstep_network_host": "",
+"onstep_network_port": 9999
 ```
 
 ## Object Details Key Map

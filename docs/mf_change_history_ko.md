@@ -975,6 +975,32 @@ INDI 마운트 제어는 선택 기능이다. 기본 PiFinder 설치만으로는
 - object details 화면에서 현재 대상에 대한 sync/goto/stop/manual step 명령을 mount queue로 보낸다.
 - 종료 시 mount-control process에 shutdown command를 보내고, 응답하지 않으면 terminate한다.
 
+### 웹 INDI 메뉴와 LX200 OnStep 제어
+
+`python/views/indi_mount.html`을 추가하고 `python/PiFinder/server.py`에 `/indi`
+라우트를 추가해 INDI를 `Equipment`와 `Tools` 사이의 독립 웹 메뉴로 분리했다.
+
+- `INDI Web Manager` 버튼은 현재 PiFinder host의 `:8624`로 연결한다.
+- `Current INDI Driver State`는 LX200 OnStep의 연결 방식, serial/network 설정,
+  위치, UTC 시간, Park 상태, Slew Rate 상태를 `indi_getprop`으로 읽어 표시한다.
+- `LX200 OnStep Driver Connection`은 USB Serial과 Network TCP를 선택할 수 있다.
+  USB는 `/dev/serial/by-id`, `/dev/ttyUSB*`, `/dev/ttyACM*` 후보를 표시하고,
+  네트워크는 AP 접속 장치 목록에서 IP를 선택하거나 수동 입력할 수 있다.
+- `Location and Time`은 GPS lock이 있으면 GPS/loaded location을, 없으면
+  PiFinder 기본 location을 사용한다. `Reload Current Values`로 PiFinder와 OnStep
+  현재값을 다시 읽을 수 있고, 화면의 UTC 입력값은 초 단위로 계속 갱신된다.
+- `Send Location and Time`은 browser가 보낸 시간을 그대로 쓰지 않고,
+  Flask route가 POST를 받은 시점의 PiFinder system UTC를 다시 계산해 OnStep에
+  전송한다.
+- `Mount Control`에는 Park/Unpark 상태 표시, At Home, Return Home, Park,
+  Unpark, Set-Park 명령, OnStep 0-9 Slew Rate 선택, press-and-hold 방향 이동을
+  추가했다.
+- 방향 이동은 버튼을 누르고 있는 동안 motion 명령을 보내고, pointer up/cancel/leave
+  시 stop 명령을 보내도록 AJAX로 처리한다.
+- Red Night theme에서도 select/dropdown/table이 흰색으로 뜨지 않도록 CSS를
+  보정했고, Materialize select input의 글자 잘림을 줄이기 위해 높이와 label
+  위치를 조정했다.
+
 ### 문서/설치 파일
 
 ```text

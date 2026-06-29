@@ -16,6 +16,50 @@ BACKUP_PATH = os.path.join(_pifinder_data_dir, "PiFinder_backup.zip")
 logger = logging.getLogger("SysUtils.Fake")
 
 
+def list_onstep_serial_ports():
+    return []
+
+
+def get_indi_onstep_properties(
+    server_host="localhost",
+    server_port=7624,
+    device_name="LX200 OnStep",
+):
+    return {}
+
+
+def apply_indi_onstep_connection(
+    connection_type,
+    serial_port="",
+    network_host="",
+    network_port=9999,
+    server_host="localhost",
+    server_port=7624,
+    device_name="LX200 OnStep",
+):
+    return {
+        "ok": True,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "properties": [],
+    }
+
+
+def apply_indi_onstep_properties(
+    properties,
+    server_host="localhost",
+    server_port=7624,
+):
+    return {
+        "ok": True,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "properties": properties,
+    }
+
+
 class Network:
     """
     Provides wifi network info

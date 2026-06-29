@@ -33,6 +33,7 @@ STATUS_FILE = utils.data_dir / "mount_control_status.json"
 DEFAULT_STEP_DEGREES = 1.0
 MIN_STEP_DEGREES = 0.05
 MAX_STEP_DEGREES = 10.0
+POSITION_STATUS_MIN_INTERVAL = 2.0
 
 
 def _write_status(state: str, message: str = "", **extra: Any) -> None:
@@ -266,6 +267,7 @@ class MountControlIndi:
         self.current_ra: Optional[float] = None
         self.current_dec: Optional[float] = None
         self.connected = False
+        self._last_position_status_at = 0.0
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -273,6 +275,16 @@ class MountControlIndi:
     def set_current_position(self, ra_deg: float, dec_deg: float) -> None:
         self.current_ra = ra_deg % 360.0
         self.current_dec = dec_deg
+        self._write_position_status()
+
+    def _write_position_status(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if (
+            not force
+            and now - self._last_position_status_at < POSITION_STATUS_MIN_INTERVAL
+        ):
+            return
+        self._last_position_status_at = now
         _write_status(
             "connected",
             "Mount position updated",
@@ -346,6 +358,7 @@ class MountControlIndi:
         self.client.enable_tracking(self.device)
         self._read_current_position()
         self.connected = True
+        self._last_position_status_at = time.monotonic()
         _write_status(
             "connected",
             f"Connected to {device_name}",
@@ -566,7 +579,6 @@ class MountControlIndi:
             f"Mount-control process ready for {self.indi_host}:{self.indi_port}",
             step_degrees=self.step_degrees,
         )
-        self.connect()
 
         running = True
         while running:

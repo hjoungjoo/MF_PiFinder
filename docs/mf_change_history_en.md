@@ -1088,6 +1088,36 @@ dependencies with `scripts/install_indi_mount.sh` and enables `mount_control`.
 - Shutdown sends a mount-control shutdown command first, then terminates the
   process if it does not exit.
 
+### Web INDI Menu And LX200 OnStep Control
+
+Added `python/views/indi_mount.html` and the `/indi` route in
+`python/PiFinder/server.py`, making INDI a dedicated top-level web menu between
+`Equipment` and `Tools`.
+
+- The `INDI Web Manager` button opens port `8624` on the current PiFinder host.
+- `Current INDI Driver State` reads LX200 OnStep connection mode,
+  serial/network settings, location, UTC time, park state, and slew-rate state
+  through `indi_getprop`.
+- `LX200 OnStep Driver Connection` supports USB Serial and Network TCP. USB mode
+  lists `/dev/serial/by-id`, `/dev/ttyUSB*`, and `/dev/ttyACM*` candidates;
+  network mode can select an IP from the AP connected-device list or use manual
+  host/IP entry.
+- `Location and Time` uses the GPS/loaded location when PiFinder has a GPS lock,
+  otherwise it uses the default PiFinder location. `Reload Current Values`
+  refreshes both PiFinder and OnStep values, and the UTC field keeps ticking
+  while the page is open.
+- `Send Location and Time` does not trust a stale browser-supplied timestamp.
+  The Flask route recalculates PiFinder system UTC when it receives the POST and
+  sends that timestamp to OnStep.
+- `Mount Control` adds Park/Unpark state display, At Home, Return Home, Park,
+  Unpark, Set-Park, native OnStep 0-9 Slew Rate selection, and press-and-hold
+  direction movement.
+- Direction movement is handled through AJAX: pressing a button sends the motion
+  command, and pointer up/cancel/leave sends stop.
+- Red Night theme CSS now covers selects/dropdowns/tables so INDI controls do
+  not flash white, and the Materialize select sizing was adjusted to reduce
+  clipped option text.
+
 ### Docs and Install Files
 
 ```text

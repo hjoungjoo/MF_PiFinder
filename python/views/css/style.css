@@ -269,6 +269,60 @@ html[data-theme="red"] select option {
   color: var(--pf-text);
 }
 
+html[data-theme="red"] .select-wrapper input.select-dropdown,
+html[data-theme="red"] .select-wrapper input.select-dropdown:focus {
+  background-color: var(--pf-input-bg);
+  border-bottom-color: var(--pf-border);
+  color: var(--pf-text);
+}
+
+.select-wrapper input.select-dropdown {
+  min-height: 3rem;
+  line-height: 3rem;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+
+.input-field .select-wrapper + label {
+  top: -0.4rem;
+}
+
+html[data-theme="red"] .select-wrapper .caret {
+  fill: var(--pf-text);
+}
+
+html[data-theme="red"] .dropdown-content,
+html[data-theme="red"] .dropdown-content li,
+html[data-theme="red"] .dropdown-content li > a,
+html[data-theme="red"] .dropdown-content li > span {
+  background-color: var(--pf-input-bg) !important;
+  color: var(--pf-text) !important;
+}
+
+html[data-theme="red"] .dropdown-content li:hover,
+html[data-theme="red"] .dropdown-content li.active,
+html[data-theme="red"] .dropdown-content li.selected,
+html[data-theme="red"] .dropdown-content li.active > span,
+html[data-theme="red"] .dropdown-content li.selected > span {
+  background-color: var(--pf-button-hover) !important;
+  color: var(--pf-link) !important;
+}
+
+html[data-theme="red"] .dropdown-content li.disabled,
+html[data-theme="red"] .dropdown-content li.disabled > span {
+  background-color: var(--pf-surface) !important;
+  color: var(--pf-text-muted) !important;
+}
+
+html[data-theme="red"] table.striped > tbody > tr:nth-child(odd) {
+  background-color: var(--pf-surface-alt) !important;
+}
+
+html[data-theme="red"] table.striped > tbody > tr:nth-child(even) {
+  background-color: var(--pf-surface) !important;
+}
+
 .ap-password-field {
   position: relative;
 }
@@ -306,6 +360,57 @@ html[data-theme="red"] select option {
 
 .ap-password-field .password-preview.is-visible {
   display: block;
+}
+
+.indi-motion-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(5rem, 1fr));
+  gap: 0.5rem;
+  max-width: 32rem;
+}
+
+.indi-motion-grid .btn {
+  width: 100%;
+  min-height: 5rem;
+  line-height: 5rem;
+  padding: 0;
+  touch-action: none;
+}
+
+.indi-motion-grid .btn.disabled {
+  background-color: var(--pf-surface-alt) !important;
+  color: var(--pf-text-muted) !important;
+}
+
+.indi-park-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.5rem;
+}
+
+.indi-park-actions .btn {
+  width: 100%;
+}
+
+.indi-park-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.25rem 0 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--pf-border);
+  border-radius: 4px;
+  background-color: var(--pf-input-bg);
+  color: var(--pf-text);
+}
+
+.indi-park-state span {
+  color: var(--pf-text-muted);
+}
+
+.indi-park-state strong {
+  font-size: 1.15rem;
+  font-weight: 600;
 }
 
 @media (max-width: 767px) {

@@ -59,22 +59,66 @@ http://<pifinder-ip>:8624
 
 Profile을 만들고 사용하는 마운트에 맞는 telescope driver를 선택합니다. 필요하면 Auto Start와 Auto Connect를 켠 뒤 profile을 시작합니다. 흔한 드라이버는 EQMod, LX200, iOptron, Celestron, Telescope Simulator입니다.
 
+LX200 OnStep은 PiFinder 웹 UI의 다음 페이지에서 연결 방식을 설정할 수 있습니다.
+
+```text
+INDI > LX200 OnStep Driver Setup
+```
+
+USB 연결은 감지된 `/dev/serial/by-id`, `/dev/ttyUSB*`, `/dev/ttyACM*` 목록에서 선택하거나 수동으로 포트 이름을 입력합니다. 네트워크 연결은 AP에 접속된 장치 목록에서 IP를 선택하거나, 목록에 없으면 IP/host와 TCP port를 수동으로 입력합니다. OnStep 네트워크 연결의 기본 TCP port는 `9999`입니다.
+
+## PiFinder INDI 웹 메뉴
+
+PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 이 페이지에서 INDI Web Manager로 바로 이동하고, LX200 OnStep 드라이버 상태를 확인하며, 기본적인 OnStep 제어를 실행할 수 있습니다.
+
+### Current INDI Driver State
+
+현재 INDI 드라이버의 연결 방식, serial/network 설정, OnStep 위치, OnStep UTC 시간을 표시합니다. 이 값은 INDI profile이 시작되고 LX200 OnStep 드라이버가 로드된 뒤에 표시됩니다.
+
+### Location and Time
+
+`Location and Time` 영역은 PiFinder의 현재 위치와 UTC 시간을 OnStep에 전송합니다.
+
+- 위치는 GPS lock이 있으면 GPS/loaded location 값을 사용합니다.
+- GPS lock이 없으면 PiFinder `Locations`의 기본 위치를 사용합니다.
+- UTC 시간 입력칸은 화면을 열어 둔 동안 초 단위로 계속 갱신됩니다.
+- `Reload Current Values`는 PiFinder 위치/시간과 OnStep의 현재 위치/시간 표시를 다시 읽습니다.
+- `Send Location and Time`을 누르면 서버가 요청을 받은 바로 그 시점의 PiFinder system UTC를 다시 계산해서 OnStep에 전송합니다. 따라서 브라우저나 휴대폰 시간이 틀려 있어도 최종 전송 시간은 PiFinder 기준입니다.
+
+### Mount Control
+
+`Mount Control` 영역은 LX200 OnStep의 간단한 초기화/주차/수동 이동 기능을 제공합니다.
+
+- 현재 Park/Unpark 상태를 표시합니다.
+- `At Home`, `Return Home`, `Park`, `Unpark`, `Set-Park` 명령을 보낼 수 있습니다.
+- Slew Rate는 OnStep의 0-9 단계를 그대로 사용합니다. `0`은 Off, `1`은 `1/2x`, `9`는 `Max`입니다.
+- 방향 버튼은 누르고 있는 동안 이동하고, 손을 떼면 정지 명령을 보냅니다.
+- 대각선 버튼은 North/South와 East/West 명령을 함께 보냅니다.
+
+이 웹 제어는 INDI 드라이버에 직접 명령을 보내는 보조 UI입니다. Object Details 화면의 숫자 키 기반 Sync/GoTo 기능과 함께 사용할 수 있습니다.
+
 ## PiFinder 제어 켜기
 
 PiFinder UI에서 다음 메뉴로 이동합니다.
 
 ```text
-Settings > Experimental > Mount Control > On
+Tools > Experimental > Mount Control > On
 ```
 
 이 값을 변경하면 선택형 `MountControl` 프로세스를 깨끗하게 시작하거나 종료하기 위해 PiFinder가 재시작됩니다.
+
+Mount Control 프로세스는 켜져 있어도 시작 직후 INDI에 바로 연결하지 않습니다. Object Details 화면에서 `1`, Sync, GoTo 같은 마운트 명령을 실행할 때 INDI 연결을 초기화합니다.
 
 고급 설정 키는 `default_config.json`에 있습니다.
 
 ```json
 "mount_control": false,
 "mount_control_indi_host": "localhost",
-"mount_control_indi_port": 7624
+"mount_control_indi_port": 7624,
+"onstep_connection_type": "network",
+"onstep_serial_port": "",
+"onstep_network_host": "",
+"onstep_network_port": 9999
 ```
 
 ## Object Details 숫자 키 맵

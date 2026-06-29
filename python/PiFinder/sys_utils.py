@@ -53,6 +53,35 @@ STA_5GHZ_SCAN_FREQ = (
     "5745 5765 5785 5805 5825"
 )
 NMCLI_COMMAND = "nmcli"
+INDI_SETPROP_COMMAND = "indi_setprop"
+INDI_GETPROP_COMMAND = "indi_getprop"
+DEFAULT_INDI_SERVER_HOST = "localhost"
+DEFAULT_INDI_SERVER_PORT = 7624
+DEFAULT_ONSTEP_NETWORK_PORT = 9999
+DEFAULT_ONSTEP_DEVICE_NAME = "LX200 OnStep"
+ONSTEP_CONNECTION_USB = "usb"
+ONSTEP_CONNECTION_NETWORK = "network"
+ONSTEP_DISPLAY_PROPERTIES = [
+    "CONNECTION.CONNECT",
+    "CONNECTION_MODE.CONNECTION_SERIAL",
+    "CONNECTION_MODE.CONNECTION_TCP",
+    "DEVICE_PORT.PORT",
+    "DEVICE_ADDRESS.ADDRESS",
+    "DEVICE_ADDRESS.PORT",
+    "TIME_UTC.UTC",
+    "GEOGRAPHIC_COORD.LAT",
+    "GEOGRAPHIC_COORD.LONG",
+    "GEOGRAPHIC_COORD.ELEV",
+    "TELESCOPE_PARK.PARK",
+    "TELESCOPE_PARK.UNPARK",
+    "TELESCOPE_HOME.SET",
+    "TELESCOPE_HOME.GO",
+    "TELESCOPE_PARK_OPTION.PARK_CURRENT",
+    "TELESCOPE_PARK_OPTION.PARK_DEFAULT",
+    "TELESCOPE_PARK_OPTION.PARK_WRITE_DATA",
+    "TELESCOPE_PARK_OPTION.PARK_PURGE_DATA",
+    *[f"TELESCOPE_SLEW_RATE.{rate}" for rate in range(10)],
+]
 
 BLUETOOTHCTL_COMMAND = "bluetoothctl"
 BLUETOOTH_DEVICE_RE = re.compile(
@@ -63,6 +92,176 @@ BLUETOOTH_DEVICE_FIELD_RE = re.compile(
 )
 BLUETOOTH_MAC_RE = re.compile(r"^[0-9A-Fa-f:]{17}$")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def list_onstep_serial_ports() -> list[dict[str, str]]:
+    """
+    Return likely USB serial ports for an OnStep controller.
+
+    Prefer stable /dev/serial/by-id names when available, then include common
+    ttyUSB/ttyACM fallbacks. The label includes the resolved target for clarity.
+    """
+    ports: dict[str, dict[str, str]] = {}
+    for pattern in ["/dev/serial/by-id/*", "/dev/ttyUSB*", "/dev/ttyACM*"]:
+        for path in sorted(glob.glob(pattern)):
+            try:
+                resolved = os.path.realpath(path)
+            except OSError:
+                resolved = path
+            label = path
+            if resolved != path:
+                label = f"{path} ({resolved})"
+            ports[path] = {"path": path, "label": label, "resolved": resolved}
+    return sorted(ports.values(), key=lambda item: item["path"])
+
+
+def _run_indi_command(args: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def get_indi_onstep_properties(
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+    device_name: str = DEFAULT_ONSTEP_DEVICE_NAME,
+) -> dict[str, str]:
+    property_names = [
+        f"{device_name}.{property_name}" for property_name in ONSTEP_DISPLAY_PROPERTIES
+    ]
+    try:
+        result = _run_indi_command(
+            [
+                INDI_GETPROP_COMMAND,
+                "-h",
+                server_host,
+                "-p",
+                str(server_port),
+                "-t",
+                "1",
+                *property_names,
+            ],
+            timeout=5.0,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+
+    prefix = f"{device_name}."
+    properties: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if not line.startswith(prefix) or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        properties[key] = value
+    return properties
+
+
+def apply_indi_onstep_connection(
+    connection_type: str,
+    serial_port: str = "",
+    network_host: str = "",
+    network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+    device_name: str = DEFAULT_ONSTEP_DEVICE_NAME,
+) -> dict[str, Any]:
+    connection_type = connection_type.strip().lower()
+    if connection_type not in {ONSTEP_CONNECTION_USB, ONSTEP_CONNECTION_NETWORK}:
+        raise ValueError("Invalid OnStep connection type")
+
+    properties = [f"{device_name}.CONNECTION.DISCONNECT=On"]
+    if connection_type == ONSTEP_CONNECTION_USB:
+        if not serial_port.strip().startswith("/dev/"):
+            raise ValueError("USB serial port must be a /dev path")
+        properties.extend(
+            [
+                f"{device_name}.CONNECTION_MODE.CONNECTION_SERIAL=On",
+                f"{device_name}.DEVICE_PORT.PORT={serial_port.strip()}",
+            ]
+        )
+    else:
+        if not network_host.strip():
+            raise ValueError("Network host/IP is required")
+        if not (1 <= int(network_port) <= 65535):
+            raise ValueError("Network port must be between 1 and 65535")
+        properties.extend(
+            [
+                f"{device_name}.CONNECTION_MODE.CONNECTION_TCP=On",
+                f"{device_name}.CONNECTION_TYPE.TCP=On",
+                f"{device_name}.DEVICE_ADDRESS.ADDRESS={network_host.strip()}",
+                f"{device_name}.DEVICE_ADDRESS.PORT={int(network_port)}",
+            ]
+        )
+
+    properties.extend(
+        [
+            f"{device_name}.CONNECTION.CONNECT=On",
+            f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On",
+        ]
+    )
+
+    try:
+        result = _run_indi_command(
+            [
+                INDI_SETPROP_COMMAND,
+                "-h",
+                server_host,
+                "-p",
+                str(server_port),
+                *properties,
+            ],
+            timeout=10.0,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("indi_setprop is not installed") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Timed out while applying INDI OnStep settings") from exc
+
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "properties": properties,
+    }
+
+
+def apply_indi_onstep_properties(
+    properties: list[str],
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+) -> dict[str, Any]:
+    if not properties:
+        raise ValueError("No INDI properties were provided")
+
+    try:
+        result = _run_indi_command(
+            [
+                INDI_SETPROP_COMMAND,
+                "-h",
+                server_host,
+                "-p",
+                str(server_port),
+                *properties,
+            ],
+            timeout=10.0,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("indi_setprop is not installed") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Timed out while applying INDI properties") from exc
+
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "properties": properties,
+    }
 
 
 class Network:

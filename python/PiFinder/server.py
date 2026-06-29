@@ -962,6 +962,310 @@ class Server:
         def tools():
             return app.jinja_env.get_template("tools.html").render(title=_("Tools"))
 
+        def _indi_json_response(ok=True, message="", error=""):
+            status = 200 if ok else 400
+            return jsonify({"ok": ok, "message": message, "error": error}), status
+
+        def _indi_config_values():
+            cfg = config.Config()
+            cfg.load_config()
+            return {
+                "connection_type": cfg.get_option("onstep_connection_type", "network"),
+                "network_host": cfg.get_option("onstep_network_host", ""),
+                "network_port": int(cfg.get_option("onstep_network_port", 9999)),
+                "serial_port": cfg.get_option("onstep_serial_port", ""),
+                "server_host": cfg.get_option("mount_control_indi_host", "localhost"),
+                "server_port": int(cfg.get_option("mount_control_indi_port", 7624)),
+            }
+
+        def _pifinder_location_time_values():
+            source = "Current time"
+            lat = lon = elev = ""
+            try:
+                location = self.shared_state.location()
+            except Exception:
+                location = None
+
+            if location and getattr(location, "lock", False):
+                lat = location.lat
+                lon = location.lon
+                elev = location.altitude if location.altitude is not None else 0
+                source = "GPS / loaded location"
+            else:
+                cfg = config.Config()
+                cfg.load_config()
+                default_location = cfg.locations.default_location
+                if default_location:
+                    lat = default_location.latitude
+                    lon = default_location.longitude
+                    elev = default_location.height
+                    source = f"Default location: {default_location.name}"
+
+            return {
+                "latitude": lat,
+                "longitude": lon,
+                "elevation": elev,
+                "utc_time": datetime.now(timezone.utc)
+                .replace(microsecond=0)
+                .strftime("%Y-%m-%dT%H:%M:%S"),
+                "source": source,
+            }
+
+        def _render_indi_page(status_message="", error_message=""):
+            indi_cfg = _indi_config_values()
+
+            try:
+                ap_clients = self.network.get_ap_clients()
+            except Exception:
+                logger.exception("Could not get AP clients for INDI setup")
+                ap_clients = []
+
+            onstep_props = sys_utils.get_indi_onstep_properties(
+                server_host=indi_cfg["server_host"],
+                server_port=indi_cfg["server_port"],
+            )
+            return app.jinja_env.get_template("indi_mount.html").render(
+                title=_("INDI"),
+                **indi_cfg,
+                serial_ports=sys_utils.list_onstep_serial_ports(),
+                ap_clients=ap_clients,
+                onstep_props=onstep_props,
+                pifinder_location_time=_pifinder_location_time_values(),
+                slew_rate_labels=[
+                    "Off",
+                    "1/2x - VSlow",
+                    "1x - Slow",
+                    "2x",
+                    "4x",
+                    "8x - Center",
+                    "20x - Find",
+                    "48x - Fast",
+                    "1/2 Max - VFast",
+                    "Max",
+                ],
+                status_message=status_message,
+                error_message=error_message,
+            )
+
+        @app.route("/indi")
+        @auth_required
+        def indi_page():
+            return _render_indi_page()
+
+        @app.route("/tools/indi_mount")
+        @auth_required
+        def indi_mount_setup_redirect():
+            return redirect("/indi")
+
+        @app.route("/indi/current_values")
+        @auth_required
+        def indi_current_values():
+            indi_cfg = _indi_config_values()
+            return jsonify(
+                {
+                    "ok": True,
+                    "pifinder_location_time": _pifinder_location_time_values(),
+                    "onstep_props": sys_utils.get_indi_onstep_properties(
+                        server_host=indi_cfg["server_host"],
+                        server_port=indi_cfg["server_port"],
+                    ),
+                }
+            )
+
+        @app.route("/indi/driver", methods=["POST"])
+        @auth_required
+        def indi_mount_update():
+            connection_type = (request.form.get("connection_type") or "network").strip()
+            serial_port = (request.form.get("serial_port") or "").strip()
+            serial_manual = (request.form.get("serial_manual") or "").strip()
+            network_host = (request.form.get("network_host") or "").strip()
+            network_manual = (request.form.get("network_manual") or "").strip()
+            server_host = (request.form.get("server_host") or "localhost").strip()
+
+            if serial_port == "__manual__":
+                serial_port = serial_manual
+            if network_host == "__manual__":
+                network_host = network_manual
+
+            try:
+                network_port = int(request.form.get("network_port") or "9999")
+                server_port = int(request.form.get("server_port") or "7624")
+                result = sys_utils.apply_indi_onstep_connection(
+                    connection_type=connection_type,
+                    serial_port=serial_port,
+                    network_host=network_host,
+                    network_port=network_port,
+                    server_host=server_host,
+                    server_port=server_port,
+                )
+                if not result["ok"]:
+                    raise RuntimeError(
+                        result.get("stderr")
+                        or result.get("stdout")
+                        or "INDI setting command failed"
+                    )
+
+                cfg = config.Config()
+                cfg.load_config()
+                cfg.set_option("onstep_connection_type", connection_type)
+                cfg.set_option("onstep_serial_port", serial_port)
+                cfg.set_option("onstep_network_host", network_host)
+                cfg.set_option("onstep_network_port", network_port)
+                cfg.set_option("mount_control_indi_host", server_host)
+                cfg.set_option("mount_control_indi_port", server_port)
+                self.ui_queue.put("reload_config")
+                return _render_indi_page(_("INDI OnStep settings applied"))
+            except (RuntimeError, ValueError) as e:
+                logger.warning("Could not apply INDI OnStep settings: %s", e)
+                return _render_indi_page(error_message=str(e))
+
+        def _apply_indi_action(properties, success_message):
+            indi_cfg = _indi_config_values()
+            result = sys_utils.apply_indi_onstep_properties(
+                properties,
+                server_host=indi_cfg["server_host"],
+                server_port=indi_cfg["server_port"],
+            )
+            if not result["ok"]:
+                raise RuntimeError(
+                    result.get("stderr")
+                    or result.get("stdout")
+                    or "INDI command failed"
+                )
+            return _render_indi_page(success_message)
+
+        def _apply_indi_action_json(properties, success_message):
+            indi_cfg = _indi_config_values()
+            result = sys_utils.apply_indi_onstep_properties(
+                properties,
+                server_host=indi_cfg["server_host"],
+                server_port=indi_cfg["server_port"],
+            )
+            if not result["ok"]:
+                raise RuntimeError(
+                    result.get("stderr")
+                    or result.get("stdout")
+                    or "INDI command failed"
+                )
+            return _indi_json_response(message=success_message)
+
+        @app.route("/indi/park", methods=["POST"])
+        @auth_required
+        def indi_park():
+            action = (request.form.get("park_action") or "").strip()
+            action_map = {
+                "PARK": ["LX200 OnStep.TELESCOPE_PARK.PARK=On"],
+                "UNPARK": ["LX200 OnStep.TELESCOPE_PARK.UNPARK=On"],
+                "SET_HOME": ["LX200 OnStep.TELESCOPE_HOME.SET=On"],
+                "RETURN_HOME": ["LX200 OnStep.TELESCOPE_HOME.GO=On"],
+                "SET_PARK": ["LX200 OnStep.TELESCOPE_PARK_OPTION.PARK_CURRENT=On"],
+            }
+            try:
+                if action not in action_map:
+                    raise ValueError("Invalid park action")
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _apply_indi_action_json(
+                        action_map[action],
+                        f"{action.replace('_', ' ').title()} command sent",
+                    )
+                return _apply_indi_action(
+                    action_map[action],
+                    _(f"{action.replace('_', ' ').title()} command sent"),
+                )
+            except (RuntimeError, ValueError) as e:
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _indi_json_response(ok=False, error=str(e))
+                return _render_indi_page(error_message=str(e))
+
+        @app.route("/indi/slew_rate", methods=["POST"])
+        @auth_required
+        def indi_slew_rate():
+            try:
+                rate = int(request.form.get("slew_rate") or "6")
+                if not 0 <= rate <= 9:
+                    raise ValueError("Slew rate must be between 0 and 9")
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _apply_indi_action_json(
+                        [f"LX200 OnStep.TELESCOPE_SLEW_RATE.{rate}=On"],
+                        f"Slew rate {rate} selected",
+                    )
+                return _apply_indi_action(
+                    [f"LX200 OnStep.TELESCOPE_SLEW_RATE.{rate}=On"],
+                    _(f"Slew rate {rate} selected"),
+                )
+            except (RuntimeError, ValueError) as e:
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _indi_json_response(ok=False, error=str(e))
+                return _render_indi_page(error_message=str(e))
+
+        @app.route("/indi/motion", methods=["POST"])
+        @auth_required
+        def indi_motion():
+            direction = (request.form.get("direction") or "").strip().lower()
+            motion_map = {
+                "north": "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
+                "south": "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
+                "west": "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                "east": "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                "northeast": [
+                    "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
+                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                ],
+                "northwest": [
+                    "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
+                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                ],
+                "southeast": [
+                    "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
+                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                ],
+                "southwest": [
+                    "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
+                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                ],
+                "stop": "LX200 OnStep.TELESCOPE_ABORT_MOTION.ABORT=On",
+            }
+            try:
+                if direction not in motion_map:
+                    raise ValueError("Invalid motion command")
+                properties = motion_map[direction]
+                if isinstance(properties, str):
+                    properties = [properties]
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _apply_indi_action_json(properties, "Motion command sent")
+                return _apply_indi_action(properties, _("Motion command sent"))
+            except (RuntimeError, ValueError) as e:
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _indi_json_response(ok=False, error=str(e))
+                return _render_indi_page(error_message=str(e))
+
+        @app.route("/indi/location_time", methods=["POST"])
+        @auth_required
+        def indi_location_time():
+            try:
+                lat = float(request.form.get("latitude") or "0")
+                lon = float(request.form.get("longitude") or "0")
+                elev = float(request.form.get("elevation") or "0")
+                if not -90 <= lat <= 90:
+                    raise ValueError("Latitude must be between -90 and 90")
+                if not -180 <= lon <= 180:
+                    raise ValueError("Longitude must be between -180 and 180")
+                utc_time = datetime.now(timezone.utc).replace(microsecond=0).strftime(
+                    "%Y-%m-%dT%H:%M:%S"
+                )
+                return _apply_indi_action(
+                    [
+                        f"LX200 OnStep.GEOGRAPHIC_COORD.LAT={lat}",
+                        f"LX200 OnStep.GEOGRAPHIC_COORD.LONG={lon}",
+                        f"LX200 OnStep.GEOGRAPHIC_COORD.ELEV={elev}",
+                        f"LX200 OnStep.TIME_UTC.UTC={utc_time}",
+                        "LX200 OnStep.TIME_UTC.OFFSET=0",
+                    ],
+                    _("Location and UTC time sent"),
+                )
+            except (RuntimeError, ValueError) as e:
+                return _render_indi_page(error_message=str(e))
+
         @app.route("/logs")
         @auth_required
         def logs_page():
