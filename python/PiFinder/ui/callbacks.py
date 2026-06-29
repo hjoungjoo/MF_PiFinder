@@ -359,6 +359,14 @@ def indi_set_park(ui_module: UIModule) -> None:
     )
 
 
+def indi_restart_driver(ui_module: UIModule) -> None:
+    _send_mount_control(
+        ui_module,
+        {"type": "restart_driver"},
+        "INDI Restart",
+    )
+
+
 def restart_system(ui_module: UIModule) -> None:
     """
     Restarts the system

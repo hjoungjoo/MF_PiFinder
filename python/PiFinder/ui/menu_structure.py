@@ -112,6 +112,10 @@ pifinder_menu = {
                                     "name": _("Set-Park"),
                                     "callback": callbacks.indi_set_park,
                                 },
+                                {
+                                    "name": _("Restart INDI"),
+                                    "callback": callbacks.indi_restart_driver,
+                                },
                             ],
                         },
                         {

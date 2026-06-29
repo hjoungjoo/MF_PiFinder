@@ -28,16 +28,17 @@
     <h5 class="grey-text">{{ _('Current INDI Driver State') }}</h5>
     <div class="row">
       <a href="#" id="indi_web_manager_link" class="btn">{{ _('INDI Web Manager') }}</a>
+      <button type="button" id="restart_indi_button" class="btn">{{ _('Restart INDI') }}</button>
     </div>
     {% if onstep_props %}
       <table class="striped grey-text">
         <tbody>
-          <tr><td>{{ _('Connection') }}</td><td>{{ onstep_props.get('LX200 OnStep.CONNECTION.CONNECT', '') }}</td></tr>
-          <tr><td>{{ _('Serial Mode') }}</td><td>{{ onstep_props.get('LX200 OnStep.CONNECTION_MODE.CONNECTION_SERIAL', '') }}</td></tr>
-          <tr><td>{{ _('TCP Mode') }}</td><td>{{ onstep_props.get('LX200 OnStep.CONNECTION_MODE.CONNECTION_TCP', '') }}</td></tr>
-          <tr><td>{{ _('Serial Port') }}</td><td>{{ onstep_props.get('LX200 OnStep.DEVICE_PORT.PORT', '') }}</td></tr>
-          <tr><td>{{ _('Network Host') }}</td><td>{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.ADDRESS', '') }}</td></tr>
-          <tr><td>{{ _('Network Port') }}</td><td>{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.PORT', '') }}</td></tr>
+          <tr><td>{{ _('Connection') }}</td><td id="onstep_connection_value">{{ onstep_props.get('LX200 OnStep.CONNECTION.CONNECT', '') }}</td></tr>
+          <tr><td>{{ _('Serial Mode') }}</td><td id="onstep_serial_mode_value">{{ onstep_props.get('LX200 OnStep.CONNECTION_MODE.CONNECTION_SERIAL', '') }}</td></tr>
+          <tr><td>{{ _('TCP Mode') }}</td><td id="onstep_tcp_mode_value">{{ onstep_props.get('LX200 OnStep.CONNECTION_MODE.CONNECTION_TCP', '') }}</td></tr>
+          <tr><td>{{ _('Serial Port') }}</td><td id="onstep_serial_port_value">{{ onstep_props.get('LX200 OnStep.DEVICE_PORT.PORT', '') }}</td></tr>
+          <tr><td>{{ _('Network Host') }}</td><td id="onstep_network_host_value">{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.ADDRESS', '') }}</td></tr>
+          <tr><td>{{ _('Network Port') }}</td><td id="onstep_network_port_value">{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.PORT', '') }}</td></tr>
           <tr><td>{{ _('OnStep Location') }}</td><td id="onstep_location_value">{{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LAT', '-') }}, {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LONG', '-') }} / {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.ELEV', '-') }}m</td></tr>
           <tr><td>{{ _('OnStep UTC Time') }}</td><td id="onstep_utc_time_value">{{ onstep_props.get('LX200 OnStep.TIME_UTC.UTC', '-') }}</td></tr>
         </tbody>
@@ -90,7 +91,7 @@
     <h5 class="grey-text">{{ _('Mount Control') }}</h5>
     <div class="indi-park-state">
       <span>{{ _('Park State') }}</span>
-      <strong>
+      <strong id="indi_park_state_value">
         {% if onstep_props.get('LX200 OnStep.TELESCOPE_PARK.PARK', '') == 'On' %}
           {{ _('Parked') }}
         {% elif onstep_props.get('LX200 OnStep.TELESCOPE_PARK.UNPARK', '') == 'On' %}
@@ -232,6 +233,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   var connectionType = document.getElementById('connection_type');
   var managerLink = document.getElementById('indi_web_manager_link');
+  var restartIndiButton = document.getElementById('restart_indi_button');
   var networkHost = document.getElementById('network_host');
   var networkManual = document.getElementById('network_manual');
   var networkSettings = document.getElementById('network_settings');
@@ -358,28 +360,60 @@ document.addEventListener('DOMContentLoaded', function() {
       )
     );
     setText('onstep_utc_time_value', textOrDash(onstep['LX200 OnStep.TIME_UTC.UTC']));
+    setText('onstep_connection_value', textOrDash(onstep['LX200 OnStep.CONNECTION.CONNECT']));
+    setText('onstep_serial_mode_value', textOrDash(onstep['LX200 OnStep.CONNECTION_MODE.CONNECTION_SERIAL']));
+    setText('onstep_tcp_mode_value', textOrDash(onstep['LX200 OnStep.CONNECTION_MODE.CONNECTION_TCP']));
+    setText('onstep_serial_port_value', textOrDash(onstep['LX200 OnStep.DEVICE_PORT.PORT']));
+    setText('onstep_network_host_value', textOrDash(onstep['LX200 OnStep.DEVICE_ADDRESS.ADDRESS']));
+    setText('onstep_network_port_value', textOrDash(onstep['LX200 OnStep.DEVICE_ADDRESS.PORT']));
+    if (onstep['LX200 OnStep.TELESCOPE_PARK.PARK'] === 'On') {
+      setText('indi_park_state_value', '{{ _("Parked") }}');
+    } else if (onstep['LX200 OnStep.TELESCOPE_PARK.UNPARK'] === 'On') {
+      setText('indi_park_state_value', '{{ _("Unparked") }}');
+    } else {
+      setText('indi_park_state_value', '{{ _("Unknown") }}');
+    }
+    if (slewRate) {
+      for (var rate = 0; rate <= 9; rate += 1) {
+        if (onstep['LX200 OnStep.TELESCOPE_SLEW_RATE.' + rate] === 'On') {
+          slewRate.value = String(rate);
+          M.FormSelect.init(slewRate);
+          break;
+        }
+      }
+    }
     M.updateTextFields();
+  }
+
+  function refreshIndiState(showStatus) {
+    if (showStatus) {
+      setActionStatus('{{ _("Reading") }}');
+    }
+    return fetch('/indi/current_values', {
+      headers: {'X-Requested-With': 'XMLHttpRequest'}
+    }).then(function(response) {
+      return response.json().then(function(payload) {
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || '{{ _("Could not read current values") }}');
+        }
+        return payload;
+      });
+    }).then(function(payload) {
+      updateLocationValues(payload);
+      if (showStatus) {
+        setActionStatus('{{ _("Updated") }}');
+      }
+    }).catch(function(error) {
+      if (showStatus) {
+        setActionStatus(error.message);
+      }
+    });
   }
 
   if (reloadLocationValues) {
     reloadLocationValues.addEventListener('click', function(event) {
       event.preventDefault();
-      setActionStatus('{{ _("Reading") }}');
-      fetch('/indi/current_values', {
-        headers: {'X-Requested-With': 'XMLHttpRequest'}
-      }).then(function(response) {
-        return response.json().then(function(payload) {
-          if (!response.ok || !payload.ok) {
-            throw new Error(payload.error || '{{ _("Could not read current values") }}');
-          }
-          return payload;
-        });
-      }).then(function(payload) {
-        updateLocationValues(payload);
-        setActionStatus('{{ _("Updated") }}');
-      }).catch(function(error) {
-        setActionStatus(error.message);
-      });
+      refreshIndiState(true);
     });
   }
 
@@ -473,6 +507,20 @@ document.addEventListener('DOMContentLoaded', function() {
   if (managerLink) {
     managerLink.href = window.location.protocol + '//' + window.location.hostname + ':8624/';
   }
+  if (restartIndiButton) {
+    restartIndiButton.addEventListener('click', function(event) {
+      event.preventDefault();
+      setActionStatus('{{ _("Restarting INDI") }}');
+      restartIndiButton.disabled = true;
+      postIndiAction('/indi/restart', {})
+        .then(function() { setActionStatus('{{ _("Restart requested") }}'); })
+        .catch(function(error) { setActionStatus(error.message); })
+        .finally(function() { restartIndiButton.disabled = false; });
+    });
+  }
+  setInterval(function() {
+    refreshIndiState(false);
+  }, 5000);
   updateConnectionSections();
   updateNetworkManual();
 });

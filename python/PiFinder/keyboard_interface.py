@@ -8,6 +8,8 @@ logger = logging.getLogger("Keyboard.Interface")
 
 class KeyboardInterface:
     TEXT_BASE = 1000
+    NUMBER_PRESS_BASE = 3000
+    NUMBER_RELEASE_BASE = 3100
     NA = 10
     PLUS = 11
     MINUS = 12
@@ -41,6 +43,30 @@ class KeyboardInterface:
     @classmethod
     def text_from_keycode(cls, keycode: int) -> str:
         return chr(keycode - cls.TEXT_BASE)
+
+    @classmethod
+    def number_press_key(cls, number: int) -> int:
+        return cls.NUMBER_PRESS_BASE + number
+
+    @classmethod
+    def number_release_key(cls, number: int) -> int:
+        return cls.NUMBER_RELEASE_BASE + number
+
+    @classmethod
+    def is_number_press_key(cls, keycode: int) -> bool:
+        return cls.NUMBER_PRESS_BASE <= keycode < cls.NUMBER_PRESS_BASE + 10
+
+    @classmethod
+    def is_number_release_key(cls, keycode: int) -> bool:
+        return cls.NUMBER_RELEASE_BASE <= keycode < cls.NUMBER_RELEASE_BASE + 10
+
+    @classmethod
+    def number_from_press_keycode(cls, keycode: int) -> int:
+        return keycode - cls.NUMBER_PRESS_BASE
+
+    @classmethod
+    def number_from_release_keycode(cls, keycode: int) -> int:
+        return keycode - cls.NUMBER_RELEASE_BASE
 
     def __init__(self, q=None):
         self.q = q

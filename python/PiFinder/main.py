@@ -698,7 +698,19 @@ def main(
                             if ctrl_held and event.key in pygame_ctrl_key_map:
                                 keyboard_queue.put(pygame_ctrl_key_map[event.key])
                             elif event.key in pygame_key_map:
-                                keyboard_queue.put(pygame_key_map[event.key])
+                                mapped_key = pygame_key_map[event.key]
+                                if isinstance(mapped_key, int) and 1 <= mapped_key <= 9:
+                                    keyboard_queue.put(
+                                        keyboard_base.number_press_key(mapped_key)
+                                    )
+                                else:
+                                    keyboard_queue.put(mapped_key)
+                        elif event.type == pygame.KEYUP:
+                            mapped_key = pygame_key_map.get(event.key)
+                            if isinstance(mapped_key, int) and 1 <= mapped_key <= 9:
+                                keyboard_queue.put(
+                                    keyboard_base.number_release_key(mapped_key)
+                                )
                         elif event.type == pygame.QUIT:
                             logger.info("Pygame window closed, exiting...")
                             raise KeyboardInterrupt
@@ -847,8 +859,7 @@ def main(
                 # Keyboard
                 keycode = None
                 try:
-                    while True:
-                        keycode = keyboard_queue.get(block=False)
+                    keycode = keyboard_queue.get(block=False)
                 except queue.Empty:
                     pass
 
@@ -856,7 +867,17 @@ def main(
                 # state changes.  If so, we DO NOT process this keystroke
                 if keycode is not None and power_manager.register_activity() is False:
                     # ignore keystroke if we have been asleep
-                    if keyboard_base.is_text_key(keycode):
+                    if keyboard_base.is_number_press_key(keycode):
+                        menu_manager.key_number_press(
+                            keyboard_base.number_from_press_keycode(keycode)
+                        )
+
+                    elif keyboard_base.is_number_release_key(keycode):
+                        menu_manager.key_number_release(
+                            keyboard_base.number_from_release_keycode(keycode)
+                        )
+
+                    elif keyboard_base.is_text_key(keycode):
                         menu_manager.key_text(keyboard_base.text_from_keycode(keycode))
 
                     elif keycode > 99:

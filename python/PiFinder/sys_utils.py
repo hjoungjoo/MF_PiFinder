@@ -55,6 +55,7 @@ STA_5GHZ_SCAN_FREQ = (
 NMCLI_COMMAND = "nmcli"
 INDI_SETPROP_COMMAND = "indi_setprop"
 INDI_GETPROP_COMMAND = "indi_getprop"
+INDI_WEB_MANAGER_SERVICE = "indiwebmanager.service"
 DEFAULT_INDI_SERVER_HOST = "localhost"
 DEFAULT_INDI_SERVER_PORT = 7624
 DEFAULT_ONSTEP_NETWORK_PORT = 9999
@@ -261,6 +262,30 @@ def apply_indi_onstep_properties(
         "stdout": result.stdout,
         "stderr": result.stderr,
         "properties": properties,
+    }
+
+
+def restart_indi_web_manager(timeout: float = 30.0) -> dict[str, Any]:
+    """Restart INDI Web Manager, which also restarts indiserver and drivers."""
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "systemctl", "restart", INDI_WEB_MANAGER_SERVICE],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("systemctl or sudo is not available") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Timed out while restarting INDI Web Manager") from exc
+
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "service": INDI_WEB_MANAGER_SERVICE,
     }
 
 

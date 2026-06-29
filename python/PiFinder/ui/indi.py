@@ -113,17 +113,19 @@ class UIIndiInit(UIIndiBase):
         self._draw_text((6, y), loc_text[:28])
         y += line_h
 
+        hint_font = self.fonts.small.font
+        hint_line_h = max(10, self.fonts.small.height + 2)
         hints = [
-            _("1 Init"),
-            _("2 Time/Loc"),
-            _("3 Park  6 Unpark"),
-            _("4 Home  5 Return"),
-            _("7 Set-Park"),
+            _("1 Init   2 Time"),
+            _("3 Park   6 Unpark"),
+            _("4 Home   5 Return"),
+            _("7 SetPark"),
+            _("8 Restart"),
         ]
-        hint_y = max(y + 4, self.display_class.resY - (len(hints) * line_h) - 2)
+        hint_y = max(y + 4, self.display_class.resY - (len(hints) * hint_line_h) - 2)
         for hint in hints:
-            self._draw_text((6, hint_y), hint, fill=self.colors.get(128))
-            hint_y += line_h
+            self._draw_text((6, hint_y), hint, font=hint_font, fill=self.colors.get(128))
+            hint_y += hint_line_h
 
         return self.screen_update()
 
@@ -149,6 +151,9 @@ class UIIndiInit(UIIndiBase):
         elif number == 7:
             if self._send_mount({"type": "park_action", "action": "set_park"}):
                 self.message(_("Set-Park"), 1)
+        elif number == 8:
+            if self._send_mount({"type": "restart_driver"}):
+                self.message(_("INDI Restart"), 1)
 
     def key_square(self):
         self.key_number(1)
@@ -220,7 +225,6 @@ class UIIndiGuide(UIIndiBase):
         2: "south",
         3: "southeast",
         4: "west",
-        5: "stop",
         6: "east",
         7: "northwest",
         8: "north",
@@ -237,6 +241,9 @@ class UIIndiGuide(UIIndiBase):
         "w": "north",
         "e": "northeast",
     }
+
+    def active(self):
+        self._send_mount({"type": "refresh_slew_rate"})
 
     def _draw_camera_background(self):
         try:
@@ -277,14 +284,21 @@ class UIIndiGuide(UIIndiBase):
         center_y = (self.display_class.resY - line_h) // 2
         bottom_hint_y = self.display_class.resY - (line_h * 3) - 2
         bottom_key_y = max(center_y + line_h + 2, bottom_hint_y - line_h - 2)
+        side_key_y = (top_y + bottom_key_y) // 2
 
-        centered(top_y, "7 8 9")
-        centered(bottom_key_y, "1 2 3")
-        overlay_text(4, center_y, "4")
+        key_9_w, _height = text_size("9")
+        key_3_w, _height = text_size("3")
+        overlay_text(4, top_y, "7")
+        centered(top_y, "8")
+        overlay_text(self.display_class.resX - key_9_w - 4, top_y, "9")
+        overlay_text(4, side_key_y, "4")
         right_w, _height = text_size("6")
-        overlay_text(self.display_class.resX - right_w - 4, center_y, "6")
+        overlay_text(self.display_class.resX - right_w - 4, side_key_y, "6")
+        overlay_text(4, bottom_key_y, "1")
+        centered(bottom_key_y, "2")
+        overlay_text(self.display_class.resX - key_3_w - 4, bottom_key_y, "3")
 
-        overlay_text(4, bottom_hint_y, "5:stop")
+        overlay_text(4, bottom_hint_y, _("Release: stop"))
         overlay_text(
             4,
             bottom_hint_y + line_h,
@@ -305,9 +319,16 @@ class UIIndiGuide(UIIndiBase):
         self.update(force=True)
 
     def key_number(self, number):
+        pass
+
+    def key_number_press(self, number):
         direction = self._number_direction.get(number)
         if direction:
             self._move(direction)
+
+    def key_number_release(self, number):
+        if number in self._number_direction:
+            self._move("stop")
 
     def key_text(self, char: str):
         direction = self._text_direction.get(char.lower())

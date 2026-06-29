@@ -17,7 +17,7 @@ from datetime import timezone
 from multiprocessing import Queue
 from typing import Any, Optional
 
-from PiFinder import utils
+from PiFinder import sys_utils, utils
 from PiFinder.multiproclogging import MultiprocLogging
 
 try:
@@ -311,6 +311,37 @@ class MountControlIndi:
         elif not self.connected:
             self._write_controller_status("idle", "INDI mount waiting")
 
+    def _apply_indi_properties(
+        self,
+        properties: list[str],
+        success_state: str,
+        success_message: str,
+        failure_state: str,
+    ) -> bool:
+        try:
+            result = sys_utils.apply_indi_onstep_properties(
+                properties,
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+            )
+        except Exception as exc:
+            logger.exception("INDI setprop command failed")
+            self._write_controller_status(failure_state, str(exc))
+            return False
+
+        if not result.get("ok"):
+            error = (
+                result.get("stderr")
+                or result.get("stdout")
+                or "INDI command failed"
+            )
+            logger.warning("INDI setprop returned failure: %s", error)
+            self._write_controller_status(failure_state, error)
+            return False
+
+        self._write_controller_status(success_state, success_message)
+        return True
+
     def set_current_position(self, ra_deg: float, dec_deg: float) -> None:
         self.current_ra = ra_deg % 360.0
         self.current_dec = dec_deg
@@ -414,6 +445,34 @@ class MountControlIndi:
         self.device = None
         self._write_controller_status("disconnected", message)
 
+    def restart_driver(self) -> bool:
+        logger.info("Restarting INDI Web Manager, server, and mount driver")
+        self._write_controller_status("restarting", "Restarting INDI server/driver")
+        self._console("INDI server\nrestarting")
+        self.disconnect()
+        self.client = None
+        self.device = None
+        try:
+            result = sys_utils.restart_indi_web_manager(timeout=30)
+            if not result["ok"]:
+                error = (
+                    result.get("stderr")
+                    or result.get("stdout")
+                    or "Could not restart INDI Web Manager"
+                )
+                logger.error("Could not restart INDI Web Manager: %s", error)
+                self._write_controller_status("restart_failed", error)
+                self._console("INDI restart\nfailed")
+                return False
+        except RuntimeError as exc:
+            logger.error("Could not restart INDI Web Manager: %s", exc)
+            self._write_controller_status("restart_failed", str(exc))
+            self._console("INDI restart\nfailed")
+            return False
+
+        time.sleep(3.0)
+        return self.connect()
+
     def disconnect(self) -> None:
         if self.client is not None:
             try:
@@ -424,30 +483,38 @@ class MountControlIndi:
         self._write_controller_status("stopped", "Mount-control process stopped")
 
     def sync_location_time(self) -> None:
-        if self.client is None or self.device is None:
-            return
-
         try:
+            properties = []
             location = self.shared_state.location()
             if location and location.lock:
-                values = {"LAT": location.lat, "LONG": location.lon}
+                properties.extend(
+                    [
+                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.GEOGRAPHIC_COORD.LAT={float(location.lat)}",
+                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.GEOGRAPHIC_COORD.LONG={float(location.lon)}",
+                    ]
+                )
                 if location.altitude is not None:
-                    values["ELEV"] = location.altitude
-                self.client.set_number(self.device, "GEOGRAPHIC_COORD", values, timeout=1.0)
+                    properties.append(
+                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.GEOGRAPHIC_COORD.ELEV={float(location.altitude)}"
+                    )
 
             dt = self.shared_state.datetime()
             if dt is not None:
                 utc_dt = dt.astimezone(timezone.utc)
-                self.client.set_text(
-                    self.device,
-                    "TIME_UTC",
-                    {
-                        "UTC": utc_dt.replace(microsecond=0).strftime(
-                            "%Y-%m-%dT%H:%M:%S"
-                        ),
-                        "OFFSET": "0",
-                    },
-                    timeout=1.0,
+                properties.extend(
+                    [
+                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TIME_UTC.UTC="
+                        + utc_dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%S"),
+                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TIME_UTC.OFFSET=0",
+                    ]
+                )
+
+            if properties:
+                self._apply_indi_properties(
+                    properties,
+                    "connected" if self.connected else "idle",
+                    "Location/time sent",
+                    "sync_failed",
                 )
         except Exception:
             logger.exception("Could not sync INDI location/time")
@@ -530,89 +597,90 @@ class MountControlIndi:
         return True
 
     def stop_mount(self) -> bool:
-        if not self.connect() or self.client is None or self.device is None:
+        if not self._apply_indi_properties(
+            [f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_ABORT_MOTION.ABORT=On"],
+            "stopped",
+            "Mount stop command sent",
+            "stop_failed",
+        ):
+            self._console("INDI stop\nfailed")
             return False
 
-        if not self.client.set_switch(self.device, "TELESCOPE_ABORT_MOTION", "ABORT"):
-            self._write_controller_status("stop_failed", "Could not send abort motion")
-            return False
-
-        self._write_controller_status("stopped", "Mount stop command sent")
         logger.info("Mount stop command sent")
         self._console("INDI mount\nstopped")
         return True
 
     def manual_move(self, direction: str) -> bool:
-        if not self.connect() or self.client is None or self.device is None:
-            return False
-
         direction = direction.lower()
         motion_map = {
-            "north": [("TELESCOPE_MOTION_NS", "MOTION_NORTH")],
-            "south": [("TELESCOPE_MOTION_NS", "MOTION_SOUTH")],
-            "east": [("TELESCOPE_MOTION_WE", "MOTION_EAST")],
-            "west": [("TELESCOPE_MOTION_WE", "MOTION_WEST")],
+            "north": [
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_NORTH=On"
+            ],
+            "south": [
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On"
+            ],
+            "east": [
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On"
+            ],
+            "west": [
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On"
+            ],
             "northeast": [
-                ("TELESCOPE_MOTION_NS", "MOTION_NORTH"),
-                ("TELESCOPE_MOTION_WE", "MOTION_EAST"),
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On",
             ],
             "northwest": [
-                ("TELESCOPE_MOTION_NS", "MOTION_NORTH"),
-                ("TELESCOPE_MOTION_WE", "MOTION_WEST"),
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On",
             ],
             "southeast": [
-                ("TELESCOPE_MOTION_NS", "MOTION_SOUTH"),
-                ("TELESCOPE_MOTION_WE", "MOTION_EAST"),
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On",
             ],
             "southwest": [
-                ("TELESCOPE_MOTION_NS", "MOTION_SOUTH"),
-                ("TELESCOPE_MOTION_WE", "MOTION_WEST"),
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On",
             ],
         }
         if direction not in motion_map:
             logger.warning("Unknown manual mount direction: %s", direction)
             return False
 
-        for prop_name, element_name in motion_map[direction]:
-            if not self.client.set_switch(self.device, prop_name, element_name):
-                self._write_controller_status(
-                    "manual_failed",
-                    f"Could not send {direction} motion",
-                )
-                self._console("INDI motion\nfailed")
-                return False
-
-        self._write_controller_status(
+        if not self._apply_indi_properties(
+            motion_map[direction],
             "moving",
             f"Manual {direction} motion sent",
-            direction=direction,
-        )
+            "manual_failed",
+        ):
+            self._console("INDI motion\nfailed")
+            return False
+
         logger.info("Manual %s motion sent", direction)
         self._console(f"INDI move\n{direction}")
         return True
 
     def park_action(self, action: str) -> bool:
-        if not self.connect() or self.client is None or self.device is None:
-            return False
-
         action_map = {
-            "park": ("TELESCOPE_PARK", "PARK", "Mount parked"),
-            "unpark": ("TELESCOPE_PARK", "UNPARK", "Mount unparked"),
-            "set_home": ("TELESCOPE_HOME", "SET", "Home position set"),
-            "return_home": ("TELESCOPE_HOME", "GO", "Return home command sent"),
-            "set_park": ("TELESCOPE_PARK_OPTION", "PARK_CURRENT", "Park position set"),
+            "park": ("TELESCOPE_PARK.PARK", "Mount parked"),
+            "unpark": ("TELESCOPE_PARK.UNPARK", "Mount unparked"),
+            "set_home": ("TELESCOPE_HOME.SET", "Home position set"),
+            "return_home": ("TELESCOPE_HOME.GO", "Return home command sent"),
+            "set_park": ("TELESCOPE_PARK_OPTION.PARK_CURRENT", "Park position set"),
         }
         if action not in action_map:
             logger.warning("Unknown park action: %s", action)
             return False
 
-        prop_name, element_name, message = action_map[action]
-        if not self.client.set_switch(self.device, prop_name, element_name):
-            self._write_controller_status("park_failed", f"Could not send {action}")
+        property_name, message = action_map[action]
+        if not self._apply_indi_properties(
+            [f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.{property_name}=On"],
+            "connected",
+            message,
+            "park_failed",
+        ):
             self._console("INDI park\nfailed")
             return False
 
-        self._write_controller_status("connected", message)
         self._console("INDI\n" + message)
         return True
 
@@ -627,23 +695,43 @@ class MountControlIndi:
         )
         self._console(f"INDI step\n{self.step_degrees:.2f} deg")
 
+    def refresh_slew_rate(self) -> int:
+        properties = sys_utils.get_indi_onstep_properties(
+            server_host=self.indi_host,
+            server_port=self.indi_port,
+        )
+        for rate in range(10):
+            if (
+                properties.get(
+                    f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_SLEW_RATE.{rate}"
+                )
+                == "On"
+            ):
+                self.slew_rate = rate
+                self._write_controller_status(
+                    "connected" if self.connected else "idle",
+                    f"Slew rate {self.slew_rate}",
+                )
+                break
+        return self.slew_rate
+
     def set_slew_rate(self, rate: int) -> bool:
         self.slew_rate = max(0, min(9, int(rate)))
-        if self.connected and self.client is not None and self.device is not None:
-            if not self.client.set_switch(
-                self.device, "TELESCOPE_SLEW_RATE", str(self.slew_rate), timeout=2.0
-            ):
-                self._write_controller_status("slew_rate_failed", "Could not set slew rate")
-                self._console("INDI speed\nfailed")
-                return False
-        self._write_controller_status(
+        if not self._apply_indi_properties(
+            [
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_SLEW_RATE.{self.slew_rate}=On"
+            ],
             "connected" if self.connected else "idle",
             f"Slew rate {self.slew_rate}",
-        )
+            "slew_rate_failed",
+        ):
+            self._console("INDI speed\nfailed")
+            return False
         self._console(f"INDI speed\n{self.slew_rate}")
         return True
 
     def change_slew_rate(self, delta: int) -> None:
+        self.refresh_slew_rate()
         self.set_slew_rate(self.slew_rate + delta)
 
     def handle_command(self, command: Any) -> bool:
@@ -656,6 +744,8 @@ class MountControlIndi:
             return False
         if command_type == "init":
             self.connect()
+        elif command_type == "restart_driver":
+            self.restart_driver()
         elif command_type == "sync":
             self.sync_mount(float(command["ra"]), float(command["dec"]))
         elif command_type == "goto_target":
@@ -674,6 +764,8 @@ class MountControlIndi:
             self.change_slew_rate(-1)
         elif command_type == "set_slew_rate":
             self.set_slew_rate(int(command.get("rate", self.slew_rate)))
+        elif command_type == "refresh_slew_rate":
+            self.refresh_slew_rate()
         elif command_type == "sync_location_time":
             self.sync_location_time()
         elif command_type == "park_action":

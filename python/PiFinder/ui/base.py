@@ -491,6 +491,12 @@ class UIModule:
     def key_number(self, number):
         pass
 
+    def key_number_press(self, number):
+        self.key_number(number)
+
+    def key_number_release(self, number):
+        pass
+
     def key_text(self, char: str):
         pass
 

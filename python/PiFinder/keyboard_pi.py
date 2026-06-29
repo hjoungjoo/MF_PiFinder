@@ -247,6 +247,18 @@ class KeyboardPi(KeyboardInterface):
             | (self.physical_pressed & PHYSICAL_MODIFIER_KEYS)
         )
 
+    def _direction_number_key(self, keycode: int) -> int | None:
+        mapped_key = self.keymap[keycode]
+        if isinstance(mapped_key, int) and 1 <= mapped_key <= 9:
+            return mapped_key
+        return None
+
+    def _physical_direction_number_key(self, key: int) -> int | None:
+        mapped_key = self.physical_key_mapping.get(key)
+        if isinstance(mapped_key, int) and 1 <= mapped_key <= 9:
+            return mapped_key
+        return None
+
     def _get_physical_hold_key(self) -> int:
         now = monotonic()
         held_keys = sorted(
@@ -264,6 +276,9 @@ class KeyboardPi(KeyboardInterface):
 
             modifiers = self._physical_key_modifiers(key)
             if modifiers & PHYSICAL_ALT_KEYS:
+                continue
+
+            if self._physical_direction_number_key(key) is not None:
                 continue
 
             if key in [KEY_UP, KEY_DOWN]:
@@ -307,6 +322,12 @@ class KeyboardPi(KeyboardInterface):
                     kbev = libinput.KeyboardEvent(hevent, self.li_kb._libinput)
                     if kbev.key_state == libinput.constant.KeyState.PRESSED:
                         self._remember_physical_press(kbev.key)
+                        number = self._physical_direction_number_key(kbev.key)
+                        if (
+                            number is not None
+                            and not self._physical_key_modifiers(kbev.key)
+                        ):
+                            return self.number_press_key(number)
                         continue
                     if kbev.key_state != libinput.constant.KeyState.RELEASED:
                         continue
@@ -340,6 +361,10 @@ class KeyboardPi(KeyboardInterface):
                             return 0
                         return self.shift_text_physical_key_mapping.get(kbev.key, 0)
 
+                    number = self._physical_direction_number_key(kbev.key)
+                    if number is not None:
+                        return self.number_release_key(number)
+
                     return self.physical_key_mapping.get(
                         kbev.key, self.text_physical_key_mapping.get(kbev.key, 0)
                     )
@@ -368,9 +393,12 @@ class KeyboardPi(KeyboardInterface):
                 hold_counter += 1
                 if hold_counter > scan_freq:
                     # Held for more than 1 second
-                    if list(pressed)[-1] in [17, 18]:
+                    held_keycode = list(pressed)[-1]
+                    if self._direction_number_key(held_keycode) is not None:
+                        hold_counter = int(scan_freq / 1.05)
+                    elif held_keycode in [17, 18]:
                         # Up/Down arrows repeat
-                        self.q.put(self.keymap[list(pressed)[-1]])
+                        self.q.put(self.keymap[held_keycode])
                         hold_counter = int(scan_freq / 1.05)
                     else:
                         if not alt_sent and not hold_sent:
@@ -389,6 +417,9 @@ class KeyboardPi(KeyboardInterface):
                     if newval and keycode not in pressed:
                         # initial press
                         pressed.add(keycode)
+                        number = self._direction_number_key(keycode)
+                        if number is not None and 15 not in pressed:
+                            self.q.put(self.number_press_key(number))
                     elif not newval and keycode in pressed:
                         # release
                         pressed.discard(keycode)
@@ -397,10 +428,13 @@ class KeyboardPi(KeyboardInterface):
                             alt_sent = True
                             self.q.put(self.alt_keymap[keycode])
                         else:
+                            number = self._direction_number_key(keycode)
                             if keycode == 15 and alt_sent:
                                 alt_sent = False
                             elif hold_sent:
                                 hold_sent = False
+                            elif number is not None:
+                                self.q.put(self.number_release_key(number))
                             else:
                                 self.q.put(self.keymap[keycode])
                 GPIO.setup(self.rows[i], GPIO.IN)

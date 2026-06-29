@@ -352,6 +352,21 @@ class MenuManager:
 
         self.stack[-1].key_number(number)
 
+    def key_number_press(self, number):
+        if self.help_images is not None:
+            # Exit help
+            self.help_images = None
+            self.update()
+            return
+
+        self.stack[-1].key_number_press(number)
+
+    def key_number_release(self, number):
+        if self.help_images is not None:
+            return
+
+        self.stack[-1].key_number_release(number)
+
     def key_text(self, char: str):
         if self.help_images is not None:
             # Exit help

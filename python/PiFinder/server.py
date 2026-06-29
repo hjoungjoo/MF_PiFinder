@@ -1149,6 +1149,26 @@ class Server:
                 )
             return _indi_json_response(message=success_message)
 
+        @app.route("/indi/restart", methods=["POST"])
+        @auth_required
+        def indi_restart():
+            try:
+                result = sys_utils.restart_indi_web_manager()
+                if not result["ok"]:
+                    raise RuntimeError(
+                        result.get("stderr")
+                        or result.get("stdout")
+                        or "Could not restart INDI Web Manager"
+                    )
+                message = _("INDI server and driver restart requested")
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _indi_json_response(message=message)
+                return _render_indi_page(message)
+            except RuntimeError as e:
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _indi_json_response(ok=False, error=str(e))
+                return _render_indi_page(error_message=str(e))
+
         @app.route("/indi/park", methods=["POST"])
         @auth_required
         def indi_park():
