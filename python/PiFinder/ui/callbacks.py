@@ -292,6 +292,73 @@ def mount_control_toggle(ui_module: UIModule) -> None:
     restart_pifinder(ui_module)
 
 
+def _send_mount_control(ui_module: UIModule, command: dict, message: str) -> None:
+    """Queue an INDI mount-control command from a text menu item."""
+    if not ui_module.config_object.get_option("mount_control", False):
+        ui_module.message(_("Mount Control Off"), 1)
+        return
+
+    mount_queue = ui_module.command_queues.get("mountcontrol")
+    if mount_queue is None:
+        ui_module.message(_("Mount Control\nUnavailable"), 1)
+        return
+
+    mount_queue.put(command)
+    ui_module.message(_(message), 1)
+
+
+def indi_init(ui_module: UIModule) -> None:
+    _send_mount_control(ui_module, {"type": "init"}, "INDI Init")
+
+
+def indi_sync_location_time(ui_module: UIModule) -> None:
+    _send_mount_control(
+        ui_module,
+        {"type": "sync_location_time"},
+        "Time/Location",
+    )
+
+
+def indi_park(ui_module: UIModule) -> None:
+    _send_mount_control(
+        ui_module,
+        {"type": "park_action", "action": "park"},
+        "Park",
+    )
+
+
+def indi_unpark(ui_module: UIModule) -> None:
+    _send_mount_control(
+        ui_module,
+        {"type": "park_action", "action": "unpark"},
+        "Unpark",
+    )
+
+
+def indi_set_home(ui_module: UIModule) -> None:
+    _send_mount_control(
+        ui_module,
+        {"type": "park_action", "action": "set_home"},
+        "Set Home",
+    )
+
+
+def indi_return_home(ui_module: UIModule) -> None:
+    _send_mount_control(
+        ui_module,
+        {"type": "park_action", "action": "return_home"},
+        "Return Home",
+    )
+
+
+def indi_set_park(ui_module: UIModule) -> None:
+    _send_mount_control(
+        ui_module,
+        {"type": "park_action", "action": "set_park"},
+        "Set-Park",
+    )
+
+
 def restart_system(ui_module: UIModule) -> None:
     """
     Restarts the system

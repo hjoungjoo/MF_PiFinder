@@ -34,6 +34,7 @@ DEFAULT_STEP_DEGREES = 1.0
 MIN_STEP_DEGREES = 0.05
 MAX_STEP_DEGREES = 10.0
 POSITION_STATUS_MIN_INTERVAL = 2.0
+STATUS_HEARTBEAT_INTERVAL = 5.0
 
 
 def _write_status(state: str, message: str = "", **extra: Any) -> None:
@@ -264,13 +265,51 @@ class MountControlIndi:
         self.client: Optional[PiFinderIndiClient] = None
         self.device = None
         self.step_degrees = DEFAULT_STEP_DEGREES
+        self.slew_rate = 5
         self.current_ra: Optional[float] = None
         self.current_dec: Optional[float] = None
         self.connected = False
         self._last_position_status_at = 0.0
+        self._last_status_heartbeat_at = 0.0
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
+
+    def _status_fields(self, **extra: Any) -> dict[str, Any]:
+        payload = {
+            "step_degrees": self.step_degrees,
+            "slew_rate": self.slew_rate,
+            "ra": self.current_ra,
+            "dec": self.current_dec,
+        }
+        if self.device is not None:
+            try:
+                payload["device"] = self.device.getDeviceName()
+            except Exception:
+                pass
+        payload.update(extra)
+        return payload
+
+    def _write_controller_status(
+        self, state: str, message: str = "", **extra: Any
+    ) -> None:
+        _write_status(state, message, **self._status_fields(**extra))
+
+    def _write_status_heartbeat(self) -> None:
+        now = time.monotonic()
+        if now - self._last_status_heartbeat_at < STATUS_HEARTBEAT_INTERVAL:
+            return
+        self._last_status_heartbeat_at = now
+
+        if (
+            self.connected
+            and self.client is not None
+            and self.device is not None
+            and self.client.isServerConnected()
+        ):
+            self._write_controller_status("connected", "INDI mount connected")
+        elif not self.connected:
+            self._write_controller_status("idle", "INDI mount waiting")
 
     def set_current_position(self, ra_deg: float, dec_deg: float) -> None:
         self.current_ra = ra_deg % 360.0
@@ -285,12 +324,9 @@ class MountControlIndi:
         ):
             return
         self._last_position_status_at = now
-        _write_status(
+        self._write_controller_status(
             "connected",
             "Mount position updated",
-            ra=self.current_ra,
-            dec=self.current_dec,
-            step_degrees=self.step_degrees,
         )
 
     def _wait_for_device(self, timeout: float = 10.0) -> bool:
@@ -316,20 +352,20 @@ class MountControlIndi:
             self.mark_disconnected("INDI server connection is not active")
 
         if PyIndi is None:
-            _write_status("missing_pyindi", "PyIndi is not installed")
+            self._write_controller_status("missing_pyindi", "PyIndi is not installed")
             self._console("INDI mount\nPyIndi missing")
             return False
 
         self.client = PiFinderIndiClient(self)
         self.client.setServer(self.indi_host, self.indi_port)
-        _write_status(
+        self._write_controller_status(
             "connecting",
             f"Connecting to INDI server {self.indi_host}:{self.indi_port}",
         )
         logger.info("Connecting to INDI server at %s:%s", self.indi_host, self.indi_port)
 
         if not self.client.connectServer():
-            _write_status(
+            self._write_controller_status(
                 "server_unavailable",
                 f"Could not connect to INDI server {self.indi_host}:{self.indi_port}",
             )
@@ -337,7 +373,10 @@ class MountControlIndi:
             return False
 
         if not self._wait_for_device():
-            _write_status("no_telescope", "No telescope/mount device detected")
+            self._write_controller_status(
+                "no_telescope",
+                "No telescope/mount device detected",
+            )
             self._console("INDI mount\nnot found")
             return False
 
@@ -348,7 +387,10 @@ class MountControlIndi:
         if self.client._wait_for_property(self.device, "CONNECTION", timeout=2.0):
             if not self.device.isConnected():
                 if not self.client.set_switch(self.device, "CONNECTION", "CONNECT"):
-                    _write_status("device_connect_failed", f"Could not connect {device_name}")
+                    self._write_controller_status(
+                        "device_connect_failed",
+                        f"Could not connect {device_name}",
+                    )
                     self._console("INDI mount\nconnect failed")
                     return False
                 time.sleep(1.0)
@@ -359,13 +401,10 @@ class MountControlIndi:
         self._read_current_position()
         self.connected = True
         self._last_position_status_at = time.monotonic()
-        _write_status(
+        self._write_controller_status(
             "connected",
             f"Connected to {device_name}",
             device=device_name,
-            step_degrees=self.step_degrees,
-            ra=self.current_ra,
-            dec=self.current_dec,
         )
         self._console("INDI mount\nconnected")
         return True
@@ -373,7 +412,7 @@ class MountControlIndi:
     def mark_disconnected(self, message: str) -> None:
         self.connected = False
         self.device = None
-        _write_status("disconnected", message)
+        self._write_controller_status("disconnected", message)
 
     def disconnect(self) -> None:
         if self.client is not None:
@@ -382,7 +421,7 @@ class MountControlIndi:
             except Exception:
                 logger.exception("Could not disconnect from INDI server")
         self.connected = False
-        _write_status("stopped", "Mount-control process stopped")
+        self._write_controller_status("stopped", "Mount-control process stopped")
 
     def sync_location_time(self) -> None:
         if self.client is None or self.device is None:
@@ -446,7 +485,7 @@ class MountControlIndi:
             return False
 
         if not self.client.set_switch(self.device, "ON_COORD_SET", "SYNC"):
-            _write_status("sync_failed", "Could not set INDI SYNC mode")
+            self._write_controller_status("sync_failed", "Could not set INDI SYNC mode")
             return False
 
         if not self.client.set_number(
@@ -454,7 +493,7 @@ class MountControlIndi:
             "EQUATORIAL_EOD_COORD",
             {"RA": (ra_deg % 360.0) / 15.0, "DEC": dec_deg},
         ):
-            _write_status("sync_failed", "Could not set sync coordinates")
+            self._write_controller_status("sync_failed", "Could not set sync coordinates")
             return False
 
         self.client.set_switch(self.device, "ON_COORD_SET", "TRACK")
@@ -469,7 +508,7 @@ class MountControlIndi:
             return False
 
         if not self.client.set_switch(self.device, "ON_COORD_SET", "TRACK"):
-            _write_status("goto_failed", "Could not set INDI TRACK mode")
+            self._write_controller_status("goto_failed", "Could not set INDI TRACK mode")
             return False
 
         if not self.client.set_number(
@@ -477,15 +516,14 @@ class MountControlIndi:
             "EQUATORIAL_EOD_COORD",
             {"RA": (ra_deg % 360.0) / 15.0, "DEC": dec_deg},
         ):
-            _write_status("goto_failed", "Could not set target coordinates")
+            self._write_controller_status("goto_failed", "Could not set target coordinates")
             return False
 
-        _write_status(
+        self._write_controller_status(
             "slewing",
             "GoTo target command sent",
             target_ra=ra_deg % 360.0,
             target_dec=dec_deg,
-            step_degrees=self.step_degrees,
         )
         logger.info("Mount GoTo RA %.4f Dec %.4f", ra_deg, dec_deg)
         self._console("INDI mount\nGoTo sent")
@@ -496,54 +534,117 @@ class MountControlIndi:
             return False
 
         if not self.client.set_switch(self.device, "TELESCOPE_ABORT_MOTION", "ABORT"):
-            _write_status("stop_failed", "Could not send abort motion")
+            self._write_controller_status("stop_failed", "Could not send abort motion")
             return False
 
-        _write_status("stopped", "Mount stop command sent")
+        self._write_controller_status("stopped", "Mount stop command sent")
         logger.info("Mount stop command sent")
         self._console("INDI mount\nstopped")
         return True
 
     def manual_move(self, direction: str) -> bool:
-        if not self.connect():
+        if not self.connect() or self.client is None or self.device is None:
             return False
 
-        position = self._read_current_position()
-        if position is None:
-            _write_status("manual_failed", "Could not read current mount position")
-            self._console("INDI mount\nno position")
-            return False
-
-        ra_deg, dec_deg = position
         direction = direction.lower()
-        if direction == "north":
-            dec_deg = min(90.0, dec_deg + self.step_degrees)
-        elif direction == "south":
-            dec_deg = max(-90.0, dec_deg - self.step_degrees)
-        elif direction == "east":
-            ra_deg = (ra_deg + self.step_degrees) % 360.0
-        elif direction == "west":
-            ra_deg = (ra_deg - self.step_degrees) % 360.0
-        else:
+        motion_map = {
+            "north": [("TELESCOPE_MOTION_NS", "MOTION_NORTH")],
+            "south": [("TELESCOPE_MOTION_NS", "MOTION_SOUTH")],
+            "east": [("TELESCOPE_MOTION_WE", "MOTION_EAST")],
+            "west": [("TELESCOPE_MOTION_WE", "MOTION_WEST")],
+            "northeast": [
+                ("TELESCOPE_MOTION_NS", "MOTION_NORTH"),
+                ("TELESCOPE_MOTION_WE", "MOTION_EAST"),
+            ],
+            "northwest": [
+                ("TELESCOPE_MOTION_NS", "MOTION_NORTH"),
+                ("TELESCOPE_MOTION_WE", "MOTION_WEST"),
+            ],
+            "southeast": [
+                ("TELESCOPE_MOTION_NS", "MOTION_SOUTH"),
+                ("TELESCOPE_MOTION_WE", "MOTION_EAST"),
+            ],
+            "southwest": [
+                ("TELESCOPE_MOTION_NS", "MOTION_SOUTH"),
+                ("TELESCOPE_MOTION_WE", "MOTION_WEST"),
+            ],
+        }
+        if direction not in motion_map:
             logger.warning("Unknown manual mount direction: %s", direction)
             return False
 
-        logger.info("Manual %s move by %.2f degrees", direction, self.step_degrees)
-        return self.goto_target(ra_deg, dec_deg)
+        for prop_name, element_name in motion_map[direction]:
+            if not self.client.set_switch(self.device, prop_name, element_name):
+                self._write_controller_status(
+                    "manual_failed",
+                    f"Could not send {direction} motion",
+                )
+                self._console("INDI motion\nfailed")
+                return False
+
+        self._write_controller_status(
+            "moving",
+            f"Manual {direction} motion sent",
+            direction=direction,
+        )
+        logger.info("Manual %s motion sent", direction)
+        self._console(f"INDI move\n{direction}")
+        return True
+
+    def park_action(self, action: str) -> bool:
+        if not self.connect() or self.client is None or self.device is None:
+            return False
+
+        action_map = {
+            "park": ("TELESCOPE_PARK", "PARK", "Mount parked"),
+            "unpark": ("TELESCOPE_PARK", "UNPARK", "Mount unparked"),
+            "set_home": ("TELESCOPE_HOME", "SET", "Home position set"),
+            "return_home": ("TELESCOPE_HOME", "GO", "Return home command sent"),
+            "set_park": ("TELESCOPE_PARK_OPTION", "PARK_CURRENT", "Park position set"),
+        }
+        if action not in action_map:
+            logger.warning("Unknown park action: %s", action)
+            return False
+
+        prop_name, element_name, message = action_map[action]
+        if not self.client.set_switch(self.device, prop_name, element_name):
+            self._write_controller_status("park_failed", f"Could not send {action}")
+            self._console("INDI park\nfailed")
+            return False
+
+        self._write_controller_status("connected", message)
+        self._console("INDI\n" + message)
+        return True
 
     def change_step(self, multiplier: float) -> None:
         self.step_degrees = max(
             MIN_STEP_DEGREES,
             min(MAX_STEP_DEGREES, self.step_degrees * multiplier),
         )
-        _write_status(
+        self._write_controller_status(
             "connected" if self.connected else "idle",
             f"Step size {self.step_degrees:.2f} deg",
-            step_degrees=self.step_degrees,
-            ra=self.current_ra,
-            dec=self.current_dec,
         )
         self._console(f"INDI step\n{self.step_degrees:.2f} deg")
+
+    def set_slew_rate(self, rate: int) -> bool:
+        self.slew_rate = max(0, min(9, int(rate)))
+        if self.connected and self.client is not None and self.device is not None:
+            if not self.client.set_switch(
+                self.device, "TELESCOPE_SLEW_RATE", str(self.slew_rate), timeout=2.0
+            ):
+                self._write_controller_status("slew_rate_failed", "Could not set slew rate")
+                self._console("INDI speed\nfailed")
+                return False
+        self._write_controller_status(
+            "connected" if self.connected else "idle",
+            f"Slew rate {self.slew_rate}",
+        )
+        self._console(f"INDI speed\n{self.slew_rate}")
+        return True
+
+    def change_slew_rate(self, delta: int) -> None:
+        self.set_slew_rate(self.slew_rate + delta)
 
     def handle_command(self, command: Any) -> bool:
         if not isinstance(command, dict):
@@ -567,17 +668,24 @@ class MountControlIndi:
             self.change_step(2.0)
         elif command_type == "reduce_step_size":
             self.change_step(0.5)
+        elif command_type == "increase_slew_rate":
+            self.change_slew_rate(1)
+        elif command_type == "reduce_slew_rate":
+            self.change_slew_rate(-1)
+        elif command_type == "set_slew_rate":
+            self.set_slew_rate(int(command.get("rate", self.slew_rate)))
         elif command_type == "sync_location_time":
             self.sync_location_time()
+        elif command_type == "park_action":
+            self.park_action(str(command.get("action", "")))
         else:
             logger.warning("Unknown mount-control command: %s", command_type)
         return True
 
     def run(self) -> None:
-        _write_status(
+        self._write_controller_status(
             "idle",
             f"Mount-control process ready for {self.indi_host}:{self.indi_port}",
-            step_degrees=self.step_degrees,
         )
 
         running = True
@@ -586,10 +694,11 @@ class MountControlIndi:
                 command = self.mount_queue.get(timeout=1.0)
                 running = self.handle_command(command)
             except queue.Empty:
+                self._write_status_heartbeat()
                 continue
             except Exception as exc:
                 logger.exception("Mount-control command failed")
-                _write_status("error", str(exc))
+                self._write_controller_status("error", str(exc))
                 self._console("INDI mount\ncommand failed")
 
         self.disconnect()

@@ -21,6 +21,7 @@ from PiFinder.ui.locationentry import UILocationEntry
 from PiFinder.ui.radec_entry import UIRADecEntry
 from PiFinder.ui.telemetry_list import UITelemetryList
 from PiFinder.ui.bluetooth_keyboard import UIBluetoothKeyboard
+from PiFinder.ui.indi import UIIndiGuide, UIIndiStatus
 import PiFinder.ui.callbacks as callbacks
 
 
@@ -68,6 +69,56 @@ pifinder_menu = {
                 {
                     "name": _("GPS Status"),
                     "class": UIGPSStatus,
+                },
+                {
+                    "name": _("INDI"),
+                    "class": UITextMenu,
+                    "select": "single",
+                    "items": [
+                        {
+                            "name": _("STATUS"),
+                            "class": UIIndiStatus,
+                        },
+                        {
+                            "name": _("INIT"),
+                            "class": UITextMenu,
+                            "select": "single",
+                            "items": [
+                                {
+                                    "name": _("Connect / Init"),
+                                    "callback": callbacks.indi_init,
+                                },
+                                {
+                                    "name": _("Send Location/Time"),
+                                    "callback": callbacks.indi_sync_location_time,
+                                },
+                                {
+                                    "name": _("Park"),
+                                    "callback": callbacks.indi_park,
+                                },
+                                {
+                                    "name": _("Unpark"),
+                                    "callback": callbacks.indi_unpark,
+                                },
+                                {
+                                    "name": _("Set Home"),
+                                    "callback": callbacks.indi_set_home,
+                                },
+                                {
+                                    "name": _("Return Home"),
+                                    "callback": callbacks.indi_return_home,
+                                },
+                                {
+                                    "name": _("Set-Park"),
+                                    "callback": callbacks.indi_set_park,
+                                },
+                            ],
+                        },
+                        {
+                            "name": _("Guide"),
+                            "class": UIIndiGuide,
+                        },
+                    ],
                 },
             ],
         },

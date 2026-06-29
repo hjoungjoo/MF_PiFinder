@@ -5,6 +5,7 @@ This module contains the base UIModule class
 
 """
 
+import json
 import time
 import uuid
 from itertools import cycle
@@ -30,6 +31,22 @@ if TYPE_CHECKING:
 # geometry value — it must NOT scale with display resolution (it previously
 # read as a bare ``128`` which looked resolution-derived).
 GPS_ANIM_RATE = 128
+INDI_STATUS_FILE = utils.data_dir / "mount_control_status.json"
+INDI_OK_STATES = {"connected", "moving", "slewing", "stopped"}
+INDI_PROBLEM_STATES = {
+    "device_connect_failed",
+    "disconnected",
+    "error",
+    "goto_failed",
+    "manual_failed",
+    "missing_pyindi",
+    "no_telescope",
+    "park_failed",
+    "server_unavailable",
+    "slew_rate_failed",
+    "stop_failed",
+    "sync_failed",
+}
 
 
 class RotatingInfoDisplay:
@@ -312,6 +329,36 @@ class UIModule:
             inverted=True,
         )
 
+    def _indi_indicator_state(self):
+        if not self.config_object.get_option("mount_control", False):
+            return None
+        try:
+            with open(INDI_STATUS_FILE, encoding="utf-8") as status_in:
+                status = json.load(status_in)
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return "problem"
+
+        state = str(status.get("state", "unknown"))
+        updated = float(status.get("updated", 0) or 0)
+        if time.time() - updated > 120:
+            return "problem"
+        if state in INDI_OK_STATES:
+            return "ok"
+        if state in INDI_PROBLEM_STATES or state.endswith("_failed"):
+            return "problem"
+        return "idle"
+
+    def _draw_indi_indicator(self, y):
+        state = self._indi_indicator_state()
+        if state is None:
+            return
+        if state == "problem" and int(time.time() * 2) % 2 == 0:
+            return
+
+        fill = self.colors.get(0 if state == "ok" else 32)
+        x = int(self.display_class.resX * 0.865)
+        self.draw.text((x, y), "I", font=self.fonts.bold.font, fill=fill)
+
     def draw_rotating_info(self, x=10, y=92, font=None):
         """Draw rotating constellation/SQM display with cross-fade."""
         self._rotating_display.draw(
@@ -380,6 +427,7 @@ class UIModule:
                 font=self.fonts.icon_bold_large.font,
                 fill=_gps_color,
             )
+            self._draw_indi_indicator(title_y)
 
             if moving:
                 self._unmoved = False
