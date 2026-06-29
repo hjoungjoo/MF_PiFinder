@@ -81,6 +81,9 @@ class Network:
     def set_sta_band_preference(self, preference):
         pass
 
+    def get_ap_clients(self):
+        return []
+
     def get_host_name(self):
         return socket.gethostname()
 

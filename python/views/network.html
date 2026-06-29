@@ -102,6 +102,54 @@
   </div>
 </div>
 <div class="row valign-wrapper" style="margin: 0px;">
+  <div class="col s12">
+        <h5 class="grey-text">{{ _('AP Connected Devices') }}</h5>
+  </div>
+</div>
+<div class="card grey darken-2">
+  <div class="card-content">
+    {% set ap_clients = net.get_ap_clients() %}
+    {% if ap_clients %}
+    <table class="grey-text responsive-table">
+      <thead>
+        <tr>
+          <th>{{ _('Status') }}</th>
+          <th>{{ _('Host') }}</th>
+          <th>{{ _('IP') }}</th>
+          <th>{{ _('MAC') }}</th>
+          <th>{{ _('Link') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for client in ap_clients %}
+        <tr class="grey-text text-lighten-1">
+          <td>
+            {% if client.connected %}
+              <span class="green-text text-lighten-2">{{ _('Connected') }}</span>
+            {% else %}
+              <span class="grey-text">{{ _('Lease only') }}</span>
+            {% endif %}
+          </td>
+          <td>{{ client.hostname or '-' }}</td>
+          <td>{{ client.ip or '-' }}</td>
+          <td>{{ client.mac }}</td>
+          <td>
+            {% if client.connected %}
+              {{ client.rx_bitrate or '-' }} / {{ client.tx_bitrate or '-' }}
+            {% else %}
+              {{ client.neighbor_state or '-' }}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="grey-text text-lighten-1">{{ _('No AP clients are currently visible.') }}</p>
+    {% endif %}
+  </div>
+</div>
+<div class="row valign-wrapper" style="margin: 0px;">
   <div class="col s10">
         <h5 class="grey-text">{{ _('Wifi Networks') }}</h5>
   </div>

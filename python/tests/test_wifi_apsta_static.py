@@ -44,6 +44,8 @@ def test_network_page_includes_apsta_option():
     assert 'name="sta_band_preference"' in network_html
     assert "Prefer 2.4 GHz" in network_html
     assert 'name="ssid_select"' in network_html
+    assert "AP Connected Devices" in network_html
+    assert "Lease only" in network_html
 
 
 def test_apsta_system_files_target_virtual_ap_interface():

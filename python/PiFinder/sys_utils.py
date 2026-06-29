@@ -38,6 +38,7 @@ DHCPD_ACTIVE_CONF_PATH = "/etc/dhcpcd.conf"
 DNSMASQ_CONF_PATH = "/etc/dnsmasq.conf"
 PIFINDER_APSTA_NAT_CONF_PATH = "/etc/pifinder_apsta_nat.conf"
 PIFINDER_STA_BAND_CONF_PATH = "/etc/pifinder_sta_band.conf"
+DNSMASQ_LEASES_PATH = "/var/lib/misc/dnsmasq.leases"
 DEFAULT_AP_IP = "10.10.10.1"
 AP_SECURITY_OPEN = "OPEN"
 AP_SECURITY_WPA2 = "WPA2-PSK"
@@ -584,6 +585,128 @@ class Network:
             networks.append(ssid)
             seen.add(ssid)
         return networks
+
+    @staticmethod
+    def _parse_dnsmasq_leases(contents: str) -> dict[str, dict[str, str]]:
+        leases = {}
+        for line in contents.splitlines():
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            expires, mac, ip, hostname = parts[:4]
+            leases[mac.lower()] = {
+                "mac": mac.lower(),
+                "ip": ip,
+                "hostname": "" if hostname == "*" else hostname,
+                "lease_expires": expires,
+            }
+        return leases
+
+    @staticmethod
+    def _parse_iw_station_dump(output: str) -> dict[str, dict[str, Any]]:
+        stations: dict[str, dict[str, Any]] = {}
+        current_mac = None
+        for line in output.splitlines():
+            station_match = re.match(r"Station\s+([0-9A-Fa-f:]{17})", line.strip())
+            if station_match:
+                current_mac = station_match.group(1).lower()
+                stations[current_mac] = {"mac": current_mac, "connected": True}
+                continue
+            if not current_mac or ":" not in line:
+                continue
+            key, value = line.strip().split(":", 1)
+            key = key.strip().replace(" ", "_")
+            stations[current_mac][key] = value.strip()
+        return stations
+
+    @staticmethod
+    def _parse_ip_neigh(output: str) -> dict[str, dict[str, str]]:
+        neighbors = {}
+        for line in output.splitlines():
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            ip = parts[0]
+            state = parts[-1]
+            mac = ""
+            if "lladdr" in parts:
+                mac_index = parts.index("lladdr") + 1
+                if mac_index < len(parts):
+                    mac = parts[mac_index].lower()
+            if mac:
+                neighbors[mac] = {"ip": ip, "neighbor_state": state}
+            else:
+                neighbors[ip] = {"ip": ip, "neighbor_state": state}
+        return neighbors
+
+    def _ap_interfaces(self) -> list[str]:
+        if self._wifi_mode == WIFI_MODE_APSTA:
+            return ["uap0"]
+        if self._wifi_mode == WIFI_MODE_AP:
+            return ["wlan0"]
+        return ["uap0", "wlan0"]
+
+    def get_ap_clients(self) -> list[dict[str, Any]]:
+        """
+        Return AP clients by combining live hostapd station state, DHCP leases,
+        and neighbor information. A DHCP lease alone is marked disconnected.
+        """
+        try:
+            with open(DNSMASQ_LEASES_PATH, "r") as leases_file:
+                clients = Network._parse_dnsmasq_leases(leases_file.read())
+        except FileNotFoundError:
+            clients = {}
+        except IOError as e:
+            logger.error(f"Error reading dnsmasq leases: {e}")
+            clients = {}
+
+        for interface in self._ap_interfaces():
+            try:
+                station_result = subprocess.run(
+                    ["iw", "dev", interface, "station", "dump"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                station_result = subprocess.CompletedProcess([], 1, "", "")
+            stations = Network._parse_iw_station_dump(station_result.stdout)
+
+            try:
+                neigh_result = subprocess.run(
+                    ["ip", "neigh", "show", "dev", interface],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                neigh_result = subprocess.CompletedProcess([], 1, "", "")
+            neighbors = Network._parse_ip_neigh(neigh_result.stdout)
+
+            for mac, station in stations.items():
+                client = clients.setdefault(
+                    mac, {"mac": mac, "ip": "", "hostname": "", "lease_expires": ""}
+                )
+                client.update(station)
+                client["interface"] = interface
+                client["connected"] = True
+                if mac in neighbors:
+                    client.update(neighbors[mac])
+
+        for client in clients.values():
+            client.setdefault("connected", False)
+            client.setdefault("interface", "")
+            client.setdefault("neighbor_state", "")
+            client.setdefault("inactive_time", "")
+            client.setdefault("rx_bitrate", "")
+            client.setdefault("tx_bitrate", "")
+
+        return sorted(
+            clients.values(),
+            key=lambda item: (not item.get("connected", False), item.get("ip", "")),
+        )
 
     def get_ap_name(self):
         with open(HOSTAPD_CONF_PATH, "r") as conf:

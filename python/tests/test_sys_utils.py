@@ -277,6 +277,43 @@ try:
             sys_utils.Network._normalize_sta_band_preference("6")
 
     @pytest.mark.unit
+    def test_dnsmasq_lease_parsing():
+        leases = sys_utils.Network._parse_dnsmasq_leases(
+            "1782816834 06:43:af:65:75:9b 10.10.10.15 phone 01:06:43\n"
+            "1782815524 da:4f:d2:62:87:74 10.10.10.14 * 01:da:4f\n"
+        )
+
+        assert leases["06:43:af:65:75:9b"]["hostname"] == "phone"
+        assert leases["da:4f:d2:62:87:74"]["hostname"] == ""
+        assert leases["da:4f:d2:62:87:74"]["ip"] == "10.10.10.14"
+
+    @pytest.mark.unit
+    def test_iw_station_dump_parsing():
+        output = """
+        Station da:4f:d2:62:87:74 (on uap0)
+            inactive time:  20 ms
+            rx bitrate:     72.2 MBit/s
+            tx bitrate:     65.0 MBit/s
+            authorized:     yes
+        """
+
+        stations = sys_utils.Network._parse_iw_station_dump(output)
+
+        assert stations["da:4f:d2:62:87:74"]["connected"]
+        assert stations["da:4f:d2:62:87:74"]["rx_bitrate"] == "72.2 MBit/s"
+        assert stations["da:4f:d2:62:87:74"]["tx_bitrate"] == "65.0 MBit/s"
+
+    @pytest.mark.unit
+    def test_ip_neighbor_parsing_by_mac_and_failed_ip():
+        neighbors = sys_utils.Network._parse_ip_neigh(
+            "10.10.10.15 lladdr 06:43:af:65:75:9b REACHABLE\n"
+            "10.10.10.14 FAILED\n"
+        )
+
+        assert neighbors["06:43:af:65:75:9b"]["neighbor_state"] == "REACHABLE"
+        assert neighbors["10.10.10.14"]["neighbor_state"] == "FAILED"
+
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("model", "profile", "gps_device", "uart_overlay"),
         [

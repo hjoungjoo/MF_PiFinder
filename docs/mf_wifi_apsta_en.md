@@ -40,6 +40,7 @@ The same Network page also manages:
 - Nearby Wi-Fi scan results when adding a new STA network.
 - AP+STA internet sharing. This is off by default.
 - STA band preference: Auto, Prefer 2.4 GHz, or Prefer 5 GHz.
+- AP connected devices, combining live station state with DHCP leases.
 
 Device UI:
 
@@ -58,6 +59,10 @@ PiFinder imports these OS-provisioned profiles during setup and post-update migr
 When adding a new STA network from the web UI, PiFinder scans nearby Wi-Fi networks and lets the user select an SSID. Manual SSID entry is still available for hidden networks or scan failures.
 
 The editable `/etc/wpa_supplicant/wpa_supplicant.conf` file is owned by the PiFinder service user with mode `600`, so PiFinder can update saved STA networks without making Wi-Fi passwords world-readable.
+
+## AP Connected Devices
+
+The Network page shows devices that are visible on the PiFinder AP. Entries marked `Connected` are currently associated with hostapd. Entries marked `Lease only` are DHCP lease records that are not currently visible as associated AP stations.
 
 ## AP Security
 
