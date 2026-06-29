@@ -65,6 +65,15 @@ pifinder_prepare_apsta_nat_config() {
     sudo chmod 644 /etc/pifinder_apsta_nat.conf
 }
 
+pifinder_prepare_sta_band_config() {
+    if [[ ! -f /etc/pifinder_sta_band.conf ]]; then
+        printf "%s\n" \
+            "# PiFinder STA band preference" \
+            "PIFINDER_STA_BAND=auto" | sudo tee /etc/pifinder_sta_band.conf >/dev/null
+    fi
+    sudo chmod 644 /etc/pifinder_sta_band.conf
+}
+
 pifinder_boot_config_path() {
     if [[ -e /boot/firmware/config.txt ]]; then
         printf "%s\n" "/boot/firmware/config.txt"

@@ -37,9 +37,21 @@ DHCPD_APSTA_CONF_PATH = "/etc/dhcpcd.conf.apsta"
 DHCPD_ACTIVE_CONF_PATH = "/etc/dhcpcd.conf"
 DNSMASQ_CONF_PATH = "/etc/dnsmasq.conf"
 PIFINDER_APSTA_NAT_CONF_PATH = "/etc/pifinder_apsta_nat.conf"
+PIFINDER_STA_BAND_CONF_PATH = "/etc/pifinder_sta_band.conf"
 DEFAULT_AP_IP = "10.10.10.1"
 AP_SECURITY_OPEN = "OPEN"
 AP_SECURITY_WPA2 = "WPA2-PSK"
+STA_BAND_AUTO = "auto"
+STA_BAND_24 = "2.4"
+STA_BAND_5 = "5"
+STA_BAND_PREFERENCES = {STA_BAND_AUTO, STA_BAND_24, STA_BAND_5}
+STA_24GHZ_SCAN_FREQ = "2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462 2467 2472"
+STA_5GHZ_SCAN_FREQ = (
+    "5180 5200 5220 5240 5260 5280 5300 5320 "
+    "5500 5520 5540 5560 5580 5600 5620 5640 5660 5680 5700 "
+    "5745 5765 5785 5805 5825"
+)
+NMCLI_COMMAND = "nmcli"
 
 BLUETOOTHCTL_COMMAND = "bluetoothctl"
 BLUETOOTH_DEVICE_RE = re.compile(
@@ -193,6 +205,7 @@ class Network:
                     "ssid": None,
                     "psk": None,
                     "key_mgmt": None,
+                    "scan_freq": None,
                 }
 
             elif line == "}" and in_network_block:
@@ -211,6 +224,235 @@ class Network:
 
     def get_wifi_networks(self):
         return self._wifi_networks
+
+    @staticmethod
+    def _nmcli(args: list[str]) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["sudo", "-n", NMCLI_COMMAND, *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @staticmethod
+    def _networkmanager_active() -> bool:
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-active", "NetworkManager"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+        return result.stdout.strip() == "active"
+
+    @staticmethod
+    def _nm_band_for_preference(preference: str) -> str:
+        if preference == STA_BAND_24:
+            return "bg"
+        if preference == STA_BAND_5:
+            return "a"
+        return ""
+
+    @staticmethod
+    def _networkmanager_wifi_profiles() -> list[dict[str, str]]:
+        if not Network._networkmanager_active():
+            return []
+        result = Network._nmcli(["-t", "-f", "NAME,TYPE", "con", "show"])
+        if result.returncode != 0:
+            logger.info("Unable to list NetworkManager profiles: %s", result.stderr)
+            return []
+
+        profiles = []
+        for line in result.stdout.splitlines():
+            if not line:
+                continue
+            name, _, connection_type = line.partition(":")
+            if connection_type not in ("802-11-wireless", "wifi"):
+                continue
+            ssid_result = Network._nmcli(
+                ["-g", "802-11-wireless.ssid", "con", "show", name]
+            )
+            if ssid_result.returncode != 0:
+                continue
+            profiles.append({"name": name, "ssid": ssid_result.stdout.strip()})
+        return profiles
+
+    def _sync_networkmanager_profiles(self) -> None:
+        """
+        Mirror PiFinder's saved STA list into NetworkManager when Bookworm keeps
+        wlan0 under NetworkManager control.
+        """
+        profiles = Network._networkmanager_wifi_profiles()
+        if not profiles:
+            return
+
+        saved_by_ssid = {
+            network["ssid"]: network
+            for network in self._wifi_networks
+            if network.get("ssid")
+        }
+        profile_by_ssid = {
+            profile["ssid"]: profile
+            for profile in profiles
+            if profile.get("ssid")
+        }
+
+        for profile in profiles:
+            if profile.get("ssid") not in saved_by_ssid:
+                result = Network._nmcli(["con", "delete", profile["name"]])
+                if result.returncode != 0:
+                    logger.info(
+                        "Unable to delete stale NetworkManager profile %s: %s",
+                        profile["name"],
+                        result.stderr,
+                    )
+
+        nm_band = Network._nm_band_for_preference(self.get_sta_band_preference())
+        for ssid, network in saved_by_ssid.items():
+            profile = profile_by_ssid.get(ssid)
+            profile_name = profile["name"] if profile else f"PiFinder {ssid}"
+            if not profile:
+                result = Network._nmcli(
+                    [
+                        "con",
+                        "add",
+                        "type",
+                        "wifi",
+                        "ifname",
+                        "wlan0",
+                        "con-name",
+                        profile_name,
+                        "ssid",
+                        ssid,
+                    ]
+                )
+                if result.returncode != 0:
+                    logger.info(
+                        "Unable to create NetworkManager profile for %s: %s",
+                        ssid,
+                        result.stderr,
+                    )
+                    continue
+
+            modify_args = [
+                "con",
+                "modify",
+                profile_name,
+                "connection.autoconnect",
+                "yes",
+                "802-11-wireless.band",
+                nm_band,
+            ]
+            if network.get("key_mgmt") == "WPA-PSK" and network.get("psk"):
+                modify_args.extend(
+                    [
+                        "wifi-sec.key-mgmt",
+                        "wpa-psk",
+                        "wifi-sec.psk",
+                        network["psk"],
+                    ]
+                )
+            result = Network._nmcli(modify_args)
+            if result.returncode != 0:
+                logger.info(
+                    "Unable to update NetworkManager profile %s: %s",
+                    profile_name,
+                    result.stderr,
+                )
+
+    @staticmethod
+    def _sta_scan_freq_for_preference(preference: str) -> str | None:
+        if preference == STA_BAND_24:
+            return STA_24GHZ_SCAN_FREQ
+        if preference == STA_BAND_5:
+            return STA_5GHZ_SCAN_FREQ
+        return None
+
+    @staticmethod
+    def _normalize_sta_band_preference(preference: str | None) -> str:
+        preference = (preference or STA_BAND_AUTO).strip().lower()
+        if preference in ("24", "2g", "2.4g", "2.4ghz", "2.4"):
+            return STA_BAND_24
+        if preference in ("5g", "5ghz", "5"):
+            return STA_BAND_5
+        if preference in ("auto", ""):
+            return STA_BAND_AUTO
+        raise ValueError("Unsupported STA band preference")
+
+    @staticmethod
+    def _rewrite_wpa_supplicant_band_preference(
+        contents: str, preference: str
+    ) -> str:
+        scan_freq = Network._sta_scan_freq_for_preference(preference)
+        lines = contents.splitlines(keepends=True)
+        output = []
+        in_network = False
+        added_scan_freq = False
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("network={"):
+                in_network = True
+                added_scan_freq = False
+                output.append(line)
+                continue
+
+            if in_network and stripped.startswith("scan_freq="):
+                continue
+
+            if in_network and stripped == "}":
+                if scan_freq and not added_scan_freq:
+                    output.append(f"\tscan_freq={scan_freq}\n")
+                    added_scan_freq = True
+                output.append(line)
+                in_network = False
+                continue
+
+            output.append(line)
+
+        return "".join(output)
+
+    def get_sta_band_preference(self):
+        try:
+            with open(PIFINDER_STA_BAND_CONF_PATH, "r") as conf:
+                for line in conf:
+                    if line.startswith("PIFINDER_STA_BAND="):
+                        return Network._normalize_sta_band_preference(
+                            line.split("=", 1)[1]
+                        )
+        except FileNotFoundError:
+            return STA_BAND_AUTO
+        except IOError as e:
+            logger.error(f"Error reading STA band preference config: {e}")
+        return STA_BAND_AUTO
+
+    def _apply_sta_band_preference(self, preference: str) -> None:
+        try:
+            with open(WPA_SUPPLICANT_PATH, "r") as wpa_conf:
+                contents = wpa_conf.read()
+        except FileNotFoundError:
+            contents = ""
+        rewritten = Network._rewrite_wpa_supplicant_band_preference(
+            contents, preference
+        )
+        with open(WPA_SUPPLICANT_PATH, "w") as wpa_conf:
+            wpa_conf.write(rewritten)
+
+    def set_sta_band_preference(self, preference):
+        preference = Network._normalize_sta_band_preference(preference)
+        contents = (
+            "# PiFinder STA band preference\n"
+            f"PIFINDER_STA_BAND={preference}\n"
+        )
+        Network._write_root_file(PIFINDER_STA_BAND_CONF_PATH, contents)
+        self._apply_sta_band_preference(preference)
+        self.populate_wifi_networks()
+        self._sync_networkmanager_profiles()
+        if self._wifi_mode in (WIFI_MODE_CLIENT, WIFI_MODE_APSTA):
+            wpa_cli("reconfigure")
 
     @staticmethod
     def _quote_wpa_value(value: str) -> str:
@@ -238,16 +480,22 @@ class Network:
                 ssid = Network._quote_wpa_value(network["ssid"])
                 key_mgmt = network["key_mgmt"]
                 psk = Network._quote_wpa_value(network["psk"] or "")
+                scan_freq = Network._sta_scan_freq_for_preference(
+                    self.get_sta_band_preference()
+                )
 
                 wpa_conf.write("\nnetwork={\n")
                 wpa_conf.write(f'\tssid="{ssid}"\n')
                 if key_mgmt == "WPA-PSK" and psk:
                     wpa_conf.write(f'\tpsk="{psk}"\n')
                 wpa_conf.write(f"\tkey_mgmt={key_mgmt}\n")
+                if scan_freq:
+                    wpa_conf.write(f"\tscan_freq={scan_freq}\n")
 
                 wpa_conf.write("}\n")
 
         self.populate_wifi_networks()
+        self._sync_networkmanager_profiles()
 
     def add_wifi_network(self, ssid, key_mgmt, psk=None):
         """
@@ -261,15 +509,21 @@ class Network:
             raise ValueError("Wi-Fi password must be at least 8 characters")
 
         with open(WPA_SUPPLICANT_PATH, "a") as wpa_conf:
+            scan_freq = Network._sta_scan_freq_for_preference(
+                self.get_sta_band_preference()
+            )
             wpa_conf.write("\nnetwork={\n")
             wpa_conf.write(f'\tssid="{Network._quote_wpa_value(ssid)}"\n')
             if key_mgmt == "WPA-PSK":
                 wpa_conf.write(f'\tpsk="{Network._quote_wpa_value(psk)}"\n')
             wpa_conf.write(f"\tkey_mgmt={key_mgmt}\n")
+            if scan_freq:
+                wpa_conf.write(f"\tscan_freq={scan_freq}\n")
 
             wpa_conf.write("}\n")
 
         self.populate_wifi_networks()
+        self._sync_networkmanager_profiles()
         if self._wifi_mode in (WIFI_MODE_CLIENT, WIFI_MODE_APSTA):
             # Restart the supplicant
             wpa_cli("reconfigure")

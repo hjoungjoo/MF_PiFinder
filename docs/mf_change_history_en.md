@@ -35,7 +35,7 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Bluetooth/USB HID keyboard support | Draft PR exists | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput key mapping, text-entry keycodes, Bluetooth keyboard scan/pair/connect UI, reconnect |
 | INDI mount control | Draft PR exists | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, install script, INDI docs |
 | Integrated GPS/NTP/RTC/software PPS time sync | Draft PR exists | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source selection, helper service, dry-run/real clock sync, status UI, time-sync docs |
-| Wi-Fi AP+STA simultaneous mode and AP settings | No Draft PR yet | local `mf_pifinder` worktree | `wlan0` STA + `uap0` AP, STA channel tracking, configurable AP IP, AP WPA2 password setting, AP+STA internet sharing option, OS Wi-Fi profile import, scanned SSID selection, shared Pi 4/5 Wi-Fi mode |
+| Wi-Fi AP+STA simultaneous mode and AP settings | No Draft PR yet | local `mf_pifinder` worktree | `wlan0` STA + `uap0` AP, STA channel tracking, STA band preference, configurable AP IP, AP WPA2 password setting, AP+STA internet sharing option, OS Wi-Fi profile import, scanned SSID selection, shared Pi 4/5 Wi-Fi mode |
 | Web UI red night theme and PWA fullscreen app mode | No Draft PR yet | local `mf_pifinder` worktree | red night theme, per-browser theme storage, PWA manifest, service worker, PWA icons |
 | Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |
 | Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted Web UI/PWA changes | integration branch used for install and hardware testing across the features above |
@@ -52,7 +52,7 @@ to follow. The following grouping is easier to maintain.
 | Input devices | Bluetooth keyboard, USB HID key mapping, keyboard mapping docs | Use #506 as the base |
 | Optional INDI mount integration | INDI mount process, install script, object sync, INDI keyboard mapping notes | Keep #503 |
 | Integrated time sync | GPS/NTP/RTC/software PPS, helper service, status UI | Keep #504 |
-| Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, configurable AP IP, AP security/password, optional AP+STA internet sharing, OS Wi-Fi profile import, scanned SSID selection, web/device network UI | New Draft PR needed |
+| Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, STA band preference, configurable AP IP, AP security/password, optional AP+STA internet sharing, OS Wi-Fi profile import, scanned SSID selection, web/device network UI | New Draft PR needed |
 | Web observing UI | red night theme, PWA/fullscreen app mode | New Draft PR needed |
 | Korean localization | Korean locale and CJK language handling | Keep #500 separate because the locale file is large |
 

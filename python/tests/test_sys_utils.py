@@ -234,6 +234,49 @@ try:
         )
 
     @pytest.mark.unit
+    def test_sta_band_preference_rewrites_scan_freq():
+        contents = (
+            "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n"
+            "\nnetwork={\n"
+            '\tssid="DualBand"\n'
+            '\tpsk="secretpass"\n'
+            "\tkey_mgmt=WPA-PSK\n"
+            "}\n"
+        )
+
+        result = sys_utils.Network._rewrite_wpa_supplicant_band_preference(
+            contents, "2.4"
+        )
+
+        assert "scan_freq=2412 2417" in result
+        assert "ssid=\"DualBand\"" in result
+
+    @pytest.mark.unit
+    def test_sta_band_auto_removes_scan_freq():
+        contents = (
+            "network={\n"
+            '\tssid="DualBand"\n'
+            "\tscan_freq=2412 2417 2422\n"
+            "\tkey_mgmt=NONE\n"
+            "}\n"
+        )
+
+        result = sys_utils.Network._rewrite_wpa_supplicant_band_preference(
+            contents, "auto"
+        )
+
+        assert "scan_freq=" not in result
+        assert "key_mgmt=NONE" in result
+
+    @pytest.mark.unit
+    def test_sta_band_preference_normalization():
+        assert sys_utils.Network._normalize_sta_band_preference("2.4GHz") == "2.4"
+        assert sys_utils.Network._normalize_sta_band_preference("5g") == "5"
+        assert sys_utils.Network._normalize_sta_band_preference("") == "auto"
+        with pytest.raises(ValueError):
+            sys_utils.Network._normalize_sta_band_preference("6")
+
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("model", "profile", "gps_device", "uart_overlay"),
         [

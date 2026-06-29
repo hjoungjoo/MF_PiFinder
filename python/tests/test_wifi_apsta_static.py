@@ -41,6 +41,8 @@ def test_network_page_includes_apsta_option():
     assert 'name="ap_password"' in network_html
     assert 'name="ap_ip"' in network_html
     assert 'name="apsta_share_internet"' in network_html
+    assert 'name="sta_band_preference"' in network_html
+    assert "Prefer 2.4 GHz" in network_html
     assert 'name="ssid_select"' in network_html
 
 
@@ -92,7 +94,9 @@ def test_wifi_profile_import_is_installed_by_setup_and_update():
     assert "scripts/import_initial_wifi_networks.py" in migration
     assert "pifinder_prepare_wpa_supplicant_config" in paths
     assert "pifinder_prepare_apsta_nat_config" in paths
+    assert "pifinder_prepare_sta_band_config" in paths
     assert "PIFINDER_APSTA_SHARE_INTERNET=0" in paths
+    assert "PIFINDER_STA_BAND=auto" in paths
     assert "chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf" in paths
 
 

@@ -39,6 +39,7 @@ The same Network page also manages:
 - Saved STA networks.
 - Nearby Wi-Fi scan results when adding a new STA network.
 - AP+STA internet sharing. This is off by default.
+- STA band preference: Auto, Prefer 2.4 GHz, or Prefer 5 GHz.
 
 Device UI:
 
@@ -78,6 +79,20 @@ AP+STA can optionally share the STA-side internet connection with clients connec
 The option is off by default. Enable it only when needed because routing traffic through the Pi can add system load and may be slow, especially while PiFinder is capturing, solving, or serving the web UI.
 
 PiFinder enables sharing only when AP+STA mode is active and the STA interface has a default route. If STA internet is unavailable, the NAT table is removed and normal PiFinder AP control remains available.
+
+## STA Band Preference
+
+When the same SSID is available on both 2.4 GHz and 5 GHz, the Network page can steer the STA connection by setting a band preference.
+
+Options:
+
+- `Auto`: do not restrict the STA scan frequencies.
+- `Prefer 2.4 GHz`: limit STA scans to common 2.4 GHz channels.
+- `Prefer 5 GHz`: limit STA scans to common 5 GHz channels.
+
+This is useful in AP+STA mode because the AP must follow the STA channel. If AP clients such as OnStep only support 2.4 GHz, set the STA preference to `Prefer 2.4 GHz` and connect PiFinder to a 2.4 GHz-capable STA network.
+
+The selected band must be available for the saved STA SSID. If the selected band is not available, STA connection can fail until the preference is returned to `Auto` or changed to the available band.
 
 ## Related Files
 

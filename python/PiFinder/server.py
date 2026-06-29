@@ -555,6 +555,7 @@ class Server:
             ap_security = request.form.get("ap_security")
             ap_password = request.form.get("ap_password")
             apsta_share_internet = request.form.get("apsta_share_internet") == "1"
+            sta_band_preference = request.form.get("sta_band_preference")
             host_name = request.form.get("host_name")
 
             try:
@@ -562,6 +563,7 @@ class Server:
                 self.network.set_ap_ip(ap_ip)
                 self.network.set_ap_security(ap_security, ap_password)
                 self.network.set_apsta_internet_sharing(apsta_share_internet)
+                self.network.set_sta_band_preference(sta_band_preference)
                 self.network.set_host_name(host_name)
                 self.network.set_wifi_mode(wifi_mode)
                 return app.jinja_env.get_template("restart.html").render(

@@ -28,6 +28,17 @@
         </div>
         <div class="row">
             <div class="input-field col s12">
+                <select name="sta_band_preference" id="sta_band_preference">
+                    <option value="auto" {% if net.get_sta_band_preference() == "auto" %}selected{% endif %}>{{ _('Auto') }}</option>
+                    <option value="2.4" {% if net.get_sta_band_preference() == "2.4" %}selected{% endif %}>{{ _('Prefer 2.4 GHz') }}</option>
+                    <option value="5" {% if net.get_sta_band_preference() == "5" %}selected{% endif %}>{{ _('Prefer 5 GHz') }}</option>
+                </select>
+                <label>{{ _('STA Band Preference') }}</label>
+                <span class="helper-text">{{ _('Use 2.4 GHz when AP+STA clients require a 2.4 GHz AP channel') }}</span>
+            </div>
+        </div>
+        <div class="row">
+            <div class="input-field col s12">
                 <input value="{{ net.get_ap_name() }}" id="ap_name" type="text" name="ap_name">
                 <label for="ap_name">{{ _('AP Network Name') }}</label>
             </div>
@@ -47,10 +58,14 @@
                 </select>
                 <label>{{ _('AP Security') }}</label>
             </div>
-            <div class="input-field col s12 m6">
-                <input value="" placeholder="{{ _('Unchanged') if net.get_ap_password() else '' }}" id="ap_password" type="password" name="ap_password" minlength="8" maxlength="63">
+            <div class="input-field col s12 m6 ap-password-field">
+                <input value="" placeholder="{{ _('Unchanged') if net.get_ap_password() else '' }}" id="ap_password" type="password" name="ap_password" minlength="8" maxlength="63" autocomplete="new-password">
                 <label for="ap_password">{{ _('AP Password') }}</label>
+                <button type="button" class="password-toggle btn-flat" id="toggle_ap_password" aria-label="{{ _('Show current AP password') }}" data-current-password="{{ net.get_ap_password() }}">
+                    <i class="material-icons">visibility</i>
+                </button>
                 <span class="helper-text">{{ _('8-63 characters; leave blank to keep current password') }}</span>
+                <div class="password-preview" id="ap_password_preview" aria-live="polite"></div>
             </div>
         </div>
         <div class="row">
@@ -191,6 +206,30 @@ document.addEventListener('DOMContentLoaded', function() {
     if (securitySelect && passwordInput) {
         securitySelect.addEventListener('change', updateApPasswordState);
         updateApPasswordState();
+    }
+
+    var toggleApPassword = document.getElementById('toggle_ap_password');
+    var passwordPreview = document.getElementById('ap_password_preview');
+    if (toggleApPassword && passwordInput && passwordPreview) {
+        toggleApPassword.addEventListener('click', function() {
+            var isRevealed = passwordPreview.classList.contains('is-visible');
+            var currentPassword = this.getAttribute('data-current-password') || '';
+            var icon = this.querySelector('i');
+
+            if (isRevealed) {
+                passwordInput.type = 'password';
+                passwordPreview.classList.remove('is-visible');
+                passwordPreview.textContent = '';
+                icon.textContent = 'visibility';
+                this.setAttribute('aria-label', '{{ _('Show current AP password') }}');
+            } else {
+                passwordInput.type = 'text';
+                passwordPreview.textContent = passwordInput.value || currentPassword || '{{ _('No current AP password is set.') }}';
+                passwordPreview.classList.add('is-visible');
+                icon.textContent = 'visibility_off';
+                this.setAttribute('aria-label', '{{ _('Hide current AP password') }}');
+            }
+        });
     }
 });
 </script>

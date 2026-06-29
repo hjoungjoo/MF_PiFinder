@@ -75,6 +75,12 @@ class Network:
     def set_apsta_internet_sharing(self, enabled):
         pass
 
+    def get_sta_band_preference(self):
+        return "auto"
+
+    def set_sta_band_preference(self, preference):
+        pass
+
     def get_host_name(self):
         return socket.gethostname()
 
