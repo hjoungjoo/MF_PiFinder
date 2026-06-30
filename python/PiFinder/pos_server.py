@@ -12,6 +12,7 @@ This is used by SkySafari (iOS, iPadOS)
 import socket
 import logging
 import math
+import queue as queue_module
 import re
 from multiprocessing import Queue
 from typing import Optional, Tuple, Union
@@ -22,6 +23,7 @@ from PiFinder.calc_utils import ra_to_deg, dec_to_deg, sf_utils
 from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObject
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.pointing_model.imu_dead_reckoning import ImuDeadReckoning
+from PiFinder.types.positioning import AlignCancel, AlignOnRaDec
 from skyfield.positionlib import position_of_radec
 import sys
 import time
@@ -29,14 +31,20 @@ import time
 logger = logging.getLogger("PosServer")
 
 sr_result = None
+sd_result = None
+last_target_j2000: Optional[Tuple[float, float]] = None
 sequence = 0
 ui_queue: Queue
 mountcontrol_queue: Optional[Queue] = None
+align_command_queue: Optional[Queue] = None
+align_response_queue: Optional[Queue] = None
+console_queue: Optional[Queue] = None
 is_stellarium = False
 pos_server_config: Optional[config.Config] = None
 
 _POINTING_CACHE_SECONDS = 0.2
 _CONFIG_RELOAD_SECONDS = 1.0
+_ALIGN_TIMEOUT_SECONDS = 2.0
 _GUIDE_LEASE_SECONDS = 1.2
 _pointing_cache = {
     "time": 0.0,
@@ -275,6 +283,80 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
     return True
 
 
+def _queue_indi_sync_if_enabled(ra_deg: float, dec_deg: float) -> bool:
+    if not _mount_control_enabled():
+        return False
+    if not _get_config_option("skysafari_indi_sync", False):
+        return False
+
+    mountcontrol_queue.put(
+        {
+            "type": "sync",
+            "ra": ra_deg,
+            "dec": dec_deg,
+        }
+    )
+    logger.info("SkySafari INDI sync queued: RA %.4f Dec %.4f", ra_deg, dec_deg)
+    return True
+
+
+def _align_pifinder_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> bool:
+    if not _get_config_option("skysafari_pifinder_align", True):
+        return False
+    if align_command_queue is None or align_response_queue is None:
+        return False
+
+    while True:
+        try:
+            align_response_queue.get(block=False)
+        except queue_module.Empty:
+            break
+
+    align_command_queue.put(AlignOnRaDec(ra=ra_deg, dec=dec_deg))
+
+    response = None
+    start = time.time()
+    while response is None:
+        if time.time() - start > _ALIGN_TIMEOUT_SECONDS:
+            align_command_queue.put(AlignCancel())
+            if console_queue is not None:
+                console_queue.put("SkySafari Align Timeout")
+            logger.warning("SkySafari PiFinder align timed out")
+            return False
+        try:
+            response = align_response_queue.get(block=False)
+        except queue_module.Empty:
+            time.sleep(0.05)
+
+    target_pixel = response.as_target_pixel()
+    if target_pixel[0] == -1:
+        logger.warning("SkySafari PiFinder align failed")
+        return False
+
+    shared_state.set_target_pixel(target_pixel)
+    if pos_server_config is not None:
+        pos_server_config.set_option("target_pixel", target_pixel)
+    if console_queue is not None:
+        console_queue.put("SkySafari Alignment Set")
+    ui_queue.put("reload_config")
+    logger.info("SkySafari PiFinder align set target pixel: %s", target_pixel)
+    return True
+
+
+def _target_from_parsed_coordinates() -> Optional[Tuple[float, float]]:
+    if not sr_result or not sd_result:
+        return None
+
+    ra = ra_to_deg(*sr_result)
+    dec = dec_to_deg(*sd_result)
+    if is_stellarium:
+        return ra, dec
+
+    point = position_of_radec(ra_hours=ra / 15, dec_degrees=dec, epoch=ts.now())
+    ra_h, dec_d, _ = point.radec(epoch=ts.J2000)
+    return float(ra_h._degrees), float(dec_d.degrees)
+
+
 def handle_guide_move(_shared_state, input_str: str):
     command = extract_command(input_str)
     direction = _GUIDE_DIRECTIONS.get(command)
@@ -333,18 +415,36 @@ def parse_sr_command(_, input_str: str):
 
 
 def parse_sd_command(shared_state, input_str: str):
-    global sr_result
+    global sd_result
     pattern = r":Sd([-+]?\d{2})\*(\d{2}):(\d{2})#"
     match = _match_to_hms(pattern, input_str)
     logger.debug("Parsing sd command, match: %s, sr_result: %s", match, sr_result)
     if match and sr_result:
+        sd_result = match
         return handle_goto_command(shared_state, sr_result, match)
     else:
         return "0"
 
 
+def handle_sync_command(shared_state, _input_str: str):
+    target = last_target_j2000 or _target_from_parsed_coordinates()
+    if target is None:
+        logger.warning("SkySafari sync ignored; no target coordinates")
+        return "No target."
+
+    ra_deg, dec_deg = target
+    pifinder_aligned = _align_pifinder_if_enabled(shared_state, ra_deg, dec_deg)
+    indi_synced = _queue_indi_sync_if_enabled(ra_deg, dec_deg)
+    logger.info(
+        "SkySafari sync handled: pifinder_aligned=%s indi_synced=%s",
+        pifinder_aligned,
+        indi_synced,
+    )
+    return "Coordinates matched."
+
+
 def handle_goto_command(shared_state, ra_parsed, dec_parsed):
-    global sequence, ui_queue, is_stellarium
+    global sequence, ui_queue, is_stellarium, last_target_j2000
     ra = ra_to_deg(*ra_parsed)
     dec = dec_to_deg(*dec_parsed)
     if is_stellarium:
@@ -356,6 +456,7 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
         comp_ra = float(ra_h._degrees)
         comp_dec = float(dec_d.degrees)
     sequence += 1
+    last_target_j2000 = (comp_ra, comp_dec)
     logger.debug("Goto ra,dec in deg, J2000: %s, %s", comp_ra, comp_dec)
     constellation = sf_utils.radec_to_constellation(comp_ra, comp_dec)
     obj = CompositeObject.from_dict(
@@ -396,6 +497,7 @@ lx_command_dict = {
     "GVP": get_product,
     "GVT": get_firmware_time,
     "GW": get_status,
+    "CM": handle_sync_command,
     "Mn": handle_guide_move,
     "Ms": handle_guide_move,
     "Me": handle_guide_move,
@@ -462,11 +564,23 @@ def handle_client(client_socket, shared_state):
     client_socket.close()
 
 
-def run_server(shared_state, p_ui_queue, log_queue, p_mountcontrol_queue=None):
+def run_server(
+    shared_state,
+    p_ui_queue,
+    log_queue,
+    p_mountcontrol_queue=None,
+    p_align_command_queue=None,
+    p_align_response_queue=None,
+    p_console_queue=None,
+):
     MultiprocLogging.configurer(log_queue)
     global ui_queue, mountcontrol_queue, pos_server_config, _config_last_loaded
+    global align_command_queue, align_response_queue, console_queue
     ui_queue = p_ui_queue
     mountcontrol_queue = p_mountcontrol_queue
+    align_command_queue = p_align_command_queue
+    align_response_queue = p_align_response_queue
+    console_queue = p_console_queue
     pos_server_config = config.Config()
     _config_last_loaded = time.monotonic()
     logger = logging.getLogger(__name__)

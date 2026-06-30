@@ -1020,6 +1020,9 @@ class Server:
                 "skysafari_indi_goto": bool(
                     cfg.get_option("skysafari_indi_goto", False)
                 ),
+                "skysafari_indi_sync": bool(
+                    cfg.get_option("skysafari_indi_sync", False)
+                ),
                 "indi_goto_refine_once": bool(
                     cfg.get_option("indi_goto_refine_once", False)
                 ),
@@ -1240,6 +1243,7 @@ class Server:
             network_manual = (request.form.get("network_manual") or "").strip()
             server_host = (request.form.get("server_host") or "localhost").strip()
             skysafari_indi_goto = request.form.get("skysafari_indi_goto") == "on"
+            skysafari_indi_sync = request.form.get("skysafari_indi_sync") == "on"
             indi_goto_refine_once = request.form.get("indi_goto_refine_once") == "on"
 
             if serial_port == "__manual__":
@@ -1279,6 +1283,7 @@ class Server:
                 cfg.set_option("mount_control_indi_host", server_host)
                 cfg.set_option("mount_control_indi_port", server_port)
                 cfg.set_option("skysafari_indi_goto", skysafari_indi_goto)
+                cfg.set_option("skysafari_indi_sync", skysafari_indi_sync)
                 cfg.set_option("indi_goto_refine_once", indi_goto_refine_once)
                 cfg.set_option(
                     "indi_goto_refine_accuracy_arcmin", refine_accuracy_arcmin

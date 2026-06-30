@@ -620,7 +620,15 @@ def main(
         posserver_process = Process(
             name="SkySafariServer",
             target=pos_server.run_server,
-            args=(shared_state, ui_queue, posserver_logqueue, mountcontrol_queue),
+            args=(
+                shared_state,
+                ui_queue,
+                posserver_logqueue,
+                mountcontrol_queue,
+                alignment_command_queue,
+                alignment_response_queue,
+                console_queue,
+            ),
         )
         posserver_process.start()
 

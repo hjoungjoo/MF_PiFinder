@@ -188,3 +188,45 @@ def test_skysafari_goto_skips_indi_goto_until_solved(monkeypatch):
     assert queued is False
     with pytest.raises(queue.Empty):
         commands.get_nowait()
+
+
+def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "align_command_queue", None)
+    monkeypatch.setattr(pos_server, "align_response_queue", None)
+    monkeypatch.setattr(pos_server, "last_target_j2000", (12.5, -34.25))
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig(
+            {
+                "mount_control": True,
+                "skysafari_indi_sync": True,
+                "skysafari_pifinder_align": False,
+            }
+        ),
+    )
+
+    assert pos_server.handle_sync_command(DummyState(None), ":CM#") == (
+        "Coordinates matched."
+    )
+
+    assert commands.get_nowait() == {
+        "type": "sync",
+        "ra": 12.5,
+        "dec": -34.25,
+    }
+
+
+def test_skysafari_sync_returns_no_target_without_coordinates(monkeypatch):
+    monkeypatch.setattr(pos_server, "last_target_j2000", None)
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"skysafari_pifinder_align": False}),
+    )
+
+    assert pos_server.handle_sync_command(DummyState(None), ":CM#") == "No target."
