@@ -1536,6 +1536,23 @@ pifinder_menu = {
                         },
                     ],
                 },
+                {
+                    "name": _("IMU Compass"),
+                    "class": UITextMenu,
+                    "select": "single",
+                    "config_option": "imu_use_magnetometer",
+                    "post_callback": callbacks.restart_pifinder,
+                    "items": [
+                        {
+                            "name": _("Off"),
+                            "value": False,
+                        },
+                        {
+                            "name": _("On"),
+                            "value": True,
+                        },
+                    ],
+                },
             ],
         },
         {

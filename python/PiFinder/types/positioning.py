@@ -504,6 +504,10 @@ class ImuSample:
     timestamp: float
     status: int = 0  # 3 == fully calibrated (BNO055)
     moving: bool = False
+    # BNO055 component calibration levels: (system, gyro, accel, mag).
+    calibration_status: Optional[Tuple[int, int, int, int]] = None
+    fusion_mode: str = "imuplus"
+    uses_magnetometer: bool = False
     # Raw gyroscope angular velocity (rad/s) and linear acceleration
     # (m/s², gravity removed) — captured for telemetry recording.
     gyro: Optional[Tuple[float, float, float]] = None
@@ -520,6 +524,11 @@ class ImuSample:
             "timestamp": self.timestamp,
             "status": self.status,
             "moving": self.moving,
+            "calibration_status": list(self.calibration_status)
+            if self.calibration_status is not None
+            else None,
+            "fusion_mode": self.fusion_mode,
+            "uses_magnetometer": self.uses_magnetometer,
             "gyro": list(self.gyro) if self.gyro is not None else None,
             "accel": list(self.accel) if self.accel is not None else None,
         }
@@ -533,6 +542,9 @@ class ImuSample:
 
     def __setstate__(self, state: dict) -> None:
         state["quat"] = _floats_to_quat(state.get("quat"))
+        state.setdefault("calibration_status", None)
+        state.setdefault("fusion_mode", "imuplus")
+        state.setdefault("uses_magnetometer", False)
         self.__dict__.update(state)
 
 

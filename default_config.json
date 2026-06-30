@@ -221,6 +221,7 @@
         "active_eyepiece_index": 0
     },
     "imu_threshold_scale": 1,
+    "imu_use_magnetometer": false,
     "telemetry_record": false,
     "telemetry_images": false,
     "telemetry_raw_imu": false

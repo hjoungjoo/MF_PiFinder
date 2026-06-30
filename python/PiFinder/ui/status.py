@@ -39,6 +39,7 @@ class UIStatus(UIModule):
             "IP": "--",
             "SSID": "--",
             "IMU": "--",
+            "IMU CAL": "--",
             "IMU qw,qx": "--",
             "IMU qy,qz": "--",
             "GPS": "--",
@@ -126,11 +127,20 @@ class UIStatus(UIModule):
                 else:
                     mtext = "Static"
                 self.status_dict["IMU"] = f"{mtext : >11}" + " " + str(imu.status)
+                cal = getattr(imu, "calibration_status", None)
+                mode = getattr(imu, "fusion_mode", "")
+                if cal:
+                    self.status_dict["IMU CAL"] = (
+                        f"{mode[:3].upper()} S{cal[0]} G{cal[1]} A{cal[2]} M{cal[3]}"
+                    )
+                else:
+                    self.status_dict["IMU CAL"] = "--"
 
                 self.status_dict["IMU qw,qx"] = f"{imu.quat.w:>.2f},{imu.quat.x : >.2f}"
                 self.status_dict["IMU qy,qz"] = f"{imu.quat.y:>.2f},{imu.quat.z : >.2f}"
         else:
             self.status_dict["IMU"] = "--"
+            self.status_dict["IMU CAL"] = "--"
             self.status_dict["IMU qw,qx"] = "--"
             self.status_dict["IMU qy,qz"] = "--"
 

@@ -27,15 +27,25 @@ class Imu:
     """
 
     def __init__(self):
+        cfg = config.Config()
         i2c = board.I2C()
         self.sensor = adafruit_bno055.BNO055_I2C(i2c)
-        # IMPLUS mode: Accelerometer + Gyro + Fusion data
-        self.sensor.mode = adafruit_bno055.IMUPLUS_MODE
-        # self.sensor.mode = adafruit_bno055.NDOF_MODE
+        self.use_magnetometer = bool(cfg.get_option("imu_use_magnetometer", False))
+        self.fusion_mode = "ndof" if self.use_magnetometer else "imuplus"
+        if self.use_magnetometer:
+            # NDOF mode uses accelerometer, gyroscope, magnetometer, and
+            # fusion data. It improves absolute heading after calibration,
+            # but needs a magnetically clean setup and calibration movement.
+            self.sensor.mode = adafruit_bno055.NDOF_MODE
+        else:
+            # IMUPLUS mode: accelerometer + gyro + fusion data. This is the
+            # legacy drift-limited relative mode and remains the default.
+            self.sensor.mode = adafruit_bno055.IMUPLUS_MODE
 
         self.quat_history = [(0, 0, 0, 0)] * QUEUE_LEN
         self._flip_count = 0
         self.calibration = 0
+        self.calibration_status = (0, 0, 0, 0)
         self.avg_quat = (0, 0, 0, 0)  # Scalar-first quaternion as float: (w, x, y, z)
         # Raw sensor readings taken alongside the quaternion, for telemetry
         self.gyro = None
@@ -54,7 +64,6 @@ class Imu:
         # to start moving, second is threshold to fall below
         # to stop moving.
 
-        cfg = config.Config()
         # Raw gyro/accel capture is opt-in: two extra I2C transactions per
         # sample on a bus the BNO055 is sensitive about, and only useful
         # for telemetry analysis.
@@ -80,9 +89,14 @@ class Imu:
         self.last_sample_time = time.time()
 
         # Throw out non-calibrated data
-        self.calibration = self.sensor.calibration_status[1]
+        status = self.sensor.calibration_status
+        self.calibration_status = tuple(int(v) for v in status)
+        if self.use_magnetometer:
+            self.calibration = min(self.calibration_status)
+        else:
+            self.calibration = self.calibration_status[1]
         if self.calibration == 0:
-            logger.warning("NOIMU CAL")
+            logger.warning("NOIMU CAL %s", self.calibration_status)
             return True
         # adafruit_bno055 uses quaternion convention (w, x, y, z)
         quat = self.sensor.quaternion
@@ -155,6 +169,8 @@ class Imu:
         return (
             f"IMU Information:\n"
             f"Calibration Status: {self.calibration}\n"
+            f"Calibration Components: {self.calibration_status}\n"
+            f"Fusion Mode: {self.fusion_mode}\n"
             f"Quaternion History: {self.quat_history}\n"
             f"Average Quaternion: {self.avg_quat}\n"
             f"Moving: {self.moving()}\n"
@@ -188,6 +204,9 @@ def imu_monitor(shared_state, console_queue, log_queue):
         timestamp=0.0,  # set together with quat below, at sample time
         status=0,  # IMU Status: 3=Calibrated
         moving=False,
+        calibration_status=(0, 0, 0, 0),
+        fusion_mode=getattr(imu, "fusion_mode", "unknown") if imu else "unknown",
+        uses_magnetometer=getattr(imu, "use_magnetometer", False) if imu else False,
     )
 
     # update() already throttles the I2C reads to imu_sample_frequency (30 Hz),
@@ -201,6 +220,9 @@ def imu_monitor(shared_state, console_queue, log_queue):
         loop_start = time.monotonic()
         imu.update()
         imu_sample.status = imu.calibration
+        imu_sample.calibration_status = getattr(imu, "calibration_status", None)
+        imu_sample.fusion_mode = getattr(imu, "fusion_mode", "unknown")
+        imu_sample.uses_magnetometer = getattr(imu, "use_magnetometer", False)
 
         # Raw data + read epoch are captured by imu.update() in the same
         # I2C burst as the quaternion; copy them onto the published sample.
@@ -227,9 +249,10 @@ def imu_monitor(shared_state, console_queue, log_queue):
         if not imu_calibrated:
             if imu_sample.status == 3:
                 imu_calibrated = True
-                console_queue.put("IMU: NDOF Calibrated!")
+                mode_name = "NDOF" if imu_sample.uses_magnetometer else "IMUPLUS"
+                console_queue.put(f"IMU: {mode_name} Calibrated!")
 
-        if shared_state is not None and imu_calibrated:
+        if shared_state is not None:
             shared_state.set_imu(imu_sample)
 
         # Pace the loop to the IMU sample rate: sleep only the remainder of the

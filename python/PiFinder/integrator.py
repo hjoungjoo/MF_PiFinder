@@ -289,6 +289,9 @@ def _advance_with_imu(
     Returns ``True`` if cells were advanced, ``False`` if IMU motion
     was below the deadband.
     """
+    if not imu.is_calibrated():
+        return False
+
     q_x2imu = imu.quat
     assert isinstance(
         q_x2imu, quaternion.quaternion
