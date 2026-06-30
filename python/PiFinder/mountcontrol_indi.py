@@ -35,6 +35,8 @@ MIN_STEP_DEGREES = 0.05
 MAX_STEP_DEGREES = 10.0
 POSITION_STATUS_MIN_INTERVAL = 2.0
 STATUS_HEARTBEAT_INTERVAL = 5.0
+AUTO_CONNECT_START_DELAY = 5.0
+AUTO_CONNECT_RETRY_INTERVAL = 10.0
 
 
 def _write_status(state: str, message: str = "", **extra: Any) -> None:
@@ -370,7 +372,7 @@ class MountControlIndi:
             time.sleep(0.25)
         return False
 
-    def connect(self) -> bool:
+    def connect(self, announce: bool = True) -> bool:
         if (
             self.connected
             and self.device is not None
@@ -384,7 +386,8 @@ class MountControlIndi:
 
         if PyIndi is None:
             self._write_controller_status("missing_pyindi", "PyIndi is not installed")
-            self._console("INDI mount\nPyIndi missing")
+            if announce:
+                self._console("INDI mount\nPyIndi missing")
             return False
 
         self.client = PiFinderIndiClient(self)
@@ -400,7 +403,8 @@ class MountControlIndi:
                 "server_unavailable",
                 f"Could not connect to INDI server {self.indi_host}:{self.indi_port}",
             )
-            self._console("INDI server\nnot found")
+            if announce:
+                self._console("INDI server\nnot found")
             return False
 
         if not self._wait_for_device():
@@ -408,7 +412,8 @@ class MountControlIndi:
                 "no_telescope",
                 "No telescope/mount device detected",
             )
-            self._console("INDI mount\nnot found")
+            if announce:
+                self._console("INDI mount\nnot found")
             return False
 
         assert self.device is not None
@@ -422,7 +427,8 @@ class MountControlIndi:
                         "device_connect_failed",
                         f"Could not connect {device_name}",
                     )
-                    self._console("INDI mount\nconnect failed")
+                    if announce:
+                        self._console("INDI mount\nconnect failed")
                     return False
                 time.sleep(1.0)
 
@@ -437,7 +443,8 @@ class MountControlIndi:
             f"Connected to {device_name}",
             device=device_name,
         )
-        self._console("INDI mount\nconnected")
+        if announce:
+            self._console("INDI mount\nconnected")
         return True
 
     def mark_disconnected(self, message: str) -> None:
@@ -471,6 +478,21 @@ class MountControlIndi:
             return False
 
         time.sleep(3.0)
+        connect_result = sys_utils.connect_indi_onstep_driver(
+            server_host=self.indi_host,
+            server_port=self.indi_port,
+            wait_timeout=15,
+        )
+        if not connect_result["ok"]:
+            error = (
+                connect_result.get("stderr")
+                or connect_result.get("stdout")
+                or "Could not connect INDI OnStep driver"
+            )
+            logger.error("Could not connect INDI OnStep driver after restart: %s", error)
+            self._write_controller_status("device_connect_failed", error)
+            self._console("INDI connect\nfailed")
+            return False
         return self.connect()
 
     def disconnect(self) -> None:
@@ -781,11 +803,18 @@ class MountControlIndi:
         )
 
         running = True
+        next_auto_connect_at = time.monotonic() + AUTO_CONNECT_START_DELAY
         while running:
             try:
                 command = self.mount_queue.get(timeout=1.0)
                 running = self.handle_command(command)
             except queue.Empty:
+                now = time.monotonic()
+                if not self.connected and now >= next_auto_connect_at:
+                    logger.info("Attempting automatic INDI mount connection")
+                    if self.connect(announce=False):
+                        self._console("INDI mount\nconnected")
+                    next_auto_connect_at = now + AUTO_CONNECT_RETRY_INTERVAL
                 self._write_status_heartbeat()
                 continue
             except Exception as exc:

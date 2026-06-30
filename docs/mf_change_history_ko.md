@@ -36,6 +36,7 @@
 | INDI 마운트 제어 | Draft PR 있음 | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, 설치 스크립트, INDI 문서 |
 | GPS/NTP/RTC/Software PPS 통합 시간 동기화 | Draft PR 있음 | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source 선택, helper service, dry-run/real clock sync, status UI, time sync 문서 |
 | Wi-Fi AP+STA 동시 모드 및 AP 설정 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | `wlan0` STA + `uap0` AP, STA 채널 추적, STA 밴드 선호, AP IP 설정, AP WPA2 암호 설정, AP+STA 인터넷 공유 옵션, OS Wi-Fi 프로파일 가져오기, 스캔된 SSID 선택, Pi 4/5 공통 Wi-Fi 모드 |
+| Locations 위치 카탈로그 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | GeoNames 기반 오프라인 위치 카탈로그, 국가/지역/군구/도시 선택, 좌표/고도/source 자동 입력, 북한 제외 |
 | Web UI 적색 야간 테마 및 PWA 전체화면 앱 모드 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | red night theme, 브라우저별 theme 저장, PWA manifest, service worker, PWA icon |
 | 변경 히스토리/PR 재편성 문서화 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | 이 문서의 작업 단위 목차, PR 상태, 재편성 기준 |
 | 최종 통합 브랜치 | Upstream PR 아님 | `origin/mf_pifinder` + 로컬 미커밋 Web UI/PWA 변경 | 위 기능들을 통합해 실제 장치에서 설치/테스트하는 기준 브랜치 |
@@ -53,6 +54,7 @@
 | Optional INDI mount integration | INDI mount process, install script, object sync, keyboard mapping의 INDI 항목 | #503 유지 |
 | Integrated time sync | GPS/NTP/RTC/software PPS, helper service, status UI | #504 유지 |
 | Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, STA 밴드 선호, AP IP 설정, AP 보안/암호, 선택형 AP+STA 인터넷 공유, OS Wi-Fi 프로파일 가져오기, 스캔된 SSID 선택, web/device network UI | 새 Draft PR 필요 |
+| Locations catalog | GeoNames 기반 오프라인 위치 카탈로그, 국가/지역/군구/도시 선택, 좌표 자동 입력 | 새 Draft PR 필요 |
 | Web observing UI | red night theme, PWA/fullscreen app mode | 새 Draft PR 필요 |
 | Korean localization | Korean locale and CJK language handling | #500은 파일 규모가 커서 별도 유지 권장 |
 
@@ -1078,6 +1080,38 @@ pi_config_files/pifinder_apsta_monitor.service
 scripts/pifinder_apsta.sh
 switch-apsta.sh
 ```
+
+## Locations 위치 카탈로그
+
+웹 `Locations > Add New Location`에 국가/지역/군구/도시 선택 기반 좌표 입력 기능을
+추가했다.
+
+### 주요 파일
+
+```text
+python/PiFinder/data/location_catalog.json
+python/PiFinder/location_catalog.py
+python/views/location_form.html
+python/views/locations.html
+scripts/build_location_catalog.py
+docs/mf_location_catalog_ko.md
+docs/mf_location_catalog_en.md
+python/tests/test_location_catalog.py
+```
+
+### 동작
+
+- GeoNames `cities5000`, `countryInfo`, `admin1CodesASCII`, `admin2Codes`를
+  가공해 오프라인 JSON 카탈로그를 만들었다.
+- 한국은 GeoNames 국가별 전체 덤프 `KR.zip`을 추가로 섞어 서울/구/동 단위 선택을
+  더 자세하게 제공한다.
+- 북한은 국가 코드 `KP`를 생성 단계에서 제외했다.
+- 서버는 전체 JSON을 브라우저에 직접 보내지 않고, 국가/지역/군구/장소 단계별
+  API를 제공한다.
+- 장소를 선택하면 기존 위치 추가 form의 이름, 위도, 경도, 고도, 오차, 출처
+  필드를 기본값으로 채운다.
+- 수동 좌표 입력과 DMS 입력은 그대로 유지한다.
+- `scripts/build_location_catalog.py`로 catalog를 다시 생성할 수 있다.
 
 ## Web UI 적색 야간 테마 및 PWA 앱 모드
 

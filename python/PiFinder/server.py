@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 import pydeepskylog as pds
 from PIL import Image
-from PiFinder import utils, calc_utils, config
+from PiFinder import utils, calc_utils, config, location_catalog
 from PiFinder.db.observations_db import (
     ObservationsDatabase,
 )
@@ -378,10 +378,47 @@ class Server:
                 show_new_form=show_new_form,
             )
 
+        @app.route("/locations/catalog/countries")
+        @auth_required
+        def locations_catalog_countries():
+            return jsonify({"countries": location_catalog.countries()})
+
+        @app.route("/locations/catalog/regions")
+        @auth_required
+        def locations_catalog_regions():
+            country = request.args.get("country", "")
+            return jsonify({"regions": location_catalog.regions(country)})
+
+        @app.route("/locations/catalog/districts")
+        @auth_required
+        def locations_catalog_districts():
+            country = request.args.get("country", "")
+            region = request.args.get("region", "")
+            return jsonify({"districts": location_catalog.districts(country, region)})
+
+        @app.route("/locations/catalog/places")
+        @auth_required
+        def locations_catalog_places():
+            country = request.args.get("country", "")
+            region = request.args.get("region", "")
+            district = request.args.get("district", "")
+            return jsonify(
+                {"places": location_catalog.places(country, region, district)}
+            )
+
         @app.route("/locations/add", methods=["POST"])
         @auth_required
         def location_add():
             try:
+                logger.info(
+                    "Location add request: name=%r lat=%r lon=%r altitude=%r error=%r source=%r",
+                    request.form.get("name"),
+                    request.form.get("latitude"),
+                    request.form.get("longitude"),
+                    request.form.get("altitude"),
+                    request.form.get("error_in_m"),
+                    request.form.get("source"),
+                )
                 name = request.form.get("name").strip()
                 lat = float(request.form.get("latitude"))
                 lon = float(request.form.get("longitude"))
@@ -423,6 +460,7 @@ class Server:
                 return redirect("/locations")
 
             except ValueError as e:
+                logger.warning("Location add failed validation: %s", e)
                 return app.jinja_env.get_template("locations.html").render(
                     title=_("Locations"),
                     locations=config.Config().locations.locations,
@@ -1160,7 +1198,19 @@ class Server:
                         or result.get("stdout")
                         or "Could not restart INDI Web Manager"
                     )
-                message = _("INDI server and driver restart requested")
+                time.sleep(3.0)
+                indi_cfg = _indi_config_values()
+                connect_result = sys_utils.connect_indi_onstep_driver(
+                    server_host=indi_cfg["server_host"],
+                    server_port=indi_cfg["server_port"],
+                )
+                if not connect_result["ok"]:
+                    raise RuntimeError(
+                        connect_result.get("stderr")
+                        or connect_result.get("stdout")
+                        or "Could not connect INDI OnStep driver"
+                    )
+                message = _("INDI server restarted and driver connected")
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return _indi_json_response(message=message)
                 return _render_indi_page(message)

@@ -476,9 +476,242 @@ function checkFields(id = '') {
     return isValid;
 }
 
+function refreshSelect(selectElement) {
+    if (!selectElement) return;
+    var instance = M.FormSelect.getInstance(selectElement);
+    if (instance) {
+        instance.destroy();
+    }
+    M.FormSelect.init(selectElement);
+}
+
+function setSelectOptions(selectElement, placeholder, items, valueKey, labelCallback) {
+    if (!selectElement) return;
+    selectElement.innerHTML = '';
+
+    var placeholderOption = document.createElement('option');
+    placeholderOption.value = '';
+    placeholderOption.disabled = true;
+    placeholderOption.selected = true;
+    placeholderOption.textContent = placeholder;
+    selectElement.appendChild(placeholderOption);
+
+    items.forEach(function(item) {
+        var option = document.createElement('option');
+        option.value = item[valueKey];
+        option.textContent = labelCallback(item);
+        selectElement.appendChild(option);
+    });
+
+    selectElement.disabled = items.length === 0;
+    refreshSelect(selectElement);
+}
+
+function fetchLocationCatalog(url) {
+    return fetch(url).then(function(response) {
+        return response.json().then(function(payload) {
+            if (!response.ok) {
+                throw new Error(payload.error || "{{ _('Could not load location catalog') }}");
+            }
+            return payload;
+        });
+    });
+}
+
+function setupLocationCatalogLookup() {
+    var formId = 'location_form';
+    var countrySelect = document.getElementById('catalog-country-location_form');
+    var regionSelect = document.getElementById('catalog-region-location_form');
+    var districtSelect = document.getElementById('catalog-district-location_form');
+    var placeSelect = document.getElementById('catalog-place-location_form');
+    var placesById = {};
+    var selectedCatalogPlace = null;
+
+    if (!countrySelect || !regionSelect || !districtSelect || !placeSelect) {
+        return;
+    }
+
+    function setFormFieldValue(field, value) {
+        if (!field) return;
+        field.value = value;
+        field.dispatchEvent(new Event('input', {bubbles: true}));
+        field.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+
+    function clearFieldValidation(field) {
+        if (!field) return;
+        var helperText = field.parentElement.querySelector('.helper-text');
+        field.classList.remove('invalid');
+        if (helperText) {
+            helperText.classList.remove('red-text');
+            helperText.textContent = '';
+        }
+    }
+
+    function fillSelectedPlace(place, forceName) {
+        if (!place) return;
+
+        var nameField = document.getElementById('name-location_form');
+        var latitudeField = document.getElementById('latitude-location_form');
+        var longitudeField = document.getElementById('longitude-location_form');
+        var altitudeField = document.getElementById('altitude-location_form');
+        var errorField = document.getElementById('error_in_m-location_form');
+        var sourceField = document.getElementById('source-location_form');
+
+        if (
+            nameField &&
+            (forceName ||
+             !nameField.value.trim() ||
+             nameField.dataset.catalogFilled === 'true' ||
+             nameField.dataset.userEdited !== 'true')
+        ) {
+            nameField.value = place.name;
+            nameField.dataset.catalogFilled = 'true';
+            nameField.dataset.userEdited = 'false';
+            nameField.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+        setFormFieldValue(latitudeField, place.latitude);
+        setFormFieldValue(longitudeField, place.longitude);
+        setFormFieldValue(altitudeField, place.height || 0);
+        setFormFieldValue(errorField, 1000);
+        setFormFieldValue(
+            sourceField,
+            'GeoNames: ' +
+            place.country_name + ' / ' +
+            place.region_name + ' / ' +
+            place.district_name + ' / ' +
+            place.name
+        );
+
+        updateDMSFields(place.latitude, place.longitude, formId);
+        [nameField, latitudeField, longitudeField, altitudeField, errorField].forEach(clearFieldValidation);
+        M.updateTextFields();
+        checkFields(formId);
+    }
+
+    function resetRegions() {
+        setSelectOptions(regionSelect, "{{ _('State / Province') }}", [], 'code', function(item) { return item.name; });
+        resetDistricts();
+    }
+
+    function resetDistricts() {
+        setSelectOptions(districtSelect, "{{ _('County / District') }}", [], 'code', function(item) { return item.name; });
+        resetPlaces();
+    }
+
+    function resetPlaces() {
+        selectedCatalogPlace = null;
+        placesById = {};
+        setSelectOptions(placeSelect, "{{ _('City / Place') }}", [], 'id', function(item) { return item.name; });
+    }
+
+    fetchLocationCatalog('/locations/catalog/countries')
+        .then(function(payload) {
+            setSelectOptions(
+                countrySelect,
+                "{{ _('Country') }}",
+                payload.countries || [],
+                'code',
+                function(item) { return item.name; }
+            );
+        })
+        .catch(function(error) {
+            M.toast({html: error.message, classes: 'red'});
+        });
+
+    countrySelect.addEventListener('change', function() {
+        resetRegions();
+        fetchLocationCatalog('/locations/catalog/regions?country=' + encodeURIComponent(countrySelect.value))
+            .then(function(payload) {
+                setSelectOptions(
+                    regionSelect,
+                    "{{ _('State / Province') }}",
+                    payload.regions || [],
+                    'code',
+                    function(item) { return item.name; }
+                );
+            })
+            .catch(function(error) {
+                M.toast({html: error.message, classes: 'red'});
+            });
+    });
+
+    regionSelect.addEventListener('change', function() {
+        resetDistricts();
+        var url = '/locations/catalog/districts?country=' +
+            encodeURIComponent(countrySelect.value) +
+            '&region=' +
+            encodeURIComponent(regionSelect.value);
+        fetchLocationCatalog(url)
+            .then(function(payload) {
+                setSelectOptions(
+                    districtSelect,
+                    "{{ _('County / District') }}",
+                    payload.districts || [],
+                    'code',
+                    function(item) { return item.name; }
+                );
+            })
+            .catch(function(error) {
+                M.toast({html: error.message, classes: 'red'});
+            });
+    });
+
+    districtSelect.addEventListener('change', function() {
+        resetPlaces();
+        var url = '/locations/catalog/places?country=' +
+            encodeURIComponent(countrySelect.value) +
+            '&region=' +
+            encodeURIComponent(regionSelect.value) +
+            '&district=' +
+            encodeURIComponent(districtSelect.value);
+        fetchLocationCatalog(url)
+            .then(function(payload) {
+                placesById = {};
+                (payload.places || []).forEach(function(place) {
+                    placesById[String(place.id)] = place;
+                });
+                setSelectOptions(
+                    placeSelect,
+                    "{{ _('City / Place') }}",
+                    payload.places || [],
+                    'id',
+                    function(item) {
+                        var label = item.name;
+                        if (item.population) {
+                            label += ' (' + item.population.toLocaleString() + ')';
+                        }
+                        return label;
+                    }
+                );
+            })
+            .catch(function(error) {
+                M.toast({html: error.message, classes: 'red'});
+            });
+    });
+
+    placeSelect.addEventListener('change', function() {
+        selectedCatalogPlace = placesById[String(placeSelect.value)] || null;
+        fillSelectedPlace(selectedCatalogPlace, false);
+    });
+
+    var locationForm = document.getElementById('location_form');
+    if (locationForm) {
+        locationForm.addEventListener('submit', function() {
+            var nameField = document.getElementById('name-location_form');
+            fillSelectedPlace(
+                selectedCatalogPlace,
+                nameField && !nameField.value.trim()
+            );
+        }, true);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     var elems = document.querySelectorAll('.modal');
     var instances = M.Modal.init(elems);
+    M.FormSelect.init(document.querySelectorAll('select'));
+    setupLocationCatalogLookup();
 
     var forms = document.querySelectorAll('form[id^="edit_form_"], #location_form');
     forms.forEach(function(form) {
@@ -495,12 +728,18 @@ document.addEventListener('DOMContentLoaded', function() {
         Object.entries(fields).forEach(([fieldName, field]) => {
             if (field) {
                 field.dataset.hasInteracted = 'false';
+                if (fieldName === 'name') {
+                    field.dataset.userEdited = 'false';
+                    field.dataset.catalogFilled = 'false';
+                }
                 
                 field.addEventListener('input', function() {
                     this.dataset.hasInteracted = 'true';
                     if (fieldName !== 'name') {
                         updateNumericFieldValidation(this, fieldName, id);
                     } else {
+                        this.dataset.userEdited = 'true';
+                        this.dataset.catalogFilled = 'false';
                         // Handle name field validation (text field)
                         const helperText = this.parentElement.querySelector('.helper-text');
                         const value = this.value.trim();

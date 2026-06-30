@@ -289,6 +289,50 @@ def restart_indi_web_manager(timeout: float = 30.0) -> dict[str, Any]:
     }
 
 
+def connect_indi_onstep_driver(
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+    device_name: str = DEFAULT_ONSTEP_DEVICE_NAME,
+    wait_timeout: float = 15.0,
+) -> dict[str, Any]:
+    """Wait for the OnStep INDI driver and request CONNECTION.CONNECT."""
+    deadline = time.monotonic() + wait_timeout
+    properties: dict[str, str] = {}
+    while time.monotonic() < deadline:
+        properties = get_indi_onstep_properties(
+            server_host=server_host,
+            server_port=server_port,
+            device_name=device_name,
+        )
+        if f"{device_name}.CONNECTION.CONNECT" in properties:
+            break
+        time.sleep(0.5)
+
+    if f"{device_name}.CONNECTION.CONNECT" not in properties:
+        return {
+            "ok": False,
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "LX200 OnStep CONNECTION property was not available",
+            "properties": [],
+        }
+
+    if properties.get(f"{device_name}.CONNECTION.CONNECT") == "On":
+        return {
+            "ok": True,
+            "returncode": 0,
+            "stdout": "LX200 OnStep already connected",
+            "stderr": "",
+            "properties": [f"{device_name}.CONNECTION.CONNECT=On"],
+        }
+
+    return apply_indi_onstep_properties(
+        [f"{device_name}.CONNECTION.CONNECT=On"],
+        server_host=server_host,
+        server_port=server_port,
+    )
+
+
 class Network:
     """
     Provides wifi network info

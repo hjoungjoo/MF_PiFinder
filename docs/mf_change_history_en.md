@@ -36,6 +36,7 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | INDI mount control | Draft PR exists | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, install script, INDI docs |
 | Integrated GPS/NTP/RTC/software PPS time sync | Draft PR exists | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source selection, helper service, dry-run/real clock sync, status UI, time-sync docs |
 | Wi-Fi AP+STA simultaneous mode and AP settings | No Draft PR yet | local `mf_pifinder` worktree | `wlan0` STA + `uap0` AP, STA channel tracking, STA band preference, configurable AP IP, AP WPA2 password setting, AP+STA internet sharing option, OS Wi-Fi profile import, scanned SSID selection, shared Pi 4/5 Wi-Fi mode |
+| Locations catalog | No Draft PR yet | local `mf_pifinder` worktree | GeoNames-based offline location catalog, country/region/district/city selection, coordinate/altitude/source prefill, North Korea excluded |
 | Web UI red night theme and PWA fullscreen app mode | No Draft PR yet | local `mf_pifinder` worktree | red night theme, per-browser theme storage, PWA manifest, service worker, PWA icons |
 | Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |
 | Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted Web UI/PWA changes | integration branch used for install and hardware testing across the features above |
@@ -53,6 +54,7 @@ to follow. The following grouping is easier to maintain.
 | Optional INDI mount integration | INDI mount process, install script, object sync, INDI keyboard mapping notes | Keep #503 |
 | Integrated time sync | GPS/NTP/RTC/software PPS, helper service, status UI | Keep #504 |
 | Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, STA band preference, configurable AP IP, AP security/password, optional AP+STA internet sharing, OS Wi-Fi profile import, scanned SSID selection, web/device network UI | New Draft PR needed |
+| Locations catalog | GeoNames-based offline location catalog, country/region/district/city selector, coordinate prefill | New Draft PR needed |
 | Web observing UI | red night theme, PWA/fullscreen app mode | New Draft PR needed |
 | Korean localization | Korean locale and CJK language handling | Keep #500 separate because the locale file is large |
 
@@ -1204,6 +1206,39 @@ pi_config_files/pifinder_apsta_monitor.service
 scripts/pifinder_apsta.sh
 switch-apsta.sh
 ```
+
+## Locations Catalog
+
+Added a country/region/county-or-district/city selector to the web
+`Locations > Add New Location` form so known coordinates can be used as defaults.
+
+### Main Files
+
+```text
+python/PiFinder/data/location_catalog.json
+python/PiFinder/location_catalog.py
+python/views/location_form.html
+python/views/locations.html
+scripts/build_location_catalog.py
+docs/mf_location_catalog_ko.md
+docs/mf_location_catalog_en.md
+python/tests/test_location_catalog.py
+```
+
+### Behavior
+
+- Generated an offline JSON catalog from GeoNames `cities5000`, `countryInfo`,
+  `admin1CodesASCII`, and `admin2Codes`.
+- Korea is augmented with the country-specific GeoNames `KR.zip` extract, so
+  Seoul district/neighborhood selection is much more detailed.
+- North Korea is excluded at build time by country code `KP`.
+- The server exposes step-by-step APIs for countries, regions, districts, and
+  places instead of sending the whole JSON catalog to the browser.
+- Selecting a place fills the existing add-location form with name, latitude,
+  longitude, altitude, error, and source defaults.
+- Manual coordinate entry and DMS entry continue to work.
+- `scripts/build_location_catalog.py` can regenerate the catalog from fresh
+  GeoNames source files.
 
 ## Web UI Red Night Theme and PWA App Mode
 

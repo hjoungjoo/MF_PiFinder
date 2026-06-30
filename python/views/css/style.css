@@ -224,11 +224,64 @@ html[data-theme="red"] .btn-flat {
   color: var(--pf-link) !important;
 }
 
+html[data-theme="red"] .btn,
+html[data-theme="red"] .btn-small,
+html[data-theme="red"] .btn-large,
+html[data-theme="red"] .btn-floating,
+html[data-theme="red"] .btn.grey,
+html[data-theme="red"] .btn-small.grey,
+html[data-theme="red"] .btn-large.grey,
+html[data-theme="red"] .btn-floating.grey {
+  background-color: var(--pf-button) !important;
+  color: var(--pf-text) !important;
+}
+
+html[data-theme="red"] .btn:hover,
+html[data-theme="red"] .btn-small:hover,
+html[data-theme="red"] .btn-large:hover,
+html[data-theme="red"] .btn-floating:hover {
+  background-color: var(--pf-button-hover) !important;
+  color: var(--pf-link) !important;
+}
+
+html[data-theme="red"] .btn.red,
+html[data-theme="red"] .btn-small.red,
+html[data-theme="red"] .btn-large.red,
+html[data-theme="red"] .btn-floating.red {
+  background-color: #5a0808 !important;
+  color: var(--pf-link) !important;
+}
+
+html[data-theme="red"] .btn.disabled,
+html[data-theme="red"] .btn:disabled,
+html[data-theme="red"] .btn[disabled],
+html[data-theme="red"] .btn-small.disabled,
+html[data-theme="red"] .btn-small:disabled,
+html[data-theme="red"] .btn-small[disabled],
+html[data-theme="red"] .btn-large.disabled,
+html[data-theme="red"] .btn-large:disabled,
+html[data-theme="red"] .btn-large[disabled] {
+  background-color: var(--pf-surface-alt) !important;
+  color: var(--pf-text-muted) !important;
+}
+
 html[data-theme="red"] .sidenav,
 html[data-theme="red"] .modal,
 html[data-theme="red"] .modal .modal-footer {
   background-color: var(--pf-surface) !important;
   color: var(--pf-text) !important;
+}
+
+html[data-theme="red"] .material-tooltip {
+  background-color: var(--pf-input-bg) !important;
+  border: 1px solid var(--pf-border);
+  border-radius: 3px;
+  color: var(--pf-link) !important;
+  box-shadow: 0 2px 8px rgba(255, 50, 35, 0.15);
+}
+
+html[data-theme="red"] .tooltip-content {
+  color: var(--pf-link) !important;
 }
 
 html[data-theme="red"] .sidenav li > a {
@@ -241,6 +294,16 @@ html[data-theme="red"] select {
   background-color: var(--pf-input-bg);
   border-color: var(--pf-border);
   color: var(--pf-text);
+}
+
+html[data-theme="red"] [type="checkbox"] + span:not(.lever)::before,
+html[data-theme="red"] [type="checkbox"]:not(.filled-in) + span:not(.lever)::before {
+  border-color: var(--pf-border) !important;
+}
+
+html[data-theme="red"] [type="checkbox"]:checked + span:not(.lever)::before {
+  border-right-color: var(--pf-link) !important;
+  border-bottom-color: var(--pf-link) !important;
 }
 
 html[data-theme="red"] input:not([type]):focus:not([readonly]),
