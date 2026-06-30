@@ -11,12 +11,17 @@ This is used by SkySafari (iOS, iPadOS)
 
 import socket
 import logging
+import math
 import re
 from multiprocessing import Queue
-from typing import Tuple, Union
-from PiFinder.calc_utils import ra_to_deg, dec_to_deg, dec_to_dms_exact, sf_utils
+from typing import Optional, Tuple, Union
+import numpy as np
+import quaternion
+from PiFinder import config
+from PiFinder.calc_utils import ra_to_deg, dec_to_deg, sf_utils
 from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObject
 from PiFinder.multiproclogging import MultiprocLogging
+from PiFinder.pointing_model.imu_dead_reckoning import ImuDeadReckoning
 from skyfield.positionlib import position_of_radec
 import sys
 import time
@@ -27,9 +32,126 @@ sr_result = None
 sequence = 0
 ui_queue: Queue
 is_stellarium = False
+pos_server_config: Optional[config.Config] = None
+
+_POINTING_CACHE_SECONDS = 0.2
+_pointing_cache = {
+    "time": 0.0,
+    "value": None,
+}
 
 # shortcut for skyfield timescale
 ts = sf_utils.ts
+
+
+def _get_config_option(option: str, default):
+    if pos_server_config is None:
+        return default
+    return pos_server_config.get_option(option, default)
+
+
+def _format_ra_degrees(ra_degrees: float) -> str:
+    total_seconds = round(((ra_degrees % 360.0) / 15.0) * 3600.0)
+    total_seconds %= 24 * 3600
+    hh = total_seconds // 3600
+    mm = (total_seconds % 3600) // 60
+    ss = total_seconds % 60
+    return f"{hh:02.0f}:{mm:02.0f}:{ss:02.0f}"
+
+
+def _format_dec_degrees(dec_degrees: float) -> str:
+    sign = "-" if dec_degrees < 0 else "+"
+    total_seconds = min(round(abs(dec_degrees) * 3600.0), 90 * 3600)
+    d = total_seconds // 3600
+    m = (total_seconds % 3600) // 60
+    s = total_seconds % 60
+    return f"{sign}{d:02d}*{m:02d}'{s:02d}"
+
+
+def _solved_pointing_jnow(shared_state, dt) -> Optional[Tuple[float, float]]:
+    solution = shared_state.solution()
+    if not solution or not dt or not solution.has_pointing():
+        return None
+
+    aligned = solution.pointing.aligned.estimate
+    try:
+        ra_deg = float(aligned.RA)
+        dec_deg = float(aligned.Dec)
+    except TypeError:
+        logger.warning("solved_pointing_jnow: Type error in solved coords")
+        return None
+
+    point = position_of_radec(
+        ra_hours=ra_deg / 15.0,
+        dec_degrees=dec_deg,
+        epoch=ts.J2000,
+    )
+    ra_h, dec, _dist = point.radec(epoch=ts.from_datetime(dt))
+    return float(ra_h._degrees), float(dec.degrees)
+
+
+def _imu_altaz_degrees(
+    imu_sample, screen_direction: str
+) -> Optional[Tuple[float, float]]:
+    if not imu_sample or not imu_sample.is_calibrated():
+        return None
+    try:
+        q_x2cam = (
+            imu_sample.quat * ImuDeadReckoning._q_imu2cam(screen_direction)
+        ).normalized()
+    except (AttributeError, ValueError, ZeroDivisionError):
+        logger.debug("imu_altaz_degrees: invalid IMU sample", exc_info=True)
+        return None
+
+    if not np.isfinite(quaternion.as_float_array(q_x2cam)).all():
+        return None
+
+    # BNO055 IMUPLUS mode does not use the magnetometer, so yaw is relative to
+    # the sensor-fusion reference and may drift. Plate-solved pointing always
+    # overrides this fallback when available.
+    boresight = q_x2cam * quaternion.quaternion(0, 0, 0, 1) * q_x2cam.conj()
+    east, north, up = boresight.x, boresight.y, boresight.z
+    norm = math.sqrt(east * east + north * north + up * up)
+    if norm <= 0:
+        return None
+
+    east, north, up = east / norm, north / norm, up / norm
+    alt = math.degrees(math.asin(max(-1.0, min(1.0, up))))
+    az = math.degrees(math.atan2(east, north)) % 360.0
+    return alt, az
+
+
+def _imu_fallback_pointing_jnow(shared_state, dt) -> Optional[Tuple[float, float]]:
+    if not _get_config_option("skysafari_imu_fallback", True):
+        return None
+
+    location = shared_state.location()
+    if not location or not location.lock or not dt:
+        return None
+
+    screen_direction = _get_config_option("screen_direction", "right")
+    altaz = _imu_altaz_degrees(shared_state.imu(), screen_direction)
+    if altaz is None:
+        return None
+
+    alt, az = altaz
+    sf_utils.set_location(location.lat, location.lon, location.altitude)
+    return sf_utils.altaz_to_radec(alt, az, dt)
+
+
+def _current_pointing_jnow(shared_state) -> Optional[Tuple[float, float]]:
+    now = time.monotonic()
+    if now - _pointing_cache["time"] <= _POINTING_CACHE_SECONDS:
+        return _pointing_cache["value"]
+
+    dt = shared_state.datetime()
+    pointing = _solved_pointing_jnow(shared_state, dt)
+    if pointing is None:
+        pointing = _imu_fallback_pointing_jnow(shared_state, dt)
+
+    _pointing_cache["time"] = now
+    _pointing_cache["value"] = pointing
+    return pointing
 
 
 def get_telescope_ra(shared_state, _):
@@ -38,30 +160,11 @@ def get_telescope_ra(shared_state, _):
     format for LX200 protocol
     RA = HH:MM:SS
     """
-    solution = shared_state.solution()
-    dt = shared_state.datetime()
-    if not solution or not dt or not solution.has_pointing():
+    pointing = _current_pointing_jnow(shared_state)
+    if pointing is None:
         return "+00*00'01"
 
-    aligned = solution.pointing.aligned.estimate
-    # Convert from J2000 to now epoch
-    try:
-        RA_deg = float(aligned.RA)
-        Dec_deg = float(aligned.Dec)
-    except TypeError:
-        hh = 0
-        mm = 0
-        ss = 0
-        ra_result = f"{hh:02.0f}:{mm:02.0f}:{ss:02.0f}"
-        logger.warning("get_telescope_ra: Type Error")
-        return ra_result
-
-    _p = position_of_radec(ra_hours=RA_deg / 15.0, dec_degrees=Dec_deg, epoch=ts.J2000)
-
-    RA_h, _Dec, _dist = _p.radec(epoch=ts.from_datetime(dt))
-
-    hh, mm, ss = RA_h.hms()
-    ra_result = f"{hh:02.0f}:{mm:02.0f}:{ss:02.0f}"
+    ra_result = _format_ra_degrees(pointing[0])
     logger.debug("get_telescope_ra: RA result: %s", ra_result)
     return ra_result
 
@@ -72,31 +175,11 @@ def get_telescope_dec(shared_state, _):
     format for LX200 protocol
     DEC = +/- DD*MM'SS
     """
-    solution = shared_state.solution()
-    dt = shared_state.datetime()
-    if not solution or not dt or not solution.has_pointing():
+    pointing = _current_pointing_jnow(shared_state)
+    if pointing is None:
         return "+00*00'01"
 
-    aligned = solution.pointing.aligned.estimate
-    # Convert from J2000 to now epoch
-    try:
-        RA_deg = float(aligned.RA)
-        Dec_deg = float(aligned.Dec)
-    except TypeError:
-        sign = "+"
-        hh = 0
-        mm = 0
-        ss = 0
-        dec_result = f"{sign}{hh:02.0f}*{mm:02.0f}'{ss:02.0f}"
-        logger.warning("get_telescope_dec: Type error in coords")
-        return dec_result
-
-    _p = position_of_radec(ra_hours=RA_deg / 15.0, dec_degrees=Dec_deg, epoch=ts.J2000)
-
-    _RA_h, Dec, _dist = _p.radec(epoch=ts.from_datetime(dt))
-
-    sign, d, m, s = dec_to_dms_exact(Dec.degrees)
-    dec_result = f"{sign}{d:02d}*{m:02d}'{round(s):02d}"
+    dec_result = _format_dec_degrees(pointing[1])
     logger.debug("get_telescope_dec: Dec result: %s", dec_result)
     return dec_result
 
@@ -286,8 +369,9 @@ def handle_client(client_socket, shared_state):
 
 def run_server(shared_state, p_ui_queue, log_queue):
     MultiprocLogging.configurer(log_queue)
-    global ui_queue
+    global ui_queue, pos_server_config
     ui_queue = p_ui_queue
+    pos_server_config = config.Config()
     logger = logging.getLogger(__name__)
 
     while True:
