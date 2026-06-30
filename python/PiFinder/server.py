@@ -1017,6 +1017,9 @@ class Server:
                 "serial_port": cfg.get_option("onstep_serial_port", ""),
                 "server_host": cfg.get_option("mount_control_indi_host", "localhost"),
                 "server_port": int(cfg.get_option("mount_control_indi_port", 7624)),
+                "skysafari_indi_goto": bool(
+                    cfg.get_option("skysafari_indi_goto", False)
+                ),
             }
 
         web_motion_lock = threading.Lock()
@@ -1230,6 +1233,7 @@ class Server:
             network_host = (request.form.get("network_host") or "").strip()
             network_manual = (request.form.get("network_manual") or "").strip()
             server_host = (request.form.get("server_host") or "localhost").strip()
+            skysafari_indi_goto = request.form.get("skysafari_indi_goto") == "on"
 
             if serial_port == "__manual__":
                 serial_port = serial_manual
@@ -1262,6 +1266,7 @@ class Server:
                 cfg.set_option("onstep_network_port", network_port)
                 cfg.set_option("mount_control_indi_host", server_host)
                 cfg.set_option("mount_control_indi_port", server_port)
+                cfg.set_option("skysafari_indi_goto", skysafari_indi_goto)
                 self.ui_queue.put("reload_config")
                 return _render_indi_page(_("INDI OnStep settings applied"))
             except (RuntimeError, ValueError) as e:

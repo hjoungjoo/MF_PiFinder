@@ -12,6 +12,7 @@
     "mount_control_indi_host": "localhost",
     "mount_control_indi_port": 7624,
     "skysafari_imu_fallback": true,
+    "skysafari_indi_goto": false,
     "onstep_connection_type": "network",
     "onstep_serial_port": "",
     "onstep_network_host": "",

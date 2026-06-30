@@ -17,8 +17,9 @@ class DummyLocation:
 
 
 class DummyState:
-    def __init__(self, imu_sample):
+    def __init__(self, imu_sample, solution=None):
         self._imu_sample = imu_sample
+        self._solution = solution
 
     def location(self):
         return DummyLocation()
@@ -30,7 +31,15 @@ class DummyState:
         return self._imu_sample
 
     def solution(self):
-        return None
+        return self._solution
+
+
+class DummySolution:
+    def __init__(self, has_pointing):
+        self._has_pointing = has_pointing
+
+    def has_pointing(self):
+        return self._has_pointing
 
 
 def test_imu_altaz_requires_calibrated_sample():
@@ -129,5 +138,44 @@ def test_skysafari_guide_move_ignored_when_mount_control_disabled(monkeypatch):
 
     assert pos_server.handle_guide_move(None, ":Me#") is None
 
+    with pytest.raises(queue.Empty):
+        commands.get_nowait()
+
+
+def test_skysafari_goto_queues_indi_goto_when_enabled_and_solved(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True, "skysafari_indi_goto": True}),
+    )
+
+    queued = pos_server._queue_indi_goto_if_enabled(
+        DummyState(None, DummySolution(True)), 12.5, -34.25
+    )
+
+    assert queued is True
+    assert commands.get_nowait() == {
+        "type": "goto_target",
+        "ra": 12.5,
+        "dec": -34.25,
+    }
+
+
+def test_skysafari_goto_skips_indi_goto_until_solved(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True, "skysafari_indi_goto": True}),
+    )
+
+    queued = pos_server._queue_indi_goto_if_enabled(
+        DummyState(None, DummySolution(False)), 12.5, -34.25
+    )
+
+    assert queued is False
     with pytest.raises(queue.Empty):
         commands.get_nowait()

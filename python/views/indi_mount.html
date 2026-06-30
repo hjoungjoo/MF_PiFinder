@@ -220,6 +220,15 @@
       </div>
 
       <div class="row">
+        <div class="col s12">
+          <label>
+            <input type="checkbox" name="skysafari_indi_goto" {% if skysafari_indi_goto %}checked{% endif %}>
+            <span>{{ _('Forward SkySafari GoTo to INDI when PiFinder is solved') }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="row">
         <button type="submit" class="btn">{{ _('Apply to INDI') }}</button>
       </div>
     </form>

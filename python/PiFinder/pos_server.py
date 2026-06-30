@@ -36,11 +36,13 @@ is_stellarium = False
 pos_server_config: Optional[config.Config] = None
 
 _POINTING_CACHE_SECONDS = 0.2
+_CONFIG_RELOAD_SECONDS = 1.0
 _GUIDE_LEASE_SECONDS = 1.2
 _pointing_cache = {
     "time": 0.0,
     "value": None,
 }
+_config_last_loaded = 0.0
 _GUIDE_DIRECTIONS = {
     "Mn": "north",
     "Ms": "south",
@@ -53,8 +55,16 @@ ts = sf_utils.ts
 
 
 def _get_config_option(option: str, default):
+    global _config_last_loaded
     if pos_server_config is None:
         return default
+    now = time.monotonic()
+    if now - _config_last_loaded > _CONFIG_RELOAD_SECONDS:
+        try:
+            pos_server_config.load_config()
+        except Exception:
+            logger.warning("Could not reload SkySafari server config", exc_info=True)
+        _config_last_loaded = now
     return pos_server_config.get_option(option, default)
 
 
@@ -233,6 +243,35 @@ def _mount_control_enabled() -> bool:
     return bool(_get_config_option("mount_control", False) and mountcontrol_queue)
 
 
+def _has_solved_pointing(shared_state) -> bool:
+    try:
+        solution = shared_state.solution()
+    except Exception:
+        logger.debug("Could not read PiFinder solution state", exc_info=True)
+        return False
+    return bool(solution and solution.has_pointing())
+
+
+def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> bool:
+    if not _mount_control_enabled():
+        return False
+    if not _get_config_option("skysafari_indi_goto", False):
+        return False
+    if not _has_solved_pointing(shared_state):
+        logger.info("SkySafari INDI GoTo skipped; PiFinder is not solved")
+        return False
+
+    mountcontrol_queue.put(
+        {
+            "type": "goto_target",
+            "ra": ra_deg,
+            "dec": dec_deg,
+        }
+    )
+    logger.info("SkySafari INDI GoTo queued: RA %.4f Dec %.4f", ra_deg, dec_deg)
+    return True
+
+
 def handle_guide_move(_shared_state, input_str: str):
     command = extract_command(input_str)
     direction = _GUIDE_DIRECTIONS.get(command)
@@ -335,6 +374,7 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
     shared_state.ui_state().add_recent(obj)
     shared_state.ui_state().set_new_pushto(True)
     ui_queue.put("push_object")
+    _queue_indi_goto_if_enabled(shared_state, comp_ra, comp_dec)
     return "1"
 
 
@@ -421,10 +461,11 @@ def handle_client(client_socket, shared_state):
 
 def run_server(shared_state, p_ui_queue, log_queue, p_mountcontrol_queue=None):
     MultiprocLogging.configurer(log_queue)
-    global ui_queue, mountcontrol_queue, pos_server_config
+    global ui_queue, mountcontrol_queue, pos_server_config, _config_last_loaded
     ui_queue = p_ui_queue
     mountcontrol_queue = p_mountcontrol_queue
     pos_server_config = config.Config()
+    _config_last_loaded = time.monotonic()
     logger = logging.getLogger(__name__)
 
     while True:
