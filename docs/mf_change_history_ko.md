@@ -1,7 +1,7 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
-최종 업데이트: 2026-06-27
+최종 업데이트: 2026-07-01
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
@@ -38,6 +38,7 @@
 | Wi-Fi AP+STA 동시 모드 및 AP 설정 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | `wlan0` STA + `uap0` AP, STA 채널 추적, STA 밴드 선호, AP IP 설정, AP WPA2 암호 설정, AP+STA 인터넷 공유 옵션, OS Wi-Fi 프로파일 가져오기, 스캔된 SSID 선택, Pi 4/5 공통 Wi-Fi 모드 |
 | Locations 위치 카탈로그 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | GeoNames 기반 오프라인 위치 카탈로그, 국가/지역/군구/도시 선택, 좌표/고도/source 자동 입력, 북한 제외 |
 | Web UI 적색 야간 테마 및 PWA 전체화면 앱 모드 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | red night theme, 브라우저별 theme 저장, PWA manifest, service worker, PWA icon |
+| 선택형 IMU compass 방위 개선 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | 선택형 BNO055 NDOF 지자계 fusion mode, IMU calibration 상태 표시, 자동 calibration 저장/로드, 수동 calibration 메뉴 |
 | 변경 히스토리/PR 재편성 문서화 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | 이 문서의 작업 단위 목차, PR 상태, 재편성 기준 |
 | 최종 통합 브랜치 | Upstream PR 아님 | `origin/mf_pifinder` + 로컬 미커밋 Web UI/PWA 변경 | 위 기능들을 통합해 실제 장치에서 설치/테스트하는 기준 브랜치 |
 
@@ -56,6 +57,7 @@
 | Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, STA 밴드 선호, AP IP 설정, AP 보안/암호, 선택형 AP+STA 인터넷 공유, OS Wi-Fi 프로파일 가져오기, 스캔된 SSID 선택, web/device network UI | 새 Draft PR 필요 |
 | Locations catalog | GeoNames 기반 오프라인 위치 카탈로그, 국가/지역/군구/도시 선택, 좌표 자동 입력 | 새 Draft PR 필요 |
 | Web observing UI | red night theme, PWA/fullscreen app mode | 새 Draft PR 필요 |
+| 선택형 IMU compass 방위 개선 | BNO055 NDOF 옵션, 자동/수동 calibration, status UI | 새 Draft PR 필요 |
 | Korean localization | Korean locale and CJK language handling | #500은 파일 규모가 커서 별도 유지 권장 |
 
 문서는 각 기능 PR에 필요한 설치/사용 문서를 함께 넣는 방식을 권장한다. 예를 들어

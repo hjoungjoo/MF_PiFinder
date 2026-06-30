@@ -178,6 +178,27 @@ def reload_config(ui_module: UIModule) -> None:
     ui_module.message(_("Config updated"), 1)
 
 
+def _send_imu_command(ui_module: UIModule, command_type: str, message: str) -> None:
+    imu_queue = ui_module.command_queues.get("imu")
+    if imu_queue is None:
+        ui_module.message(_("IMU command\nunavailable"), 2)
+        return
+    imu_queue.put({"type": command_type})
+    ui_module.message(message, 1)
+
+
+def imu_save_calibration(ui_module: UIModule) -> None:
+    _send_imu_command(ui_module, "save_calibration", _("IMU Cal Save"))
+
+
+def imu_load_calibration(ui_module: UIModule) -> None:
+    _send_imu_command(ui_module, "load_calibration", _("IMU Cal Load"))
+
+
+def imu_clear_calibration(ui_module: UIModule) -> None:
+    _send_imu_command(ui_module, "clear_calibration", _("IMU Cal Clear"))
+
+
 def get_custom_ntp_server_display(ui_module: UIModule) -> str:
     server = ui_module.config_object.get_option("ntp_server_custom", "")
     return f" ({server})" if server else ""

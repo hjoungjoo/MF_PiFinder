@@ -6,6 +6,7 @@ This module is for IMU related functions
 """
 
 import time
+import queue
 from PiFinder import config, imu_calibration
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.types.positioning import ImuSample
@@ -105,6 +106,40 @@ class Imu:
             logger.info("Saved BNO055 calibration to %s", imu_calibration.CALIBRATION_FILE)
         except Exception:
             logger.exception("Could not save BNO055 calibration")
+
+    def save_calibration(self) -> bool:
+        try:
+            snapshot = imu_calibration.snapshot_from_sensor(self.sensor)
+            imu_calibration.save_snapshot(snapshot)
+            self._calibration_saved_this_run = True
+            logger.info("Manually saved BNO055 calibration")
+            return True
+        except Exception:
+            logger.exception("Could not manually save BNO055 calibration")
+            return False
+
+    def load_calibration(self) -> bool:
+        try:
+            snapshot = imu_calibration.load_snapshot()
+            if not snapshot:
+                logger.warning("No saved BNO055 calibration to load")
+                return False
+            imu_calibration.apply_snapshot_to_sensor(self.sensor, snapshot)
+            self.calibration_loaded = True
+            logger.info("Manually loaded BNO055 calibration")
+            return True
+        except Exception:
+            logger.exception("Could not manually load BNO055 calibration")
+            return False
+
+    def clear_calibration(self) -> bool:
+        try:
+            cleared = imu_calibration.clear_snapshot()
+            logger.info("Cleared BNO055 calibration file: %s", cleared)
+            return cleared
+        except Exception:
+            logger.exception("Could not clear BNO055 calibration file")
+            return False
 
     def moving(self):
         """
@@ -226,7 +261,31 @@ class Imu:
         )
 
 
-def imu_monitor(shared_state, console_queue, log_queue):
+def _handle_imu_command(imu, command, console_queue):
+    command_type = command.get("type") if isinstance(command, dict) else command
+    if not hasattr(imu, "save_calibration"):
+        console_queue.put("IMU: calibration unsupported")
+        return
+    if command_type == "save_calibration":
+        if imu.save_calibration():
+            console_queue.put("IMU: calibration saved")
+        else:
+            console_queue.put("IMU: calibration save failed")
+    elif command_type == "load_calibration":
+        if imu.load_calibration():
+            console_queue.put("IMU: calibration loaded")
+        else:
+            console_queue.put("IMU: no calibration loaded")
+    elif command_type == "clear_calibration":
+        if imu.clear_calibration():
+            console_queue.put("IMU: calibration cleared")
+        else:
+            console_queue.put("IMU: no calibration file")
+    else:
+        logger.warning("Unknown IMU command: %s", command_type)
+
+
+def imu_monitor(shared_state, console_queue, log_queue, command_queue=None):
     MultiprocLogging.configurer(log_queue)
     logger.debug("Starting IMU")
     imu = None
@@ -263,6 +322,14 @@ def imu_monitor(shared_state, console_queue, log_queue):
     sample_period = getattr(imu, "imu_sample_frequency", 1 / 30)
 
     while True:
+        if command_queue is not None:
+            while True:
+                try:
+                    command = command_queue.get(block=False)
+                except queue.Empty:
+                    break
+                _handle_imu_command(imu, command, console_queue)
+
         loop_start = time.monotonic()
         imu.update()
         imu_sample.status = imu.calibration

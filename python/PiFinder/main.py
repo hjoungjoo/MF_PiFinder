@@ -405,6 +405,7 @@ def main(
     console_queue: Queue = Queue()
     keyboard_queue: Queue = Queue()
     gps_queue: Queue = Queue()
+    imu_command_queue: Queue = Queue()
     camera_command_queue: Queue = Queue()
     solver_queue: Queue = Queue()
     alignment_command_queue: Queue = Queue()
@@ -452,6 +453,7 @@ def main(
         "align_command": alignment_command_queue,
         "align_response": alignment_response_queue,
         "gps": gps_queue,
+        "imu": imu_command_queue,
         "integrator": integrator_command_queue,
         "mountcontrol": mountcontrol_queue,
     }
@@ -567,7 +569,7 @@ def main(
         imu_process = Process(
             name="IMU",
             target=imu.imu_monitor,
-            args=(shared_state, console_queue, imu_logqueue),
+            args=(shared_state, console_queue, imu_logqueue, imu_command_queue),
         )
         imu_process.start()
 

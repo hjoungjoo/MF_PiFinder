@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-06-27
+Last updated: 2026-07-01
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -38,6 +38,7 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Wi-Fi AP+STA simultaneous mode and AP settings | No Draft PR yet | local `mf_pifinder` worktree | `wlan0` STA + `uap0` AP, STA channel tracking, STA band preference, configurable AP IP, AP WPA2 password setting, AP+STA internet sharing option, OS Wi-Fi profile import, scanned SSID selection, shared Pi 4/5 Wi-Fi mode |
 | Locations catalog | No Draft PR yet | local `mf_pifinder` worktree | GeoNames-based offline location catalog, country/region/district/city selection, coordinate/altitude/source prefill, North Korea excluded |
 | Web UI red night theme and PWA fullscreen app mode | No Draft PR yet | local `mf_pifinder` worktree | red night theme, per-browser theme storage, PWA manifest, service worker, PWA icons |
+| Optional IMU compass heading | No Draft PR yet | local `mf_pifinder` worktree | optional BNO055 NDOF magnetometer fusion mode, IMU calibration status, automatic calibration save/load, manual calibration menu |
 | Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |
 | Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted Web UI/PWA changes | integration branch used for install and hardware testing across the features above |
 
@@ -56,6 +57,7 @@ to follow. The following grouping is easier to maintain.
 | Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, STA band preference, configurable AP IP, AP security/password, optional AP+STA internet sharing, OS Wi-Fi profile import, scanned SSID selection, web/device network UI | New Draft PR needed |
 | Locations catalog | GeoNames-based offline location catalog, country/region/district/city selector, coordinate prefill | New Draft PR needed |
 | Web observing UI | red night theme, PWA/fullscreen app mode | New Draft PR needed |
+| Optional IMU compass heading | BNO055 NDOF option, automatic/manual calibration, status UI | New Draft PR needed |
 | Korean localization | Korean locale and CJK language handling | Keep #500 separate because the locale file is large |
 
 Documentation should travel with the feature PR that needs it. For example, INDI

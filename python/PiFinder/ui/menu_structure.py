@@ -1553,6 +1553,25 @@ pifinder_menu = {
                         },
                     ],
                 },
+                {
+                    "name": _("IMU Calib."),
+                    "class": UITextMenu,
+                    "select": "single",
+                    "items": [
+                        {
+                            "name": _("Save"),
+                            "callback": callbacks.imu_save_calibration,
+                        },
+                        {
+                            "name": _("Load"),
+                            "callback": callbacks.imu_load_calibration,
+                        },
+                        {
+                            "name": _("Clear"),
+                            "callback": callbacks.imu_clear_calibration,
+                        },
+                    ],
+                },
             ],
         },
         {
