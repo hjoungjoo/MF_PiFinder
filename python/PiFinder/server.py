@@ -1102,7 +1102,46 @@ class Server:
                 "source": source,
             }
 
-        def _render_indi_page(status_message="", error_message=""):
+        def _onstep_location_display(onstep_props):
+            return sys_utils.format_onstep_location_display(
+                onstep_props.get("LX200 OnStep.GEOGRAPHIC_COORD.LAT"),
+                onstep_props.get("LX200 OnStep.GEOGRAPHIC_COORD.LONG"),
+                onstep_props.get("LX200 OnStep.GEOGRAPHIC_COORD.ELEV"),
+            )
+
+        def _onstep_location_matches(onstep_props, latitude, longitude, tolerance=0.01):
+            try:
+                current_lat = float(onstep_props["LX200 OnStep.GEOGRAPHIC_COORD.LAT"])
+                current_lon = (
+                    float(onstep_props["LX200 OnStep.GEOGRAPHIC_COORD.LONG"]) % 360.0
+                )
+                target_lat = float(latitude)
+                target_lon = sys_utils.onstep_longitude_degrees(float(longitude)) % 360.0
+            except (KeyError, TypeError, ValueError):
+                return False
+
+            lon_delta = abs(current_lon - target_lon)
+            lon_delta = min(lon_delta, 360.0 - lon_delta)
+            return abs(current_lat - target_lat) <= tolerance and lon_delta <= tolerance
+
+        def _get_indi_onstep_properties(indi_cfg):
+            return sys_utils.get_indi_onstep_properties(
+                server_host=indi_cfg["server_host"],
+                server_port=indi_cfg["server_port"],
+            )
+
+        def _wait_for_onstep_location_match(indi_cfg, latitude, longitude, timeout=5.0):
+            deadline = time.monotonic() + timeout
+            onstep_props = {}
+            while True:
+                onstep_props = _get_indi_onstep_properties(indi_cfg)
+                if _onstep_location_matches(onstep_props, latitude, longitude):
+                    return onstep_props
+                if time.monotonic() >= deadline:
+                    return onstep_props
+                time.sleep(0.5)
+
+        def _render_indi_page(status_message="", error_message="", onstep_props=None):
             indi_cfg = _indi_config_values()
 
             try:
@@ -1111,16 +1150,15 @@ class Server:
                 logger.exception("Could not get AP clients for INDI setup")
                 ap_clients = []
 
-            onstep_props = sys_utils.get_indi_onstep_properties(
-                server_host=indi_cfg["server_host"],
-                server_port=indi_cfg["server_port"],
-            )
+            if onstep_props is None:
+                onstep_props = _get_indi_onstep_properties(indi_cfg)
             return app.jinja_env.get_template("indi_mount.html").render(
                 title=_("INDI"),
                 **indi_cfg,
                 serial_ports=sys_utils.list_onstep_serial_ports(),
                 ap_clients=ap_clients,
                 onstep_props=onstep_props,
+                onstep_location_display=_onstep_location_display(onstep_props),
                 pifinder_location_time=_pifinder_location_time_values(),
                 web_motion_keepalive_ms=int(WEB_MOTION_KEEPALIVE_INTERVAL * 1000),
                 slew_rate_labels=[
@@ -1153,14 +1191,13 @@ class Server:
         @auth_required
         def indi_current_values():
             indi_cfg = _indi_config_values()
+            onstep_props = _get_indi_onstep_properties(indi_cfg)
             return jsonify(
                 {
                     "ok": True,
                     "pifinder_location_time": _pifinder_location_time_values(),
-                    "onstep_props": sys_utils.get_indi_onstep_properties(
-                        server_host=indi_cfg["server_host"],
-                        server_port=indi_cfg["server_port"],
-                    ),
+                    "onstep_props": onstep_props,
+                    "onstep_location_display": _onstep_location_display(onstep_props),
                 }
             )
 
@@ -1399,18 +1436,78 @@ class Server:
                     raise ValueError("Latitude must be between -90 and 90")
                 if not -180 <= lon <= 180:
                     raise ValueError("Longitude must be between -180 and 180")
-                utc_time = datetime.now(timezone.utc).replace(microsecond=0).strftime(
-                    "%Y-%m-%dT%H:%M:%S"
+                utc_time = sys_utils.parse_indi_utc_datetime(
+                    request.form.get("utc_time") or datetime.now(timezone.utc)
                 )
-                return _apply_indi_action(
-                    [
-                        f"LX200 OnStep.GEOGRAPHIC_COORD.LAT={lat}",
-                        f"LX200 OnStep.GEOGRAPHIC_COORD.LONG={lon}",
-                        f"LX200 OnStep.GEOGRAPHIC_COORD.ELEV={elev}",
-                        f"LX200 OnStep.TIME_UTC.UTC={utc_time}",
-                        "LX200 OnStep.TIME_UTC.OFFSET=0",
-                    ],
-                    _("Location and UTC time sent"),
+                properties = sys_utils.build_indi_location_time_properties(
+                    latitude=lat,
+                    longitude=lon,
+                    elevation=elev,
+                    utc_datetime=utc_time,
+                )
+                indi_cfg = _indi_config_values()
+                result = sys_utils.apply_indi_onstep_properties(
+                    properties,
+                    server_host=indi_cfg["server_host"],
+                    server_port=indi_cfg["server_port"],
+                )
+                if not result.get("ok"):
+                    raise RuntimeError(
+                        result.get("stderr")
+                        or result.get("stdout")
+                        or "INDI location/time command failed"
+                    )
+
+                onstep_props = _wait_for_onstep_location_match(
+                    indi_cfg,
+                    lat,
+                    lon,
+                    timeout=2.0,
+                )
+                if _onstep_location_matches(onstep_props, lat, lon):
+                    return _render_indi_page(
+                        _("Location and UTC time sent"),
+                        onstep_props=onstep_props,
+                    )
+
+                exclusive_result = sys_utils.sync_onstep_location_time_exclusive(
+                    connection_type=indi_cfg["connection_type"],
+                    latitude=lat,
+                    longitude=lon,
+                    elevation=elev,
+                    utc_datetime=utc_time,
+                    network_host=indi_cfg["network_host"],
+                    network_port=indi_cfg["network_port"],
+                    serial_port=indi_cfg["serial_port"],
+                    server_host=indi_cfg["server_host"],
+                    server_port=indi_cfg["server_port"],
+                )
+                if not exclusive_result.get("ok"):
+                    raise RuntimeError(
+                        "INDI driver did not apply the location and exclusive "
+                        "OnStep sync failed: "
+                        + (
+                            exclusive_result.get("stderr")
+                            or exclusive_result.get("stdout")
+                            or "unknown error"
+                        )
+                    )
+
+                onstep_props = _wait_for_onstep_location_match(
+                    indi_cfg,
+                    lat,
+                    lon,
+                    timeout=8.0,
+                )
+                if not _onstep_location_matches(onstep_props, lat, lon):
+                    raise RuntimeError(
+                        "Exclusive OnStep sync completed, but the driver still "
+                        "does not report the requested location"
+                    )
+
+                return _render_indi_page(
+                    _("Location and UTC time sent via exclusive OnStep sync"),
+                    onstep_props=onstep_props,
                 )
             except (RuntimeError, ValueError) as e:
                 return _render_indi_page(error_message=str(e))

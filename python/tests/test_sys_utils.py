@@ -5,6 +5,59 @@ try:
     from PiFinder import sys_utils
 
     @pytest.mark.unit
+    def test_build_indi_location_time_properties_uses_input_time_and_offset():
+        properties = sys_utils.build_indi_location_time_properties(
+            latitude=37.52704,
+            longitude=127.10936,
+            elevation=30,
+            utc_datetime="2026-06-30T13:45:12",
+            utc_offset_hours=9,
+        )
+
+        assert "LX200 OnStep.GEOGRAPHIC_COORD.LAT=37.52704" in properties
+        assert "LX200 OnStep.GEOGRAPHIC_COORD.LONG=127.10936" in properties
+        assert "LX200 OnStep.GEOGRAPHIC_COORD.ELEV=30.0" in properties
+        assert "LX200 OnStep.TIME_UTC.UTC=2026-06-30T13:45:12" in properties
+        assert "LX200 OnStep.TIME_UTC.OFFSET=9.00" in properties
+
+    @pytest.mark.unit
+    def test_build_indi_location_time_properties_converts_west_longitude():
+        properties = sys_utils.build_indi_location_time_properties(
+            latitude=34,
+            longitude=-118.25,
+            utc_datetime="2026-06-30T13:45:12Z",
+            utc_offset_hours=-7,
+        )
+
+        assert "LX200 OnStep.GEOGRAPHIC_COORD.LONG=241.75" in properties
+        assert "LX200 OnStep.TIME_UTC.OFFSET=-7.00" in properties
+
+    @pytest.mark.unit
+    def test_format_onstep_location_display_matches_onstep_web_sign():
+        degree = "\N{DEGREE SIGN}"
+        assert (
+            sys_utils.format_onstep_location_display(
+                37.53333333333333,
+                127.11666666666666,
+                0,
+            )
+            == f"+37{degree}32'00\", -127{degree}07'00\" / 0m"
+        )
+
+    @pytest.mark.unit
+    def test_build_onstep_lx200_location_time_commands_use_onstep_longitude_sign():
+        commands = sys_utils.build_onstep_lx200_location_time_commands(
+            latitude=37.32361,
+            longitude=126.82194,
+            utc_datetime="2026-06-30T14:15:06+00:00",
+            utc_offset_hours=9,
+        )
+
+        assert commands[0] == ":St+37*19:25#"
+        assert commands[1] == ":Sg-126*49:19#"
+        assert commands[2] == ":SG+09:00#"
+
+    @pytest.mark.unit
     def test_wpa_supplicant_parsing():
         # This could be read from a file or passed from another function
         wpa_supplicant_example = """

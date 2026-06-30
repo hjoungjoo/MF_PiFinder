@@ -71,6 +71,28 @@ hardware_platform = "Pi"
 display_hardware = "SSD1351"
 display_device: DisplayBase = DisplayBase()
 keypad_pwm = None
+USER_LOCATION_SOURCES = {"WEB", "MANUAL"}
+USER_LOCATION_PREFIXES = ("CONFIG:",)
+
+
+def _is_user_location_source(source: str | None) -> bool:
+    source = source or ""
+    return source in USER_LOCATION_SOURCES or source.startswith(USER_LOCATION_PREFIXES)
+
+
+def should_apply_location_fix(current_location: Any, gps_content: dict) -> bool:
+    """Return True when a GPS queue fix should replace the current location."""
+    new_source = str(gps_content.get("source") or "")
+    if _is_user_location_source(new_source):
+        return True
+
+    current_source = str(getattr(current_location, "source", "") or "")
+    if _is_user_location_source(current_source) or current_source == "replay":
+        return False
+
+    current_error = float(getattr(current_location, "error_in_m", 0) or 0)
+    new_error = float(gps_content.get("error_in_m", 0) or 0)
+    return current_error == 0 or new_error < current_error
 
 
 def init_keypad_pwm():
@@ -735,25 +757,9 @@ def main(
                     while True:  # Consume from gps_queue until empty
                         gps_msg, gps_content = gps_queue.get(block=False)
                         if gps_msg == "fix":
-                            if gps_content["lat"] + gps_content["lon"] != 0:
-                                location = shared_state.location()
+                            location = shared_state.location()
 
-                            # Only update GPS fixes, as soon as it's loaded or comes from the WEB it's untouchable
-                            # "replay" is protected too: a telemetry replay owns the
-                            # location until it ends and restores the original.
-                            if (
-                                not location.source == "WEB"
-                                and not location.source.startswith("CONFIG:")
-                                and not location.source == "MANUAL"
-                                and not location.source == "replay"
-                                and (
-                                    location.error_in_m == 0
-                                    or float(gps_content["error_in_m"])
-                                    < float(
-                                        location.error_in_m
-                                    )  # Only if new error is smaller
-                                )
-                            ):
+                            if should_apply_location_fix(location, gps_content):
                                 logger.debug(
                                     f"Updating GPS location: new content: {gps_content}, old content: {location}"
                                 )

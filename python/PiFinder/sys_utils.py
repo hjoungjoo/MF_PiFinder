@@ -2,9 +2,11 @@ import glob
 import configparser
 import ipaddress
 import json
+import os
 import re
 import subprocess
 import time
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 import pam
@@ -93,6 +95,159 @@ BLUETOOTH_DEVICE_FIELD_RE = re.compile(
 )
 BLUETOOTH_MAC_RE = re.compile(r"^[0-9A-Fa-f:]{17}$")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def parse_indi_utc_datetime(value: Any) -> datetime:
+    """Return a timezone-aware UTC datetime for INDI TIME_UTC.UTC."""
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            parsed = datetime.now(timezone.utc)
+        else:
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(text)
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def local_utc_offset_hours(at_utc: datetime | None = None) -> float:
+    """Return the system local UTC offset in hours for the given UTC time."""
+    utc_dt = parse_indi_utc_datetime(at_utc or datetime.now(timezone.utc))
+    offset = utc_dt.astimezone().utcoffset()
+    if offset is None:
+        return 0.0
+    return offset.total_seconds() / 3600.0
+
+
+def onstep_longitude_degrees(longitude: float) -> float:
+    """INDI LX200 longitude is 0..360 degrees eastward."""
+    lon = float(longitude)
+    if lon < 0:
+        lon += 360.0
+    return lon
+
+
+def onstep_web_longitude_degrees(indi_longitude: float) -> float:
+    """Convert INDI 0..360 eastward longitude to OnStep web west-positive style."""
+    lon = float(indi_longitude) % 360.0
+    if lon > 180.0:
+        return 360.0 - lon
+    return -lon
+
+
+def _format_signed_dms(value: float, degree_width: int) -> str:
+    sign = "+" if value >= 0 else "-"
+    total_seconds = int(round(abs(float(value)) * 3600.0))
+    degrees, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return (
+        f"{sign}{degrees:0{degree_width}d}"
+        f"\N{DEGREE SIGN}{minutes:02d}'{seconds:02d}\""
+    )
+
+
+def format_onstep_location_display(
+    latitude: Any,
+    indi_longitude: Any,
+    elevation: Any = None,
+) -> str:
+    """Return location using the same longitude sign style as the OnStep web UI."""
+    if latitude in (None, "") or indi_longitude in (None, ""):
+        return "-"
+
+    lat_dms = _format_signed_dms(float(latitude), 2)
+    lon_dms = _format_signed_dms(
+        onstep_web_longitude_degrees(float(indi_longitude)),
+        3,
+    )
+    text = f"{lat_dms}, {lon_dms}"
+    if elevation not in (None, ""):
+        text += f" / {float(elevation):g}m"
+    return text
+
+
+def _dms_parts(value: float) -> tuple[int, int, int]:
+    total_seconds = int(round(abs(float(value)) * 3600.0))
+    degrees, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return degrees, minutes, seconds
+
+
+def build_onstep_lx200_location_time_commands(
+    latitude: float,
+    longitude: float,
+    utc_datetime: Any,
+    utc_offset_hours: float | None = None,
+) -> list[str]:
+    """Build OnStep/LX200 commands for exclusive direct site/time sync."""
+    lat = float(latitude)
+    onstep_lon = onstep_web_longitude_degrees(onstep_longitude_degrees(longitude))
+    utc_dt = parse_indi_utc_datetime(utc_datetime)
+    local_dt = utc_dt.astimezone()
+    offset = (
+        local_utc_offset_hours(utc_dt)
+        if utc_offset_hours is None
+        else float(utc_offset_hours)
+    )
+
+    lat_d, lat_m, lat_s = _dms_parts(lat)
+    lon_d, lon_m, lon_s = _dms_parts(onstep_lon)
+    offset_sign = "+" if offset >= 0 else "-"
+    offset_minutes_total = int(round(abs(offset) * 60.0))
+    offset_h, offset_m = divmod(offset_minutes_total, 60)
+
+    return [
+        f":St{'+' if lat >= 0 else '-'}{lat_d:02d}*{lat_m:02d}:{lat_s:02d}#",
+        f":Sg{'+' if onstep_lon >= 0 else '-'}{lon_d:03d}*{lon_m:02d}:{lon_s:02d}#",
+        f":SG{offset_sign}{offset_h:02d}:{offset_m:02d}#",
+        f":SL{local_dt.hour:02d}:{local_dt.minute:02d}:{local_dt.second:02d}#",
+        f":SC{local_dt.month:02d}/{local_dt.day:02d}/{local_dt.year % 100:02d}#",
+    ]
+
+
+def build_indi_location_time_properties(
+    latitude: float | None = None,
+    longitude: float | None = None,
+    elevation: float | None = None,
+    utc_datetime: Any = None,
+    utc_offset_hours: float | None = None,
+    device_name: str = DEFAULT_ONSTEP_DEVICE_NAME,
+) -> list[str]:
+    """Build LX200 OnStep INDI properties for site location and UTC time."""
+    properties: list[str] = []
+
+    if latitude is not None and longitude is not None:
+        properties.extend(
+            [
+                f"{device_name}.GEOGRAPHIC_COORD.LAT={float(latitude)}",
+                f"{device_name}.GEOGRAPHIC_COORD.LONG="
+                f"{onstep_longitude_degrees(float(longitude))}",
+            ]
+        )
+        if elevation is not None:
+            properties.append(f"{device_name}.GEOGRAPHIC_COORD.ELEV={float(elevation)}")
+
+    if utc_datetime is not None:
+        utc_dt = parse_indi_utc_datetime(utc_datetime)
+        offset_hours = (
+            local_utc_offset_hours(utc_dt)
+            if utc_offset_hours is None
+            else float(utc_offset_hours)
+        )
+        properties.extend(
+            [
+                f"{device_name}.TIME_UTC.UTC="
+                + utc_dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%S"),
+                f"{device_name}.TIME_UTC.OFFSET={offset_hours:.2f}",
+            ]
+        )
+
+    return properties
 
 
 def list_onstep_serial_ports() -> list[dict[str, str]]:
@@ -287,6 +442,161 @@ def restart_indi_web_manager(timeout: float = 30.0) -> dict[str, Any]:
         "stderr": result.stderr,
         "service": INDI_WEB_MANAGER_SERVICE,
     }
+
+
+def set_indi_web_manager_running(
+    action: str,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Start or stop INDI Web Manager."""
+    if action not in {"start", "stop"}:
+        raise ValueError("action must be start or stop")
+
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "systemctl", action, INDI_WEB_MANAGER_SERVICE],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("systemctl or sudo is not available") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Timed out while running {action} on INDI Web Manager") from exc
+
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "service": INDI_WEB_MANAGER_SERVICE,
+        "action": action,
+    }
+
+
+def _send_onstep_lx200_network_commands(
+    host: str,
+    port: int,
+    commands: list[str],
+    timeout: float = 4.0,
+) -> list[dict[str, str]]:
+    responses = []
+    with socket.create_connection((host, int(port)), timeout=timeout) as sock:
+        sock.settimeout(1.0)
+        for command in commands:
+            sock.sendall(command.encode("ascii"))
+            try:
+                response = sock.recv(64).decode("ascii", errors="replace")
+            except (TimeoutError, socket.timeout):
+                response = ""
+            responses.append({"command": command, "response": response})
+            time.sleep(0.1)
+    return responses
+
+
+def _send_onstep_lx200_serial_commands(
+    serial_port: str,
+    commands: list[str],
+    baudrate: int = 9600,
+) -> list[dict[str, str]]:
+    try:
+        import serial  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise RuntimeError("pyserial is not installed") from exc
+
+    responses = []
+    with serial.Serial(serial_port, baudrate=baudrate, timeout=1, write_timeout=2) as ser:
+        for command in commands:
+            ser.write(command.encode("ascii"))
+            ser.flush()
+            response = ser.read(64).decode("ascii", errors="replace")
+            responses.append({"command": command, "response": response})
+            time.sleep(0.1)
+    return responses
+
+
+def sync_onstep_location_time_exclusive(
+    connection_type: str,
+    latitude: float,
+    longitude: float,
+    utc_datetime: Any,
+    network_host: str = "",
+    network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
+    serial_port: str = "",
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+    elevation: float | None = None,
+) -> dict[str, Any]:
+    """
+    Stop INDI, send LX200 site/time commands directly, then restart INDI.
+
+    This is intentionally exclusive because OnStep TCP/serial ports should not be
+    shared with the running LX200 OnStep INDI driver.
+    """
+    commands = build_onstep_lx200_location_time_commands(
+        latitude=latitude,
+        longitude=longitude,
+        utc_datetime=utc_datetime,
+    )
+    result: dict[str, Any] = {
+        "ok": False,
+        "commands": commands,
+        "responses": [],
+        "stop_result": None,
+        "start_result": None,
+        "connect_result": None,
+        "elevation": elevation,
+    }
+
+    stop_result = set_indi_web_manager_running("stop")
+    result["stop_result"] = stop_result
+    if not stop_result["ok"]:
+        result["stderr"] = stop_result.get("stderr") or "Could not stop INDI Web Manager"
+        return result
+
+    try:
+        time.sleep(1.0)
+        connection_type = connection_type.strip().lower()
+        if connection_type == ONSTEP_CONNECTION_USB:
+            if not serial_port:
+                raise RuntimeError("No OnStep serial port configured")
+            responses = _send_onstep_lx200_serial_commands(serial_port, commands)
+        else:
+            if not network_host:
+                raise RuntimeError("No OnStep network host configured")
+            responses = _send_onstep_lx200_network_commands(
+                network_host,
+                int(network_port),
+                commands,
+            )
+        result["responses"] = responses
+        result["ok"] = True
+    except Exception as exc:
+        result["stderr"] = str(exc)
+    finally:
+        start_result = set_indi_web_manager_running("start")
+        result["start_result"] = start_result
+        if start_result["ok"]:
+            time.sleep(3.0)
+            result["connect_result"] = connect_indi_onstep_driver(
+                server_host=server_host,
+                server_port=server_port,
+            )
+
+    if not result["ok"]:
+        return result
+    if result["start_result"] and not result["start_result"].get("ok"):
+        result["ok"] = False
+        result["stderr"] = result["start_result"].get("stderr") or "Could not restart INDI"
+    elif result["connect_result"] and not result["connect_result"].get("ok"):
+        result["ok"] = False
+        result["stderr"] = (
+            result["connect_result"].get("stderr")
+            or result["connect_result"].get("stdout")
+            or "Could not reconnect INDI OnStep driver"
+        )
+    return result
 
 
 def connect_indi_onstep_driver(

@@ -13,7 +13,6 @@ import json
 import logging
 import queue
 import time
-from datetime import timezone
 from multiprocessing import Queue
 from typing import Any, Optional
 
@@ -591,30 +590,24 @@ class MountControlIndi:
 
     def sync_location_time(self) -> None:
         try:
-            properties = []
+            latitude = longitude = elevation = None
             location = self.shared_state.location()
             if location and location.lock:
-                properties.extend(
-                    [
-                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.GEOGRAPHIC_COORD.LAT={float(location.lat)}",
-                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.GEOGRAPHIC_COORD.LONG={float(location.lon)}",
-                    ]
+                latitude = float(location.lat)
+                longitude = float(location.lon)
+                elevation = (
+                    None
+                    if location.altitude is None
+                    else float(location.altitude)
                 )
-                if location.altitude is not None:
-                    properties.append(
-                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.GEOGRAPHIC_COORD.ELEV={float(location.altitude)}"
-                    )
 
             dt = self.shared_state.datetime()
-            if dt is not None:
-                utc_dt = dt.astimezone(timezone.utc)
-                properties.extend(
-                    [
-                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TIME_UTC.UTC="
-                        + utc_dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%S"),
-                        f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TIME_UTC.OFFSET=0",
-                    ]
-                )
+            properties = sys_utils.build_indi_location_time_properties(
+                latitude=latitude,
+                longitude=longitude,
+                elevation=elevation,
+                utc_datetime=dt,
+            )
 
             if properties:
                 self._apply_indi_properties(
@@ -622,6 +615,11 @@ class MountControlIndi:
                     "connected" if self.connected else "idle",
                     "Location/time sent",
                     "sync_failed",
+                )
+            else:
+                self._write_controller_status(
+                    "connected" if self.connected else "idle",
+                    "No locked location/time available",
                 )
         except Exception:
             logger.exception("Could not sync INDI location/time")

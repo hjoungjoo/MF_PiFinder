@@ -39,7 +39,8 @@
           <tr><td>{{ _('Serial Port') }}</td><td id="onstep_serial_port_value">{{ onstep_props.get('LX200 OnStep.DEVICE_PORT.PORT', '') }}</td></tr>
           <tr><td>{{ _('Network Host') }}</td><td id="onstep_network_host_value">{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.ADDRESS', '') }}</td></tr>
           <tr><td>{{ _('Network Port') }}</td><td id="onstep_network_port_value">{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.PORT', '') }}</td></tr>
-          <tr><td>{{ _('OnStep Location') }}</td><td id="onstep_location_value">{{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LAT', '-') }}, {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LONG', '-') }} / {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.ELEV', '-') }}m</td></tr>
+          <tr><td>{{ _('OnStep Location') }}</td><td id="onstep_location_value">{{ onstep_location_display }}</td></tr>
+          <tr><td>{{ _('INDI Raw Location') }}</td><td id="onstep_raw_location_value">{{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LAT', '-') }}, {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LONG', '-') }} / {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.ELEV', '-') }}m</td></tr>
           <tr><td>{{ _('OnStep UTC Time') }}</td><td id="onstep_utc_time_value">{{ onstep_props.get('LX200 OnStep.TIME_UTC.UTC', '-') }}</td></tr>
         </tbody>
       </table>
@@ -353,8 +354,9 @@ document.addEventListener('DOMContentLoaded', function() {
       formatLocation(pifinder.latitude, pifinder.longitude, pifinder.elevation)
     );
     updateLiveUtcDisplay();
+    setText('onstep_location_value', payload.onstep_location_display || '-');
     setText(
-      'onstep_location_value',
+      'onstep_raw_location_value',
       formatLocation(
         onstep['LX200 OnStep.GEOGRAPHIC_COORD.LAT'],
         onstep['LX200 OnStep.GEOGRAPHIC_COORD.LONG'],
