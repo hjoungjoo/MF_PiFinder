@@ -148,7 +148,14 @@ def test_skysafari_goto_queues_indi_goto_when_enabled_and_solved(monkeypatch):
     monkeypatch.setattr(
         pos_server,
         "pos_server_config",
-        DummyConfig({"mount_control": True, "skysafari_indi_goto": True}),
+        DummyConfig(
+            {
+                "mount_control": True,
+                "skysafari_indi_goto": True,
+                "indi_goto_refine_once": True,
+                "indi_goto_refine_accuracy_arcmin": 4.5,
+            }
+        ),
     )
 
     queued = pos_server._queue_indi_goto_if_enabled(
@@ -160,6 +167,8 @@ def test_skysafari_goto_queues_indi_goto_when_enabled_and_solved(monkeypatch):
         "type": "goto_target",
         "ra": 12.5,
         "dec": -34.25,
+        "refine_after_goto": True,
+        "refine_accuracy_arcmin": 4.5,
     }
 
 

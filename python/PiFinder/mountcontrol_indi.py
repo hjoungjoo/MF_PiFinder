@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import queue
 import time
 from multiprocessing import Queue
@@ -42,6 +43,24 @@ MANUAL_MOTION_MAX_LEASE_SECONDS = 5.0
 MANUAL_MOTION_MAX_CONTINUOUS_SECONDS = 10.0
 MANUAL_MOTION_POLL_SECONDS = 0.1
 MANUAL_MOTION_STOP_RETRY_SECONDS = 0.5
+GOTO_REFINE_DELAY_SECONDS = 8.0
+GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
+DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 10.0
+
+
+def radec_separation_arcmin(
+    ra_a_deg: float, dec_a_deg: float, ra_b_deg: float, dec_b_deg: float
+) -> float:
+    ra_a = math.radians(ra_a_deg)
+    dec_a = math.radians(dec_a_deg)
+    ra_b = math.radians(ra_b_deg)
+    dec_b = math.radians(dec_b_deg)
+    cos_sep = (
+        math.sin(dec_a) * math.sin(dec_b)
+        + math.cos(dec_a) * math.cos(dec_b) * math.cos(ra_a - ra_b)
+    )
+    sep_rad = math.acos(max(-1.0, min(1.0, cos_sep)))
+    return math.degrees(sep_rad) * 60.0
 
 
 def _write_status(state: str, message: str = "", **extra: Any) -> None:
@@ -282,6 +301,7 @@ class MountControlIndi:
         self._manual_motion_deadline: Optional[float] = None
         self._manual_motion_started_at: Optional[float] = None
         self._manual_motion_stop_retry_at = 0.0
+        self._pending_goto_refine: Optional[dict[str, Any]] = None
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -299,6 +319,11 @@ class MountControlIndi:
                 payload["manual_motion_lease_remaining"] = max(
                     0.0, self._manual_motion_deadline - time.monotonic()
                 )
+        if self._pending_goto_refine is not None:
+            payload["goto_refine_pending"] = True
+            payload["goto_refine_accuracy_arcmin"] = self._pending_goto_refine.get(
+                "accuracy_arcmin"
+            )
         if self.device is not None:
             try:
                 payload["device"] = self.device.getDeviceName()
@@ -658,6 +683,106 @@ class MountControlIndi:
         self.set_current_position(ra_hours * 15.0, dec_deg)
         return self.current_ra, self.current_dec
 
+    def _current_plate_solve(self) -> Optional[tuple[float, float, Optional[float]]]:
+        try:
+            solution = self.shared_state.solution()
+        except Exception:
+            logger.debug("Could not read PiFinder solve for GoTo refine", exc_info=True)
+            return None
+
+        if not solution or solution.last_solve_success is None:
+            return None
+
+        try:
+            pointing = solution.pointing.aligned.solve
+            if pointing is None:
+                return None
+            return float(pointing.RA), float(pointing.Dec), solution.last_solve_success
+        except (AttributeError, TypeError, ValueError):
+            logger.debug("Invalid PiFinder solve for GoTo refine", exc_info=True)
+            return None
+
+    def _arm_goto_refine(
+        self, target_ra: float, target_dec: float, accuracy_arcmin: Any = None
+    ) -> None:
+        try:
+            accuracy = float(accuracy_arcmin)
+        except (TypeError, ValueError):
+            accuracy = DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN
+        accuracy = max(0.1, accuracy)
+        now = time.monotonic()
+        self._pending_goto_refine = {
+            "target_ra": target_ra % 360.0,
+            "target_dec": target_dec,
+            "accuracy_arcmin": accuracy,
+            "requested_wall": time.time(),
+            "ready_at": now + GOTO_REFINE_DELAY_SECONDS,
+            "timeout_at": now + GOTO_REFINE_SOLVE_TIMEOUT_SECONDS,
+        }
+        self._write_controller_status(
+            "refine_wait",
+            "Waiting for GoTo settle before solve refine",
+            target_ra=target_ra % 360.0,
+            target_dec=target_dec,
+        )
+
+    def _check_pending_goto_refine(self) -> None:
+        pending = self._pending_goto_refine
+        if pending is None:
+            return
+
+        now = time.monotonic()
+        if now < pending["ready_at"]:
+            return
+
+        if now >= pending["timeout_at"]:
+            self._pending_goto_refine = None
+            self._write_controller_status("refine_timeout", "No fresh solve for refine")
+            self._console("INDI refine\nno solve")
+            return
+
+        solved = self._current_plate_solve()
+        if solved is None:
+            return
+
+        current_ra, current_dec, solve_time = solved
+        if solve_time is None or solve_time < pending["requested_wall"]:
+            return
+
+        target_ra = float(pending["target_ra"])
+        target_dec = float(pending["target_dec"])
+        separation = radec_separation_arcmin(
+            current_ra,
+            current_dec,
+            target_ra,
+            target_dec,
+        )
+        if separation <= float(pending["accuracy_arcmin"]):
+            self._pending_goto_refine = None
+            self._write_controller_status(
+                "refine_complete",
+                f"GoTo refine within {separation:.1f} arcmin",
+                target_ra=target_ra,
+                target_dec=target_dec,
+                refine_error_arcmin=separation,
+            )
+            self._console("INDI refine\nwithin target")
+            return
+
+        self._pending_goto_refine = None
+        if not self.sync_mount(current_ra, current_dec):
+            self._write_controller_status("refine_failed", "Could not sync current solve")
+            return
+        self.goto_target(target_ra, target_dec, refine_after_goto=False)
+        self._write_controller_status(
+            "refine_sent",
+            f"Refine GoTo sent; error {separation:.1f} arcmin",
+            target_ra=target_ra,
+            target_dec=target_dec,
+            refine_error_arcmin=separation,
+        )
+        self._console("INDI refine\nGoTo sent")
+
     def sync_mount(self, ra_deg: float, dec_deg: float) -> bool:
         if not self.connect() or self.client is None or self.device is None:
             return False
@@ -681,7 +806,13 @@ class MountControlIndi:
         self._console("INDI mount\nsynced")
         return True
 
-    def goto_target(self, ra_deg: float, dec_deg: float) -> bool:
+    def goto_target(
+        self,
+        ra_deg: float,
+        dec_deg: float,
+        refine_after_goto: bool = False,
+        refine_accuracy_arcmin: Any = None,
+    ) -> bool:
         if not self.connect() or self.client is None or self.device is None:
             return False
 
@@ -705,6 +836,8 @@ class MountControlIndi:
         )
         logger.info("Mount GoTo RA %.4f Dec %.4f", ra_deg, dec_deg)
         self._console("INDI mount\nGoTo sent")
+        if refine_after_goto:
+            self._arm_goto_refine(ra_deg, dec_deg, refine_accuracy_arcmin)
         return True
 
     def stop_mount(self) -> bool:
@@ -862,7 +995,12 @@ class MountControlIndi:
         elif command_type == "sync":
             self.sync_mount(float(command["ra"]), float(command["dec"]))
         elif command_type == "goto_target":
-            self.goto_target(float(command["ra"]), float(command["dec"]))
+            self.goto_target(
+                float(command["ra"]),
+                float(command["dec"]),
+                bool(command.get("refine_after_goto", False)),
+                command.get("refine_accuracy_arcmin"),
+            )
         elif command_type == "stop_movement":
             self.stop_mount()
         elif command_type == "manual_movement":
@@ -905,6 +1043,7 @@ class MountControlIndi:
         next_auto_connect_at = time.monotonic() + AUTO_CONNECT_START_DELAY
         while running:
             self._check_manual_motion_deadline()
+            self._check_pending_goto_refine()
             try:
                 command = self.mount_queue.get(
                     timeout=self._manual_motion_queue_timeout()
@@ -912,6 +1051,7 @@ class MountControlIndi:
                 running = self.handle_command(command)
             except queue.Empty:
                 self._check_manual_motion_deadline()
+                self._check_pending_goto_refine()
                 now = time.monotonic()
                 if not self.connected and now >= next_auto_connect_at:
                     logger.info("Attempting automatic INDI mount connection")

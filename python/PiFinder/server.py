@@ -1020,6 +1020,12 @@ class Server:
                 "skysafari_indi_goto": bool(
                     cfg.get_option("skysafari_indi_goto", False)
                 ),
+                "indi_goto_refine_once": bool(
+                    cfg.get_option("indi_goto_refine_once", False)
+                ),
+                "indi_goto_refine_accuracy_arcmin": float(
+                    cfg.get_option("indi_goto_refine_accuracy_arcmin", 10.0)
+                ),
             }
 
         web_motion_lock = threading.Lock()
@@ -1234,6 +1240,7 @@ class Server:
             network_manual = (request.form.get("network_manual") or "").strip()
             server_host = (request.form.get("server_host") or "localhost").strip()
             skysafari_indi_goto = request.form.get("skysafari_indi_goto") == "on"
+            indi_goto_refine_once = request.form.get("indi_goto_refine_once") == "on"
 
             if serial_port == "__manual__":
                 serial_port = serial_manual
@@ -1243,6 +1250,11 @@ class Server:
             try:
                 network_port = int(request.form.get("network_port") or "9999")
                 server_port = int(request.form.get("server_port") or "7624")
+                refine_accuracy_arcmin = float(
+                    request.form.get("indi_goto_refine_accuracy_arcmin") or "10.0"
+                )
+                if refine_accuracy_arcmin <= 0:
+                    raise ValueError("Refine accuracy must be greater than zero")
                 result = sys_utils.apply_indi_onstep_connection(
                     connection_type=connection_type,
                     serial_port=serial_port,
@@ -1267,6 +1279,10 @@ class Server:
                 cfg.set_option("mount_control_indi_host", server_host)
                 cfg.set_option("mount_control_indi_port", server_port)
                 cfg.set_option("skysafari_indi_goto", skysafari_indi_goto)
+                cfg.set_option("indi_goto_refine_once", indi_goto_refine_once)
+                cfg.set_option(
+                    "indi_goto_refine_accuracy_arcmin", refine_accuracy_arcmin
+                )
                 self.ui_queue.put("reload_config")
                 return _render_indi_page(_("INDI OnStep settings applied"))
             except (RuntimeError, ValueError) as e:

@@ -229,6 +229,19 @@
       </div>
 
       <div class="row">
+        <div class="col s12 m6">
+          <label>
+            <input type="checkbox" name="indi_goto_refine_once" {% if indi_goto_refine_once %}checked{% endif %}>
+            <span>{{ _('One-shot solve refine after INDI GoTo') }}</span>
+          </label>
+        </div>
+        <div class="input-field col s12 m6">
+          <input value="{{ indi_goto_refine_accuracy_arcmin }}" id="indi_goto_refine_accuracy_arcmin" type="number" min="0.1" step="0.1" name="indi_goto_refine_accuracy_arcmin">
+          <label for="indi_goto_refine_accuracy_arcmin" class="active">{{ _('Refine Accuracy arcmin') }}</label>
+        </div>
+      </div>
+
+      <div class="row">
         <button type="submit" class="btn">{{ _('Apply to INDI') }}</button>
       </div>
     </form>

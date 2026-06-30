@@ -314,7 +314,7 @@ class UIIndiGuide(UIIndiBase):
 
         top_y = self.display_class.titlebar_height + 2
         center_y = (self.display_class.resY - line_h) // 2
-        bottom_hint_y = self.display_class.resY - (line_h * 3) - 2
+        bottom_hint_y = self.display_class.resY - (line_h * 4) - 2
         bottom_key_y = max(center_y + line_h + 2, bottom_hint_y - line_h - 2)
         side_key_y = (top_y + bottom_key_y) // 2
 
@@ -336,7 +336,13 @@ class UIIndiGuide(UIIndiBase):
             bottom_hint_y + line_h,
             _("+/-:Speed {rate} {label}").format(rate=slew_rate, label=label),
         )
-        overlay_text(4, bottom_hint_y + (line_h * 2), _("Square:align"))
+        refine = self.config_object.get_option("indi_goto_refine_once", False)
+        overlay_text(
+            4,
+            bottom_hint_y + (line_h * 2),
+            _("5:Refine {state}").format(state=_("On") if refine else _("Off")),
+        )
+        overlay_text(4, bottom_hint_y + (line_h * 3), _("Square:align"))
 
     def update(self, force=False):
         self._send_motion_keepalive()
@@ -364,14 +370,23 @@ class UIIndiGuide(UIIndiBase):
         self.update(force=True)
 
     def key_number(self, number):
-        pass
+        if number == 5:
+            enabled = not self.config_object.get_option("indi_goto_refine_once", False)
+            self.config_object.set_option("indi_goto_refine_once", enabled)
+            self.command_queues["ui_queue"].put("reload_config")
+            self.message(_("Refine On") if enabled else _("Refine Off"), 1)
 
     def key_number_press(self, number):
+        if number == 5:
+            self.key_number(number)
+            return
         direction = self._number_direction.get(number)
         if direction:
             self._move(direction)
 
     def key_number_release(self, number):
+        if number == 5:
+            return
         if number in self._number_direction:
             self._move("stop")
 

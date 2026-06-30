@@ -13,6 +13,8 @@
     "mount_control_indi_port": 7624,
     "skysafari_imu_fallback": true,
     "skysafari_indi_goto": false,
+    "indi_goto_refine_once": false,
+    "indi_goto_refine_accuracy_arcmin": 10.0,
     "onstep_connection_type": "network",
     "onstep_serial_port": "",
     "onstep_network_host": "",

@@ -732,6 +732,12 @@ class UIObjectDetails(UIModule):
                     "type": "goto_target",
                     "ra": self.object.ra,
                     "dec": self.object.dec,
+                    "refine_after_goto": self.config_object.get_option(
+                        "indi_goto_refine_once", False
+                    ),
+                    "refine_accuracy_arcmin": self.config_object.get_option(
+                        "indi_goto_refine_accuracy_arcmin", 10.0
+                    ),
                 }
             )
             self.message(_("Mount GoTo"), 1)

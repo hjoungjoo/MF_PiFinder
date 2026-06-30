@@ -261,13 +261,16 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
         logger.info("SkySafari INDI GoTo skipped; PiFinder is not solved")
         return False
 
-    mountcontrol_queue.put(
-        {
-            "type": "goto_target",
-            "ra": ra_deg,
-            "dec": dec_deg,
-        }
-    )
+    command = {
+        "type": "goto_target",
+        "ra": ra_deg,
+        "dec": dec_deg,
+        "refine_after_goto": bool(_get_config_option("indi_goto_refine_once", False)),
+        "refine_accuracy_arcmin": float(
+            _get_config_option("indi_goto_refine_accuracy_arcmin", 10.0)
+        ),
+    }
+    mountcontrol_queue.put(command)
     logger.info("SkySafari INDI GoTo queued: RA %.4f Dec %.4f", ra_deg, dec_deg)
     return True
 
