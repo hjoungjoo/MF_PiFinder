@@ -37,6 +37,12 @@ POSITION_STATUS_MIN_INTERVAL = 2.0
 STATUS_HEARTBEAT_INTERVAL = 5.0
 AUTO_CONNECT_START_DELAY = 5.0
 AUTO_CONNECT_RETRY_INTERVAL = 10.0
+MANUAL_MOTION_LEASE_SECONDS = 1.2
+MANUAL_MOTION_MIN_LEASE_SECONDS = 0.3
+MANUAL_MOTION_MAX_LEASE_SECONDS = 5.0
+MANUAL_MOTION_MAX_CONTINUOUS_SECONDS = 10.0
+MANUAL_MOTION_POLL_SECONDS = 0.1
+MANUAL_MOTION_STOP_RETRY_SECONDS = 0.5
 
 
 def _write_status(state: str, message: str = "", **extra: Any) -> None:
@@ -273,6 +279,10 @@ class MountControlIndi:
         self.connected = False
         self._last_position_status_at = 0.0
         self._last_status_heartbeat_at = 0.0
+        self._manual_motion_direction: Optional[str] = None
+        self._manual_motion_deadline: Optional[float] = None
+        self._manual_motion_started_at: Optional[float] = None
+        self._manual_motion_stop_retry_at = 0.0
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -284,6 +294,12 @@ class MountControlIndi:
             "ra": self.current_ra,
             "dec": self.current_dec,
         }
+        if self._manual_motion_direction is not None:
+            payload["manual_motion_direction"] = self._manual_motion_direction
+            if self._manual_motion_deadline is not None:
+                payload["manual_motion_lease_remaining"] = max(
+                    0.0, self._manual_motion_deadline - time.monotonic()
+                )
         if self.device is not None:
             try:
                 payload["device"] = self.device.getDeviceName()
@@ -361,6 +377,75 @@ class MountControlIndi:
             "connected",
             "Mount position updated",
         )
+
+    def _manual_motion_lease(self, requested: Any = None) -> float:
+        try:
+            lease_seconds = float(requested)
+        except (TypeError, ValueError):
+            lease_seconds = MANUAL_MOTION_LEASE_SECONDS
+        return max(
+            MANUAL_MOTION_MIN_LEASE_SECONDS,
+            min(MANUAL_MOTION_MAX_LEASE_SECONDS, lease_seconds),
+        )
+
+    def _clear_manual_motion_deadline(self) -> None:
+        self._manual_motion_direction = None
+        self._manual_motion_deadline = None
+        self._manual_motion_started_at = None
+        self._manual_motion_stop_retry_at = 0.0
+
+    def _arm_manual_motion_deadline(
+        self, direction: str, lease_seconds: Any = None
+    ) -> None:
+        now = time.monotonic()
+        self._manual_motion_direction = direction
+        self._manual_motion_deadline = now + self._manual_motion_lease(lease_seconds)
+        self._manual_motion_started_at = now
+        self._manual_motion_stop_retry_at = 0.0
+
+    def manual_motion_keepalive(
+        self, direction: str, lease_seconds: Any = None
+    ) -> bool:
+        direction = direction.lower()
+        if (
+            self._manual_motion_direction is None
+            or direction != self._manual_motion_direction
+        ):
+            return False
+
+        now = time.monotonic()
+        if (
+            self._manual_motion_started_at is not None
+            and now - self._manual_motion_started_at
+            > MANUAL_MOTION_MAX_CONTINUOUS_SECONDS
+        ):
+            logger.warning("Manual mount motion maximum hold time exceeded")
+            return False
+
+        self._manual_motion_deadline = now + self._manual_motion_lease(lease_seconds)
+        return True
+
+    def _manual_motion_queue_timeout(self) -> float:
+        if self._manual_motion_deadline is None:
+            return 1.0
+        return max(
+            MANUAL_MOTION_POLL_SECONDS,
+            min(1.0, self._manual_motion_deadline - time.monotonic()),
+        )
+
+    def _check_manual_motion_deadline(self) -> None:
+        if self._manual_motion_deadline is None:
+            return
+
+        now = time.monotonic()
+        if now < self._manual_motion_deadline or now < self._manual_motion_stop_retry_at:
+            return
+
+        logger.warning("Manual mount motion lease expired; sending stop")
+        if self.stop_mount():
+            return
+
+        self._manual_motion_stop_retry_at = now + MANUAL_MOTION_STOP_RETRY_SECONDS
 
     def _wait_for_device(self, timeout: float = 10.0) -> bool:
         assert self.client is not None
@@ -628,11 +713,12 @@ class MountControlIndi:
             self._console("INDI stop\nfailed")
             return False
 
+        self._clear_manual_motion_deadline()
         logger.info("Mount stop command sent")
         self._console("INDI mount\nstopped")
         return True
 
-    def manual_move(self, direction: str) -> bool:
+    def manual_move(self, direction: str, lease_seconds: Any = None) -> bool:
         direction = direction.lower()
         motion_map = {
             "north": [
@@ -642,26 +728,26 @@ class MountControlIndi:
                 f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On"
             ],
             "east": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On"
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On"
             ],
             "west": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On"
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On"
             ],
             "northeast": [
                 f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On",
             ],
             "northwest": [
                 f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On",
             ],
             "southeast": [
                 f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On",
             ],
             "southwest": [
                 f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On",
             ],
         }
         if direction not in motion_map:
@@ -677,6 +763,7 @@ class MountControlIndi:
             self._console("INDI motion\nfailed")
             return False
 
+        self._arm_manual_motion_deadline(direction, lease_seconds)
         logger.info("Manual %s motion sent", direction)
         self._console(f"INDI move\n{direction}")
         return True
@@ -775,7 +862,15 @@ class MountControlIndi:
         elif command_type == "stop_movement":
             self.stop_mount()
         elif command_type == "manual_movement":
-            self.manual_move(str(command.get("direction", "")))
+            self.manual_move(
+                str(command.get("direction", "")),
+                command.get("lease_seconds"),
+            )
+        elif command_type == "manual_movement_keepalive":
+            self.manual_motion_keepalive(
+                str(command.get("direction", "")),
+                command.get("lease_seconds"),
+            )
         elif command_type == "increase_step_size":
             self.change_step(2.0)
         elif command_type == "reduce_step_size":
@@ -805,10 +900,14 @@ class MountControlIndi:
         running = True
         next_auto_connect_at = time.monotonic() + AUTO_CONNECT_START_DELAY
         while running:
+            self._check_manual_motion_deadline()
             try:
-                command = self.mount_queue.get(timeout=1.0)
+                command = self.mount_queue.get(
+                    timeout=self._manual_motion_queue_timeout()
+                )
                 running = self.handle_command(command)
             except queue.Empty:
+                self._check_manual_motion_deadline()
                 now = time.monotonic()
                 if not self.connected and now >= next_auto_connect_at:
                     logger.info("Attempting automatic INDI mount connection")

@@ -259,6 +259,12 @@ class KeyboardPi(KeyboardInterface):
             return mapped_key
         return None
 
+    def _physical_text_char(self, key: int) -> str | None:
+        mapped_key = self.text_physical_key_mapping.get(key)
+        if mapped_key is None:
+            return None
+        return self.text_from_keycode(mapped_key)
+
     def _get_physical_hold_key(self) -> int:
         now = monotonic()
         held_keys = sorted(
@@ -328,6 +334,12 @@ class KeyboardPi(KeyboardInterface):
                             and not self._physical_key_modifiers(kbev.key)
                         ):
                             return self.number_press_key(number)
+                        text_char = self._physical_text_char(kbev.key)
+                        if (
+                            text_char is not None
+                            and not self._physical_key_modifiers(kbev.key)
+                        ):
+                            return self.text_press_key(text_char)
                         continue
                     if kbev.key_state != libinput.constant.KeyState.RELEASED:
                         continue
@@ -364,6 +376,10 @@ class KeyboardPi(KeyboardInterface):
                     number = self._physical_direction_number_key(kbev.key)
                     if number is not None:
                         return self.number_release_key(number)
+
+                    text_char = self._physical_text_char(kbev.key)
+                    if text_char is not None:
+                        return self.text_release_key(text_char)
 
                     return self.physical_key_mapping.get(
                         kbev.key, self.text_physical_key_mapping.get(kbev.key, 0)

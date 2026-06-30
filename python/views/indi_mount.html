@@ -124,15 +124,15 @@
       </div>
     </div>
     <div class="row indi-motion-grid">
-      <button type="button" data-direction="northwest" class="btn indi-motion-northwest">{{ _('NW') }}</button>
+      <button type="button" data-direction="northwest" class="btn indi-motion-northwest">{{ _('NE') }}</button>
       <button type="button" data-direction="north" class="btn indi-motion-north">{{ _('North') }}</button>
-      <button type="button" data-direction="northeast" class="btn indi-motion-northeast">{{ _('NE') }}</button>
-      <button type="button" data-direction="west" class="btn indi-motion-west">{{ _('West') }}</button>
+      <button type="button" data-direction="northeast" class="btn indi-motion-northeast">{{ _('NW') }}</button>
+      <button type="button" data-direction="west" class="btn indi-motion-west">{{ _('East') }}</button>
       <button type="button" class="btn disabled indi-motion-center">{{ _('Hold') }}</button>
-      <button type="button" data-direction="east" class="btn indi-motion-east">{{ _('East') }}</button>
-      <button type="button" data-direction="southwest" class="btn indi-motion-southwest">{{ _('SW') }}</button>
+      <button type="button" data-direction="east" class="btn indi-motion-east">{{ _('West') }}</button>
+      <button type="button" data-direction="southwest" class="btn indi-motion-southwest">{{ _('SE') }}</button>
       <button type="button" data-direction="south" class="btn indi-motion-south">{{ _('South') }}</button>
-      <button type="button" data-direction="southeast" class="btn indi-motion-southeast">{{ _('SE') }}</button>
+      <button type="button" data-direction="southeast" class="btn indi-motion-southeast">{{ _('SW') }}</button>
     </div>
   </div>
 </div>
@@ -247,6 +247,8 @@ document.addEventListener('DOMContentLoaded', function() {
   var serverUtcBasePerf = null;
   var initializedNetworkManual = false;
   var activeMotionPointer = null;
+  var activeMotionDirection = null;
+  var motionKeepaliveTimer = null;
 
   function setActionStatus(message) {
     if (actionStatus) {
@@ -468,6 +470,34 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  function clearMotionKeepalive() {
+    if (motionKeepaliveTimer !== null) {
+      clearInterval(motionKeepaliveTimer);
+      motionKeepaliveTimer = null;
+    }
+  }
+
+  function sendMotionKeepalive() {
+    if (!activeMotionDirection) {
+      return;
+    }
+    postIndiAction('/indi/motion', {
+      direction: activeMotionDirection,
+      keepalive: '1'
+    }).catch(function(error) {
+      setActionStatus(error.message);
+    });
+  }
+
+  function startMotionKeepalive(direction) {
+    clearMotionKeepalive();
+    activeMotionDirection = direction;
+    motionKeepaliveTimer = setInterval(
+      sendMotionKeepalive,
+      {{ web_motion_keepalive_ms }}
+    );
+  }
+
   document.querySelectorAll('.indi-motion-grid [data-direction]').forEach(function(button) {
     function startMotion(event) {
       event.preventDefault();
@@ -475,10 +505,17 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
       activeMotionPointer = event.pointerId;
+      activeMotionDirection = button.dataset.direction;
       button.setPointerCapture(event.pointerId);
       setActionStatus(button.textContent.trim());
       postIndiAction('/indi/motion', {direction: button.dataset.direction})
-        .catch(function(error) { setActionStatus(error.message); });
+        .then(function() { startMotionKeepalive(button.dataset.direction); })
+        .catch(function(error) {
+          activeMotionPointer = null;
+          activeMotionDirection = null;
+          clearMotionKeepalive();
+          setActionStatus(error.message);
+        });
     }
 
     function stopMotion(event) {
@@ -489,6 +526,8 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
       activeMotionPointer = null;
+      activeMotionDirection = null;
+      clearMotionKeepalive();
       setActionStatus('{{ _("Stop") }}');
       postIndiAction('/indi/motion', {direction: 'stop'})
         .then(function() { setActionStatus(''); })
@@ -502,6 +541,23 @@ document.addEventListener('DOMContentLoaded', function() {
     button.addEventListener('contextmenu', function(event) {
       event.preventDefault();
     });
+  });
+
+  function stopActiveMotion() {
+    if (activeMotionPointer === null && activeMotionDirection === null) {
+      return;
+    }
+    activeMotionPointer = null;
+    activeMotionDirection = null;
+    clearMotionKeepalive();
+    postIndiAction('/indi/motion', {direction: 'stop'}).catch(function() {});
+  }
+
+  window.addEventListener('blur', stopActiveMotion);
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      stopActiveMotion();
+    }
   });
 
   if (managerLink) {

@@ -376,6 +376,21 @@ class MenuManager:
 
         self.stack[-1].key_text(char)
 
+    def key_text_press(self, char: str):
+        if self.help_images is not None:
+            # Exit help
+            self.help_images = None
+            self.update()
+            return
+
+        self.stack[-1].key_text_press(char)
+
+    def key_text_release(self, char: str):
+        if self.help_images is not None:
+            return
+
+        self.stack[-1].key_text_release(char)
+
     def key_plus(self):
         self.stack[-1].key_plus()
 

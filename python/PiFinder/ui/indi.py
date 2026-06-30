@@ -25,6 +25,8 @@ SLEW_STEPS = [
     "1/2 Max",
     "Max",
 ]
+MANUAL_MOTION_KEEPALIVE_INTERVAL = 0.4
+MANUAL_MOTION_LEASE_SECONDS = 1.2
 
 
 class UIIndiBase(UIModule):
@@ -242,8 +244,38 @@ class UIIndiGuide(UIIndiBase):
         "e": "northeast",
     }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._active_motion_direction = None
+        self._next_motion_keepalive_at = 0.0
+
     def active(self):
+        self._active_motion_direction = None
+        self._next_motion_keepalive_at = 0.0
         self._send_mount({"type": "refresh_slew_rate"})
+
+    def inactive(self):
+        if self._active_motion_direction is not None:
+            self._send_mount({"type": "stop_movement"})
+        self._active_motion_direction = None
+        self._next_motion_keepalive_at = 0.0
+
+    def _send_motion_keepalive(self):
+        if self._active_motion_direction is None:
+            return
+
+        now = time.monotonic()
+        if now < self._next_motion_keepalive_at:
+            return
+
+        self._send_mount(
+            {
+                "type": "manual_movement_keepalive",
+                "direction": self._active_motion_direction,
+                "lease_seconds": MANUAL_MOTION_LEASE_SECONDS,
+            }
+        )
+        self._next_motion_keepalive_at = now + MANUAL_MOTION_KEEPALIVE_INTERVAL
 
     def _draw_camera_background(self):
         try:
@@ -307,15 +339,28 @@ class UIIndiGuide(UIIndiBase):
         overlay_text(4, bottom_hint_y + (line_h * 2), _("Square:align"))
 
     def update(self, force=False):
+        self._send_motion_keepalive()
         self._draw_camera_background()
         self._draw_keypad_overlay()
         return self.screen_update(title_bar=True, button_hints=False)
 
     def _move(self, direction):
         if direction == "stop":
+            self._active_motion_direction = None
+            self._next_motion_keepalive_at = 0.0
             self._send_mount({"type": "stop_movement"})
         else:
-            self._send_mount({"type": "manual_movement", "direction": direction})
+            self._active_motion_direction = direction
+            self._next_motion_keepalive_at = (
+                time.monotonic() + MANUAL_MOTION_KEEPALIVE_INTERVAL
+            )
+            self._send_mount(
+                {
+                    "type": "manual_movement",
+                    "direction": direction,
+                    "lease_seconds": MANUAL_MOTION_LEASE_SECONDS,
+                }
+            )
         self.update(force=True)
 
     def key_number(self, number):
@@ -331,9 +376,19 @@ class UIIndiGuide(UIIndiBase):
             self._move("stop")
 
     def key_text(self, char: str):
+        # Legacy text events have no release pair, so only allow explicit stop.
+        direction = self._text_direction.get(char.lower())
+        if direction == "stop":
+            self._move(direction)
+
+    def key_text_press(self, char: str):
         direction = self._text_direction.get(char.lower())
         if direction:
             self._move(direction)
+
+    def key_text_release(self, char: str):
+        if char.lower() in self._text_direction:
+            self._move("stop")
 
     def key_plus(self):
         self._send_mount({"type": "increase_slew_rate"})

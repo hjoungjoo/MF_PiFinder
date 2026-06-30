@@ -10,6 +10,8 @@ class KeyboardInterface:
     TEXT_BASE = 1000
     NUMBER_PRESS_BASE = 3000
     NUMBER_RELEASE_BASE = 3100
+    TEXT_PRESS_BASE = 3200
+    TEXT_RELEASE_BASE = 3500
     NA = 10
     PLUS = 11
     MINUS = 12
@@ -43,6 +45,30 @@ class KeyboardInterface:
     @classmethod
     def text_from_keycode(cls, keycode: int) -> str:
         return chr(keycode - cls.TEXT_BASE)
+
+    @classmethod
+    def text_press_key(cls, char: str) -> int:
+        return cls.TEXT_PRESS_BASE + ord(char)
+
+    @classmethod
+    def text_release_key(cls, char: str) -> int:
+        return cls.TEXT_RELEASE_BASE + ord(char)
+
+    @classmethod
+    def is_text_press_key(cls, keycode: int) -> bool:
+        return cls.TEXT_PRESS_BASE <= keycode < cls.TEXT_PRESS_BASE + 256
+
+    @classmethod
+    def is_text_release_key(cls, keycode: int) -> bool:
+        return cls.TEXT_RELEASE_BASE <= keycode < cls.TEXT_RELEASE_BASE + 256
+
+    @classmethod
+    def text_from_press_keycode(cls, keycode: int) -> str:
+        return chr(keycode - cls.TEXT_PRESS_BASE)
+
+    @classmethod
+    def text_from_release_keycode(cls, keycode: int) -> str:
+        return chr(keycode - cls.TEXT_RELEASE_BASE)
 
     @classmethod
     def number_press_key(cls, number: int) -> int:

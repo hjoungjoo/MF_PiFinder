@@ -500,6 +500,12 @@ class UIModule:
     def key_text(self, char: str):
         pass
 
+    def key_text_press(self, char: str):
+        pass
+
+    def key_text_release(self, char: str):
+        self.key_text(char)
+
     def key_plus(self):
         pass
 

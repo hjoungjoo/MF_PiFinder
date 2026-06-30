@@ -7,6 +7,7 @@ import os
 import argparse
 import sys
 import multiprocessing
+import threading
 from datetime import datetime, timezone
 
 import pydeepskylog as pds
@@ -45,6 +46,8 @@ logs_logger = logging.getLogger("Server.Logs")
 
 # Generate a secret to validate the auth cookie
 SESSION_SECRET = str(uuid.uuid4())
+WEB_MOTION_LEASE_SECONDS = 1.2
+WEB_MOTION_KEEPALIVE_INTERVAL = 0.4
 
 
 def auth_required(func):
@@ -1016,6 +1019,56 @@ class Server:
                 "server_port": int(cfg.get_option("mount_control_indi_port", 7624)),
             }
 
+        web_motion_lock = threading.Lock()
+        web_motion_timer = {"timer": None, "token": 0}
+
+        def _cancel_web_motion_timer():
+            with web_motion_lock:
+                timer = web_motion_timer.get("timer")
+                web_motion_timer["timer"] = None
+                web_motion_timer["token"] += 1
+            if timer is not None:
+                timer.cancel()
+
+        def _abort_web_motion_if_current(token):
+            with web_motion_lock:
+                if token != web_motion_timer["token"]:
+                    return
+                web_motion_timer["timer"] = None
+
+            try:
+                indi_cfg = _indi_config_values()
+                result = sys_utils.apply_indi_onstep_properties(
+                    ["LX200 OnStep.TELESCOPE_ABORT_MOTION.ABORT=On"],
+                    server_host=indi_cfg["server_host"],
+                    server_port=indi_cfg["server_port"],
+                )
+                if result.get("ok"):
+                    logger.warning("Web INDI manual motion lease expired; stop sent")
+                else:
+                    logger.warning(
+                        "Web INDI manual motion timeout stop failed: %s",
+                        result.get("stderr") or result.get("stdout"),
+                    )
+            except Exception:
+                logger.exception("Web INDI manual motion timeout stop failed")
+
+        def _schedule_web_motion_timer():
+            with web_motion_lock:
+                timer = web_motion_timer.get("timer")
+                if timer is not None:
+                    timer.cancel()
+                web_motion_timer["token"] += 1
+                token = web_motion_timer["token"]
+                timer = threading.Timer(
+                    WEB_MOTION_LEASE_SECONDS,
+                    _abort_web_motion_if_current,
+                    args=(token,),
+                )
+                timer.daemon = True
+                web_motion_timer["timer"] = timer
+                timer.start()
+
         def _pifinder_location_time_values():
             source = "Current time"
             lat = lon = elev = ""
@@ -1069,6 +1122,7 @@ class Server:
                 ap_clients=ap_clients,
                 onstep_props=onstep_props,
                 pifinder_location_time=_pifinder_location_time_values(),
+                web_motion_keepalive_ms=int(WEB_MOTION_KEEPALIVE_INTERVAL * 1000),
                 slew_rate_labels=[
                     "Off",
                     "1/2x - VSlow",
@@ -1272,38 +1326,63 @@ class Server:
         @auth_required
         def indi_motion():
             direction = (request.form.get("direction") or "").strip().lower()
+            keepalive = request.form.get("keepalive") in {"1", "true", "yes"}
             motion_map = {
                 "north": "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
                 "south": "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                "west": "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
-                "east": "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                "west": "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                "east": "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
                 "northeast": [
                     "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
                 ],
                 "northwest": [
                     "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
                 ],
                 "southeast": [
                     "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
                 ],
                 "southwest": [
                     "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
                 ],
                 "stop": "LX200 OnStep.TELESCOPE_ABORT_MOTION.ABORT=On",
             }
             try:
                 if direction not in motion_map:
                     raise ValueError("Invalid motion command")
+                if keepalive:
+                    if direction == "stop":
+                        _cancel_web_motion_timer()
+                    else:
+                        _schedule_web_motion_timer()
+                    return _indi_json_response(message="Motion keepalive")
+
                 properties = motion_map[direction]
                 if isinstance(properties, str):
                     properties = [properties]
+                indi_cfg = _indi_config_values()
+                result = sys_utils.apply_indi_onstep_properties(
+                    properties,
+                    server_host=indi_cfg["server_host"],
+                    server_port=indi_cfg["server_port"],
+                )
+                if not result.get("ok"):
+                    error = (
+                        result.get("stderr")
+                        or result.get("stdout")
+                        or "INDI command failed"
+                    )
+                    raise RuntimeError(error)
+                if direction != "stop":
+                    _schedule_web_motion_timer()
+                else:
+                    _cancel_web_motion_timer()
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                    return _apply_indi_action_json(properties, "Motion command sent")
-                return _apply_indi_action(properties, _("Motion command sent"))
+                    return _indi_json_response(message="Motion command sent")
+                return _render_indi_page(_("Motion command sent"))
             except (RuntimeError, ValueError) as e:
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return _indi_json_response(ok=False, error=str(e))

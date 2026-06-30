@@ -877,6 +877,16 @@ def main(
                             keyboard_base.number_from_release_keycode(keycode)
                         )
 
+                    elif keyboard_base.is_text_press_key(keycode):
+                        menu_manager.key_text_press(
+                            keyboard_base.text_from_press_keycode(keycode)
+                        )
+
+                    elif keyboard_base.is_text_release_key(keycode):
+                        menu_manager.key_text_release(
+                            keyboard_base.text_from_release_keycode(keycode)
+                        )
+
                     elif keyboard_base.is_text_key(keycode):
                         menu_manager.key_text(keyboard_base.text_from_keycode(keycode))
 
