@@ -46,6 +46,8 @@ MANUAL_MOTION_STOP_RETRY_SECONDS = 0.5
 GOTO_REFINE_DELAY_SECONDS = 8.0
 GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
 DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 10.0
+GUIDE_CORRECTION_INTERVAL_SECONDS = 10.0
+GUIDE_CORRECTION_PULSE_SECONDS = 0.4
 
 
 def radec_separation_arcmin(
@@ -61,6 +63,10 @@ def radec_separation_arcmin(
     )
     sep_rad = math.acos(max(-1.0, min(1.0, cos_sep)))
     return math.degrees(sep_rad) * 60.0
+
+
+def shortest_ra_delta_deg(target_ra_deg: float, current_ra_deg: float) -> float:
+    return (target_ra_deg - current_ra_deg + 180.0) % 360.0 - 180.0
 
 
 def _write_status(state: str, message: str = "", **extra: Any) -> None:
@@ -302,6 +308,12 @@ class MountControlIndi:
         self._manual_motion_started_at: Optional[float] = None
         self._manual_motion_stop_retry_at = 0.0
         self._pending_goto_refine: Optional[dict[str, Any]] = None
+        self._last_goto_target: Optional[tuple[float, float]] = None
+        self._guide_correction_enabled = False
+        self._guide_correction_target: Optional[tuple[float, float]] = None
+        self._guide_correction_accuracy_arcmin = DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN
+        self._guide_correction_next_at = 0.0
+        self._guide_correction_last_solve_time = 0.0
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -323,6 +335,13 @@ class MountControlIndi:
             payload["goto_refine_pending"] = True
             payload["goto_refine_accuracy_arcmin"] = self._pending_goto_refine.get(
                 "accuracy_arcmin"
+            )
+        payload["guide_correction_enabled"] = self._guide_correction_enabled
+        if self._guide_correction_target is not None:
+            payload["guide_correction_target_ra"] = self._guide_correction_target[0]
+            payload["guide_correction_target_dec"] = self._guide_correction_target[1]
+            payload["guide_correction_accuracy_arcmin"] = (
+                self._guide_correction_accuracy_arcmin
             )
         if self.device is not None:
             try:
@@ -783,6 +802,141 @@ class MountControlIndi:
         )
         self._console("INDI refine\nGoTo sent")
 
+    def _guide_direction_for_error(
+        self,
+        current_ra: float,
+        current_dec: float,
+        target_ra: float,
+        target_dec: float,
+        accuracy_arcmin: float,
+    ) -> Optional[str]:
+        ra_delta = shortest_ra_delta_deg(target_ra, current_ra)
+        dec_delta = target_dec - current_dec
+        ra_arcmin = ra_delta * 60.0 * math.cos(math.radians(current_dec))
+        dec_arcmin = dec_delta * 60.0
+        component_threshold = max(0.5, accuracy_arcmin / 2.0)
+
+        ns = None
+        if dec_arcmin > component_threshold:
+            ns = "north"
+        elif dec_arcmin < -component_threshold:
+            ns = "south"
+
+        we = None
+        if ra_arcmin > component_threshold:
+            we = "east"
+        elif ra_arcmin < -component_threshold:
+            we = "west"
+
+        if ns and we:
+            return ns + we
+        return ns or we
+
+    def toggle_guide_correction(
+        self,
+        enabled: Optional[bool] = None,
+        target_ra: Any = None,
+        target_dec: Any = None,
+        accuracy_arcmin: Any = None,
+    ) -> bool:
+        if enabled is None:
+            enabled = not self._guide_correction_enabled
+
+        if not enabled:
+            self._guide_correction_enabled = False
+            self._write_controller_status("connected", "Guide correction disabled")
+            self._console("Guide corr\nOff")
+            return True
+
+        try:
+            target = (
+                float(target_ra) % 360.0,
+                float(target_dec),
+            )
+        except (TypeError, ValueError):
+            target = self._last_goto_target
+
+        if target is None:
+            self._write_controller_status(
+                "guide_correction_failed",
+                "No GoTo target for guide correction",
+            )
+            self._console("Guide corr\nno target")
+            return False
+
+        try:
+            accuracy = float(accuracy_arcmin)
+        except (TypeError, ValueError):
+            accuracy = self._guide_correction_accuracy_arcmin
+
+        self._guide_correction_enabled = True
+        self._guide_correction_target = target
+        self._guide_correction_accuracy_arcmin = max(0.1, accuracy)
+        self._guide_correction_next_at = time.monotonic()
+        self._guide_correction_last_solve_time = 0.0
+        self._write_controller_status(
+            "guide_correction",
+            "Guide correction enabled",
+            target_ra=target[0],
+            target_dec=target[1],
+        )
+        self._console("Guide corr\nOn")
+        return True
+
+    def _check_guide_correction(self) -> None:
+        if not self._guide_correction_enabled or self._guide_correction_target is None:
+            return
+        if self._manual_motion_direction is not None:
+            return
+
+        now = time.monotonic()
+        if now < self._guide_correction_next_at:
+            return
+
+        solved = self._current_plate_solve()
+        if solved is None:
+            return
+
+        current_ra, current_dec, solve_time = solved
+        if solve_time is None or solve_time <= self._guide_correction_last_solve_time:
+            return
+
+        target_ra, target_dec = self._guide_correction_target
+        separation = radec_separation_arcmin(
+            current_ra,
+            current_dec,
+            target_ra,
+            target_dec,
+        )
+        self._guide_correction_last_solve_time = solve_time
+        self._guide_correction_next_at = now + GUIDE_CORRECTION_INTERVAL_SECONDS
+
+        if separation <= self._guide_correction_accuracy_arcmin:
+            self._write_controller_status(
+                "guide_correction",
+                f"Guide correction within {separation:.1f} arcmin",
+                guide_error_arcmin=separation,
+            )
+            return
+
+        direction = self._guide_direction_for_error(
+            current_ra,
+            current_dec,
+            target_ra,
+            target_dec,
+            self._guide_correction_accuracy_arcmin,
+        )
+        if not direction:
+            return
+
+        if self.manual_move(direction, lease_seconds=GUIDE_CORRECTION_PULSE_SECONDS):
+            self._write_controller_status(
+                "guide_correction",
+                f"Guide correction pulse {direction}; error {separation:.1f} arcmin",
+                guide_error_arcmin=separation,
+                guide_direction=direction,
+            )
+
     def sync_mount(self, ra_deg: float, dec_deg: float) -> bool:
         if not self.connect() or self.client is None or self.device is None:
             return False
@@ -813,6 +967,7 @@ class MountControlIndi:
         refine_after_goto: bool = False,
         refine_accuracy_arcmin: Any = None,
     ) -> bool:
+        self._last_goto_target = (ra_deg % 360.0, dec_deg)
         if not self.connect() or self.client is None or self.device is None:
             return False
 
@@ -1001,6 +1156,13 @@ class MountControlIndi:
                 bool(command.get("refine_after_goto", False)),
                 command.get("refine_accuracy_arcmin"),
             )
+        elif command_type == "toggle_guide_correction":
+            self.toggle_guide_correction(
+                command.get("enabled"),
+                command.get("target_ra"),
+                command.get("target_dec"),
+                command.get("accuracy_arcmin"),
+            )
         elif command_type == "stop_movement":
             self.stop_mount()
         elif command_type == "manual_movement":
@@ -1044,6 +1206,7 @@ class MountControlIndi:
         while running:
             self._check_manual_motion_deadline()
             self._check_pending_goto_refine()
+            self._check_guide_correction()
             try:
                 command = self.mount_queue.get(
                     timeout=self._manual_motion_queue_timeout()
@@ -1052,6 +1215,7 @@ class MountControlIndi:
             except queue.Empty:
                 self._check_manual_motion_deadline()
                 self._check_pending_goto_refine()
+                self._check_guide_correction()
                 now = time.monotonic()
                 if not self.connected and now >= next_auto_connect_at:
                     logger.info("Attempting automatic INDI mount connection")

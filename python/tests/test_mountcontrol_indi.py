@@ -1,7 +1,11 @@
 import time
 from multiprocessing import Queue
 
-from PiFinder.mountcontrol_indi import MountControlIndi, radec_separation_arcmin
+from PiFinder.mountcontrol_indi import (
+    MountControlIndi,
+    radec_separation_arcmin,
+    shortest_ra_delta_deg,
+)
 
 
 class DummyMountControl(MountControlIndi):
@@ -123,6 +127,11 @@ def test_radec_separation_arcmin_handles_small_offsets():
     assert 5.9 < sep < 6.1
 
 
+def test_shortest_ra_delta_wraps_at_zero_hours():
+    assert shortest_ra_delta_deg(1.0, 359.0) == 2.0
+    assert shortest_ra_delta_deg(359.0, 1.0) == -2.0
+
+
 def test_goto_refine_syncs_fresh_solve_then_sends_one_regoto():
     solve_time = time.time()
     mount = DummyMountControl(DummySharedState(DummySolution(9.9, 20.0, solve_time)))
@@ -159,3 +168,35 @@ def test_goto_refine_completes_without_regoto_inside_accuracy():
     assert mount._pending_goto_refine is None
     assert mount.sync_calls == []
     assert mount.goto_calls == []
+
+
+def test_guide_correction_requires_a_target():
+    mount = DummyMountControl()
+
+    assert not mount.toggle_guide_correction(enabled=True)
+    assert not mount._guide_correction_enabled
+
+
+def test_guide_correction_pulses_toward_target_on_fresh_solve():
+    solve_time = time.time()
+    mount = DummyMountControl(DummySharedState(DummySolution(9.9, 20.0, solve_time)))
+    mount._last_goto_target = (10.0, 20.0)
+
+    assert mount.toggle_guide_correction(enabled=True, accuracy_arcmin=1.0)
+    mount._guide_correction_next_at = time.monotonic() - 1.0
+    mount._check_guide_correction()
+
+    assert mount._manual_motion_direction == "east"
+    assert mount._guide_correction_last_solve_time == solve_time
+
+
+def test_guide_correction_does_not_pulse_inside_accuracy():
+    solve_time = time.time()
+    mount = DummyMountControl(DummySharedState(DummySolution(10.0, 20.0, solve_time)))
+    mount._last_goto_target = (10.0, 20.0)
+
+    assert mount.toggle_guide_correction(enabled=True, accuracy_arcmin=1.0)
+    mount._guide_correction_next_at = time.monotonic() - 1.0
+    mount._check_guide_correction()
+
+    assert mount._manual_motion_direction is None
