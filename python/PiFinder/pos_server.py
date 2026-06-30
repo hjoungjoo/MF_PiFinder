@@ -31,13 +31,21 @@ logger = logging.getLogger("PosServer")
 sr_result = None
 sequence = 0
 ui_queue: Queue
+mountcontrol_queue: Optional[Queue] = None
 is_stellarium = False
 pos_server_config: Optional[config.Config] = None
 
 _POINTING_CACHE_SECONDS = 0.2
+_GUIDE_LEASE_SECONDS = 1.2
 _pointing_cache = {
     "time": 0.0,
     "value": None,
+}
+_GUIDE_DIRECTIONS = {
+    "Mn": "north",
+    "Ms": "south",
+    "Me": "east",
+    "Mw": "west",
 }
 
 # shortcut for skyfield timescale
@@ -221,6 +229,39 @@ def respond_one(shared_state, input_str):
     return "1"
 
 
+def _mount_control_enabled() -> bool:
+    return bool(_get_config_option("mount_control", False) and mountcontrol_queue)
+
+
+def handle_guide_move(_shared_state, input_str: str):
+    command = extract_command(input_str)
+    direction = _GUIDE_DIRECTIONS.get(command)
+    if not direction:
+        return None
+
+    if _mount_control_enabled():
+        mountcontrol_queue.put(
+            {
+                "type": "manual_movement",
+                "direction": direction,
+                "lease_seconds": _GUIDE_LEASE_SECONDS,
+            }
+        )
+        logger.debug("SkySafari guide move queued: %s", direction)
+    else:
+        logger.debug("SkySafari guide move ignored; INDI mount control is disabled")
+    return None
+
+
+def handle_guide_stop(_shared_state, _input_str: str):
+    if _mount_control_enabled():
+        mountcontrol_queue.put({"type": "stop_movement"})
+        logger.debug("SkySafari guide stop queued")
+    else:
+        logger.debug("SkySafari guide stop ignored; INDI mount control is disabled")
+    return None
+
+
 def not_implemented(shared_state, input_str):
     # return "not implemented"
     return respond_none(shared_state, input_str)
@@ -312,9 +353,20 @@ lx_command_dict = {
     "GVP": get_product,
     "GVT": get_firmware_time,
     "GW": get_status,
+    "Mn": handle_guide_move,
+    "Ms": handle_guide_move,
+    "Me": handle_guide_move,
+    "Mw": handle_guide_move,
+    "Qn": handle_guide_stop,
+    "Qs": handle_guide_stop,
+    "Qe": handle_guide_stop,
+    "Qw": handle_guide_stop,
     "RS": respond_none,  # Set slew rate to max
+    "RM": respond_none,  # Set slew rate to find
+    "RC": respond_none,  # Set slew rate to center
+    "RG": respond_none,  # Set slew rate to guide
     "MS": respond_zero,  # Slew to object
-    "Q": respond_none,  # Abort
+    "Q": handle_guide_stop,  # Abort
     "U": respond_none,  # Precision toggle
     "Sd": parse_sd_command,  # Set declination
     "Sr": parse_sr_command,  # Set RA
@@ -367,10 +419,11 @@ def handle_client(client_socket, shared_state):
     client_socket.close()
 
 
-def run_server(shared_state, p_ui_queue, log_queue):
+def run_server(shared_state, p_ui_queue, log_queue, p_mountcontrol_queue=None):
     MultiprocLogging.configurer(log_queue)
-    global ui_queue, pos_server_config
+    global ui_queue, mountcontrol_queue, pos_server_config
     ui_queue = p_ui_queue
+    mountcontrol_queue = p_mountcontrol_queue
     pos_server_config = config.Config()
     logger = logging.getLogger(__name__)
 

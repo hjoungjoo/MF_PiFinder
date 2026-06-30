@@ -1,4 +1,5 @@
 import datetime
+import queue
 
 import pytest
 import pytz
@@ -81,3 +82,52 @@ def test_format_ra_degrees_wraps_to_lx200_hms(ra_deg, expected):
 )
 def test_format_dec_degrees_normalizes_seconds(dec_deg, expected):
     assert pos_server._format_dec_degrees(dec_deg) == expected
+
+
+class DummyConfig:
+    def __init__(self, options):
+        self.options = options
+
+    def get_option(self, option, default=None):
+        return self.options.get(option, default)
+
+
+def test_skysafari_guide_move_queues_indi_manual_motion(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(
+        pos_server, "pos_server_config", DummyConfig({"mount_control": True})
+    )
+
+    assert pos_server.handle_guide_move(None, ":Mn#") is None
+
+    assert commands.get_nowait() == {
+        "type": "manual_movement",
+        "direction": "north",
+        "lease_seconds": pos_server._GUIDE_LEASE_SECONDS,
+    }
+
+
+def test_skysafari_guide_stop_queues_indi_stop(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(
+        pos_server, "pos_server_config", DummyConfig({"mount_control": True})
+    )
+
+    assert pos_server.handle_guide_stop(None, ":Q#") is None
+
+    assert commands.get_nowait() == {"type": "stop_movement"}
+
+
+def test_skysafari_guide_move_ignored_when_mount_control_disabled(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(
+        pos_server, "pos_server_config", DummyConfig({"mount_control": False})
+    )
+
+    assert pos_server.handle_guide_move(None, ":Me#") is None
+
+    with pytest.raises(queue.Empty):
+        commands.get_nowait()
