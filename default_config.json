@@ -222,6 +222,7 @@
     },
     "imu_threshold_scale": 1,
     "imu_use_magnetometer": false,
+    "imu_auto_calibration_store": true,
     "telemetry_record": false,
     "telemetry_images": false,
     "telemetry_raw_imu": false

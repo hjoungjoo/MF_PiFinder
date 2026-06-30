@@ -6,7 +6,7 @@ This module is for IMU related functions
 """
 
 import time
-from PiFinder import config
+from PiFinder import config, imu_calibration
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.types.positioning import ImuSample
 import board
@@ -31,6 +31,9 @@ class Imu:
         i2c = board.I2C()
         self.sensor = adafruit_bno055.BNO055_I2C(i2c)
         self.use_magnetometer = bool(cfg.get_option("imu_use_magnetometer", False))
+        self.auto_calibration_store = bool(
+            cfg.get_option("imu_auto_calibration_store", True)
+        )
         self.fusion_mode = "ndof" if self.use_magnetometer else "imuplus"
         if self.use_magnetometer:
             # NDOF mode uses accelerometer, gyroscope, magnetometer, and
@@ -41,6 +44,12 @@ class Imu:
             # IMUPLUS mode: accelerometer + gyro + fusion data. This is the
             # legacy drift-limited relative mode and remains the default.
             self.sensor.mode = adafruit_bno055.IMUPLUS_MODE
+        self.calibration_loaded = False
+        self.calibration_saved_now = False
+        self._calibration_saved_this_run = False
+        self._last_calibration_status = None
+        if self.use_magnetometer and self.auto_calibration_store:
+            self._load_saved_calibration()
 
         self.quat_history = [(0, 0, 0, 0)] * QUEUE_LEN
         self._flip_count = 0
@@ -74,6 +83,29 @@ class Imu:
             0.0003 * imu_threshold_scale,
         )
 
+    def _load_saved_calibration(self) -> None:
+        try:
+            snapshot = imu_calibration.load_snapshot()
+            if not snapshot:
+                return
+            imu_calibration.apply_snapshot_to_sensor(self.sensor, snapshot)
+            self.calibration_loaded = True
+            logger.info("Loaded BNO055 calibration from %s", imu_calibration.CALIBRATION_FILE)
+        except Exception:
+            logger.exception("Could not load saved BNO055 calibration")
+
+    def _save_current_calibration(self) -> None:
+        if self._calibration_saved_this_run:
+            return
+        try:
+            snapshot = imu_calibration.snapshot_from_sensor(self.sensor)
+            imu_calibration.save_snapshot(snapshot)
+            self._calibration_saved_this_run = True
+            self.calibration_saved_now = True
+            logger.info("Saved BNO055 calibration to %s", imu_calibration.CALIBRATION_FILE)
+        except Exception:
+            logger.exception("Could not save BNO055 calibration")
+
     def moving(self):
         """
         Compares most recent reading
@@ -91,6 +123,12 @@ class Imu:
         # Throw out non-calibrated data
         status = self.sensor.calibration_status
         self.calibration_status = tuple(int(v) for v in status)
+        if self.calibration_status != self._last_calibration_status:
+            logger.info(
+                "IMU calibration status sys=%s gyro=%s accel=%s mag=%s",
+                *self.calibration_status,
+            )
+            self._last_calibration_status = self.calibration_status
         if self.use_magnetometer:
             self.calibration = min(self.calibration_status)
         else:
@@ -98,6 +136,12 @@ class Imu:
         if self.calibration == 0:
             logger.warning("NOIMU CAL %s", self.calibration_status)
             return True
+        if (
+            self.use_magnetometer
+            and self.auto_calibration_store
+            and self.calibration == 3
+        ):
+            self._save_current_calibration()
         # adafruit_bno055 uses quaternion convention (w, x, y, z)
         quat = self.sensor.quaternion
         if quat[0] is None:
@@ -188,6 +232,8 @@ def imu_monitor(shared_state, console_queue, log_queue):
     imu = None
     try:
         imu = Imu()
+        if getattr(imu, "calibration_loaded", False):
+            console_queue.put("IMU: saved calibration loaded")
     except Exception as e:
         logger.error(f"Error starting phyiscal IMU : {e}")
         logger.error("Falling back to fake IMU")
@@ -223,6 +269,9 @@ def imu_monitor(shared_state, console_queue, log_queue):
         imu_sample.calibration_status = getattr(imu, "calibration_status", None)
         imu_sample.fusion_mode = getattr(imu, "fusion_mode", "unknown")
         imu_sample.uses_magnetometer = getattr(imu, "use_magnetometer", False)
+        if getattr(imu, "calibration_saved_now", False):
+            console_queue.put("IMU: calibration saved")
+            imu.calibration_saved_now = False
 
         # Raw data + read epoch are captured by imu.update() in the same
         # I2C burst as the quaternion; copy them onto the published sample.
