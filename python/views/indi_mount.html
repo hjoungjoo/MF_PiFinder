@@ -40,7 +40,8 @@
           <tr><td>{{ _('Network Host') }}</td><td id="onstep_network_host_value">{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.ADDRESS', '') }}</td></tr>
           <tr><td>{{ _('Network Port') }}</td><td id="onstep_network_port_value">{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.PORT', '') }}</td></tr>
           <tr><td>{{ _('OnStep Location') }}</td><td id="onstep_location_value">{{ onstep_location_display }}</td></tr>
-          <tr><td>{{ _('INDI Raw Location') }}</td><td id="onstep_raw_location_value">{{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LAT', '-') }}, {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LONG', '-') }} / {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.ELEV', '-') }}m</td></tr>
+          <tr><td>{{ _('Effective Coordinates') }}</td><td id="onstep_effective_location_value">{{ onstep_effective_location_display }}</td></tr>
+          <tr><td>{{ _('INDI Driver Readback') }}</td><td id="onstep_raw_location_value">{{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LAT', '-') }}, {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LONG', '-') }} / {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.ELEV', '-') }}m</td></tr>
           <tr><td>{{ _('OnStep UTC Time') }}</td><td id="onstep_utc_time_value">{{ onstep_props.get('LX200 OnStep.TIME_UTC.UTC', '-') }}</td></tr>
         </tbody>
       </table>
@@ -75,7 +76,7 @@
           <label for="elevation" class="active">{{ _('Elevation m') }}</label>
         </div>
         <div class="input-field col s12 m3">
-          <input id="utc_time" type="text" name="utc_time" value="{{ pifinder_location_time.utc_time }}">
+          <input id="utc_time" type="text" name="utc_time" value="{{ pifinder_location_time.utc_time }}" readonly>
           <label for="utc_time" class="active">{{ _('UTC Time') }}</label>
         </div>
       </div>
@@ -355,6 +356,10 @@ document.addEventListener('DOMContentLoaded', function() {
     );
     updateLiveUtcDisplay();
     setText('onstep_location_value', payload.onstep_location_display || '-');
+    setText(
+      'onstep_effective_location_value',
+      payload.onstep_effective_location_display || '-'
+    );
     setText(
       'onstep_raw_location_value',
       formatLocation(

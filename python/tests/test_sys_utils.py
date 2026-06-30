@@ -45,6 +45,90 @@ try:
         )
 
     @pytest.mark.unit
+    def test_onstep_location_display_uses_cached_seconds_for_coarse_indi_readback():
+        degree = "\N{DEGREE SIGN}"
+        onstep_props = {
+            "LX200 OnStep.GEOGRAPHIC_COORD.LAT": "37.51666666666665719",
+            "LX200 OnStep.GEOGRAPHIC_COORD.LONG": "127.0999999999999432",
+            "LX200 OnStep.GEOGRAPHIC_COORD.ELEV": "0",
+        }
+        cache = {
+            "latitude": 37.52704,
+            "longitude": 127.10936,
+            "elevation": 30,
+        }
+
+        assert sys_utils.onstep_location_readback_matches(
+            onstep_props["LX200 OnStep.GEOGRAPHIC_COORD.LAT"],
+            onstep_props["LX200 OnStep.GEOGRAPHIC_COORD.LONG"],
+            cache["latitude"],
+            cache["longitude"],
+        )
+        assert (
+            sys_utils.format_onstep_location_display_with_cache(onstep_props, cache)
+            == f"+37{degree}31'37\", -127{degree}06'34\" / 30m"
+        )
+
+    @pytest.mark.unit
+    def test_onstep_location_display_uses_cached_elevation_for_exclusive_sync():
+        degree = "\N{DEGREE SIGN}"
+        onstep_props = {
+            "LX200 OnStep.GEOGRAPHIC_COORD.LAT": "37.31666666666669983",
+            "LX200 OnStep.GEOGRAPHIC_COORD.LONG": "126.8166666666666288",
+            "LX200 OnStep.GEOGRAPHIC_COORD.ELEV": "0",
+        }
+        cache = {
+            "latitude": 37.32361,
+            "longitude": 126.82194,
+            "elevation": 15,
+        }
+
+        assert (
+            sys_utils.format_onstep_location_display_with_cache(onstep_props, cache)
+            == f"+37{degree}19'25\", -126{degree}49'19\" / 15m"
+        )
+
+    @pytest.mark.unit
+    def test_effective_onstep_location_prefers_cached_synced_coordinates():
+        onstep_props = {
+            "LX200 OnStep.GEOGRAPHIC_COORD.LAT": "37.31666666666669983",
+            "LX200 OnStep.GEOGRAPHIC_COORD.LONG": "126.8166666666666288",
+            "LX200 OnStep.GEOGRAPHIC_COORD.ELEV": "0",
+        }
+        cache = {
+            "latitude": 37.32361,
+            "longitude": 126.82194,
+            "elevation": 15,
+        }
+
+        effective = sys_utils.effective_onstep_location(onstep_props, cache)
+
+        assert effective["latitude"] == pytest.approx(37.32361)
+        assert effective["longitude"] == pytest.approx(126.82194)
+        assert effective["elevation"] == pytest.approx(15)
+        assert effective["source"] == "PiFinder synced location"
+        assert effective["driver_readback_matched"] is True
+        assert (
+            sys_utils.format_effective_onstep_location(onstep_props, cache)
+            == "37.32361, 126.82194 / 15m"
+        )
+
+    @pytest.mark.unit
+    def test_effective_onstep_location_falls_back_to_driver_readback():
+        onstep_props = {
+            "LX200 OnStep.GEOGRAPHIC_COORD.LAT": "34.25",
+            "LX200 OnStep.GEOGRAPHIC_COORD.LONG": "241.75",
+            "LX200 OnStep.GEOGRAPHIC_COORD.ELEV": "100",
+        }
+
+        effective = sys_utils.effective_onstep_location(onstep_props, {})
+
+        assert effective["latitude"] == pytest.approx(34.25)
+        assert effective["longitude"] == pytest.approx(-118.25)
+        assert effective["elevation"] == pytest.approx(100)
+        assert effective["source"] == "INDI driver readback"
+
+    @pytest.mark.unit
     def test_build_onstep_lx200_location_time_commands_use_onstep_longitude_sign():
         commands = sys_utils.build_onstep_lx200_location_time_commands(
             latitude=37.32361,

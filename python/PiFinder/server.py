@@ -1096,33 +1096,45 @@ class Server:
                 "latitude": lat,
                 "longitude": lon,
                 "elevation": elev,
-                "utc_time": datetime.now(timezone.utc)
+                "utc_time": _current_pifinder_utc_datetime()
                 .replace(microsecond=0)
                 .strftime("%Y-%m-%dT%H:%M:%S"),
                 "source": source,
             }
 
+        def _current_pifinder_utc_datetime():
+            try:
+                pifinder_dt = self.shared_state.datetime()
+            except Exception:
+                logger.exception("Could not read PiFinder shared datetime")
+                pifinder_dt = None
+
+            if pifinder_dt is None:
+                return datetime.now(timezone.utc)
+            return sys_utils.parse_indi_utc_datetime(pifinder_dt)
+
         def _onstep_location_display(onstep_props):
-            return sys_utils.format_onstep_location_display(
+            return sys_utils.format_onstep_location_display_with_cache(onstep_props)
+
+        def _onstep_effective_location(onstep_props):
+            return sys_utils.effective_onstep_location(onstep_props)
+
+        def _onstep_effective_location_display(onstep_props):
+            return sys_utils.format_effective_onstep_location(onstep_props)
+
+        def _onstep_location_matches(
+            onstep_props,
+            latitude,
+            longitude,
+            tolerance=sys_utils.ONSTEP_LOCATION_READBACK_TOLERANCE_DEGREES,
+        ):
+            return sys_utils.onstep_location_readback_matches(
                 onstep_props.get("LX200 OnStep.GEOGRAPHIC_COORD.LAT"),
                 onstep_props.get("LX200 OnStep.GEOGRAPHIC_COORD.LONG"),
-                onstep_props.get("LX200 OnStep.GEOGRAPHIC_COORD.ELEV"),
+                latitude,
+                longitude,
+                tolerance_degrees=tolerance,
             )
-
-        def _onstep_location_matches(onstep_props, latitude, longitude, tolerance=0.01):
-            try:
-                current_lat = float(onstep_props["LX200 OnStep.GEOGRAPHIC_COORD.LAT"])
-                current_lon = (
-                    float(onstep_props["LX200 OnStep.GEOGRAPHIC_COORD.LONG"]) % 360.0
-                )
-                target_lat = float(latitude)
-                target_lon = sys_utils.onstep_longitude_degrees(float(longitude)) % 360.0
-            except (KeyError, TypeError, ValueError):
-                return False
-
-            lon_delta = abs(current_lon - target_lon)
-            lon_delta = min(lon_delta, 360.0 - lon_delta)
-            return abs(current_lat - target_lat) <= tolerance and lon_delta <= tolerance
 
         def _get_indi_onstep_properties(indi_cfg):
             return sys_utils.get_indi_onstep_properties(
@@ -1159,6 +1171,10 @@ class Server:
                 ap_clients=ap_clients,
                 onstep_props=onstep_props,
                 onstep_location_display=_onstep_location_display(onstep_props),
+                onstep_effective_location_display=_onstep_effective_location_display(
+                    onstep_props
+                ),
+                onstep_effective_location=_onstep_effective_location(onstep_props),
                 pifinder_location_time=_pifinder_location_time_values(),
                 web_motion_keepalive_ms=int(WEB_MOTION_KEEPALIVE_INTERVAL * 1000),
                 slew_rate_labels=[
@@ -1198,6 +1214,10 @@ class Server:
                     "pifinder_location_time": _pifinder_location_time_values(),
                     "onstep_props": onstep_props,
                     "onstep_location_display": _onstep_location_display(onstep_props),
+                    "onstep_effective_location": _onstep_effective_location(onstep_props),
+                    "onstep_effective_location_display": (
+                        _onstep_effective_location_display(onstep_props)
+                    ),
                 }
             )
 
@@ -1436,9 +1456,7 @@ class Server:
                     raise ValueError("Latitude must be between -90 and 90")
                 if not -180 <= lon <= 180:
                     raise ValueError("Longitude must be between -180 and 180")
-                utc_time = sys_utils.parse_indi_utc_datetime(
-                    request.form.get("utc_time") or datetime.now(timezone.utc)
-                )
+                utc_time = _current_pifinder_utc_datetime()
                 properties = sys_utils.build_indi_location_time_properties(
                     latitude=lat,
                     longitude=lon,
@@ -1465,6 +1483,7 @@ class Server:
                     timeout=2.0,
                 )
                 if _onstep_location_matches(onstep_props, lat, lon):
+                    sys_utils.write_onstep_location_cache(lat, lon, elev, utc_time)
                     return _render_indi_page(
                         _("Location and UTC time sent"),
                         onstep_props=onstep_props,
@@ -1504,6 +1523,7 @@ class Server:
                         "Exclusive OnStep sync completed, but the driver still "
                         "does not report the requested location"
                     )
+                sys_utils.write_onstep_location_cache(lat, lon, elev, utc_time)
 
                 return _render_indi_page(
                     _("Location and UTC time sent via exclusive OnStep sync"),

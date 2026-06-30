@@ -610,12 +610,18 @@ class MountControlIndi:
             )
 
             if properties:
-                self._apply_indi_properties(
+                if self._apply_indi_properties(
                     properties,
                     "connected" if self.connected else "idle",
                     "Location/time sent",
                     "sync_failed",
-                )
+                ) and latitude is not None and longitude is not None:
+                    sys_utils.write_onstep_location_cache(
+                        latitude,
+                        longitude,
+                        elevation,
+                        dt,
+                    )
             else:
                 self._write_controller_status(
                     "connected" if self.connected else "idle",

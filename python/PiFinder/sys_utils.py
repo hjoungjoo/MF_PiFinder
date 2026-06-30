@@ -64,6 +64,10 @@ DEFAULT_ONSTEP_NETWORK_PORT = 9999
 DEFAULT_ONSTEP_DEVICE_NAME = "LX200 OnStep"
 ONSTEP_CONNECTION_USB = "usb"
 ONSTEP_CONNECTION_NETWORK = "network"
+ONSTEP_LOCATION_CACHE_FILE = utils.data_dir / "onstep_location_cache.json"
+# The LX200 OnStep INDI driver may read site latitude/longitude back at minute
+# precision even when the device itself keeps seconds.
+ONSTEP_LOCATION_READBACK_TOLERANCE_DEGREES = (1.0 / 60.0) + 0.002
 ONSTEP_DISPLAY_PROPERTIES = [
     "CONNECTION.CONNECT",
     "CONNECTION_MODE.CONNECTION_SERIAL",
@@ -140,6 +144,38 @@ def onstep_web_longitude_degrees(indi_longitude: float) -> float:
     return -lon
 
 
+def signed_longitude_degrees(indi_longitude: float) -> float:
+    """Convert INDI 0..360 eastward longitude to ordinary signed east-positive degrees."""
+    lon = float(indi_longitude) % 360.0
+    if lon > 180.0:
+        lon -= 360.0
+    return lon
+
+
+def onstep_location_readback_matches(
+    readback_latitude: Any,
+    readback_indi_longitude: Any,
+    target_latitude: Any,
+    target_longitude: Any,
+    tolerance_degrees: float = ONSTEP_LOCATION_READBACK_TOLERANCE_DEGREES,
+) -> bool:
+    """Compare a requested location with INDI readback at LX200 site precision."""
+    try:
+        current_lat = float(readback_latitude)
+        current_lon = float(readback_indi_longitude) % 360.0
+        target_lat = float(target_latitude)
+        target_lon = onstep_longitude_degrees(float(target_longitude)) % 360.0
+    except (TypeError, ValueError):
+        return False
+
+    lon_delta = abs(current_lon - target_lon)
+    lon_delta = min(lon_delta, 360.0 - lon_delta)
+    return (
+        abs(current_lat - target_lat) <= tolerance_degrees
+        and lon_delta <= tolerance_degrees
+    )
+
+
 def _format_signed_dms(value: float, degree_width: int) -> str:
     sign = "+" if value >= 0 else "-"
     total_seconds = int(round(abs(float(value)) * 3600.0))
@@ -169,6 +205,140 @@ def format_onstep_location_display(
     if elevation not in (None, ""):
         text += f" / {float(elevation):g}m"
     return text
+
+
+def _onstep_property(properties: dict[str, Any], property_name: str) -> Any:
+    return properties.get(f"{DEFAULT_ONSTEP_DEVICE_NAME}.{property_name}")
+
+
+def write_onstep_location_cache(
+    latitude: float,
+    longitude: float,
+    elevation: float | None = None,
+    utc_datetime: Any = None,
+) -> None:
+    """Persist the last high-precision location PiFinder successfully sent."""
+    payload = {
+        "latitude": float(latitude),
+        "longitude": float(longitude),
+        "elevation": None if elevation is None else float(elevation),
+        "updated": time.time(),
+    }
+    if utc_datetime is not None:
+        payload["utc_time"] = (
+            parse_indi_utc_datetime(utc_datetime)
+            .replace(microsecond=0)
+            .strftime("%Y-%m-%dT%H:%M:%S")
+        )
+
+    try:
+        utils.create_path(utils.data_dir)
+        with open(ONSTEP_LOCATION_CACHE_FILE, "w", encoding="utf-8") as cache_out:
+            json.dump(payload, cache_out, indent=2, sort_keys=True)
+    except OSError:
+        logger.exception("Could not write OnStep location cache")
+
+
+def read_onstep_location_cache() -> dict[str, Any]:
+    """Return the last high-precision location sent by PiFinder, if available."""
+    try:
+        with open(ONSTEP_LOCATION_CACHE_FILE, encoding="utf-8") as cache_in:
+            payload = json.load(cache_in)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+    if "latitude" not in payload or "longitude" not in payload:
+        return {}
+    return payload
+
+
+def format_onstep_location_display_with_cache(
+    onstep_props: dict[str, Any],
+    location_cache: dict[str, Any] | None = None,
+) -> str:
+    """Format OnStep location, using cached PiFinder values when readback is coarse."""
+    raw_lat = _onstep_property(onstep_props, "GEOGRAPHIC_COORD.LAT")
+    raw_lon = _onstep_property(onstep_props, "GEOGRAPHIC_COORD.LONG")
+    raw_elev = _onstep_property(onstep_props, "GEOGRAPHIC_COORD.ELEV")
+    location_cache = location_cache or read_onstep_location_cache()
+
+    if location_cache and onstep_location_readback_matches(
+        raw_lat,
+        raw_lon,
+        location_cache.get("latitude"),
+        location_cache.get("longitude"),
+    ):
+        return format_onstep_location_display(
+            location_cache["latitude"],
+            onstep_longitude_degrees(location_cache["longitude"]),
+            location_cache.get("elevation"),
+        )
+
+    return format_onstep_location_display(raw_lat, raw_lon, raw_elev)
+
+
+def effective_onstep_location(
+    onstep_props: dict[str, Any],
+    location_cache: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Return the best available OnStep site coordinates in PiFinder convention.
+
+    The INDI LX200 OnStep driver's GEOGRAPHIC_COORD readback can be coarse. If
+    it matches the last high-precision PiFinder sync, prefer the cached synced
+    coordinates for application logic and keep driver readback for diagnostics.
+    """
+    raw_lat = _onstep_property(onstep_props, "GEOGRAPHIC_COORD.LAT")
+    raw_lon = _onstep_property(onstep_props, "GEOGRAPHIC_COORD.LONG")
+    raw_elev = _onstep_property(onstep_props, "GEOGRAPHIC_COORD.ELEV")
+    location_cache = location_cache or read_onstep_location_cache()
+
+    if location_cache and onstep_location_readback_matches(
+        raw_lat,
+        raw_lon,
+        location_cache.get("latitude"),
+        location_cache.get("longitude"),
+    ):
+        return {
+            "latitude": float(location_cache["latitude"]),
+            "longitude": float(location_cache["longitude"]),
+            "elevation": location_cache.get("elevation"),
+            "source": "PiFinder synced location",
+            "driver_readback_matched": True,
+        }
+
+    try:
+        return {
+            "latitude": float(raw_lat),
+            "longitude": signed_longitude_degrees(float(raw_lon)),
+            "elevation": None if raw_elev in (None, "") else float(raw_elev),
+            "source": "INDI driver readback",
+            "driver_readback_matched": False,
+        }
+    except (TypeError, ValueError):
+        return {
+            "latitude": None,
+            "longitude": None,
+            "elevation": None,
+            "source": "Unavailable",
+            "driver_readback_matched": False,
+        }
+
+
+def format_effective_onstep_location(
+    onstep_props: dict[str, Any],
+    location_cache: dict[str, Any] | None = None,
+) -> str:
+    """Format effective OnStep site coordinates as decimal PiFinder coordinates."""
+    effective = effective_onstep_location(onstep_props, location_cache)
+    if effective["latitude"] is None or effective["longitude"] is None:
+        return "-"
+    elevation = effective.get("elevation")
+    elevation_text = "-" if elevation is None else f"{float(elevation):g}"
+    return (
+        f"{float(effective['latitude']):.5f}, "
+        f"{float(effective['longitude']):.5f} / {elevation_text}m"
+    )
 
 
 def _dms_parts(value: float) -> tuple[int, int, int]:
