@@ -85,6 +85,18 @@ INDI > SkySafari Mount Mode > SkySafari LX200 Mount Code
 이 흐름은 mount axis가 Alt/Az인지 EQ인지에 의존하지 않는다. IMU는 실제 하늘
 수평 방향을 측정하고, SkySafari에는 항상 RA/Dec를 반환하기 때문이다.
 
+SkySafari/LX200 명령 처리에서 `:Sr...#`와 `:Sd...#`는 target 좌표를 저장만
+한다. 실제 동작은 뒤따르는 명령으로 구분한다.
+
+| 후속 명령 | 의미 |
+| --- | --- |
+| `:MS#` | 저장된 target으로 GoTo |
+| `:CM#` | 저장된 target으로 Sync/Align |
+
+`CM#` 처리 시에는 방금 수신된 `Sr/Sd` 좌표를 이전 GoTo target보다 우선한다.
+따라서 사용자가 다른 대상에서 Align/Sync를 실행해도 이전 GoTo 좌표로 잘못
+정렬되지 않는다.
+
 ## 구현 체크리스트
 
 - [x] no-solve IMU 보정값 저장 구조 추가
@@ -92,6 +104,7 @@ INDI > SkySafari Mount Mode > SkySafari LX200 Mount Code
 - [x] no-solve Sync에서 PiFinder plate-solve align을 호출하지 않도록 분리
 - [x] SkySafari `:GW#`가 `mount_type`을 반영하도록 수정
 - [x] `skysafari_lx200_mount_code` override 추가
+- [x] SkySafari `CM#`가 최신 `Sr/Sd` 좌표를 이전 GoTo target보다 우선하도록 수정
 - [x] INDI 웹 UI에 SkySafari mount mode 공통 설정 추가
 - [x] 관련 unit test 추가
 - [x] 서비스 재시작 후 상태 확인

@@ -417,6 +417,11 @@ def test_handle_client_processes_multiple_lx200_commands_in_one_packet(monkeypat
     assert fake_socket.sent == [b"#", b"AT1"]
 
 
+@pytest.mark.parametrize("status", ["AT1", "PT1", "GT1"])
+def test_lx200_mount_status_response_is_not_hash_terminated(status):
+    assert pos_server._format_lx200_response(status) == status.encode()
+
+
 def test_handle_client_processes_split_lx200_command(monkeypatch):
     class FakeSocket:
         def __init__(self):
@@ -472,6 +477,41 @@ def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
         "type": "sync",
         "ra": 12.5,
         "dec": -34.25,
+    }
+
+
+def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "align_command_queue", None)
+    monkeypatch.setattr(pos_server, "align_response_queue", None)
+    monkeypatch.setattr(pos_server, "last_target_j2000", (12.5, -34.25))
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(pos_server, "is_stellarium", True)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig(
+            {
+                "mount_control": True,
+                "skysafari_indi_sync": True,
+                "skysafari_pifinder_align": False,
+                "skysafari_imu_align_without_solve": False,
+            }
+        ),
+    )
+
+    assert pos_server.parse_sr_command(None, ":Sr02:00:00#") == "1"
+    assert pos_server.parse_sd_command(None, ":Sd+10*00:00#") == "1"
+    assert pos_server.handle_sync_command(DummyState(None), ":CM#") == (
+        "Coordinates matched."
+    )
+
+    assert commands.get_nowait() == {
+        "type": "sync",
+        "ra": 30.0,
+        "dec": 10.0,
     }
 
 

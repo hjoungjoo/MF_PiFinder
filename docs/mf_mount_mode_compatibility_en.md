@@ -86,6 +86,18 @@ Supported values:
 This is mount-axis independent because the IMU measures physical sky direction
 and SkySafari receives RA/Dec.
 
+In the SkySafari/LX200 command flow, `:Sr...#` and `:Sd...#` only store target
+coordinates. The following command selects the action:
+
+| Following command | Meaning |
+| --- | --- |
+| `:MS#` | GoTo the stored target |
+| `:CM#` | Sync/Align to the stored target |
+
+When handling `CM#`, PiFinder prefers the most recently received `Sr/Sd`
+coordinates over the previous GoTo target. This prevents an Align/Sync on a new
+object from accidentally reusing the older GoTo target.
+
 ## Implementation Checklist
 
 - [x] Add no-solve IMU correction state
@@ -93,6 +105,7 @@ and SkySafari receives RA/Dec.
 - [x] Avoid PiFinder plate-solve align while there is no solve
 - [x] Make SkySafari `:GW#` follow `mount_type`
 - [x] Add `skysafari_lx200_mount_code` override
+- [x] Make SkySafari `CM#` prefer current `Sr/Sd` coordinates over the previous GoTo target
 - [x] Add shared SkySafari mount-mode settings to the INDI web UI
 - [x] Add unit tests
 - [x] Restart service and verify status

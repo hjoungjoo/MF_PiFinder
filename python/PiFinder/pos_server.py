@@ -684,7 +684,9 @@ def handle_slew_command(shared_state, _input_str: str):
 
 
 def handle_sync_command(shared_state, _input_str: str):
-    target = last_target_j2000 or _target_from_parsed_coordinates()
+    parsed_target = _target_from_parsed_coordinates()
+    target_source = "parsed_coordinates" if parsed_target is not None else "last_goto"
+    target = parsed_target or last_target_j2000
     if target is None:
         logger.warning("SkySafari sync ignored; no target coordinates")
         return "No target."
@@ -702,7 +704,9 @@ def handle_sync_command(shared_state, _input_str: str):
         )
     indi_synced = _queue_indi_sync_if_enabled(ra_deg, dec_deg)
     logger.info(
-        "SkySafari sync handled: pifinder_aligned=%s imu_aligned=%s indi_synced=%s",
+        "SkySafari sync handled: target_source=%s pifinder_aligned=%s "
+        "imu_aligned=%s indi_synced=%s",
+        target_source,
         pifinder_aligned,
         imu_aligned,
         indi_synced,
@@ -776,7 +780,8 @@ def _pop_lx200_message(buffer: str) -> Tuple[Optional[str], str]:
 
 
 def _format_lx200_response(out_data: str) -> bytes:
-    response = out_data if out_data in ("0", "1", "AT1") else out_data + "#"
+    is_bare_status = bool(re.fullmatch(r"[APG]T\d", out_data))
+    response = out_data if out_data in ("0", "1") or is_bare_status else out_data + "#"
     return response.encode()
 
 
