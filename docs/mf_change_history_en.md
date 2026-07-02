@@ -1,11 +1,14 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
 Raspberry Pi 5-class Bookworm 64-bit hardware.
+
+For a concise reference used when syncing future upstream source changes and
+reapplying MF-specific patches, see `docs/mf_upstream_patch_reference_en.md`.
 
 Scope:
 

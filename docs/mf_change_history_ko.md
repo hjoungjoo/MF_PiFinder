@@ -1,11 +1,14 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
-최종 업데이트: 2026-07-02
+최종 업데이트: 2026-07-03
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
 소스 수정 사항을 파일별로 기록한다.
+
+upstream 원본 소스가 변경되었을 때 재동기화와 패치 재적용 기준으로 사용할 요약은
+`docs/mf_upstream_patch_reference_ko.md`를 참고한다.
 
 범위:
 
