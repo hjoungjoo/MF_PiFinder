@@ -98,6 +98,11 @@ When handling `CM#`, PiFinder prefers the most recently received `Sr/Sd`
 coordinates over the previous GoTo target. This prevents an Align/Sync on a new
 object from accidentally reusing the older GoTo target.
 
+When `skysafari_indi_goto` is enabled, SkySafari Align/Sync is forwarded to
+INDI/OnStep along with SkySafari GoTo. `skysafari_indi_sync` remains as an
+additional allow option for setups that want Align/Sync forwarding without
+GoTo forwarding.
+
 ## Implementation Checklist
 
 - [x] Add no-solve IMU correction state
@@ -106,6 +111,7 @@ object from accidentally reusing the older GoTo target.
 - [x] Make SkySafari `:GW#` follow `mount_type`
 - [x] Add `skysafari_lx200_mount_code` override
 - [x] Make SkySafari `CM#` prefer current `Sr/Sd` coordinates over the previous GoTo target
+- [x] Forward SkySafari Align/Sync to INDI/OnStep when GoTo forwarding is enabled
 - [x] Treat 0-degree altitude as a valid Alt/Az push-to coordinate
 - [x] Render object-list push-to distances when one axis is 0 degrees
 - [x] Add shared SkySafari mount-mode settings to the INDI web UI
@@ -154,6 +160,7 @@ Decision items:
 | solved pointing available | IMU correction inactive |
 | SkySafari GoTo with INDI GoTo off | push-to target only |
 | SkySafari GoTo with INDI GoTo on | `goto_target` queued |
+| SkySafari Align/Sync with INDI GoTo on | `sync` queued |
 | mount_control off | position reporting and push-to only |
 | Alt/Az solution altitude is 0 degrees | valid push-to delta returned |
 | Object List movement has one 0-degree axis | actual distance rendered, not `--- ---` |

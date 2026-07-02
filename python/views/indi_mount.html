@@ -91,7 +91,7 @@
         <div class="col s12 m6">
           <label>
             <input type="checkbox" name="skysafari_indi_goto" {% if skysafari_indi_goto %}checked{% endif %}>
-            <span>{{ _('Forward SkySafari GoTo to INDI') }}</span>
+            <span>{{ _('Forward SkySafari GoTo and Align/Sync to INDI') }}</span>
           </label>
         </div>
       </div>
@@ -99,7 +99,7 @@
         <div class="col s12 m6">
           <label>
             <input type="checkbox" name="skysafari_indi_sync" {% if skysafari_indi_sync %}checked{% endif %}>
-            <span>{{ _('Forward SkySafari Align/Sync to INDI') }}</span>
+            <span>{{ _('Forward SkySafari Align/Sync to INDI even when GoTo forwarding is off') }}</span>
           </label>
         </div>
         <div class="col s12 m6">

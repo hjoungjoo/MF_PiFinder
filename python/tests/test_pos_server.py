@@ -480,6 +480,36 @@ def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
     }
 
 
+def test_skysafari_sync_queues_indi_sync_when_goto_forwarding_enabled(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "align_command_queue", None)
+    monkeypatch.setattr(pos_server, "align_response_queue", None)
+    monkeypatch.setattr(pos_server, "last_target_j2000", (42.0, 15.5))
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig(
+            {
+                "mount_control": True,
+                "skysafari_indi_goto": True,
+                "skysafari_indi_sync": False,
+                "skysafari_pifinder_align": False,
+            }
+        ),
+    )
+
+    assert pos_server.handle_sync_command(DummyState(None), ":CM#") == (
+        "Coordinates matched."
+    )
+
+    assert commands.get_nowait() == {
+        "type": "sync",
+        "ra": 42.0,
+        "dec": 15.5,
+    }
+
+
 def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)

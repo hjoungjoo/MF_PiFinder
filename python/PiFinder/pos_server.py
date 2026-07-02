@@ -468,7 +468,10 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
 def _queue_indi_sync_if_enabled(ra_deg: float, dec_deg: float) -> bool:
     if not _mount_control_enabled():
         return False
-    if not _get_config_option("skysafari_indi_sync", False):
+    sync_enabled = bool(_get_config_option("skysafari_indi_sync", False))
+    goto_forwarding_enabled = bool(_get_config_option("skysafari_indi_goto", False))
+    if not (sync_enabled or goto_forwarding_enabled):
+        logger.info("SkySafari INDI sync skipped; SkySafari mount forwarding is off")
         return False
 
     mountcontrol_queue.put(
