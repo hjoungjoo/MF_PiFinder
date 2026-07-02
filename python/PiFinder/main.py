@@ -1238,7 +1238,10 @@ if __name__ == "__main__":
         gps_monitor = importlib.import_module("PiFinder.gps_fake")
     else:
         hardware_platform = "Pi"
-        display_hardware = "ssd1351"
+        from PiFinder import hardware_detect
+
+        display_hardware = hardware_detect.default_display_hardware()
+        rlogger.info("using %s display", display_hardware)
         from rpi_hardware_pwm import HardwarePWM
 
         cfg = config.Config()
