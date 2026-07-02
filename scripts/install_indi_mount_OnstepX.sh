@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Latest INDI test installer.
+# LX200 OnStepX INDI test installer.
 #
 # This wrapper intentionally reuses install_indi_mount.sh so the INDI Web
 # Manager install and service setup stay identical to the stable installer.
 # A separate default build root avoids reusing an existing ~/indi v2.1.6 tree.
+# It also enables the bundled PiFinder INDI patch set, including LX200 OnStepX.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -19,14 +20,16 @@ export INDI_VERSION="${INDI_VERSION:-v2.2.3.1}"
 export INDI_3RDPARTY_VERSION="${INDI_3RDPARTY_VERSION:-v2.2.3.1}"
 export PYINDI_VERSION="${PYINDI_VERSION:-v2.1.2}"
 export BUILD_ROOT="${BUILD_ROOT:-$HOME/indi-latest}"
+export INDI_PATCH_DIR="${INDI_PATCH_DIR:-${SCRIPT_DIR}/patches}"
 export CFLAGS="$(sanitize_arm64_flags "${CFLAGS:-}") -march=armv8-a"
 export CXXFLAGS="$(sanitize_arm64_flags "${CXXFLAGS:-}") -march=armv8-a -Wno-error=stringop-overread -Wno-error=stringop-truncation"
 
-echo "PiFinder latest INDI mount-control installer"
+echo "PiFinder LX200 OnStepX INDI mount-control installer"
 echo "Using BUILD_ROOT=${BUILD_ROOT}"
 echo "INDI_VERSION=${INDI_VERSION}"
 echo "INDI_3RDPARTY_VERSION=${INDI_3RDPARTY_VERSION}"
 echo "PYINDI_VERSION=${PYINDI_VERSION}"
+echo "INDI_PATCH_DIR=${INDI_PATCH_DIR}"
 echo "CFLAGS=${CFLAGS}"
 echo "CXXFLAGS=${CXXFLAGS}"
 echo

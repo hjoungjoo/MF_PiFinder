@@ -43,6 +43,23 @@ INDI_VERSION=v2.1.6 INDI_3RDPARTY_VERSION=v2.1.6.2 JOBS=2 bash scripts/install_i
 
 Pi 4에서는 메모리 여유를 위해 기본 `JOBS=2`를 권장합니다. Pi 5나 CM5에서는 냉각과 전원 상태가 안정적이면 `JOBS=3` 또는 `JOBS=4`로 빌드 시간을 줄일 수 있습니다.
 
+### 최신 INDI + LX200 OnStepX 소스 빌드
+
+`LX200 OnStepX` 드라이버가 포함된 최신 INDI 테스트 빌드는 다음 스크립트를 사용합니다.
+
+```bash
+cd ~/PiFinder
+bash scripts/install_indi_mount_OnstepX.sh
+```
+
+이 스크립트는 INDI `v2.2.3.1`을 `~/indi-latest` 아래에 받아 빌드하고, `scripts/patches/indi-v2.2.3.1-onstepx.patch`를 자동으로 적용합니다. 패치는 원본 `LX200 OnStep` 드라이버를 변경하지 않고 `LX200 OnStepX` 장치와 실행 링크를 추가합니다.
+
+`install_indi_mount_OnstepX.sh`는 Pi 5에서 빌드하더라도 Pi 4에서 실행될 수 있도록 `-march=native`, `-mcpu=*`, `-mtune=*`를 제거하고 `-march=armv8-a`를 사용합니다. 패치 적용을 끄고 순수 upstream INDI만 테스트하려면 다음처럼 실행할 수 있습니다.
+
+```bash
+INDI_PATCH_DIR=none bash scripts/install_indi_mount_OnstepX.sh
+```
+
 ### Pi 4/Pi 5 공용 바이너리 아카이브 설치
 
 소스 빌드 대신 미리 만든 Bookworm 64-bit/aarch64 아카이브를 사용할 수 있습니다.
@@ -73,7 +90,7 @@ cd ~/PiFinder
 bash scripts/package_indi_mount_archive.sh
 ```
 
-최신 소스 빌드 스크립트는 Pi 5에서 빌드하더라도 Pi 4 호환성을 위해 `-march=native`, `-mcpu=*`, `-mtune=*`를 제거하고 `-march=armv8-a`를 사용합니다.
+최신 소스 빌드 스크립트로 만든 뒤 아카이브를 생성하면 `LX200 OnStepX`가 포함된 설치 결과를 Pi 4/Pi 5 공용 아카이브로 배포할 수 있습니다.
 
 ## 마운트 드라이버 설정
 

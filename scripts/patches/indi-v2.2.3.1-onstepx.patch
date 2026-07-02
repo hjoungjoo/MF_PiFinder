@@ -1,0 +1,324 @@
+diff --git a/drivers.xml b/drivers.xml
+index d48863b..ebf9121 100644
+--- a/drivers.xml
++++ b/drivers.xml
+@@ -39,6 +39,10 @@
+             <driver name="LX200 OnStep">indi_lx200_OnStep</driver>
+             <version>1.27</version>
+         </device>
++        <device label="LX200 OnStepX" manufacturer="MF PiFinder">
++            <driver name="LX200 OnStepX">indi_lx200_OnStepX</driver>
++            <version>1.27-mf1</version>
++        </device>
+         <device label="WARPDRIVE" manufacturer="WarpAstron">
+             <driver name="LX200 OnStep">indi_lx200_OnStep</driver>
+             <version>1.27</version>
+diff --git a/drivers/telescope/CMakeLists.txt b/drivers/telescope/CMakeLists.txt
+index 42384f3..900d123 100644
+--- a/drivers/telescope/CMakeLists.txt
++++ b/drivers/telescope/CMakeLists.txt
+@@ -71,6 +71,7 @@ add_executable(indi_lx200generic
+     lx200fs2.cpp
+     lx200ss2000pc.cpp
+     lx200_OnStep.cpp
++    lx200_OnStepX.cpp
+     lx200_OpenAstroTech.cpp
+     lx200_pegasus_nyx101.cpp
+     lx200_10micron.cpp
+@@ -103,6 +104,7 @@ execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic
+ execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200fs2)\n
+ execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200ss2000pc)\n
+ execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200_OnStep)\n
++execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200_OnStepX)\n
+ execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200_OpenAstroTech)\n
+ execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200_pegasus_nyx101)\n
+ execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200_10micron)\n
+diff --git a/drivers/telescope/lx200generic.cpp b/drivers/telescope/lx200generic.cpp
+index 8f12597..0ab5014 100644
+--- a/drivers/telescope/lx200generic.cpp
++++ b/drivers/telescope/lx200generic.cpp
+@@ -32,6 +32,7 @@ Updated driver to use INDI::Telescope (JM)
+ #include "lx200_10micron.h"
+ #include "lx200_16.h"
+ #include "lx200_OnStep.h"
++#include "lx200_OnStepX.h"
+ #include "lx200_OpenAstroTech.h"
+ #include "lx200ap_v2.h"
+ #include "lx200ap_gtocp2.h"
+@@ -92,6 +93,11 @@ static class Loader
+                 IDLog("initializing from LX200 classic device...\n");
+                 telescope.reset(new LX200Classic());
+             }
++            else if (strstr(getProgName(), "indi_lx200_OnStepX"))
++            {
++                IDLog("initializing from LX200 OnStepX device...\n");
++                telescope.reset(new LX200_OnStepX());
++            }
+             else if (strstr(getProgName(), "indi_lx200_OnStep"))
+             {
+                 IDLog("initializing from LX200 OnStep device...\n");
+diff --git a/drivers/telescope/lx200_OnStepX.cpp b/drivers/telescope/lx200_OnStepX.cpp
+new file mode 100644
+index 0000000..c210f94
+--- /dev/null
++++ b/drivers/telescope/lx200_OnStepX.cpp
+@@ -0,0 +1,224 @@
++/*
++    LX200 OnStepX
++
++    Custom INDI device name for the PiFinder OnStep integration.
++*/
++
++#include "lx200_OnStepX.h"
++
++#include <cmath>
++
++const char *LX200_OnStepX::getDefaultName()
++{
++    return "LX200 OnStepX";
++}
++
++bool LX200_OnStepX::updateLocation(double latitude, double longitude, double elevation)
++{
++    if (isSimulation())
++        return true;
++
++    // INDI stores longitude as cartographic east-positive degrees. OnStep LX200
++    // follows the Meade convention used by its web UI: east is negative and
++    // west is positive.
++    double onstep_long = longitude;
++    while (onstep_long < 0)
++        onstep_long += 360;
++    while (onstep_long >= 360)
++        onstep_long -= 360;
++    if (onstep_long > 180)
++        onstep_long = 360 - onstep_long;
++    else if (onstep_long > 0)
++        onstep_long *= -1;
++
++    if (setSiteLongitude(PortFD, onstep_long) < 0)
++    {
++        LOG_ERROR("Error setting site longitude coordinates");
++        return false;
++    }
++
++    if (setSiteLatitude(PortFD, latitude) < 0)
++    {
++        LOG_ERROR("Error setting site latitude coordinates");
++        return false;
++    }
++
++    if (setSiteElevation(PortFD, elevation) < 0)
++    {
++        LOG_ERROR("Error setting site elevation");
++        return false;
++    }
++
++    char lat_text[32] = {0}, lon_text[32] = {0};
++    fs_sexa(lat_text, latitude, 3, 360000);
++    fs_sexa(lon_text, longitude, 4, 360000);
++
++    LOGF_INFO("Site location updated to Lat %.32s - Long %.32s - Elev %.1fm", lat_text, lon_text, elevation);
++
++    return true;
++}
++
++int LX200_OnStepX::setSiteLongitude(int fd, double longitude)
++{
++    int degrees = 0, minutes = 0;
++    double seconds_fraction = 0.0;
++    char command[32] = {0};
++
++    getSexComponentsIID(longitude, &degrees, &minutes, &seconds_fraction);
++    if (OSHighPrecision)
++    {
++        int seconds = static_cast<int>(std::round(seconds_fraction));
++        if (seconds >= 60)
++        {
++            seconds = 0;
++            minutes += 1;
++            if (minutes >= 60)
++            {
++                minutes = 0;
++                degrees += degrees >= 0 ? 1 : -1;
++            }
++        }
++        snprintf(command, sizeof(command), ":Sg%+04d*%02d:%02d#", degrees, minutes, seconds);
++        int result = setStandardProcedure(fd, command);
++        if (result == 0)
++            return 0;
++
++        snprintf(command, sizeof(command), ":Sg%+04d*%02d#", degrees, minutes);
++        return setStandardProcedure(fd, command);
++    }
++
++    snprintf(command, sizeof(command), ":Sg%+04d*%02d#", degrees, minutes);
++    return setStandardProcedure(fd, command);
++}
++
++int LX200_OnStepX::setSiteLatitude(int fd, double latitude)
++{
++    int degrees = 0, minutes = 0;
++    double seconds_fraction = 0.0;
++    char command[32] = {0};
++
++    getSexComponentsIID(latitude, &degrees, &minutes, &seconds_fraction);
++    if (OSHighPrecision)
++    {
++        int seconds = static_cast<int>(std::round(seconds_fraction));
++        if (seconds >= 60)
++        {
++            seconds = 0;
++            minutes += 1;
++            if (minutes >= 60)
++            {
++                minutes = 0;
++                degrees += degrees >= 0 ? 1 : -1;
++            }
++        }
++        snprintf(command, sizeof(command), ":St%+03d*%02d:%02d#", degrees, minutes, seconds);
++        int result = setStandardProcedure(fd, command);
++        if (result == 0)
++            return 0;
++
++        snprintf(command, sizeof(command), ":St%+03d*%02d#", degrees, minutes);
++        return setStandardProcedure(fd, command);
++    }
++
++    snprintf(command, sizeof(command), ":St%+03d*%02d#", degrees, minutes);
++    return setStandardProcedure(fd, command);
++}
++
++int LX200_OnStepX::setSiteElevation(int fd, double elevation)
++{
++    char command[32] = {0};
++
++    snprintf(command, sizeof(command), ":Sv%g#", elevation);
++    return setStandardProcedure(fd, command);
++}
++
++bool LX200_OnStepX::getOnStepSiteCoordinate(int fd, const char *cmd, double *value, bool longitude)
++{
++    char response[RB_MAX_LEN] = {0};
++    int result = getCommandSingleCharErrorOrLongResponse(fd, response, cmd);
++    if (result < 0 || response[0] == '\0')
++        return false;
++
++    int degrees = 0, minutes = 0;
++    double seconds = 0.0;
++    if (sscanf(response, "%d%*c%d:%lf", &degrees, &minutes, &seconds) < 2)
++    {
++        LOGF_DEBUG("Unable to parse OnStep site coordinate response for %s: <%s>", cmd, response);
++        return false;
++    }
++
++    const double sign = degrees < 0 ? -1.0 : 1.0;
++    double coordinate = std::abs(degrees) + std::abs(minutes) / 60.0 + std::fabs(seconds) / 3600.0;
++    coordinate *= sign;
++
++    // OnStep follows Meade LX200 longitude convention: east is negative. INDI
++    // geographic longitude is cartographic: east is positive.
++    *value = longitude ? -coordinate : coordinate;
++    return true;
++}
++
++bool LX200_OnStepX::readOnStepSiteCoordinate(int fd, const char *highPrecisionCmd, const char *fallbackCmd,
++        double *value, bool longitude)
++{
++    if (getOnStepSiteCoordinate(fd, highPrecisionCmd, value, longitude))
++        return true;
++
++    return getOnStepSiteCoordinate(fd, fallbackCmd, value, longitude);
++}
++
++bool LX200_OnStepX::sendScopeLocation()
++{
++    double latitude = 0.0, longitude = 0.0;
++    char lat_sexagesimal[MAXINDIFORMAT] = {0};
++    char lng_sexagesimal[MAXINDIFORMAT] = {0};
++
++    if (isSimulation())
++    {
++        LocationNP[LOCATION_LATITUDE].setValue(29.5);
++        LocationNP[LOCATION_LONGITUDE].setValue(48.0);
++        LocationNP[LOCATION_ELEVATION].setValue(10);
++        LocationNP.setState(IPS_OK);
++        LocationNP.apply();
++        return true;
++    }
++
++    if (!readOnStepSiteCoordinate(PortFD, ":GtH#", ":Gt#", &latitude, false))
++    {
++        LOG_WARN("Failed to get site latitude from device.");
++        return false;
++    }
++
++    if (!readOnStepSiteCoordinate(PortFD, ":GgH#", ":Gg#", &longitude, true))
++    {
++        LOG_WARN("Failed to get site longitude from device.");
++        return false;
++    }
++
++    LocationNP[LOCATION_LATITUDE].setValue(latitude);
++    LocationNP[LOCATION_LONGITUDE].setValue(longitude);
++    fs_sexa(lat_sexagesimal, latitude, 3, 360000);
++    fs_sexa(lng_sexagesimal, longitude, 4, 360000);
++
++    double elevation = 0.0;
++    char elevation_response[RB_MAX_LEN] = {0};
++    if (getCommandDoubleResponse(PortFD, &elevation, elevation_response, ":Gv#") < 0)
++    {
++        LOG_WARN("Failed to get site elevation from device.");
++    }
++    else
++    {
++        LocationNP[LOCATION_ELEVATION].setValue(elevation);
++    }
++
++    LOGF_INFO("Mount has Latitude %s (%g) Longitude %s (%g) Elevation %g m (Longitude sign in carthography format)",
++              lat_sexagesimal,
++              LocationNP[LOCATION_LATITUDE].getValue(),
++              lng_sexagesimal,
++              LocationNP[LOCATION_LONGITUDE].getValue(),
++              LocationNP[LOCATION_ELEVATION].getValue());
++
++    LocationNP.apply();
++    saveConfig(true, "GEOGRAPHIC_COORD");
++
++    return true;
++}
+diff --git a/drivers/telescope/lx200_OnStepX.h b/drivers/telescope/lx200_OnStepX.h
+new file mode 100644
+index 0000000..1181a98
+--- /dev/null
++++ b/drivers/telescope/lx200_OnStepX.h
+@@ -0,0 +1,29 @@
++/*
++    LX200 OnStepX
++
++    PiFinder-focused OnStep driver variant.  It keeps the upstream LX200 OnStep
++    behavior as a base while giving MF PiFinder a stable driver name for local
++    fixes that are not yet suitable for the upstream driver.
++*/
++
++#pragma once
++
++#include "lx200_OnStep.h"
++
++class LX200_OnStepX : public LX200_OnStep
++{
++    public:
++        const char *getDefaultName() override;
++
++    protected:
++        bool updateLocation(double latitude, double longitude, double elevation) override;
++        int setSiteLongitude(int fd, double longitude) override;
++        int setSiteLatitude(int fd, double latitude) override;
++        bool sendScopeLocation() override;
++
++    private:
++        int setSiteElevation(int fd, double elevation);
++        bool getOnStepSiteCoordinate(int fd, const char *cmd, double *value, bool longitude);
++        bool readOnStepSiteCoordinate(int fd, const char *highPrecisionCmd, const char *fallbackCmd, double *value,
++                                      bool longitude);
++};

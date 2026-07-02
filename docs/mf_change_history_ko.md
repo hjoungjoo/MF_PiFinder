@@ -1,7 +1,7 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
-최종 업데이트: 2026-07-01
+최종 업데이트: 2026-07-02
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
@@ -33,7 +33,7 @@
 | 카메라 preview/focus/gain 제어 | Draft PR 있음 | [#501](https://github.com/brickbots/PiFinder/pull/501), `pr/focus-gain-preview` | focus preview, 밝은 배경 threshold, camera gain profile/runtime 제어, LCD preview script |
 | 한국어 UI localization | Draft PR 있음 | [#500](https://github.com/brickbots/PiFinder/pull/500), `pr/korean-localization` | `python/locale/ko`, 언어 메뉴의 `ko`, CJK font/restart 처리 |
 | Bluetooth/USB HID 키보드 지원 | Draft PR 있음 | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput 키 매핑, 텍스트 입력 키코드, Bluetooth keyboard scan/pair/connect UI, 재연결 |
-| INDI 마운트 제어 | Draft PR 있음 | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, 설치 스크립트, INDI 문서 |
+| INDI 마운트 제어 | Draft PR 있음 | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, LX200 OnStepX 커스텀 드라이버 패치, 설치 스크립트, INDI 문서 |
 | GPS/NTP/RTC/Software PPS 통합 시간 동기화 | Draft PR 있음 | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source 선택, helper service, dry-run/real clock sync, status UI, time sync 문서 |
 | Wi-Fi AP+STA 동시 모드 및 AP 설정 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | `wlan0` STA + `uap0` AP, STA 채널 추적, STA 밴드 선호, AP IP 설정, AP WPA2 암호 설정, AP+STA 인터넷 공유 옵션, OS Wi-Fi 프로파일 가져오기, 스캔된 SSID 선택, Pi 4/5 공통 Wi-Fi 모드 |
 | Locations 위치 카탈로그 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | GeoNames 기반 오프라인 위치 카탈로그, 국가/지역/군구/도시 선택, 좌표/고도/source 자동 입력, 북한 제외 |
@@ -137,6 +137,8 @@ scripts/camera_lcd_preview.py
 scripts/import_initial_wifi_networks.py
 scripts/pifinder_apsta.sh
 scripts/install_indi_mount.sh
+scripts/install_indi_mount_OnstepX.sh
+scripts/patches/indi-v2.2.3.1-onstepx.patch
 scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
 docs/mf_bookworm_install_ko.md

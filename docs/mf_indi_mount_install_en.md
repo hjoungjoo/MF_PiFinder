@@ -43,6 +43,23 @@ INDI_VERSION=v2.1.6 INDI_3RDPARTY_VERSION=v2.1.6.2 JOBS=2 bash scripts/install_i
 
 `JOBS=2` is the recommended default on Raspberry Pi 4 to keep memory use conservative. On Raspberry Pi 5 or CM5, `JOBS=3` or `JOBS=4` can reduce build time if cooling and power are stable.
 
+### Latest INDI + LX200 OnStepX Source Build
+
+Use this script for the latest INDI test build that includes the `LX200 OnStepX` driver:
+
+```bash
+cd ~/PiFinder
+bash scripts/install_indi_mount_OnstepX.sh
+```
+
+The script checks out INDI `v2.2.3.1` under `~/indi-latest`, builds it, and automatically applies `scripts/patches/indi-v2.2.3.1-onstepx.patch`. The patch leaves the upstream `LX200 OnStep` driver unchanged and adds a separate `LX200 OnStepX` device and executable link.
+
+`install_indi_mount_OnstepX.sh` strips `-march=native`, `-mcpu=*`, and `-mtune=*`, then uses `-march=armv8-a` so a build made on Raspberry Pi 5 stays compatible with Raspberry Pi 4. To test pure upstream INDI without the bundled PiFinder patch:
+
+```bash
+INDI_PATCH_DIR=none bash scripts/install_indi_mount_OnstepX.sh
+```
+
 ### Pi 4/Pi 5 Shared Binary Archive Install
 
 Instead of building from source, you can install a prebuilt Bookworm 64-bit/aarch64 archive:
@@ -73,7 +90,7 @@ cd ~/PiFinder
 bash scripts/package_indi_mount_archive.sh
 ```
 
-The latest source-build script strips `-march=native`, `-mcpu=*`, and `-mtune=*`, then uses `-march=armv8-a` so a build made on Raspberry Pi 5 stays compatible with Raspberry Pi 4.
+A binary archive created after the latest source build includes `LX200 OnStepX` and can be reused on Raspberry Pi 4 and Raspberry Pi 5 Bookworm 64-bit systems.
 
 ## Configure The Mount Driver
 

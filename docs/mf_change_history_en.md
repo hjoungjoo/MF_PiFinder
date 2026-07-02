@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -33,7 +33,7 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Camera preview/focus/gain control | Draft PR exists | [#501](https://github.com/brickbots/PiFinder/pull/501), `pr/focus-gain-preview` | focus preview, bright-background threshold, camera gain profile/runtime control, LCD preview script |
 | Korean UI localization | Draft PR exists | [#500](https://github.com/brickbots/PiFinder/pull/500), `pr/korean-localization` | `python/locale/ko`, `ko` language menu entry, CJK font/restart handling |
 | Bluetooth/USB HID keyboard support | Draft PR exists | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput key mapping, text-entry keycodes, Bluetooth keyboard scan/pair/connect UI, reconnect |
-| INDI mount control | Draft PR exists | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, install script, INDI docs |
+| INDI mount control | Draft PR exists | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, LX200 OnStepX custom-driver patch, install script, INDI docs |
 | Integrated GPS/NTP/RTC/software PPS time sync | Draft PR exists | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source selection, helper service, dry-run/real clock sync, status UI, time-sync docs |
 | Wi-Fi AP+STA simultaneous mode and AP settings | No Draft PR yet | local `mf_pifinder` worktree | `wlan0` STA + `uap0` AP, STA channel tracking, STA band preference, configurable AP IP, AP WPA2 password setting, AP+STA internet sharing option, OS Wi-Fi profile import, scanned SSID selection, shared Pi 4/5 Wi-Fi mode |
 | Locations catalog | No Draft PR yet | local `mf_pifinder` worktree | GeoNames-based offline location catalog, country/region/district/city selection, coordinate/altitude/source prefill, North Korea excluded |
@@ -137,6 +137,8 @@ scripts/camera_lcd_preview.py
 scripts/import_initial_wifi_networks.py
 scripts/pifinder_apsta.sh
 scripts/install_indi_mount.sh
+scripts/install_indi_mount_OnstepX.sh
+scripts/patches/indi-v2.2.3.1-onstepx.patch
 scripts/install_chrony_time_sync.sh
 scripts/install_gps_time_sync_helper.sh
 docs/mf_bookworm_install_ko.md

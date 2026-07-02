@@ -11,6 +11,7 @@ ANYIO_VERSION="${ANYIO_VERSION:-3.7.1}"
 JOBS="${JOBS:-2}"
 BUILD_ROOT="${BUILD_ROOT:-$HOME}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INDI_PATCH_DIR="${INDI_PATCH_DIR:-}"
 DISABLE_CAMERA_DRIVER_OPTIONS=(
     -DWITH_WEBCAM=OFF
     -DWITH_SX=OFF
@@ -62,8 +63,53 @@ cmake_install_if_available() {
     fi
 }
 
+apply_indi_patches() {
+    local repo_dir="$1"
+    local patch_dir="$2"
+    local version_key="${INDI_VERSION#v}"
+    local version_name="${INDI_VERSION}"
+    local patch_file
+    local patches=()
+
+    if [ -z "${patch_dir}" ] || [ "${patch_dir}" = "none" ]; then
+        return 0
+    fi
+
+    if [ ! -d "${patch_dir}" ]; then
+        echo "ERROR: INDI_PATCH_DIR does not exist: ${patch_dir}" >&2
+        exit 1
+    fi
+
+    shopt -s nullglob
+    patches=("${patch_dir}"/indi-"${version_name}"-*.patch)
+    if [ "${version_name}" != "${version_key}" ]; then
+        patches+=("${patch_dir}"/indi-"${version_key}"-*.patch)
+    fi
+    shopt -u nullglob
+
+    if [ "${#patches[@]}" -eq 0 ]; then
+        echo "No PiFinder INDI patches for ${INDI_VERSION} in ${patch_dir}; continuing."
+        return 0
+    fi
+
+    for patch_file in "${patches[@]}"; do
+        echo "Applying PiFinder INDI patch: ${patch_file}"
+        if git -C "${repo_dir}" apply --check "${patch_file}"; then
+            git -C "${repo_dir}" apply "${patch_file}"
+        elif git -C "${repo_dir}" apply --reverse --check "${patch_file}"; then
+            echo "Patch already applied: ${patch_file}"
+        else
+            echo "ERROR: INDI patch cannot be applied cleanly: ${patch_file}" >&2
+            exit 1
+        fi
+    done
+}
+
 echo "PiFinder INDI mount-control installer"
 echo "INDI: ${INDI_VERSION}, INDI 3rd-party: ${INDI_3RDPARTY_VERSION}"
+if [ -n "${INDI_PATCH_DIR}" ] && [ "${INDI_PATCH_DIR}" != "none" ]; then
+    echo "INDI patch directory: ${INDI_PATCH_DIR}"
+fi
 echo
 
 sudo apt update
@@ -92,6 +138,7 @@ if [ ! -d indi/.git ]; then
     rm -rf indi
     git clone --branch "${INDI_VERSION}" --depth 1 https://github.com/indilib/indi.git
 fi
+apply_indi_patches "${BUILD_ROOT}/indi" "${INDI_PATCH_DIR}"
 
 mkdir -p indi/build
 cd indi/build
