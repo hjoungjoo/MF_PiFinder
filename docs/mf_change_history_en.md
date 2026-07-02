@@ -39,6 +39,7 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Locations catalog | No Draft PR yet | local `mf_pifinder` worktree | GeoNames-based offline location catalog, country/region/district/city selection, coordinate/altitude/source prefill, North Korea excluded |
 | Web UI red night theme and PWA fullscreen app mode | No Draft PR yet | local `mf_pifinder` worktree | red night theme, per-browser theme storage, PWA manifest, service worker, PWA icons |
 | Optional IMU compass heading | No Draft PR yet | local `mf_pifinder` worktree | optional BNO055 NDOF magnetometer fusion mode, IMU calibration status, automatic calibration save/load, manual calibration menu |
+| SkySafari/INDI mount-mode compatibility | No Draft PR yet | local `mf_pifinder` worktree | Alt/Az/EQ SkySafari LX200 status, no-solve IMU alignment correction, mount-mode compatibility checklist |
 | Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |
 | Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted Web UI/PWA changes | integration branch used for install and hardware testing across the features above |
 
@@ -58,6 +59,7 @@ to follow. The following grouping is easier to maintain.
 | Locations catalog | GeoNames-based offline location catalog, country/region/district/city selector, coordinate prefill | New Draft PR needed |
 | Web observing UI | red night theme, PWA/fullscreen app mode | New Draft PR needed |
 | Optional IMU compass heading | BNO055 NDOF option, automatic/manual calibration, status UI | New Draft PR needed |
+| SkySafari/INDI mount-mode compatibility | Alt/Az/EQ SkySafari LX200 status, no-solve IMU correction, INDI mount-mode verification docs | New Draft PR needed |
 | Korean localization | Korean locale and CJK language handling | Keep #500 separate because the locale file is large |
 
 Documentation should travel with the feature PR that needs it. For example, INDI
@@ -157,6 +159,8 @@ docs/mf_pifinder_rpi4_pi5_compatibility_ko.md
 docs/mf_pifinder_rpi4_pi5_compatibility_en.md
 docs/mf_time_sync_ko.md
 docs/mf_time_sync_en.md
+docs/mf_mount_mode_compatibility_ko.md
+docs/mf_mount_mode_compatibility_en.md
 ```
 
 Comparison against the original source:

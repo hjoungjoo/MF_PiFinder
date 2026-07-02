@@ -12,6 +12,8 @@
     "mount_control_indi_host": "localhost",
     "mount_control_indi_port": 7624,
     "skysafari_imu_fallback": true,
+    "skysafari_imu_align_without_solve": true,
+    "skysafari_lx200_mount_code": "auto",
     "skysafari_indi_goto": false,
     "skysafari_indi_sync": false,
     "skysafari_pifinder_align": true,

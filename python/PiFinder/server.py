@@ -1023,6 +1023,13 @@ class Server:
                 "serial_port": cfg.get_option("onstep_serial_port", ""),
                 "server_host": cfg.get_option("mount_control_indi_host", "localhost"),
                 "server_port": int(cfg.get_option("mount_control_indi_port", 7624)),
+                "mount_type": cfg.get_option("mount_type", "Alt/Az"),
+                "skysafari_imu_align_without_solve": bool(
+                    cfg.get_option("skysafari_imu_align_without_solve", True)
+                ),
+                "skysafari_lx200_mount_code": cfg.get_option(
+                    "skysafari_lx200_mount_code", "auto"
+                ),
                 "skysafari_indi_goto": bool(
                     cfg.get_option("skysafari_indi_goto", False)
                 ),
@@ -1178,8 +1185,12 @@ class Server:
             indi_cfg=None,
         ):
             return sys_utils.onstep_location_readback_matches(
-                onstep_props.get(_onstep_property_name("GEOGRAPHIC_COORD.LAT", indi_cfg)),
-                onstep_props.get(_onstep_property_name("GEOGRAPHIC_COORD.LONG", indi_cfg)),
+                onstep_props.get(
+                    _onstep_property_name("GEOGRAPHIC_COORD.LAT", indi_cfg)
+                ),
+                onstep_props.get(
+                    _onstep_property_name("GEOGRAPHIC_COORD.LONG", indi_cfg)
+                ),
                 latitude,
                 longitude,
                 tolerance_degrees=tolerance,
@@ -1272,12 +1283,62 @@ class Server:
                     "pifinder_location_time": _pifinder_location_time_values(),
                     "onstep_props": onstep_props,
                     "onstep_location_display": _onstep_location_display(onstep_props),
-                    "onstep_effective_location": _onstep_effective_location(onstep_props),
+                    "onstep_effective_location": _onstep_effective_location(
+                        onstep_props
+                    ),
                     "onstep_effective_location_display": (
                         _onstep_effective_location_display(onstep_props)
                     ),
                 }
             )
+
+        @app.route("/indi/skysafari", methods=["POST"])
+        @auth_required
+        def indi_skysafari_update():
+            mount_code = (
+                request.form.get("skysafari_lx200_mount_code") or "auto"
+            ).strip()
+            if mount_code != "auto":
+                mount_code = mount_code.upper()
+            if mount_code not in ("auto", "A", "P", "G"):
+                return _render_indi_page(
+                    error_message=_("Invalid SkySafari mount status code")
+                )
+
+            try:
+                refine_accuracy_arcmin = float(
+                    request.form.get("indi_goto_refine_accuracy_arcmin") or "10.0"
+                )
+                if refine_accuracy_arcmin <= 0:
+                    raise ValueError("Refine accuracy must be greater than zero")
+
+                cfg = config.Config()
+                cfg.load_config()
+                cfg.set_option(
+                    "skysafari_imu_align_without_solve",
+                    request.form.get("skysafari_imu_align_without_solve") == "on",
+                )
+                cfg.set_option("skysafari_lx200_mount_code", mount_code)
+                cfg.set_option(
+                    "skysafari_indi_goto",
+                    request.form.get("skysafari_indi_goto") == "on",
+                )
+                cfg.set_option(
+                    "skysafari_indi_sync",
+                    request.form.get("skysafari_indi_sync") == "on",
+                )
+                cfg.set_option(
+                    "indi_goto_refine_once",
+                    request.form.get("indi_goto_refine_once") == "on",
+                )
+                cfg.set_option(
+                    "indi_goto_refine_accuracy_arcmin", refine_accuracy_arcmin
+                )
+                self.ui_queue.put("reload_config")
+                return _render_indi_page(_("SkySafari mount settings applied"))
+            except ValueError as e:
+                logger.warning("Could not apply SkySafari mount settings: %s", e)
+                return _render_indi_page(error_message=str(e))
 
         @app.route("/indi/driver", methods=["POST"])
         @auth_required
@@ -1288,9 +1349,6 @@ class Server:
             network_host = (request.form.get("network_host") or "").strip()
             network_manual = (request.form.get("network_manual") or "").strip()
             server_host = (request.form.get("server_host") or "localhost").strip()
-            skysafari_indi_goto = request.form.get("skysafari_indi_goto") == "on"
-            skysafari_indi_sync = request.form.get("skysafari_indi_sync") == "on"
-            indi_goto_refine_once = request.form.get("indi_goto_refine_once") == "on"
 
             if serial_port == "__manual__":
                 serial_port = serial_manual
@@ -1300,11 +1358,6 @@ class Server:
             try:
                 network_port = int(request.form.get("network_port") or "9999")
                 server_port = int(request.form.get("server_port") or "7624")
-                refine_accuracy_arcmin = float(
-                    request.form.get("indi_goto_refine_accuracy_arcmin") or "10.0"
-                )
-                if refine_accuracy_arcmin <= 0:
-                    raise ValueError("Refine accuracy must be greater than zero")
                 indi_cfg = _indi_config_values()
                 _require_onstepx_driver(indi_cfg)
                 result = sys_utils.apply_indi_onstep_connection(
@@ -1331,12 +1384,6 @@ class Server:
                 cfg.set_option("onstep_network_port", network_port)
                 cfg.set_option("mount_control_indi_host", server_host)
                 cfg.set_option("mount_control_indi_port", server_port)
-                cfg.set_option("skysafari_indi_goto", skysafari_indi_goto)
-                cfg.set_option("skysafari_indi_sync", skysafari_indi_sync)
-                cfg.set_option("indi_goto_refine_once", indi_goto_refine_once)
-                cfg.set_option(
-                    "indi_goto_refine_accuracy_arcmin", refine_accuracy_arcmin
-                )
                 self.ui_queue.put("reload_config")
                 return _render_indi_page(_("INDI OnStep settings applied"))
             except (RuntimeError, ValueError) as e:

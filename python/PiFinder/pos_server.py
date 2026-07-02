@@ -64,6 +64,13 @@ _skysafari_slew_started_at = 0.0
 _skysafari_saw_mount_slew = False
 _config_last_loaded = 0.0
 _fallback_log_last = 0.0
+_imu_alignment_correction = {
+    "active": False,
+    "alt_offset": 0.0,
+    "az_offset": 0.0,
+    "set_at": 0.0,
+    "target_j2000": None,
+}
 _GUIDE_DIRECTIONS = {
     "Mn": "north",
     "Ms": "south",
@@ -96,6 +103,46 @@ def _log_fallback_skip(reason: str) -> None:
         return
     _fallback_log_last = now
     logger.info("SkySafari IMU fallback unavailable: %s", reason)
+
+
+def _invalidate_pointing_cache() -> None:
+    _pointing_cache["time"] = 0.0
+    _pointing_cache["value"] = None
+
+
+def _wrap_angle_delta_degrees(delta: float) -> float:
+    return ((delta + 180.0) % 360.0) - 180.0
+
+
+def _clamp_altitude_degrees(altitude: float) -> float:
+    return max(-90.0, min(90.0, altitude))
+
+
+def _reset_imu_alignment_correction(reason: str) -> None:
+    if not _imu_alignment_correction["active"]:
+        return
+    logger.info("SkySafari IMU alignment correction reset: %s", reason)
+    _imu_alignment_correction.update(
+        {
+            "active": False,
+            "alt_offset": 0.0,
+            "az_offset": 0.0,
+            "set_at": 0.0,
+            "target_j2000": None,
+        }
+    )
+    _invalidate_pointing_cache()
+
+
+def _apply_imu_alignment_correction(alt: float, az: float) -> Tuple[float, float]:
+    if not _imu_alignment_correction["active"]:
+        return alt, az
+
+    corrected_alt = _clamp_altitude_degrees(
+        alt + float(_imu_alignment_correction["alt_offset"])
+    )
+    corrected_az = (az + float(_imu_alignment_correction["az_offset"])) % 360.0
+    return corrected_alt, corrected_az
 
 
 def _format_ra_degrees(ra_degrees: float) -> str:
@@ -194,7 +241,9 @@ def _observer_location(shared_state) -> Optional[StateLocation]:
     return location
 
 
-def _imu_fallback_pointing_jnow(shared_state, dt) -> Optional[Tuple[float, float]]:
+def _imu_fallback_pointing_jnow(
+    shared_state, dt, apply_alignment: bool = True
+) -> Optional[Tuple[float, float]]:
     if not _get_config_option("skysafari_imu_fallback", True):
         _log_fallback_skip("disabled")
         return None
@@ -217,6 +266,8 @@ def _imu_fallback_pointing_jnow(shared_state, dt) -> Optional[Tuple[float, float
         return None
 
     alt, az = altaz
+    if apply_alignment:
+        alt, az = _apply_imu_alignment_correction(alt, az)
     sf_utils.set_location(location.lat, location.lon, location.altitude)
     return sf_utils.altaz_to_radec(alt, az, dt)
 
@@ -235,7 +286,9 @@ def _current_pointing_jnow(shared_state) -> Optional[Tuple[float, float]]:
 
     dt = _current_datetime(shared_state)
     pointing = _solved_pointing_jnow(shared_state, dt)
-    if pointing is None:
+    if pointing is not None:
+        _reset_imu_alignment_correction("plate solve available")
+    else:
         pointing = _imu_fallback_pointing_jnow(shared_state, dt)
 
     _pointing_cache["time"] = now
@@ -334,9 +387,22 @@ def get_firmware_time(_shared_state, _input_str):
     return "17:25:00"
 
 
+def _skysafari_lx200_mount_code() -> str:
+    override = str(_get_config_option("skysafari_lx200_mount_code", "auto")).strip()
+    override = override.upper()
+    if override in {"A", "P", "G"}:
+        return override
+
+    mount_type = str(_get_config_option("mount_type", "Alt/Az")).strip().lower()
+    if "alt" in mount_type and "az" in mount_type:
+        return "A"
+    return "P"
+
+
 def get_status(_shared_state, _input_str):
-    # Indicates alt-az mode, tracking, and 1-star aligned
-    return "AT1"
+    # LX200-style mount status: geometry, tracking, alignment.
+    # A=Alt/Az, P=polar/equatorial, G=German equatorial override.
+    return f"{_skysafari_lx200_mount_code()}T1"
 
 
 def respond_none(shared_state, input_str):
@@ -413,6 +479,69 @@ def _queue_indi_sync_if_enabled(ra_deg: float, dec_deg: float) -> bool:
         }
     )
     logger.info("SkySafari INDI sync queued: RA %.4f Dec %.4f", ra_deg, dec_deg)
+    return True
+
+
+def _set_imu_alignment_from_target_if_no_solve(
+    shared_state, ra_deg: float, dec_deg: float
+) -> bool:
+    if not _get_config_option("skysafari_imu_align_without_solve", True):
+        return False
+    if _has_solved_pointing(shared_state):
+        return False
+
+    location = _observer_location(shared_state)
+    if not location or not location.lock:
+        logger.warning("SkySafari IMU align skipped; location is not locked")
+        return False
+
+    dt = _current_datetime(shared_state)
+    if not dt:
+        logger.warning("SkySafari IMU align skipped; no PiFinder time")
+        return False
+
+    screen_direction = _get_config_option("screen_direction", "right")
+    imu_altaz = _imu_altaz_degrees(shared_state.imu(), screen_direction)
+    if imu_altaz is None:
+        logger.warning("SkySafari IMU align skipped; no calibrated IMU orientation")
+        return False
+
+    sf_utils.set_location(location.lat, location.lon, location.altitude)
+    try:
+        target_alt, target_az = sf_utils.radec_to_altaz(ra_deg, dec_deg, dt)
+    except Exception:
+        logger.warning(
+            "SkySafari IMU align skipped; target alt/az failed", exc_info=True
+        )
+        return False
+
+    imu_alt, imu_az = imu_altaz
+    alt_offset = target_alt - imu_alt
+    az_offset = _wrap_angle_delta_degrees(target_az - imu_az)
+    _imu_alignment_correction.update(
+        {
+            "active": True,
+            "alt_offset": alt_offset,
+            "az_offset": az_offset,
+            "set_at": time.monotonic(),
+            "target_j2000": (ra_deg, dec_deg),
+        }
+    )
+    _invalidate_pointing_cache()
+
+    if console_queue is not None:
+        console_queue.put("SkySafari IMU Alignment Set")
+    logger.info(
+        "SkySafari IMU alignment set without solve: "
+        "target_alt=%.3f target_az=%.3f imu_alt=%.3f imu_az=%.3f "
+        "alt_offset=%.3f az_offset=%.3f",
+        target_alt,
+        target_az,
+        imu_alt,
+        imu_az,
+        alt_offset,
+        az_offset,
+    )
     return True
 
 
@@ -561,11 +690,21 @@ def handle_sync_command(shared_state, _input_str: str):
         return "No target."
 
     ra_deg, dec_deg = target
-    pifinder_aligned = _align_pifinder_if_enabled(shared_state, ra_deg, dec_deg)
+    has_solved_pointing = _has_solved_pointing(shared_state)
+    pifinder_aligned = False
+    imu_aligned = False
+    if has_solved_pointing:
+        _reset_imu_alignment_correction("SkySafari sync with solved pointing")
+        pifinder_aligned = _align_pifinder_if_enabled(shared_state, ra_deg, dec_deg)
+    else:
+        imu_aligned = _set_imu_alignment_from_target_if_no_solve(
+            shared_state, ra_deg, dec_deg
+        )
     indi_synced = _queue_indi_sync_if_enabled(ra_deg, dec_deg)
     logger.info(
-        "SkySafari sync handled: pifinder_aligned=%s indi_synced=%s",
+        "SkySafari sync handled: pifinder_aligned=%s imu_aligned=%s indi_synced=%s",
         pifinder_aligned,
+        imu_aligned,
         indi_synced,
     )
     return "Coordinates matched."

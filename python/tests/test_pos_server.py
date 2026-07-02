@@ -77,6 +77,15 @@ class DummyUnlockedLocation:
     altitude = 0.0
 
 
+@pytest.fixture(autouse=True)
+def reset_imu_alignment_correction():
+    pos_server._reset_imu_alignment_correction("test setup")
+    pos_server._invalidate_pointing_cache()
+    yield
+    pos_server._reset_imu_alignment_correction("test teardown")
+    pos_server._invalidate_pointing_cache()
+
+
 def test_imu_altaz_requires_calibrated_sample():
     sample = ImuSample(
         quat=quaternion.quaternion(1, 0, 0, 0),
@@ -133,9 +142,7 @@ def test_get_telescope_ra_returns_lx200_ra_default_without_pointing():
     pos_server._pointing_cache["time"] = 0.0
     pos_server._pointing_cache["value"] = None
 
-    response = pos_server.get_telescope_ra(
-        DummyState(None, dt="none"), ":GR#"
-    )
+    response = pos_server.get_telescope_ra(DummyState(None, dt="none"), ":GR#")
     assert response == "00:00:00"
 
 
@@ -188,6 +195,21 @@ def test_skysafari_guide_move_queues_indi_manual_motion(monkeypatch):
         "direction": "north",
         "lease_seconds": pos_server._GUIDE_LEASE_SECONDS,
     }
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        ({"mount_type": "Alt/Az"}, "AT1"),
+        ({"mount_type": "EQ"}, "PT1"),
+        ({"mount_type": "EQ", "skysafari_lx200_mount_code": "G"}, "GT1"),
+        ({"mount_type": "Alt/Az", "skysafari_lx200_mount_code": "P"}, "PT1"),
+    ],
+)
+def test_skysafari_status_reports_configured_mount_mode(monkeypatch, options, expected):
+    monkeypatch.setattr(pos_server, "pos_server_config", DummyConfig(options))
+
+    assert pos_server.get_status(None, ":GW#") == expected
 
 
 def test_skysafari_guide_stop_queues_indi_stop(monkeypatch):
@@ -451,6 +473,75 @@ def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
         "ra": 12.5,
         "dec": -34.25,
     }
+
+
+def test_skysafari_sync_sets_imu_alignment_without_plate_solve(monkeypatch):
+    dt = datetime.datetime(2026, 7, 1, 12, tzinfo=pytz.UTC)
+    target_j2000 = (100.0, -20.0)
+    location = DummyLocation()
+    pos_server.sf_utils.set_location(location.lat, location.lon, location.altitude)
+    target_alt, target_az = pos_server.sf_utils.radec_to_altaz(
+        target_j2000[0], target_j2000[1], dt
+    )
+    raw_alt = target_alt - 1.25
+    raw_az = (target_az - 12.5) % 360.0
+
+    monkeypatch.setattr(pos_server, "last_target_j2000", target_j2000)
+    monkeypatch.setattr(
+        pos_server, "_imu_altaz_degrees", lambda *_args: (raw_alt, raw_az)
+    )
+    monkeypatch.setattr(
+        pos_server,
+        "_align_pifinder_if_enabled",
+        lambda *_args: pytest.fail("PiFinder plate-solve align should not run"),
+    )
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig(
+            {
+                "mount_control": False,
+                "skysafari_imu_align_without_solve": True,
+                "skysafari_pifinder_align": True,
+                "skysafari_indi_sync": False,
+            }
+        ),
+    )
+
+    assert (
+        pos_server.handle_sync_command(
+            DummyState(None, DummySolution(False), dt=dt, location=location), ":CM#"
+        )
+        == "Coordinates matched."
+    )
+
+    assert pos_server._imu_alignment_correction["active"] is True
+    corrected_alt, corrected_az = pos_server._apply_imu_alignment_correction(
+        raw_alt, raw_az
+    )
+    assert corrected_alt == pytest.approx(target_alt)
+    assert pos_server._wrap_angle_delta_degrees(corrected_az - target_az) == (
+        pytest.approx(0.0)
+    )
+
+
+def test_solved_pointing_resets_imu_alignment_correction(monkeypatch):
+    pos_server._imu_alignment_correction.update(
+        {
+            "active": True,
+            "alt_offset": 1.0,
+            "az_offset": 2.0,
+            "set_at": 1.0,
+            "target_j2000": (100.0, -20.0),
+        }
+    )
+    monkeypatch.setattr(
+        pos_server, "_solved_pointing_jnow", lambda *_args: (12.0, 34.0)
+    )
+
+    assert pos_server._current_pointing_jnow(DummyState(None)) == (12.0, 34.0)
+
+    assert pos_server._imu_alignment_correction["active"] is False
 
 
 def test_skysafari_sync_returns_no_target_without_coordinates(monkeypatch):

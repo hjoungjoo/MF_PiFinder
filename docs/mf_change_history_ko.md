@@ -39,6 +39,7 @@
 | Locations 위치 카탈로그 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | GeoNames 기반 오프라인 위치 카탈로그, 국가/지역/군구/도시 선택, 좌표/고도/source 자동 입력, 북한 제외 |
 | Web UI 적색 야간 테마 및 PWA 전체화면 앱 모드 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | red night theme, 브라우저별 theme 저장, PWA manifest, service worker, PWA icon |
 | 선택형 IMU compass 방위 개선 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | 선택형 BNO055 NDOF 지자계 fusion mode, IMU calibration 상태 표시, 자동 calibration 저장/로드, 수동 calibration 메뉴 |
+| SkySafari/INDI 마운트 모드 호환성 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | Alt/Az/EQ SkySafari LX200 status, no-solve IMU alignment correction, mount-mode compatibility checklist |
 | 변경 히스토리/PR 재편성 문서화 | Draft PR 없음 | 로컬 `mf_pifinder` 작업트리 | 이 문서의 작업 단위 목차, PR 상태, 재편성 기준 |
 | 최종 통합 브랜치 | Upstream PR 아님 | `origin/mf_pifinder` + 로컬 미커밋 Web UI/PWA 변경 | 위 기능들을 통합해 실제 장치에서 설치/테스트하는 기준 브랜치 |
 
@@ -58,6 +59,7 @@
 | Locations catalog | GeoNames 기반 오프라인 위치 카탈로그, 국가/지역/군구/도시 선택, 좌표 자동 입력 | 새 Draft PR 필요 |
 | Web observing UI | red night theme, PWA/fullscreen app mode | 새 Draft PR 필요 |
 | 선택형 IMU compass 방위 개선 | BNO055 NDOF 옵션, 자동/수동 calibration, status UI | 새 Draft PR 필요 |
+| SkySafari/INDI 마운트 모드 호환성 | Alt/Az/EQ SkySafari LX200 status, no-solve IMU 보정, INDI mount mode 검증 문서 | 새 Draft PR 필요 |
 | Korean localization | Korean locale and CJK language handling | #500은 파일 규모가 커서 별도 유지 권장 |
 
 문서는 각 기능 PR에 필요한 설치/사용 문서를 함께 넣는 방식을 권장한다. 예를 들어
@@ -157,6 +159,8 @@ docs/mf_pifinder_rpi4_pi5_compatibility_ko.md
 docs/mf_pifinder_rpi4_pi5_compatibility_en.md
 docs/mf_time_sync_ko.md
 docs/mf_time_sync_en.md
+docs/mf_mount_mode_compatibility_ko.md
+docs/mf_mount_mode_compatibility_en.md
 ```
 
 원본 대비 재검토 결과:
