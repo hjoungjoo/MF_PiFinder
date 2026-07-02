@@ -106,11 +106,40 @@ object from accidentally reusing the older GoTo target.
 - [x] Make SkySafari `:GW#` follow `mount_type`
 - [x] Add `skysafari_lx200_mount_code` override
 - [x] Make SkySafari `CM#` prefer current `Sr/Sd` coordinates over the previous GoTo target
+- [x] Treat 0-degree altitude as a valid Alt/Az push-to coordinate
+- [x] Render object-list push-to distances when one axis is 0 degrees
 - [x] Add shared SkySafari mount-mode settings to the INDI web UI
 - [x] Add unit tests
 - [x] Restart service and verify status
 - [ ] Test real SkySafari Alt/Az profile
 - [ ] Test real SkySafari EQ/German profile
+
+## 2026-07-03 Source Audit
+
+The mount-mode-sensitive paths were reviewed again.
+
+| Area | Result | Action |
+| --- | --- | --- |
+| LCD Settings > Mount Type | `mount_type` is stored as `Alt/Az` or `EQ` and runs the restart callback. | OK |
+| Push-to calculation | `calc_utils.aim_degrees()` returns Alt/Az deltas for `Alt/Az`, RA/Dec deltas otherwise. | Fixed 0-degree altitude edge case |
+| Object Details display | Passes the same `mount_type` used by `aim_degrees()` to `draw_pointing_instructions()`. | OK |
+| Object List display | Renders `aim_degrees()` results into the list distance text. | Fixed 0-degree axis display |
+| Polar Align | Always forces `Alt/Az` indicators because polar correction uses physical altitude/azimuth adjusters. | Intentional exception |
+| SkySafari `:GW#` | Returns `AT1`/`PT1`/`GT1` from `mount_type` or `skysafari_lx200_mount_code`. | OK |
+| SkySafari `:Sr/:Sd/:MS/:CM` | `Sr/Sd` only store coordinates; `MS` selects GoTo and `CM` selects Sync/Align. | Current `Sr/Sd` priority fixed |
+| INDI GoTo/Sync/Guide | Uses standard INDI telescope properties and guide/motion commands. | Mount-independent, driver hardware tests still needed |
+| Web Equipment telescope `mount_type` | Equipment DB uses `alt/az`/`equatorial`; this is separate from PiFinder runtime `Alt/Az`/`EQ`. | User decision needed for auto-linking |
+
+Decision items:
+
+- Whether changing the active telescope in Equipment should automatically change
+  PiFinder's global `mount_type`. This could be convenient, but it may also
+  unexpectedly change SkySafari mode and push-to coordinate readouts during an
+  observing session.
+- Whether to harden the LX200 `Sr/Sd` parser into an explicit transaction
+  state. Normal SkySafari sends both values together, but a malformed client
+  could send only one new coordinate and leave the other from a previous target.
+  This is a broader protocol-state change and should be handled separately.
 
 ## Test Matrix
 
@@ -126,6 +155,8 @@ object from accidentally reusing the older GoTo target.
 | SkySafari GoTo with INDI GoTo off | push-to target only |
 | SkySafari GoTo with INDI GoTo on | `goto_target` queued |
 | mount_control off | position reporting and push-to only |
+| Alt/Az solution altitude is 0 degrees | valid push-to delta returned |
+| Object List movement has one 0-degree axis | actual distance rendered, not `--- ---` |
 
 ### Hardware Tests
 

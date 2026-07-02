@@ -205,7 +205,7 @@ def aim_degrees(shared_state, mount_type, screen_direction, target):
     if location.lock and dt and solution and solution.has_pointing():
         aligned = solution.pointing.aligned.estimate
         if mount_type == "Alt/Az":
-            if solution.Alt:
+            if solution.Alt is not None and solution.Az is not None:
                 # We have position and time/date!
                 sf_utils.set_location(
                     location.lat,

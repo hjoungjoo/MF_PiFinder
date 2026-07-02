@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from PiFinder.ui import object_list
 from PiFinder.ui.ui_utils import pointing_arrows
 
 pytestmark = pytest.mark.unit
@@ -113,3 +114,17 @@ def test_none_mount_type_reads_config():
     ui = make_ui(mount_type="EQ")
     az_arrow, _, alt_arrow, _ = pointing_arrows(ui, 1.0, 1.0)
     assert (az_arrow, alt_arrow) == ("+", "+")
+
+
+def test_object_list_locate_text_keeps_zero_axis(monkeypatch):
+    """A valid zero-degree movement on one axis should still render the distance."""
+    ui = object_list.UIObjectList.__new__(object_list.UIObjectList)
+    ui.shared_state = SimpleNamespace()
+    ui.mount_type = "EQ"
+    ui.screen_direction = "right"
+    ui.format_az_alt = lambda az, alt: (f"RA{az}", f"DEC{alt}")
+    target = SimpleNamespace()
+
+    monkeypatch.setattr(object_list, "aim_degrees", lambda *_args: (0.0, 2.5))
+
+    assert ui.create_locate_text(target) == "RA0.0 DEC2.5"

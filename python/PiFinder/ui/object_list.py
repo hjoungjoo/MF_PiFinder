@@ -374,7 +374,7 @@ class UIObjectList(UITextMenu):
         az, alt = aim_degrees(
             self.shared_state, self.mount_type, self.screen_direction, obj
         )
-        if az:
+        if az is not None and alt is not None:
             az_txt, alt_txt = self.format_az_alt(az, alt)
             distance = f"{az_txt} {alt_txt}"
         else:

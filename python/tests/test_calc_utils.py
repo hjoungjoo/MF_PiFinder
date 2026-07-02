@@ -3,6 +3,7 @@ from PiFinder import calc_utils
 import numpy as np
 import datetime
 import pytz
+from types import SimpleNamespace
 from skyfield.api import Star, Angle
 
 from PiFinder.calc_utils import hadec_to_pa, hadec_to_roll
@@ -15,6 +16,37 @@ def test_converters():
     assert calc_utils.dec_to_deg(10, 10, 50) == pytest.approx(10.18056, abs=0.00001)
     assert calc_utils.dec_to_dms(80.55) == (80, 32, 59)
     assert calc_utils.ra_to_hms(81.55) == (5, 26, 12)
+
+
+def test_aim_degrees_accepts_zero_altitude_altaz_solution(monkeypatch):
+    """A true 0-degree altitude is valid and should not suppress push-to output."""
+
+    class DummySolution:
+        Alt = 0.0
+        Az = 10.0
+        pointing = SimpleNamespace(
+            aligned=SimpleNamespace(estimate=SimpleNamespace(RA=100.0, Dec=20.0))
+        )
+
+        def has_pointing(self):
+            return True
+
+    shared_state = SimpleNamespace(
+        solution=lambda: DummySolution(),
+        location=lambda: SimpleNamespace(lock=True, lat=37.5, lon=127.0, altitude=30.0),
+        datetime=lambda: datetime.datetime(2026, 7, 1, 12, tzinfo=pytz.UTC),
+    )
+    target = SimpleNamespace(ra=101.0, dec=21.0)
+
+    monkeypatch.setattr(calc_utils.sf_utils, "set_location", lambda *_args: None)
+    monkeypatch.setattr(
+        calc_utils.sf_utils, "radec_to_altaz", lambda *_args: (5.0, 20.0)
+    )
+
+    assert calc_utils.aim_degrees(shared_state, "Alt/Az", "right", target) == (
+        10.0,
+        5.0,
+    )
 
 
 @pytest.mark.unit
