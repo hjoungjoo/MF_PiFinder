@@ -1506,69 +1506,84 @@ pifinder_menu = {
                     ],
                 },
                 {
-                    "name": _("IMU Sensit."),
-                    "class": UITextMenu,
-                    "select": "single",
-                    "config_option": "imu_threshold_scale",
-                    "post_callback": callbacks.restart_pifinder,
-                    "items": [
-                        {
-                            "name": _("Off"),  # TRANSLATORS: IMU sensitivity setting
-                            "value": 100,
-                        },
-                        {
-                            "name": _(
-                                "Very Low"
-                            ),  # TRANSLATORS: IMU sensitivity setting
-                            "value": 3,
-                        },
-                        {
-                            "name": _("Low"),  # TRANSLATORS: IMU sensitivity setting
-                            "value": 2,
-                        },
-                        {
-                            "name": _("Medium"),  # TRANSLATORS: IMU sensitivity setting
-                            "value": 1,
-                        },
-                        {
-                            "name": _("High"),  # TRANSLATORS: IMU sensitivity setting
-                            "value": 0.5,
-                        },
-                    ],
-                },
-                {
-                    "name": _("IMU Compass"),
-                    "class": UITextMenu,
-                    "select": "single",
-                    "config_option": "imu_use_magnetometer",
-                    "post_callback": callbacks.restart_pifinder,
-                    "items": [
-                        {
-                            "name": _("Off"),
-                            "value": False,
-                        },
-                        {
-                            "name": _("On"),
-                            "value": True,
-                        },
-                    ],
-                },
-                {
-                    "name": _("IMU Calib."),
+                    "name": _("IMU Settings"),
                     "class": UITextMenu,
                     "select": "single",
                     "items": [
                         {
-                            "name": _("Save"),
-                            "callback": callbacks.imu_save_calibration,
+                            "name": _("Sensitivity"),
+                            "class": UITextMenu,
+                            "select": "single",
+                            "config_option": "imu_threshold_scale",
+                            "post_callback": callbacks.restart_pifinder,
+                            "items": [
+                                {
+                                    "name": _(
+                                        "Off"
+                                    ),  # TRANSLATORS: IMU sensitivity setting
+                                    "value": 100,
+                                },
+                                {
+                                    "name": _(
+                                        "Very Low"
+                                    ),  # TRANSLATORS: IMU sensitivity setting
+                                    "value": 3,
+                                },
+                                {
+                                    "name": _(
+                                        "Low"
+                                    ),  # TRANSLATORS: IMU sensitivity setting
+                                    "value": 2,
+                                },
+                                {
+                                    "name": _(
+                                        "Medium"
+                                    ),  # TRANSLATORS: IMU sensitivity setting
+                                    "value": 1,
+                                },
+                                {
+                                    "name": _(
+                                        "High"
+                                    ),  # TRANSLATORS: IMU sensitivity setting
+                                    "value": 0.5,
+                                },
+                            ],
                         },
                         {
-                            "name": _("Load"),
-                            "callback": callbacks.imu_load_calibration,
+                            "name": _("Compass"),
+                            "class": UITextMenu,
+                            "select": "single",
+                            "config_option": "imu_use_magnetometer",
+                            "post_callback": callbacks.restart_pifinder,
+                            "items": [
+                                {
+                                    "name": _("Off"),
+                                    "value": False,
+                                },
+                                {
+                                    "name": _("On"),
+                                    "value": True,
+                                },
+                            ],
                         },
                         {
-                            "name": _("Clear"),
-                            "callback": callbacks.imu_clear_calibration,
+                            "name": _("Calibration"),
+                            "class": UITextMenu,
+                            "select": "single",
+                            "items": [
+                                {
+                                    "name": _("Save"),
+                                    "callback": callbacks.imu_save_calibration,
+                                },
+                                {
+                                    "name": _("Load"),
+                                    "callback": callbacks.imu_load_calibration,
+                                },
+                                {
+                                    "name": _("Clear"),
+                                    "callback": callbacks.imu_clear_calibration,
+                                },
+                            ],
                         },
                     ],
                 },

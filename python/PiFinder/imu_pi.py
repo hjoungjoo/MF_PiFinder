@@ -164,17 +164,16 @@ class Imu:
                 *self.calibration_status,
             )
             self._last_calibration_status = self.calibration_status
-        if self.use_magnetometer:
-            self.calibration = min(self.calibration_status)
-        else:
-            self.calibration = self.calibration_status[1]
+        self.calibration = imu_calibration.tracking_calibration_level(
+            self.calibration_status
+        )
         if self.calibration == 0:
             logger.warning("NOIMU CAL %s", self.calibration_status)
             return True
         if (
             self.use_magnetometer
             and self.auto_calibration_store
-            and self.calibration == 3
+            and min(self.calibration_status) == 3
         ):
             self._save_current_calibration()
         # adafruit_bno055 uses quaternion convention (w, x, y, z)
@@ -348,22 +347,32 @@ def imu_monitor(shared_state, console_queue, log_queue, command_queue=None):
         imu_sample.accel = imu.accel
         if imu.last_read_time:
             imu_sample.timestamp = imu.last_read_time
+            # Keep the published orientation fresh even while the movement
+            # detector is below its deadband. SkySafari's no-solve fallback
+            # uses the absolute IMU orientation directly, while the integrator
+            # still applies its own angular threshold before advancing solved
+            # pointing estimates.
+            imu_sample.quat = quaternion.from_float_array(imu.avg_quat)
 
         if imu.moving():
             if not imu_sample.moving:
                 logger.debug("IMU: move start")
                 imu_sample.moving = True
-            # Scalar-first (w, x, y, z)
-            imu_sample.quat = quaternion.from_float_array(imu.avg_quat)
         else:
             if imu_sample.moving:
                 # If we were moving and we now stopped
                 logger.debug("IMU: move end")
                 imu_sample.moving = False
-                imu_sample.quat = quaternion.from_float_array(imu.avg_quat)
 
         if not imu_calibrated:
-            if imu_sample.status == 3:
+            if imu_sample.uses_magnetometer:
+                full_calibration = (
+                    imu_sample.calibration_status is not None
+                    and min(imu_sample.calibration_status) == 3
+                )
+            else:
+                full_calibration = imu_sample.status == 3
+            if full_calibration:
                 imu_calibrated = True
                 mode_name = "NDOF" if imu_sample.uses_magnetometer else "IMUPLUS"
                 console_queue.put(f"IMU: {mode_name} Calibrated!")

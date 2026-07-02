@@ -43,6 +43,38 @@ INDI_VERSION=v2.1.6 INDI_3RDPARTY_VERSION=v2.1.6.2 JOBS=2 bash scripts/install_i
 
 Pi 4에서는 메모리 여유를 위해 기본 `JOBS=2`를 권장합니다. Pi 5나 CM5에서는 냉각과 전원 상태가 안정적이면 `JOBS=3` 또는 `JOBS=4`로 빌드 시간을 줄일 수 있습니다.
 
+### Pi 4/Pi 5 공용 바이너리 아카이브 설치
+
+소스 빌드 대신 미리 만든 Bookworm 64-bit/aarch64 아카이브를 사용할 수 있습니다.
+
+```bash
+cd ~/PiFinder
+bash scripts/install_indi_mount_archive.sh dist/mf-pifinder-indi-bookworm-arm64-v2.2.3.1-current.tar.gz
+```
+
+전체 PiFinder 설치 스크립트인 `pifinder_setup.sh`에서도 같은 아카이브 설치 경로를 사용할 수 있습니다.
+
+```bash
+cd ~
+PIFINDER_INDI_ARCHIVE="$HOME/PiFinder/dist/mf-pifinder-indi-bookworm-arm64-v2.2.3.1-current.tar.gz" \
+  bash "$HOME/PiFinder/pifinder_setup.sh"
+```
+
+`PIFINDER_INSTALL_INDI_ARCHIVE`는 기본값이 `auto`입니다. `dist/mf-pifinder-indi-bookworm-arm64-*.tar.gz` 파일이 있거나 `PIFINDER_INDI_ARCHIVE`가 지정되어 있으면 INDI 지원을 설치하고, 없으면 일반 PiFinder 설치만 진행합니다. 강제로 끄려면 다음처럼 실행합니다.
+
+```bash
+PIFINDER_INSTALL_INDI_ARCHIVE=false bash "$HOME/PiFinder/pifinder_setup.sh"
+```
+
+새 바이너리 아카이브를 만들 때는 다음 스크립트를 사용합니다.
+
+```bash
+cd ~/PiFinder
+bash scripts/package_indi_mount_archive.sh
+```
+
+최신 소스 빌드 스크립트는 Pi 5에서 빌드하더라도 Pi 4 호환성을 위해 `-march=native`, `-mcpu=*`, `-mtune=*`를 제거하고 `-march=armv8-a`를 사용합니다.
+
 ## 마운트 드라이버 설정
 
 INDI Web Manager를 엽니다.
@@ -59,35 +91,38 @@ http://<pifinder-ip>:8624
 
 Profile을 만들고 사용하는 마운트에 맞는 telescope driver를 선택합니다. 필요하면 Auto Start와 Auto Connect를 켠 뒤 profile을 시작합니다. 흔한 드라이버는 EQMod, LX200, iOptron, Celestron, Telescope Simulator입니다.
 
-LX200 OnStep은 PiFinder 웹 UI의 다음 페이지에서 연결 방식을 설정할 수 있습니다.
+활성 INDI profile이 `LX200 OnStepX`를 사용할 때는 PiFinder 웹 UI의 다음 영역에서 연결 방식을 설정할 수 있습니다.
 
 ```text
-INDI > LX200 OnStep Driver Setup
+INDI > LX200 OnStepX Driver Connection
 ```
 
 USB 연결은 감지된 `/dev/serial/by-id`, `/dev/ttyUSB*`, `/dev/ttyACM*` 목록에서 선택하거나 수동으로 포트 이름을 입력합니다. 네트워크 연결은 AP에 접속된 장치 목록에서 IP를 선택하거나, 목록에 없으면 IP/host와 TCP port를 수동으로 입력합니다. OnStep 네트워크 연결의 기본 TCP port는 `9999`입니다.
 
 ## PiFinder INDI 웹 메뉴
 
-PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 이 페이지에서 INDI Web Manager로 바로 이동하고, LX200 OnStep 드라이버 상태를 확인하며, 기본적인 OnStep 제어를 실행할 수 있습니다.
+PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 이 페이지에서 INDI Web Manager로 바로 이동하고, 실행 중인 INDI profile에서 active driver 이름을 읽습니다. OnStepX 전용 설정과 제어 영역은 active driver가 `LX200 OnStepX`일 때만 표시됩니다.
 
 ### Current INDI Driver State
 
-현재 INDI 드라이버의 연결 방식, serial/network 설정, OnStep 위치, OnStep UTC 시간을 표시합니다. 이 값은 INDI profile이 시작되고 LX200 OnStep 드라이버가 로드된 뒤에 표시됩니다.
+활성 INDI profile, active driver, 사용 가능한 driver 속성을 표시합니다. OnStepX의 연결 방식, serial/network 설정, OnStep 위치, OnStep UTC 시간은 INDI profile이 시작되고 `LX200 OnStepX` 드라이버가 로드된 뒤에 표시됩니다.
 
 ### Location and Time
 
-`Location and Time` 영역은 PiFinder의 현재 위치와 UTC 시간을 OnStep에 전송합니다.
+`Location and Time` 영역은 `LX200 OnStepX`에서 표시되며 PiFinder의 현재 위치와 UTC 시간을 OnStep에 전송합니다.
 
 - 위치는 GPS lock이 있으면 GPS/loaded location 값을 사용합니다.
-- GPS lock이 없으면 PiFinder `Locations`의 기본 위치를 사용합니다.
+- GPS lock이 없으면 `GPS Lock: Not locked`로 표시하고, PiFinder `Locations`의 기본 위치를 `Location to Send`로 사용합니다.
 - UTC 시간 입력칸은 화면을 열어 둔 동안 초 단위로 계속 갱신됩니다.
 - `Reload Current Values`는 PiFinder 위치/시간과 OnStep의 현재 위치/시간 표시를 다시 읽습니다.
 - `Send Location and Time`을 누르면 서버가 요청을 받은 바로 그 시점의 PiFinder system UTC를 다시 계산해서 OnStep에 전송합니다. 따라서 브라우저나 휴대폰 시간이 틀려 있어도 최종 전송 시간은 PiFinder 기준입니다.
+- LX200 OnStepX 드라이버는 PiFinder용 커스텀 INDI 드라이버입니다. 위치/시간 동기화는 INDI `GEOGRAPHIC_COORD`/`TIME_UTC` 전체 벡터를 통해 처리하며, 드라이버 내부에서 OnStep LX200 명령으로 변환합니다.
+- `indi_setprop` CLI로 일부 element만 쓰는 방식은 피합니다. PiFinder는 PyIndi 전체 벡터 전송을 사용합니다.
+- 한국 시간대처럼 UTC+9인 환경에서 INDI `TIME_UTC.OFFSET`은 `+9.00`으로 전송되고, 드라이버가 OnStep의 `:SG-09:00#` convention으로 변환합니다.
 
 ### Mount Control
 
-`Mount Control` 영역은 LX200 OnStep의 간단한 초기화/주차/수동 이동 기능을 제공합니다.
+`Mount Control` 영역은 `LX200 OnStepX`에서 표시되며 간단한 초기화/주차/수동 이동 기능을 제공합니다.
 
 - 현재 Park/Unpark 상태를 표시합니다.
 - `At Home`, `Return Home`, `Park`, `Unpark`, `Set-Park` 명령을 보낼 수 있습니다.

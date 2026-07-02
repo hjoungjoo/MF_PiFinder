@@ -28,6 +28,18 @@ _FIELDS = (
 )
 
 
+def tracking_calibration_level(calibration_status) -> int:
+    """Return the BNO055 calibration level required for IMU tracking.
+
+    BNO055 reports (system, gyro, accel, magnetometer). PiFinder's short-term
+    dead-reckoning is driven by gyro/fusion orientation, so partial
+    accel/magnetometer calibration must not make the IMU appear frozen. The
+    full component tuple is still displayed separately and is required before
+    calibration offsets are auto-saved.
+    """
+    return int(calibration_status[1])
+
+
 def _as_list(value: Any) -> list[int]:
     if isinstance(value, (list, tuple)):
         return [int(v) for v in value]

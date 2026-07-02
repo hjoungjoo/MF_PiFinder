@@ -1,6 +1,7 @@
 import time
 from multiprocessing import Queue
 
+from PiFinder import sys_utils
 from PiFinder.mountcontrol_indi import (
     MountControlIndi,
     radec_separation_arcmin,
@@ -72,6 +73,55 @@ class DummySharedState:
         return self._solution
 
 
+class DummyLocation:
+    lock = True
+    lat = 37.52704
+    lon = 127.10936
+    altitude = 30
+
+
+class DummySharedStateWithLocation:
+    def location(self):
+        return DummyLocation()
+
+    def datetime(self):
+        return "2026-07-01T14:45:00+00:00"
+
+
+class DummyConnectedMount(MountControlIndi):
+    def __init__(self):
+        super().__init__(Queue(), Queue(), None)
+        self.client = DummyIndiClient()
+        self.device = DummyIndiDevice()
+        self.connected = True
+        self.statuses = []
+
+    def _write_controller_status(self, state, message="", **extra):
+        self.statuses.append((state, message, extra))
+
+
+class DummyIndiDevice:
+    def getDeviceName(self):
+        return "LX200 OnStep"
+
+
+class DummyIndiClient:
+    def __init__(self):
+        self.switches = []
+        self.numbers = []
+
+    def isServerConnected(self):
+        return True
+
+    def set_switch(self, device, property_name, element_name):
+        self.switches.append((device.getDeviceName(), property_name, element_name))
+        return True
+
+    def set_number(self, device, property_name, values):
+        self.numbers.append((device.getDeviceName(), property_name, dict(values)))
+        return True
+
+
 def test_manual_motion_deadman_sends_stop_after_expired_lease():
     mount = DummyMountControl()
 
@@ -121,6 +171,55 @@ def test_manual_motion_east_west_are_reversed_for_onstep_guide_axis():
     )
 
 
+def test_sync_location_time_uses_direct_lx200_for_onstep(monkeypatch):
+    mount = DummyMountControl(DummySharedStateWithLocation())
+    direct_calls = []
+    cache_calls = []
+
+    monkeypatch.setattr(
+        mount,
+        "_onstep_connection_config",
+        lambda: {
+            "connection_type": "network",
+            "network_host": "10.10.10.12",
+            "network_port": 9999,
+            "serial_port": "",
+            "direct_location_time_sync": True,
+        },
+    )
+    monkeypatch.setattr(
+        sys_utils,
+        "sync_onstep_location_time_exclusive",
+        lambda **kwargs: direct_calls.append(kwargs) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        sys_utils,
+        "write_onstep_location_cache",
+        lambda *args: cache_calls.append(args),
+    )
+
+    assert mount.sync_location_time()
+
+    assert mount.applied_properties == []
+    assert direct_calls == [
+        {
+            "connection_type": "network",
+            "latitude": 37.52704,
+            "longitude": 127.10936,
+            "elevation": 30.0,
+            "utc_datetime": "2026-07-01T14:45:00+00:00",
+            "network_host": "10.10.10.12",
+            "network_port": 9999,
+            "serial_port": "",
+            "server_host": "localhost",
+            "server_port": 7624,
+        }
+    ]
+    assert cache_calls == [
+        (37.52704, 127.10936, 30.0, "2026-07-01T14:45:00+00:00")
+    ]
+
+
 def test_radec_separation_arcmin_handles_small_offsets():
     sep = radec_separation_arcmin(10.0, 20.0, 10.0, 20.1)
 
@@ -149,6 +248,49 @@ def test_goto_refine_syncs_fresh_solve_then_sends_one_regoto():
     assert mount._pending_goto_refine is None
     assert mount.sync_calls == [(9.9, 20.0)]
     assert mount.goto_calls == [(10.0, 20.0, False, None)]
+
+
+def test_goto_target_uses_slew_mode_for_onstep():
+    mount = DummyConnectedMount()
+
+    assert mount.goto_target(132.0, 49.5)
+
+    assert ("LX200 OnStep", "ON_COORD_SET", "SLEW") in mount.client.switches
+    assert mount.client.numbers == [
+        (
+            "LX200 OnStep",
+            "EQUATORIAL_EOD_COORD",
+            {"RA": 132.0 / 15.0, "DEC": 49.5},
+        )
+    ]
+    assert mount._goto_motion is not None
+    assert mount.statuses[-1][0] == "slewing"
+
+
+def test_goto_motion_completes_when_indi_state_is_not_busy(monkeypatch):
+    mount = DummyConnectedMount()
+    monkeypatch.setattr(mount, "_read_current_position", lambda: None)
+    monkeypatch.setattr(mount, "_indi_mount_is_busy", lambda: False)
+
+    assert mount.goto_target(132.0, 49.5)
+    mount._goto_motion["started_at"] = time.monotonic() - 2.0
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is None
+    assert mount.statuses[-1][0] == "connected"
+    assert mount.statuses[-1][1] == "GoTo complete"
+
+
+def test_goto_motion_waits_while_indi_state_is_busy(monkeypatch):
+    mount = DummyConnectedMount()
+    monkeypatch.setattr(mount, "_indi_mount_is_busy", lambda: True)
+
+    assert mount.goto_target(132.0, 49.5)
+    mount._goto_motion["started_at"] = time.monotonic() - 2.0
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is not None
+    assert mount.statuses[-1][0] == "slewing"
 
 
 def test_goto_refine_completes_without_regoto_inside_accuracy():

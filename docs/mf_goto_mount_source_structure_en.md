@@ -9,7 +9,7 @@ This document maps the current SkySafari push-to flow and the INDI/OnStep mount-
 PiFinder currently has two related but separate flows.
 
 1. SkySafari connects to PiFinder over a small LX200-compatible server. It can read PiFinder's current pointing and push a selected target into PiFinder's recent target list.
-2. INDI LX200 OnStep support can set location/time, park/unpark, slew rate, manual motion, sync, and GoTo through the optional mount-control stack.
+2. INDI LX200 OnStepX support can set location/time, park/unpark, slew rate, manual motion, sync, and GoTo through the optional mount-control stack.
 
 Today, a SkySafari `GoTo` command is not a motor GoTo. It is treated as a push-to target event inside PiFinder. That is the main junction where future real INDI GoTo behavior can be connected.
 
@@ -121,6 +121,9 @@ SkySafari sees PiFinder as an LX200-style telescope.
 - TCP port: `4030`
 - Process name: `SkySafariServer`
 - Protocol: small subset of Meade LX200 commands
+- The socket parser handles multiple LX200 commands in one TCP packet and
+  commands split across packets. Sequences such as `:MS#:D#` are processed as
+  separate protocol messages.
 
 ### Reading Current Position
 
@@ -160,10 +163,16 @@ Current PiFinder behavior:
   - Stores target RA in the module-level `sr_result`.
 - `:Sd...#`
   - `parse_sd_command()`
-  - Parses target Dec and calls `handle_goto_command(...)` with the stored RA.
+  - Stores target Dec in the module-level `sd_result`.
 - `:MS#`
-  - Calls `respond_zero()` only.
-  - The push-to action has already happened during `:Sd`.
+  - Calls `handle_slew_command(...)`.
+  - Runs `handle_goto_command(...)` with the stored RA/Dec.
+  - Returns `"0"` to SkySafari to acknowledge slew start.
+- `:D#`
+  - Returns a distance-bar byte while the INDI mount status is `slewing`,
+    `refine_wait`, or `refine_sent`.
+  - Returns an empty LX200 response (`#`) after the mount-control status leaves
+    those states, allowing SkySafari to clear its "slewing" indicator.
 
 `handle_goto_command(shared_state, ra_parsed, dec_parsed)`
 
@@ -177,7 +186,7 @@ Despite the name, this is not a physical mount GoTo today.
 4. Adds it to `shared_state.ui_state().add_recent(obj)`.
 5. Sets `shared_state.ui_state().set_new_pushto(True)`.
 6. Sends `ui_queue.put("push_object")`.
-7. Returns `"1"` to SkySafari.
+7. Queues an INDI GoTo when mount control and SkySafari INDI GoTo are enabled.
 
 This is why SkySafari GoTo currently means "push this target into PiFinder".
 
@@ -230,7 +239,8 @@ The web UI mostly uses `indi_getprop` and `indi_setprop` directly rather than th
 Helpers in `python/PiFinder/sys_utils.py`:
 
 - `get_indi_onstep_properties(...)`
-  - Reads `LX200 OnStep.*` properties using `indi_getprop`.
+  - Reads the telescope driver name from the active INDI Web Manager profile.
+  - Reads `<active driver>.*` properties using `indi_getprop`.
 - `apply_indi_onstep_connection(...)`
   - Configures LX200 OnStep USB/network connection properties.
 - `apply_indi_onstep_properties(...)`
@@ -239,8 +249,11 @@ Helpers in `python/PiFinder/sys_utils.py`:
   - Restarts `indiwebmanager.service`.
 - `connect_indi_onstep_driver(...)`
   - Applies `CONNECTION.CONNECT=On`.
+- `apply_indi_onstep_location_time(...)`
+  - Primary location/time sync path with the active INDI telescope driver.
+  - Uses PyIndi full-vector updates for `GEOGRAPHIC_COORD` and `TIME_UTC`.
 - `sync_onstep_location_time_exclusive(...)`
-  - Fallback for location/time sync.
+  - OnStep-only legacy/fallback path.
   - Stops INDI Web Manager, sends direct OnStep LX200 TCP/serial commands, starts INDI again, and reconnects the driver.
 
 ### Location / Time Sync
@@ -250,20 +263,29 @@ Helpers in `python/PiFinder/sys_utils.py`:
 Current flow:
 
 1. Reads form `latitude`, `longitude`, `elevation`, and `utc_time`.
-2. Builds INDI properties with `build_indi_location_time_properties(...)`.
-3. Applies them to the LX200 OnStep driver.
-4. Verifies `GEOGRAPHIC_COORD` readback against the target location.
-5. If the driver did not apply the values, runs `sync_onstep_location_time_exclusive(...)`.
-6. Polls until the INDI driver reports the target coordinates again.
+2. Recalculates PiFinder UTC when the server receives the request.
+3. Runs `apply_indi_onstep_location_time(...)`.
+4. The helper connects to the running INDI server with PyIndi and updates the
+   complete `GEOGRAPHIC_COORD` and `TIME_UTC` vectors.
+5. With the LX200 OnStepX driver, the driver converts the INDI longitude/time
+   conventions to OnStep LX200 commands and preserves seconds plus elevation.
 
 Important conventions:
 
+- Do not use `indi_setprop` CLI one-element writes for `GEOGRAPHIC_COORD` or
+  `TIME_UTC`; testing showed that it can zero unspecified vector elements.
+  PiFinder uses PyIndi full-vector updates instead.
+- Direct LX200 sync remains available only as an OnStep-specific fallback when
+  the driver cannot be trusted.
+- OnStep `:SG` is the value added to local time to obtain UTC. Korea is
+  therefore `-09:00`, which is the opposite sign convention from INDI
+  `TIME_UTC.OFFSET=+9.00`.
 - INDI raw longitude uses 0..360 eastward degrees.
 - OnStep Web UI may display longitude with a different sign convention.
 - The PiFinder UI keeps these values separate.
-  - `OnStep Location`: DMS display matching the OnStep web UI. If INDI readback is minute-precision, PiFinder uses the last successfully synced high-precision location cache.
+  - `OnStep Location`: DMS display matching the OnStep web UI. With the fixed driver this includes seconds and elevation.
   - `Effective Coordinates`: decimal coordinates future feature code should use. This prefers PiFinder's successfully synced high-precision location and falls back to INDI driver readback.
-  - `INDI Driver Readback`: raw values reported directly by the INDI driver. LX200 OnStep may report latitude/longitude at minute precision or elevation as 0, so this is diagnostic only.
+  - `INDI Driver Readback`: raw values reported directly by the INDI driver.
 
 ### Web Manual Motion
 
@@ -338,9 +360,11 @@ Handled by `MountControlIndi.handle_command(...)`:
 `MountControlIndi.goto_target(ra_deg, dec_deg)`
 
 1. Calls `connect()` to prepare the INDI server and telescope device.
-2. Sets `ON_COORD_SET.TRACK=On`.
+2. Sets `ON_COORD_SET.SLEW=On`.
 3. Sets `EQUATORIAL_EOD_COORD.RA=<ra_hours>` and `DEC=<dec_deg>`.
 4. Writes `state="slewing"`, `target_ra`, and `target_dec` to status.
+5. The mount-control loop watches INDI busy state and writes
+   `state="connected"` with `GoTo complete` when the slew finishes.
 
 RA input is degrees and is sent to INDI as hours.
 

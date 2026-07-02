@@ -14,6 +14,32 @@ os.makedirs(_pifinder_data_dir, exist_ok=True)
 BACKUP_PATH = os.path.join(_pifinder_data_dir, "PiFinder_backup.zip")
 
 logger = logging.getLogger("SysUtils.Fake")
+ONSTEPX_DEVICE_NAME = "LX200 OnStepX"
+LEGACY_ONSTEP_DEVICE_NAME = "LX200 OnStep"
+DEFAULT_ONSTEP_DEVICE_NAME = ONSTEPX_DEVICE_NAME
+
+
+def is_onstepx_device_name(device_name):
+    return (device_name or "").strip().lower() == ONSTEPX_DEVICE_NAME.lower()
+
+
+def is_onstep_family_device_name(device_name):
+    return (device_name or "").strip().lower() in {
+        ONSTEPX_DEVICE_NAME.lower(),
+        LEGACY_ONSTEP_DEVICE_NAME.lower(),
+    }
+
+
+def get_indi_profile_drivers(profile_name=None, profiles_db_path=None):
+    return {"profile": "MF_PiFinder", "drivers": [DEFAULT_ONSTEP_DEVICE_NAME]}
+
+
+def get_indi_profile_device_name(profile_name=None, fallback=DEFAULT_ONSTEP_DEVICE_NAME):
+    return DEFAULT_ONSTEP_DEVICE_NAME
+
+
+def resolve_indi_device_name(device_name=None):
+    return (device_name or "").strip() or get_indi_profile_device_name()
 
 
 def list_onstep_serial_ports():
@@ -23,8 +49,9 @@ def list_onstep_serial_ports():
 def get_indi_onstep_properties(
     server_host="localhost",
     server_port=7624,
-    device_name="LX200 OnStep",
+    device_name=None,
 ):
+    device_name = resolve_indi_device_name(device_name)
     return {}
 
 
@@ -35,8 +62,9 @@ def apply_indi_onstep_connection(
     network_port=9999,
     server_host="localhost",
     server_port=7624,
-    device_name="LX200 OnStep",
+    device_name=None,
 ):
+    device_name = resolve_indi_device_name(device_name)
     return {
         "ok": True,
         "returncode": 0,
@@ -57,6 +85,89 @@ def apply_indi_onstep_properties(
         "stdout": "",
         "stderr": "",
         "properties": properties,
+    }
+
+
+def apply_indi_onstep_location_time(
+    latitude=None,
+    longitude=None,
+    elevation=None,
+    utc_datetime=None,
+    utc_offset_hours=None,
+    server_host="localhost",
+    server_port=7624,
+    device_name=None,
+):
+    device_name = resolve_indi_device_name(device_name)
+    properties = []
+    if latitude is not None and longitude is not None:
+        properties.extend(
+            [
+                f"{device_name}.GEOGRAPHIC_COORD.LAT={float(latitude)}",
+                f"{device_name}.GEOGRAPHIC_COORD.LONG={float(longitude)}",
+            ]
+        )
+        if elevation is not None:
+            properties.append(f"{device_name}.GEOGRAPHIC_COORD.ELEV={float(elevation)}")
+    if utc_datetime is not None:
+        properties.append(f"{device_name}.TIME_UTC.UTC={utc_datetime}")
+        if utc_offset_hours is not None:
+            properties.append(f"{device_name}.TIME_UTC.OFFSET={float(utc_offset_hours):.2f}")
+    return {
+        "ok": True,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "properties": properties,
+    }
+
+
+def sync_onstep_location_time_exclusive(
+    connection_type,
+    latitude,
+    longitude,
+    utc_datetime,
+    network_host="",
+    network_port=9999,
+    serial_port="",
+    server_host="localhost",
+    server_port=7624,
+    elevation=None,
+):
+    return {
+        "ok": True,
+        "commands": [],
+        "responses": [],
+        "stop_result": {"ok": True},
+        "start_result": {"ok": True},
+        "connect_result": {"ok": True},
+        "elevation": elevation,
+    }
+
+
+def restart_indi_web_manager(timeout=30.0):
+    return {
+        "ok": True,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "service": "indiwebmanager.service",
+    }
+
+
+def connect_indi_onstep_driver(
+    server_host="localhost",
+    server_port=7624,
+    device_name=None,
+    wait_timeout=15.0,
+):
+    device_name = resolve_indi_device_name(device_name)
+    return {
+        "ok": True,
+        "returncode": 0,
+        "stdout": f"{device_name} already connected",
+        "stderr": "",
+        "properties": [f"{device_name}.CONNECTION.CONNECT=On"],
     }
 
 

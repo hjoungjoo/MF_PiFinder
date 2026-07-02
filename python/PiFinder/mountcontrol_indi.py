@@ -14,9 +14,11 @@ import logging
 import math
 import queue
 import time
+from datetime import datetime, timezone
 from multiprocessing import Queue
 from typing import Any, Optional
 
+from PiFinder import config
 from PiFinder import sys_utils, utils
 from PiFinder.multiproclogging import MultiprocLogging
 
@@ -48,6 +50,8 @@ GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
 DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 10.0
 GUIDE_CORRECTION_INTERVAL_SECONDS = 10.0
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4
+GOTO_COMPLETE_MIN_SECONDS = 1.0
+GOTO_COMPLETE_FALLBACK_SECONDS = 180.0
 
 
 def radec_separation_arcmin(
@@ -94,6 +98,7 @@ if PyIndi is not None:
             super().__init__()
             self.telescope_device = None
             self.mount_control = mount_control
+            self.preferred_device_name = sys_utils.get_indi_profile_device_name()
 
         def get_telescope_device(self):
             return self.telescope_device
@@ -220,13 +225,16 @@ if PyIndi is not None:
 
         def newDevice(self, device):
             device_name = device.getDeviceName().lower()
-            if self.telescope_device is None and (
+            preferred = (self.preferred_device_name or "").lower()
+            is_preferred = preferred and device_name == preferred
+            is_telescope_like = (
                 any(
                     word in device_name
                     for word in ("telescope", "mount", "eqmod", "lx200", "celestron")
                 )
                 or device_name == "telescope simulator"
-            ):
+            )
+            if is_preferred or (self.telescope_device is None and is_telescope_like):
                 self.telescope_device = device
                 clientlogger.info("Telescope device detected: %s", device.getDeviceName())
 
@@ -309,6 +317,7 @@ class MountControlIndi:
         self._manual_motion_stop_retry_at = 0.0
         self._pending_goto_refine: Optional[dict[str, Any]] = None
         self._last_goto_target: Optional[tuple[float, float]] = None
+        self._goto_motion: Optional[dict[str, Any]] = None
         self._guide_correction_enabled = False
         self._guide_correction_target: Optional[tuple[float, float]] = None
         self._guide_correction_accuracy_arcmin = DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN
@@ -336,6 +345,10 @@ class MountControlIndi:
             payload["goto_refine_accuracy_arcmin"] = self._pending_goto_refine.get(
                 "accuracy_arcmin"
             )
+        if self._goto_motion is not None:
+            payload["goto_motion_active"] = True
+            payload["target_ra"] = self._goto_motion.get("target_ra")
+            payload["target_dec"] = self._goto_motion.get("target_dec")
         payload["guide_correction_enabled"] = self._guide_correction_enabled
         if self._guide_correction_target is not None:
             payload["guide_correction_target_ra"] = self._guide_correction_target[0]
@@ -356,6 +369,74 @@ class MountControlIndi:
     ) -> None:
         _write_status(state, message, **self._status_fields(**extra))
 
+    def _indi_device_name(self) -> str:
+        if self.device is not None:
+            try:
+                return self.device.getDeviceName()
+            except Exception:
+                pass
+        return sys_utils.get_indi_profile_device_name()
+
+    def _indi_property_name(self, property_name: str) -> str:
+        return f"{self._indi_device_name()}.{property_name}"
+
+    def _indi_property_on(self, property_name: str) -> str:
+        return f"{self._indi_property_name(property_name)}=On"
+
+    def _indi_property_state(self, property_name: str) -> Any:
+        if self.device is None:
+            return None
+
+        for getter_name in ("getProperty", "getNumber", "getSwitch", "getText"):
+            getter = getattr(self.device, getter_name, None)
+            if getter is None:
+                continue
+            try:
+                prop = getter(property_name)
+            except Exception:
+                continue
+            if not prop:
+                continue
+
+            state = getattr(prop, "s", None)
+            if state is None:
+                get_state = getattr(prop, "getState", None)
+                if callable(get_state):
+                    try:
+                        state = get_state()
+                    except Exception:
+                        state = None
+            if state is not None:
+                return state
+        return None
+
+    def _indi_state_is_busy(self, state: Any) -> bool:
+        if state is None:
+            return False
+        if PyIndi is not None:
+            try:
+                if state == PyIndi.IPS_BUSY:
+                    return True
+            except Exception:
+                pass
+        return str(state).lower() == "busy"
+
+    def _indi_mount_is_busy(self) -> Optional[bool]:
+        saw_state = False
+        for property_name in (
+            "EQUATORIAL_EOD_COORD",
+            "ON_COORD_SET",
+            "TELESCOPE_MOTION_NS",
+            "TELESCOPE_MOTION_WE",
+        ):
+            state = self._indi_property_state(property_name)
+            if state is None:
+                continue
+            saw_state = True
+            if self._indi_state_is_busy(state):
+                return True
+        return False if saw_state else None
+
     def _write_status_heartbeat(self) -> None:
         now = time.monotonic()
         if now - self._last_status_heartbeat_at < STATUS_HEARTBEAT_INTERVAL:
@@ -368,6 +449,8 @@ class MountControlIndi:
             and self.device is not None
             and self.client.isServerConnected()
         ):
+            if self._goto_motion is not None or self._manual_motion_direction is not None:
+                return
             self._write_controller_status("connected", "INDI mount connected")
         elif not self.connected:
             self._write_controller_status("idle", "INDI mount waiting")
@@ -500,7 +583,7 @@ class MountControlIndi:
             time.sleep(0.25)
         return False
 
-    def connect(self, announce: bool = True) -> bool:
+    def connect(self, announce: bool = True, sync_on_connect: bool = True) -> bool:
         if (
             self.connected
             and self.device is not None
@@ -517,6 +600,10 @@ class MountControlIndi:
             if announce:
                 self._console("INDI mount\nPyIndi missing")
             return False
+
+        direct_sync_for_onstep = self._use_direct_onstep_location_time_sync()
+        if sync_on_connect and direct_sync_for_onstep:
+            self.sync_location_time(reconnect_after=False)
 
         self.client = PiFinderIndiClient(self)
         self.client.setServer(self.indi_host, self.indi_port)
@@ -560,7 +647,8 @@ class MountControlIndi:
                     return False
                 time.sleep(1.0)
 
-        self.sync_location_time()
+        if sync_on_connect and not direct_sync_for_onstep:
+            self.sync_location_time()
         self.client.unpark_mount(self.device)
         self.client.enable_tracking(self.device)
         self._read_current_position()
@@ -609,6 +697,7 @@ class MountControlIndi:
         connect_result = sys_utils.connect_indi_onstep_driver(
             server_host=self.indi_host,
             server_port=self.indi_port,
+            device_name=sys_utils.get_indi_profile_device_name(),
             wait_timeout=15,
         )
         if not connect_result["ok"]:
@@ -632,47 +721,188 @@ class MountControlIndi:
         self.connected = False
         self._write_controller_status("stopped", "Mount-control process stopped")
 
-    def sync_location_time(self) -> None:
-        try:
-            latitude = longitude = elevation = None
-            location = self.shared_state.location()
-            if location and location.lock:
-                latitude = float(location.lat)
-                longitude = float(location.lon)
-                elevation = (
-                    None
-                    if location.altitude is None
-                    else float(location.altitude)
-                )
+    def _onstep_connection_config(self) -> dict[str, Any]:
+        cfg = config.Config()
+        cfg.load_config()
+        direct_sync = cfg.get_option("onstep_direct_lx200_location_time_sync", False)
+        if isinstance(direct_sync, str):
+            direct_sync = direct_sync.strip().lower() not in {
+                "0",
+                "false",
+                "no",
+                "off",
+            }
+        return {
+            "connection_type": cfg.get_option("onstep_connection_type", "network"),
+            "network_host": cfg.get_option("onstep_network_host", ""),
+            "network_port": int(cfg.get_option("onstep_network_port", 9999)),
+            "serial_port": cfg.get_option("onstep_serial_port", ""),
+            "direct_location_time_sync": bool(direct_sync),
+        }
 
+    def _use_direct_onstep_location_time_sync(self) -> bool:
+        try:
+            if self.device is not None:
+                device_name = self.device.getDeviceName()
+                if not sys_utils.is_onstep_family_device_name(device_name):
+                    return False
+            return bool(self._onstep_connection_config()["direct_location_time_sync"])
+        except Exception:
+            logger.exception("Could not read OnStep direct-sync configuration")
+            return False
+
+    def _shared_location_time_values(self):
+        latitude = longitude = elevation = None
+        try:
+            location = self.shared_state.location()
+        except Exception:
+            location = None
+
+        if location and location.lock:
+            latitude = float(location.lat)
+            longitude = float(location.lon)
+            elevation = (
+                None
+                if location.altitude is None
+                else float(location.altitude)
+            )
+
+        try:
             dt = self.shared_state.datetime()
-            properties = sys_utils.build_indi_location_time_properties(
+        except Exception:
+            dt = datetime.now(timezone.utc)
+
+        return latitude, longitude, elevation, dt
+
+    def _sync_location_time_direct_onstep(
+        self,
+        latitude: float,
+        longitude: float,
+        elevation: float | None,
+        dt: Any,
+        reconnect_after: bool,
+    ) -> bool:
+        onstep_cfg = self._onstep_connection_config()
+        was_connected = (
+            self.connected
+            or (
+                self.client is not None
+                and self.client.isServerConnected()
+            )
+        )
+
+        if self.client is not None:
+            self.disconnect()
+            self.client = None
+            self.device = None
+
+        self._write_controller_status(
+            "syncing",
+            "Sending location/time via direct LX200 OnStep commands",
+        )
+        try:
+            result = sys_utils.sync_onstep_location_time_exclusive(
+                connection_type=onstep_cfg["connection_type"],
                 latitude=latitude,
                 longitude=longitude,
                 elevation=elevation,
                 utc_datetime=dt,
+                network_host=onstep_cfg["network_host"],
+                network_port=onstep_cfg["network_port"],
+                serial_port=onstep_cfg["serial_port"],
+                server_host=self.indi_host,
+                server_port=self.indi_port,
             )
+        except Exception as exc:
+            logger.exception("Direct LX200 OnStep location/time sync failed")
+            self._write_controller_status("sync_failed", str(exc))
+            return False
 
-            if properties:
-                if self._apply_indi_properties(
-                    properties,
-                    "connected" if self.connected else "idle",
-                    "Location/time sent",
-                    "sync_failed",
-                ) and latitude is not None and longitude is not None:
-                    sys_utils.write_onstep_location_cache(
-                        latitude,
-                        longitude,
-                        elevation,
-                        dt,
+        if not result.get("ok"):
+            error = (
+                result.get("stderr")
+                or result.get("stdout")
+                or "Direct LX200 OnStep sync failed"
+            )
+            logger.warning("Direct LX200 OnStep location/time sync failed: %s", error)
+            self._write_controller_status("sync_failed", error)
+            return False
+
+        sys_utils.write_onstep_location_cache(latitude, longitude, elevation, dt)
+        self._write_controller_status(
+            "connected" if was_connected else "idle",
+            "Location/time sent via direct LX200 OnStep commands",
+        )
+
+        if reconnect_after and was_connected:
+            return self.connect(announce=False, sync_on_connect=False)
+        return True
+
+    def sync_location_time(self, reconnect_after: bool = True) -> bool:
+        try:
+            latitude, longitude, elevation, dt = self._shared_location_time_values()
+            if self._use_direct_onstep_location_time_sync():
+                if latitude is None or longitude is None:
+                    self._write_controller_status(
+                        "connected" if self.connected else "idle",
+                        "No locked location available for direct OnStep sync",
                     )
-            else:
+                    return False
+                return self._sync_location_time_direct_onstep(
+                    latitude,
+                    longitude,
+                    elevation,
+                    dt,
+                    reconnect_after=reconnect_after,
+                )
+
+            if latitude is None and longitude is None and dt is None:
                 self._write_controller_status(
                     "connected" if self.connected else "idle",
                     "No locked location/time available",
                 )
+                return False
+
+            try:
+                result = sys_utils.apply_indi_onstep_location_time(
+                    latitude=latitude,
+                    longitude=longitude,
+                    elevation=elevation,
+                    utc_datetime=dt,
+                    server_host=self.indi_host,
+                    server_port=self.indi_port,
+                    device_name=self._indi_device_name(),
+                )
+            except Exception as exc:
+                logger.exception("INDI location/time sync failed")
+                self._write_controller_status("sync_failed", str(exc))
+                return False
+
+            if not result.get("ok"):
+                error = (
+                    result.get("stderr")
+                    or result.get("stdout")
+                    or "INDI location/time sync failed"
+                )
+                logger.warning("INDI location/time sync failed: %s", error)
+                self._write_controller_status("sync_failed", error)
+                return False
+
+            self._write_controller_status(
+                "connected" if self.connected else "idle",
+                "Location/time sent via INDI",
+            )
+            if latitude is not None and longitude is not None:
+                sys_utils.write_onstep_location_cache(
+                    latitude,
+                    longitude,
+                    elevation,
+                    dt,
+                )
+            return True
         except Exception:
             logger.exception("Could not sync INDI location/time")
+            return False
 
     def _read_current_position(self) -> Optional[tuple[float, float]]:
         if self.client is None or self.device is None:
@@ -801,6 +1031,56 @@ class MountControlIndi:
             refine_error_arcmin=separation,
         )
         self._console("INDI refine\nGoTo sent")
+
+    def _arm_goto_motion(self, ra_deg: float, dec_deg: float) -> None:
+        self._goto_motion = {
+            "target_ra": ra_deg % 360.0,
+            "target_dec": dec_deg,
+            "started_at": time.monotonic(),
+        }
+
+    def _complete_goto_motion(self, message: str = "GoTo complete") -> None:
+        if self._goto_motion is None:
+            return
+
+        target_ra = self._goto_motion.get("target_ra")
+        target_dec = self._goto_motion.get("target_dec")
+        self._goto_motion = None
+        self._read_current_position()
+        self._write_controller_status(
+            "connected",
+            message,
+            target_ra=target_ra,
+            target_dec=target_dec,
+        )
+        logger.info("%s: RA %s Dec %s", message, target_ra, target_dec)
+
+    def _check_goto_motion(self) -> None:
+        if self._goto_motion is None:
+            return
+        if self._pending_goto_refine is not None:
+            return
+        if self._manual_motion_direction is not None:
+            return
+
+        started_at = float(self._goto_motion.get("started_at", 0.0))
+        elapsed = time.monotonic() - started_at
+        if elapsed < GOTO_COMPLETE_MIN_SECONDS:
+            return
+
+        is_busy = self._indi_mount_is_busy()
+        if is_busy is True:
+            return
+        if is_busy is False:
+            self._complete_goto_motion()
+            return
+
+        if elapsed > GOTO_COMPLETE_FALLBACK_SECONDS:
+            logger.warning(
+                "Could not read INDI GoTo busy state after %.1fs; assuming complete",
+                elapsed,
+            )
+            self._complete_goto_motion("GoTo status timeout; assuming complete")
 
     def _guide_direction_for_error(
         self,
@@ -971,8 +1251,8 @@ class MountControlIndi:
         if not self.connect() or self.client is None or self.device is None:
             return False
 
-        if not self.client.set_switch(self.device, "ON_COORD_SET", "TRACK"):
-            self._write_controller_status("goto_failed", "Could not set INDI TRACK mode")
+        if not self.client.set_switch(self.device, "ON_COORD_SET", "SLEW"):
+            self._write_controller_status("goto_failed", "Could not set INDI SLEW mode")
             return False
 
         if not self.client.set_number(
@@ -983,6 +1263,7 @@ class MountControlIndi:
             self._write_controller_status("goto_failed", "Could not set target coordinates")
             return False
 
+        self._arm_goto_motion(ra_deg, dec_deg)
         self._write_controller_status(
             "slewing",
             "GoTo target command sent",
@@ -997,7 +1278,7 @@ class MountControlIndi:
 
     def stop_mount(self) -> bool:
         if not self._apply_indi_properties(
-            [f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_ABORT_MOTION.ABORT=On"],
+            [self._indi_property_on("TELESCOPE_ABORT_MOTION.ABORT")],
             "stopped",
             "Mount stop command sent",
             "stop_failed",
@@ -1006,6 +1287,7 @@ class MountControlIndi:
             return False
 
         self._clear_manual_motion_deadline()
+        self._goto_motion = None
         logger.info("Mount stop command sent")
         self._console("INDI mount\nstopped")
         return True
@@ -1014,32 +1296,32 @@ class MountControlIndi:
         direction = direction.lower()
         motion_map = {
             "north": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_NORTH=On"
+                self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH")
             ],
             "south": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On"
+                self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH")
             ],
             "east": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On"
+                self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_WEST")
             ],
             "west": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On"
+                self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_EAST")
             ],
             "northeast": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH"),
+                self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_WEST"),
             ],
             "northwest": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH"),
+                self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_EAST"),
             ],
             "southeast": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH"),
+                self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_WEST"),
             ],
             "southwest": [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH"),
+                self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_EAST"),
             ],
         }
         if direction not in motion_map:
@@ -1074,7 +1356,7 @@ class MountControlIndi:
 
         property_name, message = action_map[action]
         if not self._apply_indi_properties(
-            [f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.{property_name}=On"],
+            [self._indi_property_on(property_name)],
             "connected",
             message,
             "park_failed",
@@ -1100,12 +1382,11 @@ class MountControlIndi:
         properties = sys_utils.get_indi_onstep_properties(
             server_host=self.indi_host,
             server_port=self.indi_port,
+            device_name=self._indi_device_name(),
         )
         for rate in range(10):
             if (
-                properties.get(
-                    f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_SLEW_RATE.{rate}"
-                )
+                properties.get(self._indi_property_name(f"TELESCOPE_SLEW_RATE.{rate}"))
                 == "On"
             ):
                 self.slew_rate = rate
@@ -1119,9 +1400,7 @@ class MountControlIndi:
     def set_slew_rate(self, rate: int) -> bool:
         self.slew_rate = max(0, min(9, int(rate)))
         if not self._apply_indi_properties(
-            [
-                f"{sys_utils.DEFAULT_ONSTEP_DEVICE_NAME}.TELESCOPE_SLEW_RATE.{self.slew_rate}=On"
-            ],
+            [self._indi_property_on(f"TELESCOPE_SLEW_RATE.{self.slew_rate}")],
             "connected" if self.connected else "idle",
             f"Slew rate {self.slew_rate}",
             "slew_rate_failed",
@@ -1205,6 +1484,7 @@ class MountControlIndi:
         next_auto_connect_at = time.monotonic() + AUTO_CONNECT_START_DELAY
         while running:
             self._check_manual_motion_deadline()
+            self._check_goto_motion()
             self._check_pending_goto_refine()
             self._check_guide_correction()
             try:
@@ -1214,6 +1494,7 @@ class MountControlIndi:
                 running = self.handle_command(command)
             except queue.Empty:
                 self._check_manual_motion_deadline()
+                self._check_goto_motion()
                 self._check_pending_goto_refine()
                 self._check_guide_correction()
                 now = time.monotonic()

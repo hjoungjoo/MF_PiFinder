@@ -194,7 +194,10 @@ The Settings menu holds every user-configurable item.  See
        Settings --> WM["WiFi Mode"]
        Settings --> MT["Mount Type"]
        Settings --> ADV["Advanced"]
-       Settings --> IMU["IMU Sensit."]
+       Settings --> IMU["IMU Settings"]
+       IMU --> IMUS["Sensitivity"]
+       IMU --> IMUC["Compass"]
+       IMU --> IMUK["Calibration"]
        ADV --> PFT["PiFinder Type"]
        ADV --> CT["Camera Type"]
        ADV --> GPS["GPS Settings"]
@@ -271,10 +274,20 @@ Advanced
          the PiFinder.
       GPS Baud Rate
          Serial speed for the receiver — 9600 (standard) or 115200 (UBlox-10).
-IMU Sensit.
-   How readily scope motion switches pointing from a camera solve to the
-   motion-sensor estimate — Off (ignore the sensor), Very Low, Low, Medium, or
-   High.  Changing this restarts the PiFinder.
+IMU Settings
+   IMU-related behavior and calibration controls.
+
+   Sensitivity
+      How readily scope motion switches pointing from a camera solve to the
+      motion-sensor estimate — Off (ignore the sensor), Very Low, Low, Medium,
+      or High.  Changing this restarts the PiFinder.
+
+   Compass
+      Enables the BNO055 magnetometer/NDOF fusion mode.  Changing this restarts
+      the PiFinder.
+
+   Calibration
+      Save, load, or clear the BNO055 calibration data.
 
 
 Tools

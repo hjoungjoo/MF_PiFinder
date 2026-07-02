@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set onstep_device = onstep_device_name or '' %}
 <div class="row valign-wrapper" style="margin: 0px;">
   <div class="col s12">
     <h3 class="grey-text">{{ _('INDI') }}</h3>
@@ -30,34 +31,42 @@
       <a href="#" id="indi_web_manager_link" class="btn">{{ _('INDI Web Manager') }}</a>
       <button type="button" id="restart_indi_button" class="btn">{{ _('Restart INDI') }}</button>
     </div>
+    <table class="striped grey-text">
+      <tbody>
+        <tr><td>{{ _('INDI Profile') }}</td><td id="indi_profile_value">{{ indi_profile_name or '-' }}</td></tr>
+        <tr><td>{{ _('Active Driver') }}</td><td id="indi_driver_value">{{ onstep_device or '-' }}</td></tr>
+      </tbody>
+    </table>
     {% if onstep_props %}
       <table class="striped grey-text">
         <tbody>
-          <tr><td>{{ _('Connection') }}</td><td id="onstep_connection_value">{{ onstep_props.get('LX200 OnStep.CONNECTION.CONNECT', '') }}</td></tr>
-          <tr><td>{{ _('Serial Mode') }}</td><td id="onstep_serial_mode_value">{{ onstep_props.get('LX200 OnStep.CONNECTION_MODE.CONNECTION_SERIAL', '') }}</td></tr>
-          <tr><td>{{ _('TCP Mode') }}</td><td id="onstep_tcp_mode_value">{{ onstep_props.get('LX200 OnStep.CONNECTION_MODE.CONNECTION_TCP', '') }}</td></tr>
-          <tr><td>{{ _('Serial Port') }}</td><td id="onstep_serial_port_value">{{ onstep_props.get('LX200 OnStep.DEVICE_PORT.PORT', '') }}</td></tr>
-          <tr><td>{{ _('Network Host') }}</td><td id="onstep_network_host_value">{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.ADDRESS', '') }}</td></tr>
-          <tr><td>{{ _('Network Port') }}</td><td id="onstep_network_port_value">{{ onstep_props.get('LX200 OnStep.DEVICE_ADDRESS.PORT', '') }}</td></tr>
+          <tr><td>{{ _('Connection') }}</td><td id="onstep_connection_value">{{ onstep_props.get(onstep_device ~ '.CONNECTION.CONNECT', '') }}</td></tr>
+          <tr><td>{{ _('Serial Mode') }}</td><td id="onstep_serial_mode_value">{{ onstep_props.get(onstep_device ~ '.CONNECTION_MODE.CONNECTION_SERIAL', '') }}</td></tr>
+          <tr><td>{{ _('TCP Mode') }}</td><td id="onstep_tcp_mode_value">{{ onstep_props.get(onstep_device ~ '.CONNECTION_MODE.CONNECTION_TCP', '') }}</td></tr>
+          <tr><td>{{ _('Serial Port') }}</td><td id="onstep_serial_port_value">{{ onstep_props.get(onstep_device ~ '.DEVICE_PORT.PORT', '') }}</td></tr>
+          <tr><td>{{ _('Network Host') }}</td><td id="onstep_network_host_value">{{ onstep_props.get(onstep_device ~ '.DEVICE_ADDRESS.ADDRESS', '') }}</td></tr>
+          <tr><td>{{ _('Network Port') }}</td><td id="onstep_network_port_value">{{ onstep_props.get(onstep_device ~ '.DEVICE_ADDRESS.PORT', '') }}</td></tr>
           <tr><td>{{ _('OnStep Location') }}</td><td id="onstep_location_value">{{ onstep_location_display }}</td></tr>
           <tr><td>{{ _('Effective Coordinates') }}</td><td id="onstep_effective_location_value">{{ onstep_effective_location_display }}</td></tr>
-          <tr><td>{{ _('INDI Driver Readback') }}</td><td id="onstep_raw_location_value">{{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LAT', '-') }}, {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.LONG', '-') }} / {{ onstep_props.get('LX200 OnStep.GEOGRAPHIC_COORD.ELEV', '-') }}m</td></tr>
-          <tr><td>{{ _('OnStep UTC Time') }}</td><td id="onstep_utc_time_value">{{ onstep_props.get('LX200 OnStep.TIME_UTC.UTC', '-') }}</td></tr>
+          <tr><td>{{ _('INDI Driver Readback') }}</td><td id="onstep_raw_location_value">{{ onstep_props.get(onstep_device ~ '.GEOGRAPHIC_COORD.LAT', '-') }}, {{ onstep_props.get(onstep_device ~ '.GEOGRAPHIC_COORD.LONG', '-') }} / {{ onstep_props.get(onstep_device ~ '.GEOGRAPHIC_COORD.ELEV', '-') }}m</td></tr>
+          <tr><td>{{ _('OnStep UTC Time') }}</td><td id="onstep_utc_time_value">{{ onstep_props.get(onstep_device ~ '.TIME_UTC.UTC', '-') }}</td></tr>
         </tbody>
       </table>
     {% else %}
-      <p class="grey-text">{{ _('LX200 OnStep driver properties are not available. Start the INDI profile first.') }}</p>
+      <p class="grey-text">{{ _('%(driver)s driver properties are not available. Start the INDI profile first.') % {'driver': onstep_device or _('Active INDI')} }}</p>
     {% endif %}
   </div>
 </div>
 
+{% if is_onstepx_driver %}
 <div class="card grey darken-2">
   <div class="card-content">
     <h5 class="grey-text">{{ _('Location and Time') }}</h5>
     <table class="striped grey-text">
       <tbody>
-        <tr><td>{{ _('PiFinder Source') }}</td><td id="pifinder_location_source_value">{{ pifinder_location_time.source }}</td></tr>
-        <tr><td>{{ _('PiFinder Location') }}</td><td id="pifinder_location_value">{{ pifinder_location_time.latitude if pifinder_location_time.latitude != '' else '-' }}, {{ pifinder_location_time.longitude if pifinder_location_time.longitude != '' else '-' }} / {{ pifinder_location_time.elevation if pifinder_location_time.elevation != '' else '-' }}m</td></tr>
+        <tr><td>{{ _('GPS Lock') }}</td><td id="pifinder_location_lock_value">{{ pifinder_location_time.lock_status }}</td></tr>
+        <tr><td>{{ _('Location Source') }}</td><td id="pifinder_location_source_value">{{ pifinder_location_time.source }}</td></tr>
+        <tr><td>{{ _('Location to Send') }}</td><td id="pifinder_location_value">{{ pifinder_location_time.latitude if pifinder_location_time.latitude != '' else '-' }}, {{ pifinder_location_time.longitude if pifinder_location_time.longitude != '' else '-' }} / {{ pifinder_location_time.elevation if pifinder_location_time.elevation != '' else '-' }}m</td></tr>
         <tr><td>{{ _('PiFinder UTC Time') }}</td><td id="pifinder_utc_time_value">{{ pifinder_location_time.utc_time }}</td></tr>
       </tbody>
     </table>
@@ -94,9 +103,9 @@
     <div class="indi-park-state">
       <span>{{ _('Park State') }}</span>
       <strong id="indi_park_state_value">
-        {% if onstep_props.get('LX200 OnStep.TELESCOPE_PARK.PARK', '') == 'On' %}
+        {% if onstep_props.get(onstep_device ~ '.TELESCOPE_PARK.PARK', '') == 'On' %}
           {{ _('Parked') }}
-        {% elif onstep_props.get('LX200 OnStep.TELESCOPE_PARK.UNPARK', '') == 'On' %}
+        {% elif onstep_props.get(onstep_device ~ '.TELESCOPE_PARK.UNPARK', '') == 'On' %}
           {{ _('Unparked') }}
         {% else %}
           {{ _('Unknown') }}
@@ -115,7 +124,7 @@
         <div class="input-field col s8">
           <select name="slew_rate" id="slew_rate">
             {% for label in slew_rate_labels %}
-            <option value="{{ loop.index0 }}" {% if onstep_props.get('LX200 OnStep.TELESCOPE_SLEW_RATE.' ~ loop.index0|string, '') == 'On' %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ loop.index0 }}" {% if onstep_props.get(onstep_device ~ '.TELESCOPE_SLEW_RATE.' ~ loop.index0|string, '') == 'On' %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
           <label>{{ _('Slew Rate') }}</label>
@@ -141,7 +150,7 @@
 
 <div class="card grey darken-2">
   <div class="card-content">
-    <h5 class="grey-text">{{ _('LX200 OnStep Driver Connection') }}</h5>
+    <h5 class="grey-text">{{ _('%(driver)s Driver Connection') % {'driver': onstep_device} }}</h5>
     <form action="/indi/driver" method="post" id="indi_mount_form" class="col s12">
       <div class="row">
         <div class="input-field col s12 m6">
@@ -256,6 +265,16 @@
     </form>
   </div>
 </div>
+{% else %}
+<div class="card grey darken-2">
+  <div class="card-content">
+    <h5 class="grey-text">{{ _('INDI Driver') }}</h5>
+    <p class="grey-text">
+      {{ _('%(driver)s is selected in the active INDI profile. OnStepX-specific setup and motion controls are hidden for this driver.') % {'driver': onstep_device or _('No driver')} }}
+    </p>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -282,6 +301,11 @@ document.addEventListener('DOMContentLoaded', function() {
   var activeMotionPointer = null;
   var activeMotionDirection = null;
   var motionKeepaliveTimer = null;
+  var onstepDeviceName = {{ onstep_device_name|default('', true)|tojson }};
+
+  function onstepKey(propertyName) {
+    return onstepDeviceName + '.' + propertyName;
+  }
 
   function setActionStatus(message) {
     if (actionStatus) {
@@ -333,6 +357,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function setInputValue(id, value) {
+    var element = document.getElementById(id);
+    if (element) {
+      element.value = value;
+    }
+  }
+
   function pad2(value) {
     return String(value).padStart(2, '0');
   }
@@ -373,14 +404,18 @@ document.addEventListener('DOMContentLoaded', function() {
   function updateLocationValues(payload) {
     var pifinder = payload.pifinder_location_time || {};
     var onstep = payload.onstep_props || {};
+    if (payload.onstep_device_name) {
+      onstepDeviceName = payload.onstep_device_name;
+    }
 
-    document.getElementById('latitude').value = valueOrEmpty(pifinder.latitude);
-    document.getElementById('longitude').value = valueOrEmpty(pifinder.longitude);
-    document.getElementById('elevation').value = valueOrEmpty(pifinder.elevation);
-    document.getElementById('utc_time').value = valueOrEmpty(pifinder.utc_time);
+    setInputValue('latitude', valueOrEmpty(pifinder.latitude));
+    setInputValue('longitude', valueOrEmpty(pifinder.longitude));
+    setInputValue('elevation', valueOrEmpty(pifinder.elevation));
+    setInputValue('utc_time', valueOrEmpty(pifinder.utc_time));
     setServerUtcBase(pifinder.utc_time);
 
     setText('pifinder_location_source_value', pifinder.source || '');
+    setText('pifinder_location_lock_value', pifinder.lock_status || '');
     setText(
       'pifinder_location_value',
       formatLocation(pifinder.latitude, pifinder.longitude, pifinder.elevation)
@@ -394,28 +429,28 @@ document.addEventListener('DOMContentLoaded', function() {
     setText(
       'onstep_raw_location_value',
       formatLocation(
-        onstep['LX200 OnStep.GEOGRAPHIC_COORD.LAT'],
-        onstep['LX200 OnStep.GEOGRAPHIC_COORD.LONG'],
-        onstep['LX200 OnStep.GEOGRAPHIC_COORD.ELEV']
+        onstep[onstepKey('GEOGRAPHIC_COORD.LAT')],
+        onstep[onstepKey('GEOGRAPHIC_COORD.LONG')],
+        onstep[onstepKey('GEOGRAPHIC_COORD.ELEV')]
       )
     );
-    setText('onstep_utc_time_value', textOrDash(onstep['LX200 OnStep.TIME_UTC.UTC']));
-    setText('onstep_connection_value', textOrDash(onstep['LX200 OnStep.CONNECTION.CONNECT']));
-    setText('onstep_serial_mode_value', textOrDash(onstep['LX200 OnStep.CONNECTION_MODE.CONNECTION_SERIAL']));
-    setText('onstep_tcp_mode_value', textOrDash(onstep['LX200 OnStep.CONNECTION_MODE.CONNECTION_TCP']));
-    setText('onstep_serial_port_value', textOrDash(onstep['LX200 OnStep.DEVICE_PORT.PORT']));
-    setText('onstep_network_host_value', textOrDash(onstep['LX200 OnStep.DEVICE_ADDRESS.ADDRESS']));
-    setText('onstep_network_port_value', textOrDash(onstep['LX200 OnStep.DEVICE_ADDRESS.PORT']));
-    if (onstep['LX200 OnStep.TELESCOPE_PARK.PARK'] === 'On') {
+    setText('onstep_utc_time_value', textOrDash(onstep[onstepKey('TIME_UTC.UTC')]));
+    setText('onstep_connection_value', textOrDash(onstep[onstepKey('CONNECTION.CONNECT')]));
+    setText('onstep_serial_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_SERIAL')]));
+    setText('onstep_tcp_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_TCP')]));
+    setText('onstep_serial_port_value', textOrDash(onstep[onstepKey('DEVICE_PORT.PORT')]));
+    setText('onstep_network_host_value', textOrDash(onstep[onstepKey('DEVICE_ADDRESS.ADDRESS')]));
+    setText('onstep_network_port_value', textOrDash(onstep[onstepKey('DEVICE_ADDRESS.PORT')]));
+    if (onstep[onstepKey('TELESCOPE_PARK.PARK')] === 'On') {
       setText('indi_park_state_value', '{{ _("Parked") }}');
-    } else if (onstep['LX200 OnStep.TELESCOPE_PARK.UNPARK'] === 'On') {
+    } else if (onstep[onstepKey('TELESCOPE_PARK.UNPARK')] === 'On') {
       setText('indi_park_state_value', '{{ _("Unparked") }}');
     } else {
       setText('indi_park_state_value', '{{ _("Unknown") }}');
     }
     if (slewRate) {
       for (var rate = 0; rate <= 9; rate += 1) {
-        if (onstep['LX200 OnStep.TELESCOPE_SLEW_RATE.' + rate] === 'On') {
+        if (onstep[onstepKey('TELESCOPE_SLEW_RATE.' + rate)] === 'On') {
           slewRate.value = String(rate);
           M.FormSelect.init(slewRate);
           break;
@@ -470,12 +505,18 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function updateConnectionSections() {
+    if (!connectionType || !networkSettings || !usbSettings) {
+      return;
+    }
     var isUsb = connectionType.value === 'usb';
     networkSettings.style.display = isUsb ? 'none' : 'block';
     usbSettings.style.display = isUsb ? 'block' : 'none';
   }
 
   function updateNetworkManual() {
+    if (!networkHost || !networkManual) {
+      return;
+    }
     if (networkHost.value === '__manual__') {
       if (initializedNetworkManual) {
         networkManual.value = '';
@@ -487,8 +528,12 @@ document.addEventListener('DOMContentLoaded', function() {
     initializedNetworkManual = true;
   }
 
-  connectionType.addEventListener('change', updateConnectionSections);
-  networkHost.addEventListener('change', updateNetworkManual);
+  if (connectionType) {
+    connectionType.addEventListener('change', updateConnectionSections);
+  }
+  if (networkHost) {
+    networkHost.addEventListener('change', updateNetworkManual);
+  }
   if (slewRate) {
     slewRate.addEventListener('change', function() {
       setActionStatus('{{ _("Setting") }}');

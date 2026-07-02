@@ -14,11 +14,12 @@ try:
             utc_offset_hours=9,
         )
 
-        assert "LX200 OnStep.GEOGRAPHIC_COORD.LAT=37.52704" in properties
-        assert "LX200 OnStep.GEOGRAPHIC_COORD.LONG=127.10936" in properties
-        assert "LX200 OnStep.GEOGRAPHIC_COORD.ELEV=30.0" in properties
-        assert "LX200 OnStep.TIME_UTC.UTC=2026-06-30T13:45:12" in properties
-        assert "LX200 OnStep.TIME_UTC.OFFSET=9.00" in properties
+        device = sys_utils.DEFAULT_ONSTEP_DEVICE_NAME
+        assert f"{device}.GEOGRAPHIC_COORD.LAT=37.52704" in properties
+        assert f"{device}.GEOGRAPHIC_COORD.LONG=127.10936" in properties
+        assert f"{device}.GEOGRAPHIC_COORD.ELEV=30.0" in properties
+        assert f"{device}.TIME_UTC.UTC=2026-06-30T13:45:12" in properties
+        assert f"{device}.TIME_UTC.OFFSET=9.00" in properties
 
     @pytest.mark.unit
     def test_build_indi_location_time_properties_converts_west_longitude():
@@ -29,8 +30,9 @@ try:
             utc_offset_hours=-7,
         )
 
-        assert "LX200 OnStep.GEOGRAPHIC_COORD.LONG=241.75" in properties
-        assert "LX200 OnStep.TIME_UTC.OFFSET=-7.00" in properties
+        device = sys_utils.DEFAULT_ONSTEP_DEVICE_NAME
+        assert f"{device}.GEOGRAPHIC_COORD.LONG=241.75" in properties
+        assert f"{device}.TIME_UTC.OFFSET=-7.00" in properties
 
     @pytest.mark.unit
     def test_format_onstep_location_display_matches_onstep_web_sign():
@@ -133,13 +135,30 @@ try:
         commands = sys_utils.build_onstep_lx200_location_time_commands(
             latitude=37.32361,
             longitude=126.82194,
+            elevation=15,
             utc_datetime="2026-06-30T14:15:06+00:00",
             utc_offset_hours=9,
         )
 
         assert commands[0] == ":St+37*19:25#"
         assert commands[1] == ":Sg-126*49:19#"
-        assert commands[2] == ":SG+09:00#"
+        assert commands[2] == ":Sv15#"
+        assert commands[3] == ":SG-09:00#"
+        assert commands[4] == ":SL23:15:06#"
+        assert commands[5] == ":SC06/30/26#"
+
+    @pytest.mark.unit
+    def test_build_onstep_lx200_location_time_commands_use_western_offset_sign():
+        commands = sys_utils.build_onstep_lx200_location_time_commands(
+            latitude=34,
+            longitude=-118.25,
+            utc_datetime="2026-06-30T13:45:12Z",
+            utc_offset_hours=-7,
+        )
+
+        assert commands[1] == ":Sg+118*15:00#"
+        assert commands[2] == ":SG+07:00#"
+        assert commands[3] == ":SL06:45:12#"
 
     @pytest.mark.unit
     def test_wpa_supplicant_parsing():

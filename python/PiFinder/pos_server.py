@@ -14,15 +14,18 @@ import logging
 import math
 import queue as queue_module
 import re
+import datetime
+import json
 from multiprocessing import Queue
 from typing import Optional, Tuple, Union
 import numpy as np
 import quaternion
-from PiFinder import config
+from PiFinder import config, utils
 from PiFinder.calc_utils import ra_to_deg, dec_to_deg, sf_utils
 from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObject
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.pointing_model.imu_dead_reckoning import ImuDeadReckoning
+from PiFinder.state import Location as StateLocation
 from PiFinder.types.positioning import AlignCancel, AlignOnRaDec
 from skyfield.positionlib import position_of_radec
 import sys
@@ -46,11 +49,21 @@ _POINTING_CACHE_SECONDS = 0.2
 _CONFIG_RELOAD_SECONDS = 1.0
 _ALIGN_TIMEOUT_SECONDS = 2.0
 _GUIDE_LEASE_SECONDS = 1.2
+_MOUNT_STATUS_CACHE_SECONDS = 0.2
+_SKYSAFARI_SLEW_GRACE_SECONDS = 2.0
+_SKYSAFARI_SLEW_STATES = {"slewing", "refine_wait", "refine_sent"}
 _pointing_cache = {
     "time": 0.0,
     "value": None,
 }
+_mount_status_cache = {
+    "time": 0.0,
+    "value": None,
+}
+_skysafari_slew_started_at = 0.0
+_skysafari_saw_mount_slew = False
 _config_last_loaded = 0.0
+_fallback_log_last = 0.0
 _GUIDE_DIRECTIONS = {
     "Mn": "north",
     "Ms": "south",
@@ -74,6 +87,15 @@ def _get_config_option(option: str, default):
             logger.warning("Could not reload SkySafari server config", exc_info=True)
         _config_last_loaded = now
     return pos_server_config.get_option(option, default)
+
+
+def _log_fallback_skip(reason: str) -> None:
+    global _fallback_log_last
+    now = time.monotonic()
+    if now - _fallback_log_last < 5.0:
+        return
+    _fallback_log_last = now
+    logger.info("SkySafari IMU fallback unavailable: %s", reason)
 
 
 def _format_ra_degrees(ra_degrees: float) -> str:
@@ -147,17 +169,51 @@ def _imu_altaz_degrees(
     return alt, az
 
 
+def _configured_default_location() -> Optional[StateLocation]:
+    configured = _get_config_option("locations.default", None)
+    if configured is None:
+        return None
+    return StateLocation(
+        lat=float(configured.latitude),
+        lon=float(configured.longitude),
+        altitude=float(configured.height),
+        source=f"CONFIG: {configured.name}",
+        lock=True,
+        lock_type=2,
+        error_in_m=float(configured.error_in_m),
+    )
+
+
+def _observer_location(shared_state) -> Optional[StateLocation]:
+    location = shared_state.location()
+    if location and location.lock:
+        return location
+    configured = _configured_default_location()
+    if configured:
+        return configured
+    return location
+
+
 def _imu_fallback_pointing_jnow(shared_state, dt) -> Optional[Tuple[float, float]]:
     if not _get_config_option("skysafari_imu_fallback", True):
+        _log_fallback_skip("disabled")
         return None
 
-    location = shared_state.location()
-    if not location or not location.lock or not dt:
+    location = _observer_location(shared_state)
+    if not location:
+        _log_fallback_skip("no location")
+        return None
+    if not location.lock:
+        _log_fallback_skip("location unlocked")
+        return None
+    if not dt:
+        _log_fallback_skip("no datetime")
         return None
 
     screen_direction = _get_config_option("screen_direction", "right")
     altaz = _imu_altaz_degrees(shared_state.imu(), screen_direction)
     if altaz is None:
+        _log_fallback_skip("no calibrated IMU orientation")
         return None
 
     alt, az = altaz
@@ -165,12 +221,19 @@ def _imu_fallback_pointing_jnow(shared_state, dt) -> Optional[Tuple[float, float
     return sf_utils.altaz_to_radec(alt, az, dt)
 
 
+def _current_datetime(shared_state):
+    dt = shared_state.datetime()
+    if dt is not None:
+        return dt
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def _current_pointing_jnow(shared_state) -> Optional[Tuple[float, float]]:
     now = time.monotonic()
     if now - _pointing_cache["time"] <= _POINTING_CACHE_SECONDS:
         return _pointing_cache["value"]
 
-    dt = shared_state.datetime()
+    dt = _current_datetime(shared_state)
     pointing = _solved_pointing_jnow(shared_state, dt)
     if pointing is None:
         pointing = _imu_fallback_pointing_jnow(shared_state, dt)
@@ -188,7 +251,7 @@ def get_telescope_ra(shared_state, _):
     """
     pointing = _current_pointing_jnow(shared_state)
     if pointing is None:
-        return "+00*00'01"
+        return "00:00:00"
 
     ra_result = _format_ra_degrees(pointing[0])
     logger.debug("get_telescope_ra: RA result: %s", ra_result)
@@ -211,7 +274,48 @@ def get_telescope_dec(shared_state, _):
 
 
 def get_distance_bars(_shared_state, _input_str):
-    return "\x7f"
+    global _skysafari_slew_started_at, _skysafari_saw_mount_slew
+    status = _mount_control_status()
+    state = str((status or {}).get("state", ""))
+    now = time.monotonic()
+
+    if state in _SKYSAFARI_SLEW_STATES:
+        _skysafari_saw_mount_slew = True
+        return "\x7f"
+
+    if (
+        _skysafari_slew_started_at
+        and not _skysafari_saw_mount_slew
+        and now - _skysafari_slew_started_at < _SKYSAFARI_SLEW_GRACE_SECONDS
+    ):
+        return "\x7f"
+
+    _skysafari_slew_started_at = 0.0
+    _skysafari_saw_mount_slew = False
+    return ""
+
+
+def _mark_skysafari_slew_started() -> None:
+    global _skysafari_slew_started_at, _skysafari_saw_mount_slew
+    _skysafari_slew_started_at = time.monotonic()
+    _skysafari_saw_mount_slew = False
+
+
+def _mount_control_status() -> dict:
+    now = time.monotonic()
+    if now - _mount_status_cache["time"] <= _MOUNT_STATUS_CACHE_SECONDS:
+        return _mount_status_cache["value"] or {}
+
+    status_file = utils.data_dir / "mount_control_status.json"
+    try:
+        with open(status_file, encoding="utf-8") as status_in:
+            status = json.load(status_in)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        status = {}
+
+    _mount_status_cache["time"] = now
+    _mount_status_cache["value"] = status
+    return status
 
 
 def get_firmware_date(_shared_state, _input_str):
@@ -248,7 +352,15 @@ def respond_one(shared_state, input_str):
 
 
 def _mount_control_enabled() -> bool:
-    return bool(_get_config_option("mount_control", False) and mountcontrol_queue)
+    enabled = bool(_get_config_option("mount_control", False))
+    has_queue = mountcontrol_queue is not None
+    if not enabled or not has_queue:
+        logger.info(
+            "SkySafari mount-control unavailable: mount_control=%s queue=%s",
+            enabled,
+            has_queue,
+        )
+    return bool(enabled and has_queue)
 
 
 def _has_solved_pointing(shared_state) -> bool:
@@ -264,16 +376,20 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
     if not _mount_control_enabled():
         return False
     if not _get_config_option("skysafari_indi_goto", False):
+        logger.info("SkySafari INDI GoTo skipped; skysafari_indi_goto is off")
         return False
-    if not _has_solved_pointing(shared_state):
-        logger.info("SkySafari INDI GoTo skipped; PiFinder is not solved")
-        return False
+
+    has_solved_pointing = _has_solved_pointing(shared_state)
+    refine_after_goto = bool(_get_config_option("indi_goto_refine_once", False))
+    if refine_after_goto and not has_solved_pointing:
+        logger.info("SkySafari INDI GoTo queued without refine; PiFinder is not solved")
+        refine_after_goto = False
 
     command = {
         "type": "goto_target",
         "ra": ra_deg,
         "dec": dec_deg,
-        "refine_after_goto": bool(_get_config_option("indi_goto_refine_once", False)),
+        "refine_after_goto": refine_after_goto,
         "refine_accuracy_arcmin": float(
             _get_config_option("indi_goto_refine_accuracy_arcmin", 10.0)
         ),
@@ -421,9 +537,21 @@ def parse_sd_command(shared_state, input_str: str):
     logger.debug("Parsing sd command, match: %s, sr_result: %s", match, sr_result)
     if match and sr_result:
         sd_result = match
-        return handle_goto_command(shared_state, sr_result, match)
+        return "1"
     else:
         return "0"
+
+
+def handle_slew_command(shared_state, _input_str: str):
+    if sr_result and sd_result:
+        logger.info("SkySafari :MS# received; queuing GoTo for stored target")
+        handle_goto_command(shared_state, sr_result, sd_result)
+        _mark_skysafari_slew_started()
+        # LX200 :MS# returns 0 when the slew starts. 1 means "object below
+        # horizon", so do not forward the target-coordinate ACK here.
+        return "0"
+    logger.warning("SkySafari GoTo ignored; target coordinates are incomplete")
+    return "1"
 
 
 def handle_sync_command(shared_state, _input_str: str):
@@ -488,6 +616,31 @@ def extract_command(s):
     return match.group(1) if match else None
 
 
+def _pop_lx200_message(buffer: str) -> Tuple[Optional[str], str]:
+    ack_index = buffer.find("\x06")
+    command_index = buffer.find(":")
+
+    if ack_index != -1 and (command_index == -1 or ack_index < command_index):
+        return "\x06", buffer[ack_index + 1 :]
+
+    if command_index == -1:
+        return None, buffer[-1:] if buffer.endswith(":") else ""
+
+    if command_index > 0:
+        buffer = buffer[command_index:]
+
+    end_index = buffer.find("#")
+    if end_index == -1:
+        return None, buffer
+
+    return buffer[: end_index + 1], buffer[end_index + 1 :]
+
+
+def _format_lx200_response(out_data: str) -> bytes:
+    response = out_data if out_data in ("0", "1", "AT1") else out_data + "#"
+    return response.encode()
+
+
 lx_command_dict = {
     "D": get_distance_bars,
     "GD": get_telescope_dec,
@@ -510,7 +663,7 @@ lx_command_dict = {
     "RM": respond_none,  # Set slew rate to find
     "RC": respond_none,  # Set slew rate to center
     "RG": respond_none,  # Set slew rate to guide
-    "MS": respond_zero,  # Slew to object
+    "MS": handle_slew_command,  # Slew to object
     "Q": handle_guide_stop,  # Abort
     "U": respond_none,  # Precision toggle
     "Sd": parse_sd_command,  # Set declination
@@ -531,6 +684,7 @@ def handle_client(client_socket, shared_state):
     client_socket.settimeout(60)
     client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     is_stellarium = False
+    input_buffer = ""
 
     while True:
         try:
@@ -538,22 +692,27 @@ def handle_client(client_socket, shared_state):
             if not in_data:
                 break
 
+            input_buffer += in_data
             logging.debug("Received from skysafari: %s", in_data)
-            command = extract_command(in_data)
-            if command:
+            while input_buffer:
+                message, input_buffer = _pop_lx200_message(input_buffer)
+                if message is None:
+                    break
+
+                # Special case for the ACK command in the LX200 protocol sent by Stellarium.
+                if message == "\x06":
+                    is_stellarium = True
+                    # A indicates alt-az mode.
+                    client_socket.send("A".encode())
+                    continue
+
+                command = extract_command(message)
+                if not command:
+                    continue
                 command_handler = lx_command_dict.get(command, not_implemented)
-                out_data = command_handler(shared_state, in_data)
-                if out_data:
-                    response = (
-                        out_data if out_data in ("0", "1", "AT1") else out_data + "#"
-                    )
-                    client_socket.send(response.encode())
-            # Special case for the ACK command in the LX200 protocol sent by Stellarium
-            # No leading : for the ACK command but Stellarium leads all commands with #
-            elif in_data.endswith("\x06"):
-                is_stellarium = True
-                # A indicates alt-az mode
-                client_socket.send("A".encode())
+                out_data = command_handler(shared_state, message)
+                if out_data is not None:
+                    client_socket.send(_format_lx200_response(out_data))
         except socket.timeout:
             logging.warning("Connection timed out.")
             break

@@ -4,9 +4,10 @@ import ipaddress
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
 
 import pam
@@ -61,11 +62,15 @@ INDI_WEB_MANAGER_SERVICE = "indiwebmanager.service"
 DEFAULT_INDI_SERVER_HOST = "localhost"
 DEFAULT_INDI_SERVER_PORT = 7624
 DEFAULT_ONSTEP_NETWORK_PORT = 9999
-DEFAULT_ONSTEP_DEVICE_NAME = "LX200 OnStep"
+ONSTEPX_DEVICE_NAME = "LX200 OnStepX"
+LEGACY_ONSTEP_DEVICE_NAME = "LX200 OnStep"
+DEFAULT_ONSTEP_DEVICE_NAME = ONSTEPX_DEVICE_NAME
+DEFAULT_INDI_PROFILE_NAME = "MF_PiFinder"
+INDI_PROFILE_DB_PATH = utils.home_dir / ".indi" / "profiles.db"
 ONSTEP_CONNECTION_USB = "usb"
 ONSTEP_CONNECTION_NETWORK = "network"
 ONSTEP_LOCATION_CACHE_FILE = utils.data_dir / "onstep_location_cache.json"
-# The LX200 OnStep INDI driver may read site latitude/longitude back at minute
+# The LX200 OnStepX INDI driver may read site latitude/longitude back at minute
 # precision even when the device itself keeps seconds.
 ONSTEP_LOCATION_READBACK_TOLERANCE_DEGREES = (1.0 / 60.0) + 0.002
 ONSTEP_DISPLAY_PROPERTIES = [
@@ -99,6 +104,106 @@ BLUETOOTH_DEVICE_FIELD_RE = re.compile(
 )
 BLUETOOTH_MAC_RE = re.compile(r"^[0-9A-Fa-f:]{17}$")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def is_onstepx_device_name(device_name: str | None) -> bool:
+    return (device_name or "").strip().lower() == ONSTEPX_DEVICE_NAME.lower()
+
+
+def is_onstep_family_device_name(device_name: str | None) -> bool:
+    normalized = (device_name or "").strip().lower()
+    return normalized in {
+        ONSTEPX_DEVICE_NAME.lower(),
+        LEGACY_ONSTEP_DEVICE_NAME.lower(),
+    }
+
+
+def get_indi_profile_drivers(
+    profile_name: str | None = None,
+    profiles_db_path: Any = INDI_PROFILE_DB_PATH,
+) -> dict[str, Any]:
+    """Return the active INDI Web Manager profile and its driver labels."""
+    path = profiles_db_path
+    try:
+        if not os.path.exists(path):
+            return {"profile": "", "drivers": []}
+
+        with sqlite3.connect(str(path)) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            profile_row = None
+            if profile_name:
+                profile_row = cursor.execute(
+                    "select id, name from profile where name = ? limit 1",
+                    (profile_name,),
+                ).fetchone()
+
+            if profile_row is None:
+                profile_row = cursor.execute(
+                    "select id, name from profile where autostart = 1 order by id desc limit 1"
+                ).fetchone()
+
+            if profile_row is None:
+                profile_row = cursor.execute(
+                    "select id, name from profile where name = ? limit 1",
+                    (DEFAULT_INDI_PROFILE_NAME,),
+                ).fetchone()
+
+            if profile_row is None:
+                profile_row = cursor.execute(
+                    "select id, name from profile order by id desc limit 1"
+                ).fetchone()
+
+            if profile_row is None:
+                return {"profile": "", "drivers": []}
+
+            drivers = [
+                row["label"]
+                for row in cursor.execute(
+                    "select label from driver where profile = ? order by id",
+                    (profile_row["id"],),
+                )
+                if row["label"]
+            ]
+            return {"profile": profile_row["name"], "drivers": drivers}
+    except sqlite3.Error:
+        logger.exception("Could not read INDI profile database")
+        return {"profile": "", "drivers": []}
+
+
+def get_indi_profile_device_name(
+    profile_name: str | None = None,
+    fallback: str = DEFAULT_ONSTEP_DEVICE_NAME,
+) -> str:
+    """Return the telescope-like driver label from the active INDI profile."""
+    profile = get_indi_profile_drivers(profile_name=profile_name)
+    drivers = profile.get("drivers", [])
+    if not drivers:
+        return fallback
+
+    ignore_words = ("ccd", "camera", "focuser", "filter", "dome", "weather")
+    telescope_words = (
+        "telescope",
+        "mount",
+        "lx200",
+        "onstep",
+        "eqmod",
+        "celestron",
+        "skywatcher",
+        "ioptron",
+    )
+    for driver in drivers:
+        lowered = driver.lower()
+        if any(word in lowered for word in telescope_words) and not any(
+            word in lowered for word in ignore_words
+        ):
+            return driver
+
+    return drivers[0] if drivers else fallback
+
+
+def resolve_indi_device_name(device_name: str | None = None) -> str:
+    return (device_name or "").strip() or get_indi_profile_device_name()
 
 
 def parse_indi_utc_datetime(value: Any) -> datetime:
@@ -208,7 +313,11 @@ def format_onstep_location_display(
 
 
 def _onstep_property(properties: dict[str, Any], property_name: str) -> Any:
-    return properties.get(f"{DEFAULT_ONSTEP_DEVICE_NAME}.{property_name}")
+    suffix = f".{property_name}"
+    for key, value in properties.items():
+        if key.endswith(suffix):
+            return value
+    return None
 
 
 def write_onstep_location_cache(
@@ -352,32 +461,39 @@ def build_onstep_lx200_location_time_commands(
     latitude: float,
     longitude: float,
     utc_datetime: Any,
+    elevation: float | None = None,
     utc_offset_hours: float | None = None,
 ) -> list[str]:
     """Build OnStep/LX200 commands for exclusive direct site/time sync."""
     lat = float(latitude)
     onstep_lon = onstep_web_longitude_degrees(onstep_longitude_degrees(longitude))
     utc_dt = parse_indi_utc_datetime(utc_datetime)
-    local_dt = utc_dt.astimezone()
     offset = (
         local_utc_offset_hours(utc_dt)
         if utc_offset_hours is None
         else float(utc_offset_hours)
     )
+    local_dt = utc_dt.astimezone(timezone(timedelta(hours=offset)))
+    # OnStep :SG is the value added to local time to get UTC, so its sign is
+    # opposite of the usual local UTC offset used by INDI TIME_UTC.OFFSET.
+    onstep_offset = -offset
 
     lat_d, lat_m, lat_s = _dms_parts(lat)
     lon_d, lon_m, lon_s = _dms_parts(onstep_lon)
-    offset_sign = "+" if offset >= 0 else "-"
-    offset_minutes_total = int(round(abs(offset) * 60.0))
+    offset_sign = "+" if onstep_offset >= 0 else "-"
+    offset_minutes_total = int(round(abs(onstep_offset) * 60.0))
     offset_h, offset_m = divmod(offset_minutes_total, 60)
 
-    return [
+    commands = [
         f":St{'+' if lat >= 0 else '-'}{lat_d:02d}*{lat_m:02d}:{lat_s:02d}#",
         f":Sg{'+' if onstep_lon >= 0 else '-'}{lon_d:03d}*{lon_m:02d}:{lon_s:02d}#",
         f":SG{offset_sign}{offset_h:02d}:{offset_m:02d}#",
         f":SL{local_dt.hour:02d}:{local_dt.minute:02d}:{local_dt.second:02d}#",
         f":SC{local_dt.month:02d}/{local_dt.day:02d}/{local_dt.year % 100:02d}#",
     ]
+    if elevation is not None:
+        commands.insert(2, f":Sv{float(elevation):g}#")
+    return commands
 
 
 def build_indi_location_time_properties(
@@ -386,9 +502,10 @@ def build_indi_location_time_properties(
     elevation: float | None = None,
     utc_datetime: Any = None,
     utc_offset_hours: float | None = None,
-    device_name: str = DEFAULT_ONSTEP_DEVICE_NAME,
+    device_name: str | None = None,
 ) -> list[str]:
-    """Build LX200 OnStep INDI properties for site location and UTC time."""
+    """Build INDI properties for site location and UTC time."""
+    device_name = resolve_indi_device_name(device_name)
     properties: list[str] = []
 
     if latitude is not None and longitude is not None:
@@ -454,8 +571,9 @@ def _run_indi_command(args: list[str], timeout: float = 5.0) -> subprocess.Compl
 def get_indi_onstep_properties(
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
-    device_name: str = DEFAULT_ONSTEP_DEVICE_NAME,
+    device_name: str | None = None,
 ) -> dict[str, str]:
+    device_name = resolve_indi_device_name(device_name)
     property_names = [
         f"{device_name}.{property_name}" for property_name in ONSTEP_DISPLAY_PROPERTIES
     ]
@@ -493,8 +611,9 @@ def apply_indi_onstep_connection(
     network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
-    device_name: str = DEFAULT_ONSTEP_DEVICE_NAME,
+    device_name: str | None = None,
 ) -> dict[str, Any]:
+    device_name = resolve_indi_device_name(device_name)
     connection_type = connection_type.strip().lower()
     if connection_type not in {ONSTEP_CONNECTION_USB, ONSTEP_CONNECTION_NETWORK}:
         raise ValueError("Invalid OnStep connection type")
@@ -588,6 +707,164 @@ def apply_indi_onstep_properties(
         "stderr": result.stderr,
         "properties": properties,
     }
+
+
+def apply_indi_onstep_location_time(
+    latitude: float | None = None,
+    longitude: float | None = None,
+    elevation: float | None = None,
+    utc_datetime: Any = None,
+    utc_offset_hours: float | None = None,
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+    device_name: str | None = None,
+) -> dict[str, Any]:
+    """
+    Apply OnStep location/time using PyIndi vector updates.
+
+    indi_setprop sends number/text elements as individual updates on some
+    versions, which can zero unspecified GEOGRAPHIC_COORD elements. PyIndi keeps
+    the full vector intact, matching the live PiFinder INDI client path.
+    """
+    device_name = resolve_indi_device_name(device_name)
+    properties = build_indi_location_time_properties(
+        latitude=latitude,
+        longitude=longitude,
+        elevation=elevation,
+        utc_datetime=utc_datetime,
+        utc_offset_hours=utc_offset_hours,
+        device_name=device_name,
+    )
+    if not properties:
+        raise ValueError("No INDI location/time values were provided")
+
+    try:
+        import PyIndi  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise RuntimeError("PyIndi is not installed") from exc
+    from PiFinder.mountcontrol_indi import PiFinderIndiClient
+
+    coord_values: dict[str, float] = {}
+    if latitude is not None and longitude is not None:
+        coord_values = {
+            "LAT": float(latitude),
+            "LONG": onstep_longitude_degrees(float(longitude)),
+        }
+        if elevation is not None:
+            coord_values["ELEV"] = float(elevation)
+
+    time_values: dict[str, str] = {}
+    if utc_datetime is not None:
+        utc_dt = parse_indi_utc_datetime(utc_datetime)
+        offset_hours = (
+            local_utc_offset_hours(utc_dt)
+            if utc_offset_hours is None
+            else float(utc_offset_hours)
+        )
+        time_values = {
+            "UTC": utc_dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%S"),
+            "OFFSET": f"{offset_hours:.2f}",
+        }
+
+    client = PiFinderIndiClient()
+    client.setServer(server_host, server_port)
+    if not client.connectServer():
+        return {
+            "ok": False,
+            "returncode": 1,
+            "stdout": "",
+            "stderr": f"Could not connect to INDI server {server_host}:{server_port}",
+            "properties": properties,
+        }
+
+    try:
+        start = time.time()
+        device = None
+        while time.time() - start < 10.0:
+            if hasattr(client, "getDevice"):
+                try:
+                    device = client.getDevice(device_name)
+                except Exception:
+                    device = None
+                try:
+                    if (
+                        device is not None
+                        and device.getDeviceName() != device_name
+                    ):
+                        device = None
+                except Exception:
+                    device = None
+            if device is None:
+                device = client.get_telescope_device()
+                try:
+                    if (
+                        device is not None
+                        and device.getDeviceName() != device_name
+                    ):
+                        device = None
+                except Exception:
+                    device = None
+            if device is not None:
+                break
+            time.sleep(0.2)
+
+        if device is None:
+            return {
+                "ok": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": f"Could not find INDI device {device_name}",
+                "properties": properties,
+            }
+
+        if client._wait_for_property(device, "CONNECTION", timeout=2.0):
+            try:
+                connected = bool(device.isConnected())
+            except Exception:
+                connected = False
+            if not connected:
+                if not client.set_switch(device, "CONNECTION", "CONNECT"):
+                    return {
+                        "ok": False,
+                        "returncode": 1,
+                        "stdout": "",
+                        "stderr": f"Could not connect INDI device {device_name}",
+                        "properties": properties,
+                    }
+                start = time.time()
+                while time.time() - start < 8.0:
+                    try:
+                        if device.isConnected():
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(0.2)
+
+        if coord_values and not client.set_number(device, "GEOGRAPHIC_COORD", coord_values):
+            return {
+                "ok": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "Could not set INDI GEOGRAPHIC_COORD",
+                "properties": properties,
+            }
+        if time_values and not client.set_text(device, "TIME_UTC", time_values):
+            return {
+                "ok": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "Could not set INDI TIME_UTC",
+                "properties": properties,
+            }
+        return {
+            "ok": True,
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "properties": properties,
+        }
+    finally:
+        client.disconnectServer()
 
 
 def restart_indi_web_manager(timeout: float = 30.0) -> dict[str, Any]:
@@ -702,12 +979,13 @@ def sync_onstep_location_time_exclusive(
     Stop INDI, send LX200 site/time commands directly, then restart INDI.
 
     This is intentionally exclusive because OnStep TCP/serial ports should not be
-    shared with the running LX200 OnStep INDI driver.
+    shared with the running LX200 OnStepX INDI driver.
     """
     commands = build_onstep_lx200_location_time_commands(
         latitude=latitude,
         longitude=longitude,
         utc_datetime=utc_datetime,
+        elevation=elevation,
     )
     result: dict[str, Any] = {
         "ok": False,
@@ -741,6 +1019,19 @@ def sync_onstep_location_time_exclusive(
                 commands,
             )
         result["responses"] = responses
+        failed_responses = [
+            item
+            for item in responses
+            if str(item.get("response", "")).strip("#") != "1"
+        ]
+        if failed_responses:
+            raise RuntimeError(
+                "OnStep rejected LX200 site/time command(s): "
+                + ", ".join(
+                    f"{item['command']} -> {item.get('response', '') or '<no reply>'}"
+                    for item in failed_responses
+                )
+            )
         result["ok"] = True
     except Exception as exc:
         result["stderr"] = str(exc)
@@ -772,10 +1063,11 @@ def sync_onstep_location_time_exclusive(
 def connect_indi_onstep_driver(
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
-    device_name: str = DEFAULT_ONSTEP_DEVICE_NAME,
+    device_name: str | None = None,
     wait_timeout: float = 15.0,
 ) -> dict[str, Any]:
-    """Wait for the OnStep INDI driver and request CONNECTION.CONNECT."""
+    """Wait for the active INDI telescope driver and request CONNECTION.CONNECT."""
+    device_name = resolve_indi_device_name(device_name)
     deadline = time.monotonic() + wait_timeout
     properties: dict[str, str] = {}
     while time.monotonic() < deadline:
@@ -793,7 +1085,7 @@ def connect_indi_onstep_driver(
             "ok": False,
             "returncode": 1,
             "stdout": "",
-            "stderr": "LX200 OnStep CONNECTION property was not available",
+            "stderr": f"{device_name} CONNECTION property was not available",
             "properties": [],
         }
 
@@ -801,7 +1093,7 @@ def connect_indi_onstep_driver(
         return {
             "ok": True,
             "returncode": 0,
-            "stdout": "LX200 OnStep already connected",
+            "stdout": f"{device_name} already connected",
             "stderr": "",
             "properties": [f"{device_name}.CONNECTION.CONNECT=On"],
         }

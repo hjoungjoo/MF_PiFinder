@@ -92,3 +92,29 @@ def test_status_and_restart_menu_entries_exist():
     power_menu_names = [item["name"] for item in power_menu["items"]]
 
     assert "Restart" in power_menu_names
+
+
+@pytest.mark.smoke
+def test_imu_settings_menu_entries_exist():
+    """Test that IMU compass and calibration controls are discoverable."""
+    menu = menu_structure.pifinder_menu
+    settings_menu = None
+    for item in menu["items"]:
+        if item["name"] == "Settings":
+            settings_menu = item
+            break
+
+    assert settings_menu is not None, "Settings menu not found"
+
+    imu_menu = None
+    for item in settings_menu["items"]:
+        if item["name"] == "IMU Settings":
+            imu_menu = item
+            break
+
+    assert imu_menu is not None, "IMU Settings menu not found"
+
+    imu_menu_names = [item["name"] for item in imu_menu["items"]]
+    assert "Sensitivity" in imu_menu_names
+    assert "Compass" in imu_menu_names
+    assert "Calibration" in imu_menu_names

@@ -17,21 +17,41 @@ class DummyLocation:
 
 
 class DummyState:
-    def __init__(self, imu_sample, solution=None):
+    def __init__(self, imu_sample, solution=None, dt=None, location=None):
         self._imu_sample = imu_sample
         self._solution = solution
+        self._dt = dt
+        self._location = location
+        self._ui_state = DummyUiState()
 
     def location(self):
-        return DummyLocation()
+        return self._location or DummyLocation()
 
     def datetime(self):
-        return datetime.datetime(2026, 7, 1, 12, tzinfo=pytz.UTC)
+        if self._dt == "none":
+            return None
+        return self._dt or datetime.datetime(2026, 7, 1, 12, tzinfo=pytz.UTC)
 
     def imu(self):
         return self._imu_sample
 
     def solution(self):
         return self._solution
+
+    def ui_state(self):
+        return self._ui_state
+
+
+class DummyUiState:
+    def __init__(self):
+        self.recent = []
+        self.new_pushto = False
+
+    def add_recent(self, obj):
+        self.recent.append(obj)
+
+    def set_new_pushto(self, value):
+        self.new_pushto = value
 
 
 class DummySolution:
@@ -40,6 +60,21 @@ class DummySolution:
 
     def has_pointing(self):
         return self._has_pointing
+
+
+class DummyConfigLocation:
+    name = "Pungnap-dong"
+    latitude = 37.52704
+    longitude = 127.10936
+    height = 30.0
+    error_in_m = 1000.0
+
+
+class DummyUnlockedLocation:
+    lock = False
+    lat = 0.0
+    lon = 0.0
+    altitude = 0.0
 
 
 def test_imu_altaz_requires_calibrated_sample():
@@ -67,6 +102,41 @@ def test_imu_fallback_returns_jnow_radec_for_calibrated_sample():
     ra_deg, dec_deg = pointing
     assert 0.0 <= ra_deg < 360.0
     assert -90.0 <= dec_deg <= 90.0
+
+
+def test_current_datetime_falls_back_to_system_utc_when_pifinder_time_missing():
+    dt = pos_server._current_datetime(DummyState(None, dt="none"))
+
+    assert dt.tzinfo is not None
+    assert dt.utcoffset() == datetime.timedelta(0)
+
+
+def test_observer_location_uses_config_default_when_shared_location_unlocked(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"locations.default": DummyConfigLocation()}),
+    )
+    location = pos_server._observer_location(
+        DummyState(None, location=DummyUnlockedLocation())
+    )
+
+    assert location.lock is True
+    assert location.lat == pytest.approx(37.52704)
+    assert location.lon == pytest.approx(127.10936)
+    assert location.source == "CONFIG: Pungnap-dong"
+
+
+def test_get_telescope_ra_returns_lx200_ra_default_without_pointing():
+    pos_server._pointing_cache["time"] = 0.0
+    pos_server._pointing_cache["value"] = None
+
+    response = pos_server.get_telescope_ra(
+        DummyState(None, dt="none"), ":GR#"
+    )
+    assert response == "00:00:00"
 
 
 @pytest.mark.parametrize(
@@ -99,6 +169,9 @@ class DummyConfig:
 
     def get_option(self, option, default=None):
         return self.options.get(option, default)
+
+    def load_config(self):
+        return None
 
 
 def test_skysafari_guide_move_queues_indi_manual_motion(monkeypatch):
@@ -172,22 +245,183 @@ def test_skysafari_goto_queues_indi_goto_when_enabled_and_solved(monkeypatch):
     }
 
 
-def test_skysafari_goto_skips_indi_goto_until_solved(monkeypatch):
+def test_skysafari_goto_queues_indi_goto_without_refine_until_solved(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
     monkeypatch.setattr(
         pos_server,
         "pos_server_config",
-        DummyConfig({"mount_control": True, "skysafari_indi_goto": True}),
+        DummyConfig(
+            {
+                "mount_control": True,
+                "skysafari_indi_goto": True,
+                "indi_goto_refine_once": True,
+            }
+        ),
     )
 
     queued = pos_server._queue_indi_goto_if_enabled(
         DummyState(None, DummySolution(False)), 12.5, -34.25
     )
 
-    assert queued is False
+    assert queued is True
+    assert commands.get_nowait() == {
+        "type": "goto_target",
+        "ra": 12.5,
+        "dec": -34.25,
+        "refine_after_goto": False,
+        "refine_accuracy_arcmin": 10.0,
+    }
+
+
+def test_skysafari_ms_command_triggers_indi_goto(monkeypatch):
+    commands = queue.Queue()
+    ui_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "ui_queue", ui_commands, raising=False)
+    monkeypatch.setattr(pos_server, "is_stellarium", True)
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True, "skysafari_indi_goto": True}),
+    )
+
+    assert pos_server.parse_sr_command(None, ":Sr12:30:00#") == "1"
+    assert pos_server.parse_sd_command(DummyState(None), ":Sd-34*15:00#") == "1"
+
     with pytest.raises(queue.Empty):
         commands.get_nowait()
+
+    assert pos_server.handle_slew_command(DummyState(None), ":MS#") == "0"
+    assert ui_commands.get_nowait() == "push_object"
+    assert commands.get_nowait() == {
+        "type": "goto_target",
+        "ra": 187.5,
+        "dec": -34.25,
+        "refine_after_goto": False,
+        "refine_accuracy_arcmin": 10.0,
+    }
+
+
+def test_skysafari_ms_command_returns_error_without_target(monkeypatch):
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+
+    assert pos_server.handle_slew_command(DummyState(None), ":MS#") == "1"
+
+
+def test_distance_bars_follow_mount_control_slew_state(monkeypatch):
+    monkeypatch.setattr(pos_server, "_skysafari_slew_started_at", 0.0)
+    monkeypatch.setattr(pos_server, "_skysafari_saw_mount_slew", False)
+    monkeypatch.setattr(
+        pos_server, "_mount_control_status", lambda: {"state": "slewing"}
+    )
+
+    assert pos_server.get_distance_bars(None, ":D#") == "\x7f"
+
+    monkeypatch.setattr(
+        pos_server, "_mount_control_status", lambda: {"state": "connected"}
+    )
+    assert pos_server.get_distance_bars(None, ":D#") == ""
+
+
+def test_distance_bars_show_initial_grace_after_slew_command(monkeypatch):
+    monkeypatch.setattr(pos_server, "_skysafari_saw_mount_slew", False)
+    monkeypatch.setattr(pos_server, "_mount_control_status", lambda: {})
+
+    pos_server._mark_skysafari_slew_started()
+
+    assert pos_server.get_distance_bars(None, ":D#") == "\x7f"
+
+
+def test_handle_client_sends_empty_lx200_response(monkeypatch):
+    class FakeSocket:
+        def __init__(self):
+            self.recv_values = [b":D#", b""]
+            self.sent = []
+
+        def settimeout(self, _timeout):
+            return None
+
+        def setsockopt(self, *_args):
+            return None
+
+        def recv(self, _size):
+            return self.recv_values.pop(0)
+
+        def send(self, data):
+            self.sent.append(data)
+
+        def close(self):
+            return None
+
+    fake_socket = FakeSocket()
+    monkeypatch.setitem(pos_server.lx_command_dict, "D", lambda *_args: "")
+
+    pos_server.handle_client(fake_socket, DummyState(None))
+
+    assert fake_socket.sent == [b"#"]
+
+
+def test_handle_client_processes_multiple_lx200_commands_in_one_packet(monkeypatch):
+    class FakeSocket:
+        def __init__(self):
+            self.recv_values = [b":D#:GW#", b""]
+            self.sent = []
+
+        def settimeout(self, _timeout):
+            return None
+
+        def setsockopt(self, *_args):
+            return None
+
+        def recv(self, _size):
+            return self.recv_values.pop(0)
+
+        def send(self, data):
+            self.sent.append(data)
+
+        def close(self):
+            return None
+
+    fake_socket = FakeSocket()
+    monkeypatch.setitem(pos_server.lx_command_dict, "D", lambda *_args: "")
+    monkeypatch.setitem(pos_server.lx_command_dict, "GW", lambda *_args: "AT1")
+
+    pos_server.handle_client(fake_socket, DummyState(None))
+
+    assert fake_socket.sent == [b"#", b"AT1"]
+
+
+def test_handle_client_processes_split_lx200_command(monkeypatch):
+    class FakeSocket:
+        def __init__(self):
+            self.recv_values = [b":D", b"#", b""]
+            self.sent = []
+
+        def settimeout(self, _timeout):
+            return None
+
+        def setsockopt(self, *_args):
+            return None
+
+        def recv(self, _size):
+            return self.recv_values.pop(0)
+
+        def send(self, data):
+            self.sent.append(data)
+
+        def close(self):
+            return None
+
+    fake_socket = FakeSocket()
+    monkeypatch.setitem(pos_server.lx_command_dict, "D", lambda *_args: "")
+
+    pos_server.handle_client(fake_socket, DummyState(None))
+
+    assert fake_socket.sent == [b"#"]
 
 
 def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):

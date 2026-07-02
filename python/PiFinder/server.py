@@ -1010,7 +1010,13 @@ class Server:
         def _indi_config_values():
             cfg = config.Config()
             cfg.load_config()
+            profile_info = sys_utils.get_indi_profile_drivers()
+            device_name = sys_utils.get_indi_profile_device_name()
             return {
+                "indi_profile_name": profile_info.get("profile", ""),
+                "indi_profile_drivers": profile_info.get("drivers", []),
+                "device_name": device_name,
+                "is_onstepx_driver": sys_utils.is_onstepx_device_name(device_name),
                 "connection_type": cfg.get_option("onstep_connection_type", "network"),
                 "network_host": cfg.get_option("onstep_network_host", ""),
                 "network_port": int(cfg.get_option("onstep_network_port", 9999)),
@@ -1031,6 +1037,27 @@ class Server:
                 ),
             }
 
+        def _onstep_property_name(property_name, indi_cfg=None):
+            device_name = (
+                indi_cfg.get("device_name")
+                if indi_cfg is not None
+                else sys_utils.get_indi_profile_device_name()
+            )
+            return f"{device_name}.{property_name}"
+
+        def _onstep_property_on(property_name, indi_cfg=None):
+            return f"{_onstep_property_name(property_name, indi_cfg)}=On"
+
+        def _require_onstepx_driver(indi_cfg):
+            if not indi_cfg["is_onstepx_driver"]:
+                raise ValueError(
+                    _(
+                        "This INDI profile uses %(driver)s. OnStepX controls are "
+                        "available only when the active profile driver is LX200 OnStepX."
+                    )
+                    % {"driver": indi_cfg["device_name"] or _("unknown driver")}
+                )
+
         web_motion_lock = threading.Lock()
         web_motion_timer = {"timer": None, "token": 0}
 
@@ -1050,8 +1077,9 @@ class Server:
 
             try:
                 indi_cfg = _indi_config_values()
+                _require_onstepx_driver(indi_cfg)
                 result = sys_utils.apply_indi_onstep_properties(
-                    ["LX200 OnStep.TELESCOPE_ABORT_MOTION.ABORT=On"],
+                    [_onstep_property_on("TELESCOPE_ABORT_MOTION.ABORT", indi_cfg)],
                     server_host=indi_cfg["server_host"],
                     server_port=indi_cfg["server_port"],
                 )
@@ -1084,6 +1112,8 @@ class Server:
         def _pifinder_location_time_values():
             source = "Current time"
             lat = lon = elev = ""
+            location_locked = False
+            source_type = "none"
             try:
                 location = self.shared_state.location()
             except Exception:
@@ -1094,6 +1124,8 @@ class Server:
                 lon = location.lon
                 elev = location.altitude if location.altitude is not None else 0
                 source = "GPS / loaded location"
+                source_type = "gps_locked"
+                location_locked = True
             else:
                 cfg = config.Config()
                 cfg.load_config()
@@ -1102,7 +1134,8 @@ class Server:
                     lat = default_location.latitude
                     lon = default_location.longitude
                     elev = default_location.height
-                    source = f"Default location: {default_location.name}"
+                    source = f"Default location fallback: {default_location.name}"
+                    source_type = "default_location"
 
             return {
                 "latitude": lat,
@@ -1112,6 +1145,9 @@ class Server:
                 .replace(microsecond=0)
                 .strftime("%Y-%m-%dT%H:%M:%S"),
                 "source": source,
+                "source_type": source_type,
+                "location_locked": location_locked,
+                "lock_status": "Locked" if location_locked else "Not locked",
             }
 
         def _current_pifinder_utc_datetime():
@@ -1139,10 +1175,11 @@ class Server:
             latitude,
             longitude,
             tolerance=sys_utils.ONSTEP_LOCATION_READBACK_TOLERANCE_DEGREES,
+            indi_cfg=None,
         ):
             return sys_utils.onstep_location_readback_matches(
-                onstep_props.get("LX200 OnStep.GEOGRAPHIC_COORD.LAT"),
-                onstep_props.get("LX200 OnStep.GEOGRAPHIC_COORD.LONG"),
+                onstep_props.get(_onstep_property_name("GEOGRAPHIC_COORD.LAT", indi_cfg)),
+                onstep_props.get(_onstep_property_name("GEOGRAPHIC_COORD.LONG", indi_cfg)),
                 latitude,
                 longitude,
                 tolerance_degrees=tolerance,
@@ -1152,6 +1189,7 @@ class Server:
             return sys_utils.get_indi_onstep_properties(
                 server_host=indi_cfg["server_host"],
                 server_port=indi_cfg["server_port"],
+                device_name=indi_cfg["device_name"],
             )
 
         def _wait_for_onstep_location_match(indi_cfg, latitude, longitude, timeout=5.0):
@@ -1159,7 +1197,12 @@ class Server:
             onstep_props = {}
             while True:
                 onstep_props = _get_indi_onstep_properties(indi_cfg)
-                if _onstep_location_matches(onstep_props, latitude, longitude):
+                if _onstep_location_matches(
+                    onstep_props,
+                    latitude,
+                    longitude,
+                    indi_cfg=indi_cfg,
+                ):
                     return onstep_props
                 if time.monotonic() >= deadline:
                     return onstep_props
@@ -1182,6 +1225,7 @@ class Server:
                 serial_ports=sys_utils.list_onstep_serial_ports(),
                 ap_clients=ap_clients,
                 onstep_props=onstep_props,
+                onstep_device_name=indi_cfg["device_name"],
                 onstep_location_display=_onstep_location_display(onstep_props),
                 onstep_effective_location_display=_onstep_effective_location_display(
                     onstep_props
@@ -1223,6 +1267,8 @@ class Server:
             return jsonify(
                 {
                     "ok": True,
+                    "onstep_device_name": indi_cfg["device_name"],
+                    "is_onstepx_driver": indi_cfg["is_onstepx_driver"],
                     "pifinder_location_time": _pifinder_location_time_values(),
                     "onstep_props": onstep_props,
                     "onstep_location_display": _onstep_location_display(onstep_props),
@@ -1259,6 +1305,8 @@ class Server:
                 )
                 if refine_accuracy_arcmin <= 0:
                     raise ValueError("Refine accuracy must be greater than zero")
+                indi_cfg = _indi_config_values()
+                _require_onstepx_driver(indi_cfg)
                 result = sys_utils.apply_indi_onstep_connection(
                     connection_type=connection_type,
                     serial_port=serial_port,
@@ -1266,6 +1314,7 @@ class Server:
                     network_port=network_port,
                     server_host=server_host,
                     server_port=server_port,
+                    device_name=indi_cfg["device_name"],
                 )
                 if not result["ok"]:
                     raise RuntimeError(
@@ -1340,6 +1389,7 @@ class Server:
                 connect_result = sys_utils.connect_indi_onstep_driver(
                     server_host=indi_cfg["server_host"],
                     server_port=indi_cfg["server_port"],
+                    device_name=indi_cfg["device_name"],
                 )
                 if not connect_result["ok"]:
                     raise RuntimeError(
@@ -1360,14 +1410,18 @@ class Server:
         @auth_required
         def indi_park():
             action = (request.form.get("park_action") or "").strip()
+            indi_cfg = _indi_config_values()
             action_map = {
-                "PARK": ["LX200 OnStep.TELESCOPE_PARK.PARK=On"],
-                "UNPARK": ["LX200 OnStep.TELESCOPE_PARK.UNPARK=On"],
-                "SET_HOME": ["LX200 OnStep.TELESCOPE_HOME.SET=On"],
-                "RETURN_HOME": ["LX200 OnStep.TELESCOPE_HOME.GO=On"],
-                "SET_PARK": ["LX200 OnStep.TELESCOPE_PARK_OPTION.PARK_CURRENT=On"],
+                "PARK": [_onstep_property_on("TELESCOPE_PARK.PARK", indi_cfg)],
+                "UNPARK": [_onstep_property_on("TELESCOPE_PARK.UNPARK", indi_cfg)],
+                "SET_HOME": [_onstep_property_on("TELESCOPE_HOME.SET", indi_cfg)],
+                "RETURN_HOME": [_onstep_property_on("TELESCOPE_HOME.GO", indi_cfg)],
+                "SET_PARK": [
+                    _onstep_property_on("TELESCOPE_PARK_OPTION.PARK_CURRENT", indi_cfg)
+                ],
             }
             try:
+                _require_onstepx_driver(indi_cfg)
                 if action not in action_map:
                     raise ValueError("Invalid park action")
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
@@ -1388,16 +1442,18 @@ class Server:
         @auth_required
         def indi_slew_rate():
             try:
+                indi_cfg = _indi_config_values()
+                _require_onstepx_driver(indi_cfg)
                 rate = int(request.form.get("slew_rate") or "6")
                 if not 0 <= rate <= 9:
                     raise ValueError("Slew rate must be between 0 and 9")
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return _apply_indi_action_json(
-                        [f"LX200 OnStep.TELESCOPE_SLEW_RATE.{rate}=On"],
+                        [_onstep_property_on(f"TELESCOPE_SLEW_RATE.{rate}", indi_cfg)],
                         f"Slew rate {rate} selected",
                     )
                 return _apply_indi_action(
-                    [f"LX200 OnStep.TELESCOPE_SLEW_RATE.{rate}=On"],
+                    [_onstep_property_on(f"TELESCOPE_SLEW_RATE.{rate}", indi_cfg)],
                     _(f"Slew rate {rate} selected"),
                 )
             except (RuntimeError, ValueError) as e:
@@ -1410,30 +1466,40 @@ class Server:
         def indi_motion():
             direction = (request.form.get("direction") or "").strip().lower()
             keepalive = request.form.get("keepalive") in {"1", "true", "yes"}
+            indi_cfg = _indi_config_values()
             motion_map = {
-                "north": "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                "south": "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                "west": "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
-                "east": "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                "north": _onstep_property_on(
+                    "TELESCOPE_MOTION_NS.MOTION_NORTH", indi_cfg
+                ),
+                "south": _onstep_property_on(
+                    "TELESCOPE_MOTION_NS.MOTION_SOUTH", indi_cfg
+                ),
+                "west": _onstep_property_on(
+                    "TELESCOPE_MOTION_WE.MOTION_EAST", indi_cfg
+                ),
+                "east": _onstep_property_on(
+                    "TELESCOPE_MOTION_WE.MOTION_WEST", indi_cfg
+                ),
                 "northeast": [
-                    "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                    _onstep_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH", indi_cfg),
+                    _onstep_property_on("TELESCOPE_MOTION_WE.MOTION_WEST", indi_cfg),
                 ],
                 "northwest": [
-                    "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_NORTH=On",
-                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                    _onstep_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH", indi_cfg),
+                    _onstep_property_on("TELESCOPE_MOTION_WE.MOTION_EAST", indi_cfg),
                 ],
                 "southeast": [
-                    "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_WEST=On",
+                    _onstep_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH", indi_cfg),
+                    _onstep_property_on("TELESCOPE_MOTION_WE.MOTION_WEST", indi_cfg),
                 ],
                 "southwest": [
-                    "LX200 OnStep.TELESCOPE_MOTION_NS.MOTION_SOUTH=On",
-                    "LX200 OnStep.TELESCOPE_MOTION_WE.MOTION_EAST=On",
+                    _onstep_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH", indi_cfg),
+                    _onstep_property_on("TELESCOPE_MOTION_WE.MOTION_EAST", indi_cfg),
                 ],
-                "stop": "LX200 OnStep.TELESCOPE_ABORT_MOTION.ABORT=On",
+                "stop": _onstep_property_on("TELESCOPE_ABORT_MOTION.ABORT", indi_cfg),
             }
             try:
+                _require_onstepx_driver(indi_cfg)
                 if direction not in motion_map:
                     raise ValueError("Invalid motion command")
                 if keepalive:
@@ -1446,7 +1512,6 @@ class Server:
                 properties = motion_map[direction]
                 if isinstance(properties, str):
                     properties = [properties]
-                indi_cfg = _indi_config_values()
                 result = sys_utils.apply_indi_onstep_properties(
                     properties,
                     server_host=indi_cfg["server_host"],
@@ -1483,57 +1548,23 @@ class Server:
                 if not -180 <= lon <= 180:
                     raise ValueError("Longitude must be between -180 and 180")
                 utc_time = _current_pifinder_utc_datetime()
-                properties = sys_utils.build_indi_location_time_properties(
-                    latitude=lat,
-                    longitude=lon,
-                    elevation=elev,
-                    utc_datetime=utc_time,
-                )
                 indi_cfg = _indi_config_values()
-                result = sys_utils.apply_indi_onstep_properties(
-                    properties,
-                    server_host=indi_cfg["server_host"],
-                    server_port=indi_cfg["server_port"],
-                )
-                if not result.get("ok"):
-                    raise RuntimeError(
-                        result.get("stderr")
-                        or result.get("stdout")
-                        or "INDI location/time command failed"
-                    )
-
-                onstep_props = _wait_for_onstep_location_match(
-                    indi_cfg,
-                    lat,
-                    lon,
-                    timeout=2.0,
-                )
-                if _onstep_location_matches(onstep_props, lat, lon):
-                    sys_utils.write_onstep_location_cache(lat, lon, elev, utc_time)
-                    return _render_indi_page(
-                        _("Location and UTC time sent"),
-                        onstep_props=onstep_props,
-                    )
-
-                exclusive_result = sys_utils.sync_onstep_location_time_exclusive(
-                    connection_type=indi_cfg["connection_type"],
+                _require_onstepx_driver(indi_cfg)
+                sync_result = sys_utils.apply_indi_onstep_location_time(
                     latitude=lat,
                     longitude=lon,
                     elevation=elev,
                     utc_datetime=utc_time,
-                    network_host=indi_cfg["network_host"],
-                    network_port=indi_cfg["network_port"],
-                    serial_port=indi_cfg["serial_port"],
                     server_host=indi_cfg["server_host"],
                     server_port=indi_cfg["server_port"],
+                    device_name=indi_cfg["device_name"],
                 )
-                if not exclusive_result.get("ok"):
+                if not sync_result.get("ok"):
                     raise RuntimeError(
-                        "INDI driver did not apply the location and exclusive "
-                        "OnStep sync failed: "
+                        "INDI OnStep location/time sync failed: "
                         + (
-                            exclusive_result.get("stderr")
-                            or exclusive_result.get("stdout")
+                            sync_result.get("stderr")
+                            or sync_result.get("stdout")
                             or "unknown error"
                         )
                     )
@@ -1544,15 +1575,23 @@ class Server:
                     lon,
                     timeout=8.0,
                 )
-                if not _onstep_location_matches(onstep_props, lat, lon):
-                    raise RuntimeError(
-                        "Exclusive OnStep sync completed, but the driver still "
-                        "does not report the requested location"
+                if not _onstep_location_matches(
+                    onstep_props,
+                    lat,
+                    lon,
+                    indi_cfg=indi_cfg,
+                ):
+                    logger.warning(
+                        "Direct LX200 OnStep sync completed, but INDI readback "
+                        "does not match requested location: lat=%s lon=%s props=%s",
+                        lat,
+                        lon,
+                        onstep_props,
                     )
                 sys_utils.write_onstep_location_cache(lat, lon, elev, utc_time)
 
                 return _render_indi_page(
-                    _("Location and UTC time sent via exclusive OnStep sync"),
+                    _("Location and UTC time sent via INDI"),
                     onstep_props=onstep_props,
                 )
             except (RuntimeError, ValueError) as e:

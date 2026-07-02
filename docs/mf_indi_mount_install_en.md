@@ -43,6 +43,38 @@ INDI_VERSION=v2.1.6 INDI_3RDPARTY_VERSION=v2.1.6.2 JOBS=2 bash scripts/install_i
 
 `JOBS=2` is the recommended default on Raspberry Pi 4 to keep memory use conservative. On Raspberry Pi 5 or CM5, `JOBS=3` or `JOBS=4` can reduce build time if cooling and power are stable.
 
+### Pi 4/Pi 5 Shared Binary Archive Install
+
+Instead of building from source, you can install a prebuilt Bookworm 64-bit/aarch64 archive:
+
+```bash
+cd ~/PiFinder
+bash scripts/install_indi_mount_archive.sh dist/mf-pifinder-indi-bookworm-arm64-v2.2.3.1-current.tar.gz
+```
+
+The main PiFinder setup script can use the same archive installer:
+
+```bash
+cd ~
+PIFINDER_INDI_ARCHIVE="$HOME/PiFinder/dist/mf-pifinder-indi-bookworm-arm64-v2.2.3.1-current.tar.gz" \
+  bash "$HOME/PiFinder/pifinder_setup.sh"
+```
+
+`PIFINDER_INSTALL_INDI_ARCHIVE` defaults to `auto`. If a `dist/mf-pifinder-indi-bookworm-arm64-*.tar.gz` file exists or `PIFINDER_INDI_ARCHIVE` is set, the setup script installs INDI support. If no archive is found, setup continues with the normal PiFinder install only. To force-disable the archive installer:
+
+```bash
+PIFINDER_INSTALL_INDI_ARCHIVE=false bash "$HOME/PiFinder/pifinder_setup.sh"
+```
+
+To create a new binary archive from the currently installed build:
+
+```bash
+cd ~/PiFinder
+bash scripts/package_indi_mount_archive.sh
+```
+
+The latest source-build script strips `-march=native`, `-mcpu=*`, and `-mtune=*`, then uses `-march=armv8-a` so a build made on Raspberry Pi 5 stays compatible with Raspberry Pi 4.
+
 ## Configure The Mount Driver
 
 Open INDI Web Manager:
@@ -59,35 +91,38 @@ http://<pifinder-ip>:8624
 
 Create a profile, choose the correct telescope driver, enable Auto Start and Auto Connect if desired, then start the profile. Common drivers include EQMod, LX200, iOptron, Celestron, and Telescope Simulator.
 
-LX200 OnStep connection settings can be configured from the PiFinder web UI:
+When the active INDI profile uses `LX200 OnStepX`, its connection settings can be configured from the PiFinder web UI:
 
 ```text
-INDI > LX200 OnStep Driver Setup
+INDI > LX200 OnStepX Driver Connection
 ```
 
 For USB connections, choose a detected `/dev/serial/by-id`, `/dev/ttyUSB*`, or `/dev/ttyACM*` port, or enter the serial port manually. For network connections, choose an IP from the AP connected-device list, or enter a host/IP and TCP port manually when the device is not listed. The default OnStep network TCP port is `9999`.
 
 ## PiFinder INDI Web Menu
 
-The PiFinder web UI now has a dedicated `INDI` top-level menu. This page links to INDI Web Manager, shows LX200 OnStep driver state, and provides basic OnStep control actions.
+The PiFinder web UI now has a dedicated `INDI` top-level menu. This page links to INDI Web Manager and reads the active driver name from the running INDI profile. OnStepX-specific setup and control sections are shown only when that active driver is `LX200 OnStepX`.
 
 ### Current INDI Driver State
 
-This section shows the current INDI driver connection mode, serial/network settings, OnStep location, and OnStep UTC time. These values appear after the INDI profile is started and the LX200 OnStep driver is loaded.
+This section shows the active INDI profile, active driver, and available driver properties. OnStepX connection mode, serial/network settings, OnStep location, and OnStep UTC time appear after the profile is started and the `LX200 OnStepX` driver is loaded.
 
 ### Location And Time
 
-The `Location and Time` section sends PiFinder's current location and UTC time to OnStep.
+The `Location and Time` section is shown for `LX200 OnStepX` and sends PiFinder's current location and UTC time to OnStep.
 
 - If PiFinder has a GPS lock, it uses the GPS/loaded location.
-- If there is no GPS lock, it uses the default location from PiFinder `Locations`.
+- If there is no GPS lock, it shows `GPS Lock: Not locked` and uses the default location from PiFinder `Locations` as `Location to Send`.
 - The UTC time field keeps ticking while the page is open.
 - `Reload Current Values` refreshes the PiFinder location/time and the displayed OnStep location/time without leaving the page.
 - When `Send Location and Time` is pressed, the server recalculates PiFinder system UTC at the moment the request is received and sends that value to OnStep. The final transmitted time is therefore based on PiFinder, not on the phone or browser clock.
+- LX200 OnStepX is the MF PiFinder custom INDI driver. Location/time sync uses full INDI `GEOGRAPHIC_COORD` and `TIME_UTC` vector updates, and the driver converts those values to OnStep LX200 commands internally.
+- Avoid partial `indi_setprop` CLI writes for these vectors. PiFinder uses PyIndi full-vector updates.
+- In a UTC+9 environment such as Korea, PiFinder sends INDI `TIME_UTC.OFFSET=+9.00`, and the driver converts it to the OnStep `:SG-09:00#` convention.
 
 ### Mount Control
 
-The `Mount Control` section provides simple LX200 OnStep initialize/park/manual-motion controls.
+The `Mount Control` section is shown for `LX200 OnStepX` and provides simple initialize/park/manual-motion controls.
 
 - The current Park/Unpark state is displayed.
 - `At Home`, `Return Home`, `Park`, `Unpark`, and `Set-Park` commands are available.

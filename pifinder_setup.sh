@@ -48,6 +48,62 @@ PIFINDER_REPO_DIR="${PIFINDER_HOME}/PiFinder"
 source "${PIFINDER_REPO_DIR}/pifinder_paths.sh"
 
 cd "${PIFINDER_REPO_DIR}"
+
+find_pifinder_indi_archive() {
+    local archives=()
+    shopt -s nullglob
+    archives=("${PIFINDER_REPO_DIR}"/dist/mf-pifinder-indi-bookworm-arm64-*.tar.gz)
+    shopt -u nullglob
+
+    if [[ "${#archives[@]}" -gt 0 ]]; then
+        printf "%s\n" "${archives[@]}" | sort | tail -n 1
+    fi
+}
+
+install_optional_indi_archive() {
+    local mode="${PIFINDER_INSTALL_INDI_ARCHIVE:-auto}"
+    local archive="${PIFINDER_INDI_ARCHIVE:-}"
+
+    mode="${mode,,}"
+    if [[ -z "${archive}" ]]; then
+        archive="$(find_pifinder_indi_archive || true)"
+    fi
+
+    case "${mode}" in
+        1|true|yes|on|archive)
+            if [[ -z "${archive}" ]]; then
+                echo "PIFINDER_INSTALL_INDI_ARCHIVE is enabled, but no INDI archive was found." >&2
+                echo "Set PIFINDER_INDI_ARCHIVE=/path/to/mf-pifinder-indi-bookworm-arm64.tar.gz." >&2
+                exit 1
+            fi
+            ;;
+        auto|"")
+            if [[ -z "${archive}" ]]; then
+                echo "No INDI binary archive found; skipping optional INDI mount support."
+                echo "To install it during setup, put the archive in ${PIFINDER_REPO_DIR}/dist or set PIFINDER_INDI_ARCHIVE."
+                return 0
+            fi
+            ;;
+        0|false|no|off|none|skip)
+            echo "Skipping optional INDI mount support."
+            return 0
+            ;;
+        *)
+            echo "Invalid PIFINDER_INSTALL_INDI_ARCHIVE value: ${mode}" >&2
+            echo "Use auto, true, or false." >&2
+            exit 1
+            ;;
+    esac
+
+    if [[ ! -f "${archive}" ]]; then
+        echo "INDI archive not found: ${archive}" >&2
+        exit 1
+    fi
+
+    echo "Installing optional INDI mount support from ${archive}"
+    bash "${PIFINDER_REPO_DIR}/scripts/install_indi_mount_archive.sh" "${archive}"
+}
+
 sudo python3 -m pip install --break-system-packages -r python/requirements.txt
 
 # Setup GPSD
@@ -131,5 +187,7 @@ for group in input video render dialout gpio i2c spi; do
         sudo usermod -aG "${group}" "${PIFINDER_USER}"
     fi
 done
+
+install_optional_indi_archive
 
 echo "PiFinder setup complete, please restart the Pi"

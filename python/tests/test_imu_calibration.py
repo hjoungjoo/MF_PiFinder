@@ -38,3 +38,8 @@ def test_snapshot_file_helpers(tmp_path):
     assert imu_calibration.load_snapshot(path) == snapshot
     assert imu_calibration.clear_snapshot(path) is True
     assert imu_calibration.clear_snapshot(path) is False
+
+
+def test_tracking_calibration_uses_gyro_level_when_compass_is_partial():
+    assert imu_calibration.tracking_calibration_level((3, 3, 0, 0)) == 3
+    assert imu_calibration.tracking_calibration_level((0, 2, 3, 3)) == 2
