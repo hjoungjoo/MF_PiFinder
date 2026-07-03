@@ -746,6 +746,25 @@ def test_backlash_eq_ra_plan_does_not_cos_correct():
     assert 4.9 < altaz_plan["commanded_degrees"] < 5.1
 
 
+def test_backlash_eq_position_deltas_are_axis_specific():
+    mount = DummyMountControl()
+
+    dec_plan = mount._axis_goto_plan("dec", 10.0, 60.0, 5.0, "eq")
+
+    assert dec_plan["target_ra"] == 10.0
+    assert dec_plan["target_dec"] == 65.0
+    assert dec_plan["commanded_degrees"] == 5.0
+    assert dec_plan["signed_move_degrees"] == 5.0
+    assert (
+        mount._axis_position_delta_degrees("ra", 359.0, 10.0, 1.0, 10.0, "eq")
+        == 2.0
+    )
+    assert (
+        mount._axis_position_delta_degrees("dec", 10.0, 60.0, 10.0, 55.0, "eq")
+        == 5.0
+    )
+
+
 def test_backlash_roundtrip_uses_outward_position_for_reverse(monkeypatch):
     mount = DummyMountControl(shared_state=object())
     cfg = mount._backlash_axis_config("ra")
