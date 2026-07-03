@@ -109,21 +109,21 @@ msgstr "고정 안됨"
 #: python/PiFinder/server.py:241 python/views/base.html:17
 #: python/views/base.html:28
 msgid "Home"
-msgstr "Home"
+msgstr "홈"
 
 #: python/PiFinder/server.py:269 python/PiFinder/server.py:277
 #: python/views/login.html:31
 msgid "Login"
-msgstr "Login"
+msgstr "로그인"
 
 #: python/PiFinder/server.py:271
 msgid "Invalid Password"
-msgstr "Invalid Password"
+msgstr "비밀번호가 올바르지 않습니다"
 
 #: python/PiFinder/server.py:283 python/views/base.html:18
 #: python/views/base.html:29
 msgid "Remote"
-msgstr "Remote"
+msgstr "원격"
 
 #: python/PiFinder/server.py:289 python/PiFinder/ui/menu_structure.py:1098
 msgid "Advanced"
@@ -2464,15 +2464,39 @@ msgstr "GPS time lock"
 
 #: python/views/base.html:19 python/views/base.html:30
 msgid "Network Setup"
-msgstr "Network Setup"
+msgstr "네트워크 설정"
 
 #: python/views/base.html:50
 msgid "PiFinder User Guide"
-msgstr "PiFinder User Guide"
+msgstr "PiFinder 사용자 가이드"
 
 #: python/views/base.html:51
 msgid "PiFinder Support Page"
-msgstr "PiFinder Support Page"
+msgstr "PiFinder 지원 페이지"
+
+#: python/views/base.html
+msgid "Fullscreen"
+msgstr "전체화면"
+
+#: python/views/base.html
+msgid "Resume Fullscreen"
+msgstr "전체화면 복귀"
+
+#: python/views/base.html
+msgid "Theme"
+msgstr "테마"
+
+#: python/views/base.html
+msgid "Web theme"
+msgstr "웹 테마"
+
+#: python/views/base.html
+msgid "Gray"
+msgstr "회색"
+
+#: python/views/base.html
+msgid "Red Night"
+msgstr "적색 야간"
 
 #: python/views/edit_eyepiece.html:7
 msgid "Add a new eyepiece"

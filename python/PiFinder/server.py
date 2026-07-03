@@ -21,18 +21,24 @@ from PiFinder.equipment import Telescope, Eyepiece
 from PiFinder.keyboard_interface import KeyboardInterface
 from PiFinder.multiproclogging import MultiprocLogging
 
-from flask import Flask, request, jsonify, send_file, redirect, session, make_response
-from urllib.parse import quote
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    send_file,
+    redirect,
+    session,
+    make_response,
+    has_request_context,
+)
+from urllib.parse import quote, urlparse
 from flask_babel import Babel, gettext  # type: ignore[import-untyped]
 from werkzeug.routing import IntegerConverter
 from waitress import serve as waitress_serve
 
 from PiFinder import i18n  # noqa: F401
 
-# Type annotation for the global _ function installed by gettext.install()
-import builtins
-
-_ = builtins._  # type: ignore[attr-defined]
+_ = gettext
 
 
 # Custom converter to handle negative integers in Flask routes
@@ -49,6 +55,33 @@ logs_logger = logging.getLogger("Server.Logs")
 SESSION_SECRET = str(uuid.uuid4())
 WEB_MOTION_LEASE_SECONDS = 1.2
 WEB_MOTION_KEEPALIVE_INTERVAL = 0.4
+WEB_LANGUAGE_COOKIE = "pifinder_web_language"
+DEFAULT_WEB_LANGUAGE = "en"
+SUPPORTED_WEB_LANGUAGES = ("en", "de", "es", "fr", "ko", "zh")
+WEB_LANGUAGE_OPTIONS = (
+    ("en", "English"),
+    ("ko", "한국어"),
+    ("de", "Deutsch"),
+    ("fr", "Français"),
+    ("es", "Español"),
+    ("zh", "中文"),
+)
+
+
+def normalize_web_language(language):
+    if not language:
+        return ""
+    normalized = str(language).replace("_", "-").split("-", 1)[0].lower()
+    return normalized if normalized in SUPPORTED_WEB_LANGUAGES else ""
+
+
+def safe_redirect_target(target):
+    if not target:
+        return "/"
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc or not target.startswith("/"):
+        return "/"
+    return target
 
 
 def auth_required(func):
@@ -89,9 +122,28 @@ class MockSharedState:
 
 
 def server_locale():
-    # Try to get from user preferences, session, or accept languages
-    # For now, default to English
-    return request.accept_languages.best_match(["en", "fr", "de", "es"]) or "en"
+    if not has_request_context():
+        return DEFAULT_WEB_LANGUAGE
+
+    selected_language = normalize_web_language(session.get("web_language"))
+    if selected_language:
+        return selected_language
+
+    selected_language = normalize_web_language(request.cookies.get(WEB_LANGUAGE_COOKIE))
+    if selected_language:
+        session["web_language"] = selected_language
+        return selected_language
+
+    return (
+        request.accept_languages.best_match(SUPPORTED_WEB_LANGUAGES)
+        or DEFAULT_WEB_LANGUAGE
+    )
+
+
+def web_language_next_path():
+    if not has_request_context():
+        return "/"
+    return request.full_path if request.query_string else request.path
 
 
 class Server:
@@ -147,6 +199,10 @@ class Server:
 
         app = Flask(__name__, template_folder=views2_path)
         app.secret_key = SESSION_SECRET
+        app.config["BABEL_DEFAULT_LOCALE"] = DEFAULT_WEB_LANGUAGE
+        app.config["BABEL_TRANSLATION_DIRECTORIES"] = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "locale")
+        )
         # Register the custom signed integer converter
         app.url_map.converters["signed_int"] = SignedIntConverter
 
@@ -159,10 +215,10 @@ class Server:
         # Configure Jinja2 environment for i18n
         app.jinja_env.add_extension("jinja2.ext.i18n")
 
-        # Use PiFinder's global gettext function in templates
-        import builtins
-
-        app.jinja_env.globals["_"] = builtins._
+        app.jinja_env.globals["_"] = gettext
+        app.jinja_env.globals["current_web_language"] = server_locale
+        app.jinja_env.globals["web_language_options"] = WEB_LANGUAGE_OPTIONS
+        app.jinja_env.globals["web_language_next"] = web_language_next_path
 
         # # Create a simple gettext function for templates that works without translation files
         # def simple_gettext(text):
@@ -213,6 +269,22 @@ class Server:
                 mimetype="text/javascript",
             )
             response.headers["Service-Worker-Allowed"] = "/"
+            return response
+
+        @app.route("/language", methods=["POST"])
+        def language_update():
+            selected_language = normalize_web_language(request.form.get("language"))
+            if not selected_language:
+                selected_language = DEFAULT_WEB_LANGUAGE
+
+            session["web_language"] = selected_language
+            response = redirect(safe_redirect_target(request.form.get("next")))
+            response.set_cookie(
+                WEB_LANGUAGE_COOKIE,
+                selected_language,
+                max_age=365 * 24 * 60 * 60,
+                samesite="Lax",
+            )
             return response
 
         @app.route("/")

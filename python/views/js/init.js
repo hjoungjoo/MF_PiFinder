@@ -106,6 +106,13 @@
       applyTheme(this.value);
     });
 
+    $('.pf-language-select').on('change', function() {
+      $('.pf-language-select').val(this.value);
+      if (this.form) {
+        this.form.submit();
+      }
+    });
+
     $('.pf-fullscreen-button').on('click', function() {
       toggleFullscreen();
     });
