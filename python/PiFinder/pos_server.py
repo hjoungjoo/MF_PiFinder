@@ -485,6 +485,37 @@ def _queue_indi_sync_if_enabled(ra_deg: float, dec_deg: float) -> bool:
     return True
 
 
+def _multipoint_align_active() -> bool:
+    session = _mount_control_status().get("multipoint_align")
+    if not isinstance(session, dict):
+        return False
+    return bool(session.get("active"))
+
+
+def _queue_multipoint_align_confirm_if_active(ra_deg: float, dec_deg: float) -> bool:
+    if not _multipoint_align_active():
+        return False
+    if not _mount_control_enabled():
+        return False
+
+    mountcontrol_queue.put(
+        {
+            "type": "multipoint_align_confirm",
+            "ra": ra_deg,
+            "dec": dec_deg,
+            "source": "skysafari",
+        }
+    )
+    logger.info(
+        "SkySafari sync routed to INDI multi-point alignment: RA %.4f Dec %.4f",
+        ra_deg,
+        dec_deg,
+    )
+    if console_queue is not None:
+        console_queue.put("INDI Multi Align Point")
+    return True
+
+
 def _set_imu_alignment_from_target_if_no_solve(
     shared_state, ra_deg: float, dec_deg: float
 ) -> bool:
@@ -695,6 +726,9 @@ def handle_sync_command(shared_state, _input_str: str):
         return "No target."
 
     ra_deg, dec_deg = target
+    if _queue_multipoint_align_confirm_if_active(ra_deg, dec_deg):
+        return "Coordinates matched."
+
     has_solved_pointing = _has_solved_pointing(shared_state)
     pifinder_aligned = False
     imu_aligned = False

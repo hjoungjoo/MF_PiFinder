@@ -74,6 +74,10 @@ ONSTEP_LOCATION_CACHE_FILE = utils.data_dir / "onstep_location_cache.json"
 # The LX200 OnStepX INDI driver may read site latitude/longitude back at minute
 # precision even when the device itself keeps seconds.
 ONSTEP_LOCATION_READBACK_TOLERANCE_DEGREES = (1.0 / 60.0) + 0.002
+ONSTEP_BACKLASH_RA_PROPERTY = "Backlash.Backlash RA"
+ONSTEP_BACKLASH_DE_PROPERTY = "Backlash.Backlash DEC"
+ONSTEP_BACKLASH_RA_FALLBACK_PROPERTIES = (ONSTEP_BACKLASH_RA_PROPERTY, "Backlash.RA")
+ONSTEP_BACKLASH_DE_FALLBACK_PROPERTIES = (ONSTEP_BACKLASH_DE_PROPERTY, "Backlash.DE")
 ONSTEP_DISPLAY_PROPERTIES = [
     "CONNECTION.CONNECT",
     "CONNECTION_MODE.CONNECTION_SERIAL",
@@ -87,16 +91,66 @@ ONSTEP_DISPLAY_PROPERTIES = [
     "GEOGRAPHIC_COORD.ELEV",
     "TELESCOPE_PARK.PARK",
     "TELESCOPE_PARK.UNPARK",
+    "OnStep Status.Park",
+    "OnStep Status.Tracking",
+    "OnStep Status.:GU# return",
+    "TELESCOPE_TRACK_STATE.TRACK_ON",
+    "TELESCOPE_TRACK_STATE.TRACK_OFF",
     "TELESCOPE_HOME.SET",
     "TELESCOPE_HOME.GO",
     "TELESCOPE_PARK_OPTION.PARK_CURRENT",
     "TELESCOPE_PARK_OPTION.PARK_DEFAULT",
     "TELESCOPE_PARK_OPTION.PARK_WRITE_DATA",
     "TELESCOPE_PARK_OPTION.PARK_PURGE_DATA",
-    "Backlash.DE",
-    "Backlash.RA",
+    *ONSTEP_BACKLASH_DE_FALLBACK_PROPERTIES,
+    *ONSTEP_BACKLASH_RA_FALLBACK_PROPERTIES,
     *[f"TELESCOPE_SLEW_RATE.{rate}" for rate in range(10)],
 ]
+
+
+def parse_onstep_home_park_state(
+    status_text: str | None = "",
+    park_switch: str | None = "",
+    unpark_switch: str | None = "",
+    raw_status: str | None = "",
+) -> dict[str, str]:
+    """Split OnStep's combined home/park text into explicit UI states."""
+    text = (status_text or "").strip()
+    lower_text = text.lower()
+
+    if "waiting at home" in lower_text:
+        home_state = "Waiting at Home"
+    elif "home" in lower_text:
+        home_state = "At Home"
+    elif text:
+        home_state = "Not at Home"
+    else:
+        home_state = "Unknown"
+
+    if "failed" in lower_text:
+        park_state = "Parking Failed"
+    elif "progress" in lower_text or (
+        "parking" in lower_text and "parked" not in lower_text
+    ):
+        park_state = "Parking"
+    elif "unparked" in lower_text:
+        park_state = "Unparked"
+    elif "parked" in lower_text:
+        park_state = "Parked"
+    elif (park_switch or "").strip() == "On":
+        park_state = "Parked"
+    elif (unpark_switch or "").strip() == "On":
+        park_state = "Unparked"
+    else:
+        park_state = "Unknown"
+
+    return {
+        "home_state": home_state,
+        "park_state": park_state,
+        "driver_status": text,
+        "raw_status": (raw_status or "").strip(),
+    }
+
 
 BLUETOOTHCTL_COMMAND = "bluetoothctl"
 BLUETOOTH_DEVICE_RE = re.compile(
@@ -712,6 +766,101 @@ def apply_indi_onstep_properties(
         "stderr": result.stderr,
         "properties": properties,
     }
+
+
+def apply_indi_onstep_backlash(
+    backlash_ra: int,
+    backlash_de: int,
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+    device_name: str | None = None,
+) -> dict[str, Any]:
+    """
+    Apply OnStep backlash as a full INDI number vector.
+
+    LX200 OnStep expects both Backlash vector elements in the same update before
+    it sends :$BD/:$BR to the controller. Some indi_setprop versions send the
+    elements one at a time, so use PyIndi here just like location/time sync.
+    """
+    device_name = resolve_indi_device_name(device_name)
+    backlash_ra = int(backlash_ra)
+    backlash_de = int(backlash_de)
+    properties = [
+        f"{device_name}.{ONSTEP_BACKLASH_RA_PROPERTY}={backlash_ra}",
+        f"{device_name}.{ONSTEP_BACKLASH_DE_PROPERTY}={backlash_de}",
+    ]
+
+    if importlib.util.find_spec("PyIndi") is None:
+        raise RuntimeError("PyIndi is not installed")
+    from PiFinder.mountcontrol_indi import PiFinderIndiClient
+
+    client = PiFinderIndiClient()
+    client.setServer(server_host, server_port)
+    if not client.connectServer():
+        return {
+            "ok": False,
+            "returncode": 1,
+            "stdout": "",
+            "stderr": f"Could not connect to INDI server {server_host}:{server_port}",
+            "properties": properties,
+        }
+
+    try:
+        start = time.time()
+        device = None
+        while time.time() - start < 10.0:
+            if hasattr(client, "getDevice"):
+                try:
+                    device = client.getDevice(device_name)
+                except Exception:
+                    device = None
+                try:
+                    if device is not None and device.getDeviceName() != device_name:
+                        device = None
+                except Exception:
+                    device = None
+            if device is None:
+                device = client.get_telescope_device()
+                try:
+                    if device is not None and device.getDeviceName() != device_name:
+                        device = None
+                except Exception:
+                    device = None
+            if device is not None:
+                break
+            time.sleep(0.2)
+
+        if device is None:
+            return {
+                "ok": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": f"Could not find INDI device {device_name}",
+                "properties": properties,
+            }
+
+        if not client.set_number(
+            device,
+            "Backlash",
+            {"Backlash RA": float(backlash_ra), "Backlash DEC": float(backlash_de)},
+        ):
+            return {
+                "ok": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "Could not set INDI Backlash vector",
+                "properties": properties,
+            }
+
+        return {
+            "ok": True,
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "properties": properties,
+        }
+    finally:
+        client.disconnectServer()
 
 
 def apply_indi_onstep_location_time(

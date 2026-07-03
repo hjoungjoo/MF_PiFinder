@@ -109,6 +109,40 @@ def test_indi_backlash_controls_are_present():
     assert '@app.route("/indi/backlash/auto", methods=["POST"])' in server_py
 
 
+def test_indi_multipoint_align_controls_are_present():
+    indi_html = (VIEWS_DIR / "indi_mount.html").read_text()
+    server_py = SERVER_PATH.read_text()
+
+    assert 'id="indi_multipoint_align_form"' in indi_html
+    assert 'id="multipoint_align_status"' in indi_html
+    assert 'name="align_points"' in indi_html
+    assert 'name="align_mode"' in indi_html
+    assert 'name="align_star"' in indi_html
+    assert 'value="confirm"' in indi_html
+    assert 'value="cancel"' in indi_html
+    assert "/indi/multipoint_align" in indi_html
+
+    assert '@app.route("/indi/multipoint_align", methods=["POST"])' in server_py
+    assert "multipoint_align_start" in server_py
+    assert "multipoint_align_confirm" in server_py
+
+
+def test_indi_mount_state_splits_home_park_and_raw_status():
+    indi_html = (VIEWS_DIR / "indi_mount.html").read_text()
+    sys_utils_py = (
+        Path(__file__).resolve().parents[1] / "PiFinder" / "sys_utils.py"
+    ).read_text()
+
+    assert "OnStep Status.Park" in sys_utils_py
+    assert "OnStep Status.:GU# return" in sys_utils_py
+    assert "Home State" in indi_html
+    assert "Park State" in indi_html
+    assert "Raw Mount Status" in indi_html
+    assert "indi_home_state_value" in indi_html
+    assert "TELESCOPE_PARK.PARK" in sys_utils_py
+    assert "TELESCOPE_PARK.UNPARK" in sys_utils_py
+
+
 def test_red_theme_is_defined_without_overriding_log_viewer_colors():
     style_css = (VIEWS_DIR / "css" / "style.css").read_text()
     logs_html = (VIEWS_DIR / "logs.html").read_text()

@@ -118,3 +118,17 @@ def test_imu_settings_menu_entries_exist():
     assert "Sensitivity" in imu_menu_names
     assert "Compass" in imu_menu_names
     assert "Calibration" in imu_menu_names
+
+
+@pytest.mark.smoke
+def test_indi_settings_menu_entries_exist():
+    menu = menu_structure.pifinder_menu
+    start_menu = next(item for item in menu["items"] if item["name"] == "Start")
+    indi_menu = next(item for item in start_menu["items"] if item["name"] == "INDI")
+    setting_menu = next(
+        item for item in indi_menu["items"] if item["name"] == "Setting"
+    )
+
+    setting_names = [item["name"] for item in setting_menu["items"]]
+    assert "Multi-Point Align" in setting_names
+    assert "Backlash" in setting_names

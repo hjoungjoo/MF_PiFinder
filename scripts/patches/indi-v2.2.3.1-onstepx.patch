@@ -62,7 +62,7 @@ new file mode 100644
 index 0000000..c210f94
 --- /dev/null
 +++ b/drivers/telescope/lx200_OnStepX.cpp
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,289 @@
 +/*
 +    LX200 OnStepX
 +
@@ -72,10 +72,75 @@ index 0000000..c210f94
 +#include "lx200_OnStepX.h"
 +
 +#include <cmath>
++#include <ctime>
 +
 +const char *LX200_OnStepX::getDefaultName()
 +{
 +    return "LX200 OnStepX";
++}
++
++bool LX200_OnStepX::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
++{
++    if (dev != nullptr && strcmp(dev, getDeviceName()) == 0 && BacklashNP.isNameMatch(name))
++    {
++        int nset = 0;
++        double backlash_dec = BacklashNP[0].getValue();
++        double backlash_ra = BacklashNP[1].getValue();
++
++        for (int i = 0; i < n; i++)
++        {
++            if (BacklashNP[0].isNameMatch(names[i]))
++            {
++                backlash_dec = values[i];
++                LOGF_DEBUG("===CMD==> OnStepX Backlash DEC= %f", backlash_dec);
++                nset += backlash_dec >= 0 && backlash_dec <= 3600;
++            }
++            else if (BacklashNP[1].isNameMatch(names[i]))
++            {
++                backlash_ra = values[i];
++                LOGF_DEBUG("===CMD==> OnStepX Backlash RA= %f", backlash_ra);
++                nset += backlash_ra >= 0 && backlash_ra <= 3600;
++            }
++        }
++
++        if (nset != 2)
++        {
++            BacklashNP.setState(IPS_ALERT);
++            BacklashNP.apply();
++            LOG_ERROR("OnStepX Backlash invalid; expected RA/DEC in range 0..3600 arc-sec.");
++            return false;
++        }
++
++        char cmd[CMD_MAX_LEN] = {0};
++        snprintf(cmd, sizeof(cmd), ":$BD%d#", static_cast<int>(backlash_dec));
++        if (sendOnStepCommand(cmd))
++        {
++            BacklashNP.setState(IPS_ALERT);
++            BacklashNP.apply();
++            LOG_ERROR("Error setting OnStepX Backlash DEC.");
++            return false;
++        }
++
++        const struct timespec timeout = {0, 100000000L};
++        nanosleep(&timeout, nullptr);
++
++        snprintf(cmd, sizeof(cmd), ":$BR%d#", static_cast<int>(backlash_ra));
++        if (sendOnStepCommand(cmd))
++        {
++            BacklashNP.setState(IPS_ALERT);
++            BacklashNP.apply();
++            LOG_ERROR("Error setting OnStepX Backlash RA.");
++            return false;
++        }
++
++        BacklashNP[0].setValue(backlash_dec);
++        BacklashNP[1].setValue(backlash_ra);
++        BacklashNP.setState(IPS_OK);
++        BacklashNP.apply();
++        return true;
++    }
++
++    return LX200_OnStep::ISNewNumber(dev, name, values, names, n);
 +}
 +
 +bool LX200_OnStepX::updateLocation(double latitude, double longitude, double elevation)
@@ -292,7 +357,7 @@ new file mode 100644
 index 0000000..1181a98
 --- /dev/null
 +++ b/drivers/telescope/lx200_OnStepX.h
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,30 @@
 +/*
 +    LX200 OnStepX
 +
@@ -309,6 +374,7 @@ index 0000000..1181a98
 +{
 +    public:
 +        const char *getDefaultName() override;
++        bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
 +
 +    protected:
 +        bool updateLocation(double latitude, double longitude, double elevation) override;

@@ -141,13 +141,58 @@ PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 
 
 `Mount Control` 영역은 `LX200 OnStepX`에서 표시되며 간단한 초기화/주차/수동 이동 기능을 제공합니다.
 
-- 현재 Park/Unpark 상태를 표시합니다.
+- Home 상태와 Park 상태를 분리해서 표시합니다. OnStep은 `At Home`이면서도
+  `Unparked`일 수 있습니다. OnStep Web UI는 `At Home`과 `Parked` 모두에서
+  Park 버튼을 비활성화하므로, PiFinder는 디버깅을 위해 원시 `:GU#` 마운트
+  상태도 함께 표시합니다.
 - `At Home`, `Return Home`, `Park`, `Unpark`, `Set-Park` 명령을 보낼 수 있습니다.
 - Slew Rate는 OnStep의 0-9 단계를 그대로 사용합니다. `0`은 Off, `1`은 `1/2x`, `9`는 `Max`입니다.
 - 방향 버튼은 누르고 있는 동안 이동하고, 손을 떼면 정지 명령을 보냅니다.
 - 대각선 버튼은 North/South와 East/West 명령을 함께 보냅니다.
 
 이 웹 제어는 INDI 드라이버에 직접 명령을 보내는 보조 UI입니다. Object Details 화면의 숫자 키 기반 Sync/GoTo 기능과 함께 사용할 수 있습니다.
+
+### OnStepX 설정
+
+INDI 페이지의 `Settings` 영역에는 OnStepX 유지보수 제어가 포함됩니다.
+
+- `Backlash`는 INDI driver의 `Backlash.Backlash RA`,
+  `Backlash.Backlash DEC` 속성을 읽고 씁니다. 이 값은 OnStep의 RA/Azm,
+  Dec/Alt 백래시 arc-second 값에 대응합니다.
+- 수동 `Save Backlash` 동작은 설정값만 갱신하고 마운트 이동 명령을 보내지
+  않으므로 실내에서도 안전하게 테스트할 수 있습니다.
+- `Auto RA`, `Auto DEC`는 선택한 축의 Backlash를 0으로 임시 설정한 뒤
+  현재 위치 기준 Goto 왕복 방식으로 측정합니다. 기본 5도 이동에서 시작하고
+  IMU 변화량이 충분하지 않으면 더 큰 각도로 재시도하며, 각 이동 완료 후
+  실제 readback 좌표를 새 기준으로 저장해 다음 역방향 이동을 계산합니다.
+  유효한 왕복 측정을 여러 번 반복해 평균 Backlash 값을 입력창에 제안합니다.
+  측정 후 원래 driver Backlash와 slew rate는 복구됩니다. 실제 적용은
+  사용자가 `Save Backlash`를 눌러 확인해야 합니다.
+- 자동 Backlash 테스트는 테스트 전 `TELESCOPE_TRACK_STATE.TRACK_OFF`로
+  tracking을 끄고, 완료/실패 후 원래 tracking 상태를 복구해야 합니다.
+  Tracking이 켜진 상태에서는 sidereal motion이 IMU 변화로 섞여 백래시로
+  오판될 수 있습니다.
+- 자동 Backlash 테스트는 `Settings > IMU Settings > Compass > Off`
+  상태, 즉 IMUPLUS 모드에서 진행해야 합니다. NDOF/Compass 모드는 지자계
+  안정화 전 yaw 보정이 크게 튈 수 있으므로 현재 자동 테스트는 시작하지
+  않고 안내 메시지를 표시합니다.
+- Goto 왕복 보정의 기본 원리는 `Compass Off`, `Tracking Off`,
+  `Backlash 0/0` 상태에서 각 축을 한 번에 하나씩 충분한 각도로 이동하고,
+  이동 완료 후 실제 현재 위치를 새 기준으로 삼아 반대 방향 이동을 수행한
+  뒤, 실제 좌표 이동각과 IMU 실제 이동각의 차이를 Backlash arc-second 값으로
+  보정하는 것입니다. 원래 좌표 근처로 강제 복귀하지 않으므로 방향 전환 시
+  유격 상태가 계산에 섞이는 문제를 줄입니다. IMU yaw축 신뢰도가 낮은
+  자세에서는 반복 측정 평균을 사용하며, 짧은 거리와 20도 이상의 긴 거리에서
+  추가 검증합니다.
+- 측정값이 `3600 arc-sec` 상한에 도달하면 UI는 낮은 신뢰도 경고를 표시합니다.
+  이 경우 실제 백래시가 설정 범위를 넘었거나 IMU 자세/축 감지 영향이 섞였을
+  수 있으므로 바로 저장하지 말고 반복 데이터와 장비 기계 상태를 확인합니다.
+- 2026-07-03 실장 테스트에서는 `Compass Off` 재시작 후 IMUPLUS 상태가
+  유지되고 tracking off/on 복구도 정상 동작했습니다. 짧은 수동 펄스는 실제
+  INDI 좌표를 변화시켜도 현재 자세와 IMUPLUS 조건에서 IMU 각도 변화가 0으로
+  남을 수 있어, Auto RA/DEC는 Goto 왕복/반복 평균 방식으로 전환했습니다.
+  유효한 왕복 이동각이 확보되지 않으면 값은 적용되지 않고 원래 Backlash,
+  slew rate, tracking 상태가 복구됩니다.
 
 ## PiFinder 제어 켜기
 

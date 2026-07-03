@@ -158,17 +158,19 @@
 <div class="card grey darken-2">
   <div class="card-content">
     <h5 class="grey-text">{{ _('Mount Control') }}</h5>
-    <div class="indi-park-state">
-      <span>{{ _('Park State') }}</span>
-      <strong id="indi_park_state_value">
-        {% if onstep_props.get(onstep_device ~ '.TELESCOPE_PARK.PARK', '') == 'On' %}
-          {{ _('Parked') }}
-        {% elif onstep_props.get(onstep_device ~ '.TELESCOPE_PARK.UNPARK', '') == 'On' %}
-          {{ _('Unparked') }}
-        {% else %}
-          {{ _('Unknown') }}
-        {% endif %}
-      </strong>
+    <div class="indi-mount-states">
+      <div class="indi-mount-state">
+        <span>{{ _('Home State') }}</span>
+        <strong id="indi_home_state_value">{{ _(onstep_mount_state.home_state) }}</strong>
+      </div>
+      <div class="indi-mount-state">
+        <span>{{ _('Park State') }}</span>
+        <strong id="indi_park_state_value">{{ _(onstep_mount_state.park_state) }}</strong>
+      </div>
+      <div class="indi-mount-state">
+        <span>{{ _('Raw Mount Status') }}</span>
+        <strong id="indi_raw_mount_status_value">{{ onstep_mount_state.raw_status or '-' }}</strong>
+      </div>
     </div>
     <div class="row">
       <div class="col s12 m6 indi-park-actions">
@@ -296,6 +298,62 @@
 <div class="card grey darken-2">
   <div class="card-content">
     <h5 class="grey-text">{{ _('Settings') }}</h5>
+    <h6 class="grey-text">{{ _('Multi-Point Align') }}</h6>
+    <table class="striped grey-text">
+      <tbody>
+        <tr>
+          <td>{{ _('Align Status') }}</td>
+          <td id="multipoint_align_status">
+            {{ multipoint_align.get('message') or _('Idle') }}
+          </td>
+        </tr>
+        <tr>
+          <td>{{ _('Align Progress') }}</td>
+          <td id="multipoint_align_progress">
+            {{ multipoint_align.get('completed_points', 0) }} / {{ multipoint_align.get('total_points', '-') }}
+          </td>
+        </tr>
+        <tr>
+          <td>{{ _('Current Align Star') }}</td>
+          <td id="multipoint_align_star">
+            {% set current_align_star = multipoint_align.get('current_star') or {} %}
+            {{ current_align_star.get('name') or '-' }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <form action="/indi/multipoint_align" method="post" id="indi_multipoint_align_form" class="col s12">
+      <div class="row">
+        <div class="input-field col s12 m3">
+          <select id="align_mode" name="align_mode">
+            <option value="manual" {% if multipoint_align.get('mode', 'manual') == 'manual' %}selected{% endif %}>{{ _('Manual') }}</option>
+            <option value="auto" {% if multipoint_align.get('mode') == 'auto' %}selected{% endif %}>{{ _('Auto') }}</option>
+          </select>
+          <label>{{ _('Align Mode') }}</label>
+        </div>
+        <div class="input-field col s12 m3">
+          <input id="align_points" type="number" min="1" max="9" step="1" name="align_points" value="{{ multipoint_align.get('total_points', 3) }}">
+          <label for="align_points" class="active">{{ _('Align Points') }}</label>
+        </div>
+        <div class="input-field col s12 m6">
+          <select id="align_star" name="align_star">
+            {% set selected_star_name = current_align_star.get('name', '') %}
+            {% for star in align_stars %}
+            <option value="{{ star.name }}" {% if selected_star_name == star.name %}selected{% endif %}>
+              {{ star.name }}{% if star.mag is not none %} ({{ _('mag') }} {{ star.mag }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <label>{{ _('Alignment Star') }}</label>
+        </div>
+      </div>
+      <div class="row">
+        <button type="submit" name="align_action" value="start" class="btn">{{ _('Start Align') }}</button>
+        <button type="submit" name="align_action" value="select_star" class="btn">{{ _('GoTo Selected Star') }}</button>
+        <button type="submit" name="align_action" value="confirm" class="btn">{{ _('Confirm Point') }}</button>
+        <button type="submit" name="align_action" value="cancel" class="btn">{{ _('Cancel Align') }}</button>
+      </div>
+    </form>
     <h6 class="grey-text">{{ _('Backlash') }}</h6>
     <table class="striped grey-text">
       <tbody>
@@ -313,16 +371,20 @@
             {{ backlash_auto.get('message') or mount_control_status.get('message') or '-' }}
           </td>
         </tr>
+        <tr>
+          <td>{{ _('Auto Method') }}</td>
+          <td>{{ _('Current-position GoTo round trips; each return starts from the actual completed position, and physical axes may move together during RA/DEC tests.') }}</td>
+        </tr>
       </tbody>
     </table>
     <form action="/indi/backlash" method="post" id="indi_backlash_form" class="col s12">
       <div class="row">
         <div class="input-field col s12 m6">
-          <input id="backlash_ra" type="number" min="0" max="999" step="1" name="backlash_ra" value="{{ backlash_values.ra }}">
+          <input id="backlash_ra" type="number" min="0" max="3600" step="1" name="backlash_ra" value="{{ backlash_values.ra }}">
           <label for="backlash_ra" class="active">{{ _('RA Backlash') }}</label>
         </div>
         <div class="input-field col s12 m6">
-          <input id="backlash_de" type="number" min="0" max="999" step="1" name="backlash_de" value="{{ backlash_values.de }}">
+          <input id="backlash_de" type="number" min="0" max="3600" step="1" name="backlash_de" value="{{ backlash_values.de }}">
           <label for="backlash_de" class="active">{{ _('DEC Backlash') }}</label>
         </div>
       </div>
@@ -372,9 +434,23 @@ document.addEventListener('DOMContentLoaded', function() {
   var activeMotionDirection = null;
   var motionKeepaliveTimer = null;
   var onstepDeviceName = {{ onstep_device_name|default('', true)|tojson }};
+  var mountStateLabels = {
+    'At Home': {{ _('At Home')|tojson }},
+    'Not at Home': {{ _('Not at Home')|tojson }},
+    'Waiting at Home': {{ _('Waiting at Home')|tojson }},
+    'Parked': {{ _('Parked')|tojson }},
+    'Unparked': {{ _('Unparked')|tojson }},
+    'Parking': {{ _('Parking')|tojson }},
+    'Parking Failed': {{ _('Parking Failed')|tojson }},
+    'Unknown': {{ _('Unknown')|tojson }}
+  };
 
   function onstepKey(propertyName) {
     return onstepDeviceName + '.' + propertyName;
+  }
+
+  function translatedMountState(value) {
+    return mountStateLabels[value] || value || mountStateLabels.Unknown;
   }
 
   function setActionStatus(message) {
@@ -506,19 +582,17 @@ document.addEventListener('DOMContentLoaded', function() {
     );
     setText('onstep_utc_time_value', textOrDash(onstep[onstepKey('TIME_UTC.UTC')]));
     updateBacklashValues(payload.backlash_values || {}, payload.mount_control_status || {});
+    updateMultipointAlign(payload.multipoint_align || {});
     setText('onstep_connection_value', textOrDash(onstep[onstepKey('CONNECTION.CONNECT')]));
     setText('onstep_serial_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_SERIAL')]));
     setText('onstep_tcp_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_TCP')]));
     setText('onstep_serial_port_value', textOrDash(onstep[onstepKey('DEVICE_PORT.PORT')]));
     setText('onstep_network_host_value', textOrDash(onstep[onstepKey('DEVICE_ADDRESS.ADDRESS')]));
     setText('onstep_network_port_value', textOrDash(onstep[onstepKey('DEVICE_ADDRESS.PORT')]));
-    if (onstep[onstepKey('TELESCOPE_PARK.PARK')] === 'On') {
-      setText('indi_park_state_value', '{{ _("Parked") }}');
-    } else if (onstep[onstepKey('TELESCOPE_PARK.UNPARK')] === 'On') {
-      setText('indi_park_state_value', '{{ _("Unparked") }}');
-    } else {
-      setText('indi_park_state_value', '{{ _("Unknown") }}');
-    }
+    var mountState = payload.onstep_mount_state || {};
+    setText('indi_home_state_value', translatedMountState(mountState.home_state));
+    setText('indi_park_state_value', translatedMountState(mountState.park_state));
+    setText('indi_raw_mount_status_value', textOrDash(mountState.raw_status));
     if (slewRate) {
       for (var rate = 0; rate <= 9; rate += 1) {
         if (onstep[onstepKey('TELESCOPE_SLEW_RATE.' + rate)] === 'On') {
@@ -547,7 +621,26 @@ document.addEventListener('DOMContentLoaded', function() {
     if (backlashStatus) {
       var autoInfo = mountStatus.backlash_auto || {};
       backlashStatus.textContent = autoInfo.message || mountStatus.message || '-';
+      if (autoInfo.state === 'complete' && autoInfo.estimated_value !== undefined) {
+        var estimatedValue = valueOrEmpty(autoInfo.estimated_value);
+        if (estimatedValue !== '') {
+          if (autoInfo.value_key === 'backlash_ra' || autoInfo.axis === 'RA') {
+            setInputValue('backlash_ra', estimatedValue);
+          } else if (autoInfo.value_key === 'backlash_de' || autoInfo.axis === 'DE') {
+            setInputValue('backlash_de', estimatedValue);
+          }
+        }
+      }
     }
+  }
+
+  function updateMultipointAlign(alignStatus) {
+    var currentStar = alignStatus.current_star || {};
+    var completed = alignStatus.completed_points || 0;
+    var total = alignStatus.total_points || '-';
+    setText('multipoint_align_status', alignStatus.message || '{{ _("Idle") }}');
+    setText('multipoint_align_progress', completed + ' / ' + total);
+    setText('multipoint_align_star', currentStar.name || '-');
   }
 
   function refreshIndiState(showStatus) {

@@ -18,6 +18,7 @@ from PiFinder.db.observations_db import (
     ObservationsDatabase,
 )
 from PiFinder.equipment import Telescope, Eyepiece
+from PiFinder.indi_align import BRIGHT_ALIGN_STARS, clamp_align_points, get_align_star
 from PiFinder.keyboard_interface import KeyboardInterface
 from PiFinder.multiproclogging import MultiprocLogging
 
@@ -55,6 +56,8 @@ logs_logger = logging.getLogger("Server.Logs")
 SESSION_SECRET = str(uuid.uuid4())
 WEB_MOTION_LEASE_SECONDS = 1.2
 WEB_MOTION_KEEPALIVE_INTERVAL = 0.4
+WEB_BACKLASH_MIN_VALUE = 0
+WEB_BACKLASH_MAX_VALUE = 3600
 WEB_LANGUAGE_COOKIE = "pifinder_web_language"
 DEFAULT_WEB_LANGUAGE = "en"
 SUPPORTED_WEB_LANGUAGES = ("en", "de", "es", "fr", "ko", "zh")
@@ -1296,24 +1299,68 @@ class Server:
             except (TypeError, ValueError):
                 return ""
 
+        def _onstep_first_property_value(onstep_props, property_names, indi_cfg):
+            for property_name in property_names:
+                value = onstep_props.get(_onstep_property_name(property_name, indi_cfg))
+                if value not in (None, ""):
+                    return value
+            return None
+
         def _onstep_backlash_values(onstep_props, indi_cfg):
             return {
                 "ra": _parse_backlash_value(
-                    onstep_props.get(_onstep_property_name("Backlash.RA", indi_cfg))
+                    _onstep_first_property_value(
+                        onstep_props,
+                        sys_utils.ONSTEP_BACKLASH_RA_FALLBACK_PROPERTIES,
+                        indi_cfg,
+                    )
                 ),
                 "de": _parse_backlash_value(
-                    onstep_props.get(_onstep_property_name("Backlash.DE", indi_cfg))
+                    _onstep_first_property_value(
+                        onstep_props,
+                        sys_utils.ONSTEP_BACKLASH_DE_FALLBACK_PROPERTIES,
+                        indi_cfg,
+                    )
                 ),
             }
+
+        def _onstep_mount_state(onstep_props, indi_cfg):
+            return sys_utils.parse_onstep_home_park_state(
+                status_text=onstep_props.get(
+                    _onstep_property_name("OnStep Status.Park", indi_cfg)
+                ),
+                park_switch=onstep_props.get(
+                    _onstep_property_name("TELESCOPE_PARK.PARK", indi_cfg)
+                ),
+                unpark_switch=onstep_props.get(
+                    _onstep_property_name("TELESCOPE_PARK.UNPARK", indi_cfg)
+                ),
+                raw_status=onstep_props.get(
+                    _onstep_property_name("OnStep Status.:GU# return", indi_cfg)
+                ),
+            )
 
         def _validate_backlash_form_value(name):
             try:
                 value = int(float(request.form.get(name) or "0"))
             except ValueError as exc:
                 raise ValueError(_("Backlash must be a number")) from exc
-            if not 0 <= value <= 999:
-                raise ValueError(_("Backlash must be between 0 and 999"))
+            if not WEB_BACKLASH_MIN_VALUE <= value <= WEB_BACKLASH_MAX_VALUE:
+                raise ValueError(
+                    _("Backlash must be between 0 and %(max)d")
+                    % {"max": WEB_BACKLASH_MAX_VALUE}
+                )
             return value
+
+        def _multipoint_align_status():
+            status = _mount_control_status()
+            align_status = status.get("multipoint_align")
+            return align_status if isinstance(align_status, dict) else {}
+
+        def _queue_multipoint_align_command(command):
+            if self.mountcontrol_queue is None:
+                raise RuntimeError(_("Mount-control process is not available"))
+            self.mountcontrol_queue.put(command)
 
         def _wait_for_onstep_location_match(indi_cfg, latitude, longitude, timeout=5.0):
             deadline = time.monotonic() + timeout
@@ -1355,8 +1402,11 @@ class Server:
                     onstep_props
                 ),
                 onstep_effective_location=_onstep_effective_location(onstep_props),
+                onstep_mount_state=_onstep_mount_state(onstep_props, indi_cfg),
                 pifinder_location_time=_pifinder_location_time_values(),
                 backlash_values=backlash_values,
+                align_stars=BRIGHT_ALIGN_STARS,
+                multipoint_align=_multipoint_align_status(),
                 mount_control_status=_mount_control_status(),
                 web_motion_keepalive_ms=int(WEB_MOTION_KEEPALIVE_INTERVAL * 1000),
                 slew_rate_labels=[
@@ -1404,7 +1454,10 @@ class Server:
                     "onstep_effective_location_display": (
                         _onstep_effective_location_display(onstep_props)
                     ),
+                    "onstep_mount_state": _onstep_mount_state(onstep_props, indi_cfg),
                     "backlash_values": _onstep_backlash_values(onstep_props, indi_cfg),
+                    "align_stars": BRIGHT_ALIGN_STARS,
+                    "multipoint_align": _multipoint_align_status(),
                     "mount_control_status": _mount_control_status(),
                 }
             )
@@ -1761,6 +1814,58 @@ class Server:
             except (RuntimeError, ValueError) as e:
                 return _render_indi_page(error_message=str(e))
 
+        @app.route("/indi/multipoint_align", methods=["POST"])
+        @auth_required
+        def indi_multipoint_align():
+            try:
+                indi_cfg = _indi_config_values()
+                _require_onstepx_driver(indi_cfg)
+                action = (request.form.get("align_action") or "start").strip().lower()
+
+                if action == "start":
+                    mode = (request.form.get("align_mode") or "manual").strip().lower()
+                    if mode not in {"manual", "auto"}:
+                        raise ValueError(_("Invalid alignment mode"))
+                    points = clamp_align_points(request.form.get("align_points"))
+                    star_name = (request.form.get("align_star") or "").strip()
+                    if mode == "manual" and not get_align_star(star_name):
+                        raise ValueError(_("Select a valid alignment star"))
+                    _queue_multipoint_align_command(
+                        {
+                            "type": "multipoint_align_start",
+                            "mode": mode,
+                            "points": points,
+                            "star_name": star_name if mode == "manual" else "",
+                        }
+                    )
+                    return _render_indi_page(_("Multi-point alignment started"))
+
+                if action == "select_star":
+                    star_name = (request.form.get("align_star") or "").strip()
+                    if not get_align_star(star_name):
+                        raise ValueError(_("Select a valid alignment star"))
+                    _queue_multipoint_align_command(
+                        {
+                            "type": "multipoint_align_select_star",
+                            "star_name": star_name,
+                        }
+                    )
+                    return _render_indi_page(_("Alignment star selected"))
+
+                if action == "confirm":
+                    _queue_multipoint_align_command(
+                        {"type": "multipoint_align_confirm", "source": "web"}
+                    )
+                    return _render_indi_page(_("Alignment point confirmed"))
+
+                if action == "cancel":
+                    _queue_multipoint_align_command({"type": "multipoint_align_cancel"})
+                    return _render_indi_page(_("Multi-point alignment cancelled"))
+
+                raise ValueError(_("Invalid alignment action"))
+            except (RuntimeError, ValueError) as e:
+                return _render_indi_page(error_message=str(e))
+
         @app.route("/indi/backlash", methods=["POST"])
         @auth_required
         def indi_backlash_save():
@@ -1769,13 +1874,12 @@ class Server:
                 _require_onstepx_driver(indi_cfg)
                 backlash_ra = _validate_backlash_form_value("backlash_ra")
                 backlash_de = _validate_backlash_form_value("backlash_de")
-                result = sys_utils.apply_indi_onstep_properties(
-                    [
-                        f"{_onstep_property_name('Backlash.RA', indi_cfg)}={backlash_ra}",
-                        f"{_onstep_property_name('Backlash.DE', indi_cfg)}={backlash_de}",
-                    ],
+                result = sys_utils.apply_indi_onstep_backlash(
+                    backlash_ra,
+                    backlash_de,
                     server_host=indi_cfg["server_host"],
                     server_port=indi_cfg["server_port"],
+                    device_name=indi_cfg["device_name"],
                 )
                 if not result.get("ok"):
                     raise RuntimeError(

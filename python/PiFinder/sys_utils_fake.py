@@ -34,7 +34,9 @@ def get_indi_profile_drivers(profile_name=None, profiles_db_path=None):
     return {"profile": "MF_PiFinder", "drivers": [DEFAULT_ONSTEP_DEVICE_NAME]}
 
 
-def get_indi_profile_device_name(profile_name=None, fallback=DEFAULT_ONSTEP_DEVICE_NAME):
+def get_indi_profile_device_name(
+    profile_name=None, fallback=DEFAULT_ONSTEP_DEVICE_NAME
+):
     return DEFAULT_ONSTEP_DEVICE_NAME
 
 
@@ -88,6 +90,26 @@ def apply_indi_onstep_properties(
     }
 
 
+def apply_indi_onstep_backlash(
+    backlash_ra,
+    backlash_de,
+    server_host="localhost",
+    server_port=7624,
+    device_name=None,
+):
+    device_name = resolve_indi_device_name(device_name)
+    return {
+        "ok": True,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "properties": [
+            f"{device_name}.Backlash.Backlash RA={int(backlash_ra)}",
+            f"{device_name}.Backlash.Backlash DEC={int(backlash_de)}",
+        ],
+    }
+
+
 def apply_indi_onstep_location_time(
     latitude=None,
     longitude=None,
@@ -112,7 +134,9 @@ def apply_indi_onstep_location_time(
     if utc_datetime is not None:
         properties.append(f"{device_name}.TIME_UTC.UTC={utc_datetime}")
         if utc_offset_hours is not None:
-            properties.append(f"{device_name}.TIME_UTC.OFFSET={float(utc_offset_hours):.2f}")
+            properties.append(
+                f"{device_name}.TIME_UTC.OFFSET={float(utc_offset_hours):.2f}"
+            )
     return {
         "ok": True,
         "returncode": 0,

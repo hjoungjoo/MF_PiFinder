@@ -141,13 +141,63 @@ The `Location and Time` section is shown for `LX200 OnStepX` and sends PiFinder'
 
 The `Mount Control` section is shown for `LX200 OnStepX` and provides simple initialize/park/manual-motion controls.
 
-- The current Park/Unpark state is displayed.
+- Home and Park are displayed as separate states. OnStep can report `At Home`
+  while still being `Unparked`; the OnStep Web UI disables the Park button for
+  both `At Home` and `Parked`, so PiFinder also shows the raw `:GU#` mount
+  status for diagnostics.
 - `At Home`, `Return Home`, `Park`, `Unpark`, and `Set-Park` commands are available.
 - Slew Rate uses OnStep's native 0-9 scale. `0` is Off, `1` is `1/2x`, and `9` is `Max`.
 - Direction buttons move while held and send a stop command when released.
 - Diagonal buttons send the paired North/South and East/West commands together.
 
 This web control page sends commands directly to the INDI driver. It can be used alongside the Object Details numeric-key Sync/GoTo flow.
+
+### OnStepX Settings
+
+The `Settings` area on the INDI page includes OnStepX maintenance controls.
+
+- `Backlash` reads and writes the INDI driver properties
+  `Backlash.Backlash RA` and `Backlash.Backlash DEC`, which map to OnStep
+  RA/Azm and Dec/Alt backlash in arc-seconds.
+- The manual `Save Backlash` action is safe to test indoors because it only
+  updates driver/device settings and does not command mount motion.
+- `Auto RA` and `Auto DEC` temporarily reset the selected axis Backlash to 0
+  and use a current-position GoTo round-trip measurement. The routine starts
+  with a 5-degree move, retries with a larger angle when IMU motion is not large
+  enough, and stores the actual readback coordinates after each completed move
+  as the baseline for the next reverse move. It averages repeated valid round
+  trips before proposing a Backlash value in the input field. The original driver
+  Backlash and slew rate are restored afterward; press `Save Backlash` to apply
+  the proposed value.
+- The automatic Backlash test must turn tracking off with
+  `TELESCOPE_TRACK_STATE.TRACK_OFF` before measurement and restore the original
+  tracking state afterward. With tracking enabled, sidereal motion can appear as
+  IMU movement and be misread as backlash.
+- The automatic Backlash test must run with `Settings > IMU Settings > Compass >
+  Off`, which uses IMUPLUS mode. NDOF/Compass mode can apply large yaw
+  corrections while the magnetometer is settling, so the current automatic test
+  refuses to start and shows an instruction message when Compass is active.
+- The GoTo round-trip principle is: set `Compass Off`, `Tracking Off`, and
+  `Backlash 0/0`; move one axis at a time by a large enough GoTo angle; wait for
+  completion and IMU stabilization; use the actual completed position as the new
+  baseline for the opposite-direction move; then use the difference between the
+  actual coordinate motion and IMU-measured motion as the Backlash arc-second
+  correction. The routine does not force a return to the original coordinate, so
+  the backlash state created by the direction change is not hidden by an
+  additional recovery GoTo. When yaw is not fully trustworthy, use repeated
+  measurements and average them. Verify again with both short moves and long
+  moves over 20 degrees.
+- If a measurement reaches the `3600 arc-sec` limit, the UI reports low
+  confidence. Do not save that value blindly; it may mean the mechanical
+  backlash exceeds the configured range or that IMU pose/axis sensitivity is
+  contaminating the measurement.
+- A 2026-07-03 hardware test confirmed that IMUPLUS remains active after a
+  `Compass Off` restart and that tracking off/on restoration works. Short manual
+  pulses could change INDI coordinates while the IMU angle delta still remained
+  0 in the tested mount pose, so Auto RA/DEC now uses GoTo round trips with
+  repeated averaging. If a reliable round-trip IMU motion cannot be measured, no
+  value is applied and the original Backlash, slew rate, and tracking state are
+  restored.
 
 ## Enable PiFinder Control
 

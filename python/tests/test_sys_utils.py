@@ -72,6 +72,31 @@ try:
         )
 
     @pytest.mark.unit
+    def test_parse_onstep_home_park_state_splits_at_home_from_parked():
+        state = sys_utils.parse_onstep_home_park_state(
+            status_text="At Home and UnParked",
+            park_switch="Off",
+            unpark_switch="On",
+            raw_status="nNpHAo160",
+        )
+
+        assert state["home_state"] == "At Home"
+        assert state["park_state"] == "Unparked"
+        assert state["driver_status"] == "At Home and UnParked"
+        assert state["raw_status"] == "nNpHAo160"
+
+    @pytest.mark.unit
+    def test_parse_onstep_home_park_state_uses_switch_fallback():
+        state = sys_utils.parse_onstep_home_park_state(
+            status_text="",
+            park_switch="On",
+            unpark_switch="Off",
+        )
+
+        assert state["home_state"] == "Unknown"
+        assert state["park_state"] == "Parked"
+
+    @pytest.mark.unit
     def test_onstep_location_display_uses_cached_elevation_for_exclusive_sync():
         degree = "\N{DEGREE SIGN}"
         onstep_props = {
@@ -371,9 +396,7 @@ try:
             "dhcp-range=10.10.10.2,10.10.10.20,255.255.255.0,24h\n"
             "address=/gw.wlan/10.10.10.1\n"
         )
-        result = sys_utils.Network._rewrite_dnsmasq_ap_network(
-            contents, "192.168.50.1"
-        )
+        result = sys_utils.Network._rewrite_dnsmasq_ap_network(contents, "192.168.50.1")
 
         assert "interface=uap0 # Listening interface\n" in result
         assert "dhcp-range=192.168.50.2,192.168.50.20,255.255.255.0,24h\n" in result
@@ -405,7 +428,7 @@ try:
         )
 
         assert "scan_freq=2412 2417" in result
-        assert "ssid=\"DualBand\"" in result
+        assert 'ssid="DualBand"' in result
 
     @pytest.mark.unit
     def test_sta_band_auto_removes_scan_freq():
@@ -462,8 +485,7 @@ try:
     @pytest.mark.unit
     def test_ip_neighbor_parsing_by_mac_and_failed_ip():
         neighbors = sys_utils.Network._parse_ip_neigh(
-            "10.10.10.15 lladdr 06:43:af:65:75:9b REACHABLE\n"
-            "10.10.10.14 FAILED\n"
+            "10.10.10.15 lladdr 06:43:af:65:75:9b REACHABLE\n" "10.10.10.14 FAILED\n"
         )
 
         assert neighbors["06:43:af:65:75:9b"]["neighbor_state"] == "REACHABLE"
@@ -508,7 +530,9 @@ try:
 
     @pytest.mark.unit
     def test_resolve_gpsd_device_uses_board_default(monkeypatch):
-        monkeypatch.setattr(sys_utils, "get_default_gpsd_device", lambda: "/dev/ttyAMA3")
+        monkeypatch.setattr(
+            sys_utils, "get_default_gpsd_device", lambda: "/dev/ttyAMA3"
+        )
 
         assert sys_utils.resolve_gpsd_device(None) == "/dev/ttyAMA3"
         assert sys_utils.resolve_gpsd_device("auto") == "/dev/ttyAMA3"

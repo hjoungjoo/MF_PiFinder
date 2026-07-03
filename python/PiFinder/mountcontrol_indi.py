@@ -12,15 +12,26 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import queue
 import time
 from datetime import datetime, timezone
 from multiprocessing import Queue
 from typing import Any, Optional
 
-from PiFinder import config
+import quaternion
+
+from PiFinder import calc_utils, config
 from PiFinder import sys_utils, utils
+from PiFinder.indi_align import (
+    BRIGHT_ALIGN_STARS,
+    clamp_align_points,
+    get_align_star,
+    next_align_star,
+)
 from PiFinder.multiproclogging import MultiprocLogging
+from PiFinder.pointing_model.imu_dead_reckoning import ImuDeadReckoning
+from PiFinder.pointing_model import quaternion_transforms as qt
 
 try:
     import PyIndi  # type: ignore[import-untyped]
@@ -53,8 +64,44 @@ GUIDE_CORRECTION_PULSE_SECONDS = 0.4
 GOTO_COMPLETE_MIN_SECONDS = 1.0
 GOTO_COMPLETE_FALLBACK_SECONDS = 180.0
 BACKLASH_MIN_VALUE = 0
-BACKLASH_MAX_VALUE = 999
+BACKLASH_MAX_VALUE = 3600
 BACKLASH_AXES = {"ra", "de"}
+BACKLASH_AUTO_SETTLE_SECONDS = 3.0
+BACKLASH_AUTO_SAMPLE_SECONDS = 0.15
+BACKLASH_AUTO_SETTLE_AFTER_PULSE_SECONDS = 0.45
+BACKLASH_AUTO_TRACKING_SETTLE_SECONDS = 5.0
+BACKLASH_AUTO_PULSE_SECONDS = 0.35
+BACKLASH_AUTO_SLEW_RATE = 5
+BACKLASH_AUTO_IMU_STALE_SECONDS = 5.0
+BACKLASH_AUTO_MIN_DETECT_DEG = 0.012
+BACKLASH_AUTO_MAX_STABLE_NOISE_DEG = 0.05
+BACKLASH_AUTO_STABILITY_RETRIES = 3
+BACKLASH_AUTO_MAX_PRIME_PULSES = 20
+BACKLASH_AUTO_MAX_REVERSE_PULSES = 40
+BACKLASH_AUTO_GOTO_DEGREES = 5.0
+BACKLASH_AUTO_GOTO_MAX_DEGREES = 20.0
+BACKLASH_AUTO_GOTO_REPEATS = 3
+BACKLASH_AUTO_VERIFY_REPEATS = 3
+BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS = 90.0
+BACKLASH_AUTO_GOTO_POLL_SECONDS = 0.25
+BACKLASH_AUTO_MIN_GOTO_MOTION_FRACTION = 0.5
+BACKLASH_AUTO_GOTO_TARGET_TOLERANCE_DEG = 0.5
+BACKLASH_AUTO_VERIFY_WARN_PERCENT = 25.0
+BACKLASH_AUTO_VERIFY_WARN_ARCSEC = 120
+BACKLASH_AUTO_SAFE_MIN_ALT_DEG = 20.0
+BACKLASH_AUTO_SAFE_MAX_ALT_DEG = 75.0
+BACKLASH_AUTO_SAFE_TARGET_ALT_DEG = 45.0
+BACKLASH_AUTO_SAFE_GOTO_TIMEOUT_SECONDS = 120.0
+SIDEREAL_ARCSEC_PER_SECOND = 15.041067
+BACKLASH_AUTO_RATE_MULTIPLIERS = {
+    1: 0.5,
+    2: 1.0,
+    3: 2.0,
+    4: 4.0,
+    5: 8.0,
+    6: 20.0,
+    7: 48.0,
+}
 
 
 def radec_separation_arcmin(
@@ -85,8 +132,12 @@ def _write_status(state: str, message: str = "", **extra: Any) -> None:
             "updated": time.time(),
         }
         payload.update(extra)
-        with open(STATUS_FILE, "w", encoding="utf-8") as status_out:
+        tmp_status = STATUS_FILE.with_name(f"{STATUS_FILE.name}.tmp")
+        with open(tmp_status, "w", encoding="utf-8") as status_out:
             json.dump(payload, status_out, indent=2, sort_keys=True)
+            status_out.flush()
+            os.fsync(status_out.fileno())
+        tmp_status.replace(STATUS_FILE)
     except Exception:
         logger.exception("Could not write mount-control status")
 
@@ -331,6 +382,7 @@ class MountControlIndi:
         self.backlash_ra: Optional[int] = None
         self.backlash_de: Optional[int] = None
         self._backlash_auto: Optional[dict[str, Any]] = None
+        self._multipoint_align: Optional[dict[str, Any]] = None
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -342,6 +394,7 @@ class MountControlIndi:
             "ra": self.current_ra,
             "dec": self.current_dec,
         }
+        payload.update(self._home_park_status_fields())
         if self._manual_motion_direction is not None:
             payload["manual_motion_direction"] = self._manual_motion_direction
             if self._manual_motion_deadline is not None:
@@ -370,6 +423,8 @@ class MountControlIndi:
             payload["backlash_de"] = self.backlash_de
         if self._backlash_auto is not None:
             payload["backlash_auto"] = self._backlash_auto
+        if self._multipoint_align is not None:
+            payload["multipoint_align"] = self._multipoint_align
         if self.device is not None:
             try:
                 payload["device"] = self.device.getDeviceName()
@@ -377,6 +432,63 @@ class MountControlIndi:
                 pass
         payload.update(extra)
         return payload
+
+    def _device_switch_on(
+        self, property_name: str, element_name: str
+    ) -> Optional[bool]:
+        if self.device is None:
+            return None
+        try:
+            switch_prop = self.device.getSwitch(property_name)
+        except Exception:
+            return None
+        if not switch_prop:
+            return None
+        for i in range(len(switch_prop)):
+            switch = switch_prop[i]
+            if getattr(switch, "name", "") != element_name:
+                continue
+            state = getattr(switch, "s", None)
+            if PyIndi is not None:
+                try:
+                    return state == PyIndi.ISS_ON
+                except Exception:
+                    pass
+            return str(state).lower() in {"on", "iss_on", "1", "true"}
+        return None
+
+    def _device_text_value(self, property_name: str, element_name: str) -> str:
+        if self.device is None:
+            return ""
+        try:
+            text_prop = self.device.getText(property_name)
+        except Exception:
+            return ""
+        if not text_prop:
+            return ""
+        for i in range(len(text_prop)):
+            text = text_prop[i]
+            if getattr(text, "name", "") == element_name:
+                return str(getattr(text, "text", "") or "")
+        return ""
+
+    def _home_park_status_fields(self) -> dict[str, str]:
+        status_text = self._device_text_value("OnStep Status", "Park")
+        raw_status = self._device_text_value("OnStep Status", ":GU# return")
+        park_switch = self._device_switch_on("TELESCOPE_PARK", "PARK")
+        unpark_switch = self._device_switch_on("TELESCOPE_PARK", "UNPARK")
+        state = sys_utils.parse_onstep_home_park_state(
+            status_text=status_text,
+            park_switch="On" if park_switch else "",
+            unpark_switch="On" if unpark_switch else "",
+            raw_status=raw_status,
+        )
+        return {
+            "home_state": state["home_state"],
+            "park_state": state["park_state"],
+            "driver_mount_status": state["driver_status"],
+            "raw_mount_status": state["raw_status"],
+        }
 
     def _write_controller_status(
         self, state: str, message: str = "", **extra: Any
@@ -468,6 +580,10 @@ class MountControlIndi:
                 or self._manual_motion_direction is not None
             ):
                 return
+            self._read_cached_current_position()
+            driver_slew = self._read_driver_slew_rate()
+            if driver_slew is not None:
+                self.slew_rate = driver_slew
             self._write_controller_status("connected", "INDI mount connected")
         elif not self.connected:
             self._write_controller_status("idle", "INDI mount waiting")
@@ -500,6 +616,15 @@ class MountControlIndi:
 
         self._write_controller_status(success_state, success_message)
         return True
+
+    def _apply_indi_backlash(self, backlash_ra: int, backlash_de: int):
+        return sys_utils.apply_indi_onstep_backlash(
+            backlash_ra,
+            backlash_de,
+            server_host=self.indi_host,
+            server_port=self.indi_port,
+            device_name=self._indi_device_name(),
+        )
 
     def set_current_position(self, ra_deg: float, dec_deg: float) -> None:
         self.current_ra = ra_deg % 360.0
@@ -918,13 +1043,8 @@ class MountControlIndi:
             logger.exception("Could not sync INDI location/time")
             return False
 
-    def _read_current_position(self) -> Optional[tuple[float, float]]:
-        if self.client is None or self.device is None:
-            return None
-
-        if not self.client._wait_for_property(
-            self.device, "EQUATORIAL_EOD_COORD", timeout=2.0
-        ):
+    def _read_cached_current_position(self) -> Optional[tuple[float, float]]:
+        if self.device is None:
             return None
 
         coord_prop = self.device.getNumber("EQUATORIAL_EOD_COORD")
@@ -945,6 +1065,17 @@ class MountControlIndi:
 
         self.set_current_position(ra_hours * 15.0, dec_deg)
         return self.current_ra, self.current_dec
+
+    def _read_current_position(self) -> Optional[tuple[float, float]]:
+        if self.client is None or self.device is None:
+            return None
+
+        if not self.client._wait_for_property(
+            self.device, "EQUATORIAL_EOD_COORD", timeout=2.0
+        ):
+            return None
+
+        return self._read_cached_current_position()
 
     def _current_plate_solve(self) -> Optional[tuple[float, float, Optional[float]]]:
         try:
@@ -1390,7 +1521,7 @@ class MountControlIndi:
         )
         self._console(f"INDI step\n{self.step_degrees:.2f} deg")
 
-    def refresh_slew_rate(self) -> int:
+    def _read_driver_slew_rate(self) -> Optional[int]:
         properties = sys_utils.get_indi_onstep_properties(
             server_host=self.indi_host,
             server_port=self.indi_port,
@@ -1401,12 +1532,17 @@ class MountControlIndi:
                 properties.get(self._indi_property_name(f"TELESCOPE_SLEW_RATE.{rate}"))
                 == "On"
             ):
-                self.slew_rate = rate
-                self._write_controller_status(
-                    "connected" if self.connected else "idle",
-                    f"Slew rate {self.slew_rate}",
-                )
-                break
+                return rate
+        return None
+
+    def refresh_slew_rate(self) -> int:
+        driver_rate = self._read_driver_slew_rate()
+        if driver_rate is not None:
+            self.slew_rate = driver_rate
+            self._write_controller_status(
+                "connected" if self.connected else "idle",
+                f"Slew rate {self.slew_rate}",
+            )
         return self.slew_rate
 
     def set_slew_rate(self, rate: int) -> bool:
@@ -1422,6 +1558,63 @@ class MountControlIndi:
         self._console(f"INDI speed\n{self.slew_rate}")
         return True
 
+    def _read_tracking_enabled(self) -> Optional[bool]:
+        for attempt in range(3):
+            track_on_switch = self._device_switch_on(
+                "TELESCOPE_TRACK_STATE", "TRACK_ON"
+            )
+            track_off_switch = self._device_switch_on(
+                "TELESCOPE_TRACK_STATE", "TRACK_OFF"
+            )
+            if track_on_switch is not None:
+                return track_on_switch
+            if track_off_switch is not None:
+                return not track_off_switch
+
+            properties = sys_utils.get_indi_onstep_properties(
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+                device_name=self._indi_device_name(),
+            )
+            track_on = properties.get(
+                self._indi_property_name("TELESCOPE_TRACK_STATE.TRACK_ON")
+            )
+            track_off = properties.get(
+                self._indi_property_name("TELESCOPE_TRACK_STATE.TRACK_OFF")
+            )
+            if track_on in {"On", "Off"}:
+                return track_on == "On"
+            if track_off in {"On", "Off"}:
+                return track_off != "On"
+
+            tracking_text = self._device_text_value("OnStep Status", "Tracking")
+            tracking_lower = tracking_text.strip().lower()
+            if tracking_lower in {"on", "tracking", "active"}:
+                return True
+            if tracking_lower in {"off", "not tracking", "inactive"}:
+                return False
+
+            if attempt < 2:
+                time.sleep(0.2)
+        return None
+
+    def set_tracking(self, enabled: bool) -> bool:
+        property_name = (
+            "TELESCOPE_TRACK_STATE.TRACK_ON"
+            if enabled
+            else "TELESCOPE_TRACK_STATE.TRACK_OFF"
+        )
+        if not self._apply_indi_properties(
+            [self._indi_property_on(property_name)],
+            "connected" if self.connected else "idle",
+            "Tracking enabled" if enabled else "Tracking disabled",
+            "tracking_failed",
+        ):
+            self._console("INDI tracking\nfailed")
+            return False
+        self._console("Tracking\n" + ("on" if enabled else "off"))
+        return True
+
     def _validate_backlash_value(self, value: Any) -> int:
         try:
             backlash = int(float(value))
@@ -1433,14 +1626,18 @@ class MountControlIndi:
             )
         return backlash
 
-    def _read_float_property(self, properties: dict[str, str], property_name: str):
-        try:
-            value = properties.get(self._indi_property_name(property_name))
-            if value in (None, ""):
-                return None
-            return int(float(value))
-        except (TypeError, ValueError):
-            return None
+    def _read_float_property(self, properties: dict[str, str], property_names):
+        if isinstance(property_names, str):
+            property_names = (property_names,)
+        for property_name in property_names:
+            try:
+                value = properties.get(self._indi_property_name(property_name))
+                if value in (None, ""):
+                    continue
+                return int(float(value))
+            except (TypeError, ValueError):
+                continue
+        return None
 
     def refresh_backlash(self) -> tuple[Optional[int], Optional[int]]:
         properties = sys_utils.get_indi_onstep_properties(
@@ -1448,31 +1645,43 @@ class MountControlIndi:
             server_port=self.indi_port,
             device_name=self._indi_device_name(),
         )
-        self.backlash_de = self._read_float_property(properties, "Backlash.DE")
-        self.backlash_ra = self._read_float_property(properties, "Backlash.RA")
+        self.backlash_de = self._read_float_property(
+            properties, sys_utils.ONSTEP_BACKLASH_DE_FALLBACK_PROPERTIES
+        )
+        self.backlash_ra = self._read_float_property(
+            properties, sys_utils.ONSTEP_BACKLASH_RA_FALLBACK_PROPERTIES
+        )
         self._write_controller_status(
             "connected" if self.connected else "idle",
             "Backlash values refreshed",
         )
         return self.backlash_ra, self.backlash_de
 
-    def set_backlash(self, ra_value: Any, de_value: Any) -> bool:
-        backlash_ra = self._validate_backlash_value(ra_value)
-        backlash_de = self._validate_backlash_value(de_value)
-        if not self._apply_indi_properties(
-            [
-                f"{self._indi_property_name('Backlash.RA')}={backlash_ra}",
-                f"{self._indi_property_name('Backlash.DE')}={backlash_de}",
-            ],
-            "connected" if self.connected else "idle",
-            f"Backlash saved RA {backlash_ra} DE {backlash_de}",
-            "backlash_failed",
-        ):
-            self._console("Backlash\nsave failed")
+    def _apply_backlash_values(self, backlash_ra: int, backlash_de: int) -> bool:
+        try:
+            result = self._apply_indi_backlash(backlash_ra, backlash_de)
+        except Exception as exc:
+            logger.exception("INDI backlash vector update failed")
+            self._write_controller_status("backlash_failed", str(exc))
+            return False
+
+        if not result.get("ok"):
+            error = result.get("stderr") or result.get("stdout") or "Backlash failed"
+            logger.warning("INDI backlash returned failure: %s", error)
+            self._write_controller_status("backlash_failed", error)
             return False
 
         self.backlash_ra = backlash_ra
         self.backlash_de = backlash_de
+        return True
+
+    def set_backlash(self, ra_value: Any, de_value: Any) -> bool:
+        backlash_ra = self._validate_backlash_value(ra_value)
+        backlash_de = self._validate_backlash_value(de_value)
+        if not self._apply_backlash_values(backlash_ra, backlash_de):
+            self._console("Backlash\nsave failed")
+            return False
+
         self._backlash_auto = None
         self._write_controller_status(
             "connected" if self.connected else "idle",
@@ -1481,35 +1690,1584 @@ class MountControlIndi:
         self._console("Backlash\nsaved")
         return True
 
+    def _backlash_axis_config(self, axis: str) -> dict[str, str]:
+        if axis == "ra":
+            return {
+                "axis": "RA",
+                "value_key": "backlash_ra",
+                "forward": "east",
+                "reverse": "west",
+                "coord": "ra",
+            }
+        return {
+            "axis": "DE",
+            "value_key": "backlash_de",
+            "forward": "north",
+            "reverse": "south",
+            "coord": "dec",
+        }
+
+    def _backlash_auto_status(self, state: str, message: str, **extra: Any) -> None:
+        if self._backlash_auto is None:
+            self._backlash_auto = {}
+        self._backlash_auto.update(
+            {
+                "state": state,
+                "message": message,
+                "updated": time.time(),
+            }
+        )
+        self._backlash_auto.update(extra)
+        self._write_controller_status(f"backlash_auto_{state}", message)
+
+    def _current_imu_sample(self) -> Any:
+        if self.shared_state is None or not hasattr(self.shared_state, "imu"):
+            return None
+        try:
+            imu = self.shared_state.imu()
+        except Exception:
+            logger.exception("Could not read IMU sample for backlash calculation")
+            return None
+        quat = getattr(imu, "quat", None)
+        if quat is None:
+            return None
+        timestamp = getattr(imu, "timestamp", None)
+        if timestamp:
+            try:
+                if time.time() - float(timestamp) > BACKLASH_AUTO_IMU_STALE_SECONDS:
+                    return None
+            except (TypeError, ValueError):
+                return None
+        return imu
+
+    def _copy_imu_quat(self, quat_value: Any) -> Any:
+        if quat_value is None:
+            return None
+        return quaternion.quaternion(
+            float(quat_value.w),
+            float(quat_value.x),
+            float(quat_value.y),
+            float(quat_value.z),
+        )
+
+    def _wait_for_imu_sample(self, timeout: float = 3.0) -> Any:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            imu = self._current_imu_sample()
+            if imu is not None:
+                return self._copy_imu_quat(getattr(imu, "quat", None))
+            time.sleep(BACKLASH_AUTO_SAMPLE_SECONDS)
+        return None
+
+    def _imu_angle_diff_deg(self, reference_quat: Any) -> Optional[float]:
+        imu = self._current_imu_sample()
+        if imu is None:
+            return None
+        try:
+            current_quat = self._copy_imu_quat(imu.quat)
+            return math.degrees(qt.get_quat_angular_diff(reference_quat, current_quat))
+        except Exception:
+            logger.exception("Could not compare IMU quaternions")
+            return None
+
+    def _screen_direction(self) -> str:
+        try:
+            return str(config.Config().get_option("screen_direction", "right"))
+        except Exception:
+            logger.warning("Could not read screen direction; using right", exc_info=True)
+            return "right"
+
+    def _current_imu_altaz(self) -> Optional[tuple[float, float]]:
+        imu = self._current_imu_sample()
+        if imu is None:
+            return None
+
+        is_calibrated = getattr(imu, "is_calibrated", None)
+        if callable(is_calibrated) and not is_calibrated():
+            return None
+
+        try:
+            q_x2cam = (
+                self._copy_imu_quat(imu.quat)
+                * ImuDeadReckoning._q_imu2cam(self._screen_direction())
+            ).normalized()
+            if not all(
+                math.isfinite(float(component))
+                for component in (q_x2cam.w, q_x2cam.x, q_x2cam.y, q_x2cam.z)
+            ):
+                return None
+
+            boresight = (
+                q_x2cam * quaternion.quaternion(0, 0, 0, 1) * q_x2cam.conj()
+            )
+            east, north, up = boresight.x, boresight.y, boresight.z
+            norm = math.sqrt(east * east + north * north + up * up)
+            if norm <= 0:
+                return None
+
+            east, north, up = east / norm, north / norm, up / norm
+            alt = math.degrees(math.asin(max(-1.0, min(1.0, up))))
+            az = math.degrees(math.atan2(east, north)) % 360.0
+            return alt, az
+        except Exception:
+            logger.exception("Could not derive IMU Alt/Az for backlash safety")
+            return None
+
+    def _backlash_altitude_is_safe(self, altitude_deg: float) -> bool:
+        return (
+            BACKLASH_AUTO_SAFE_MIN_ALT_DEG
+            <= altitude_deg
+            <= BACKLASH_AUTO_SAFE_MAX_ALT_DEG
+        )
+
+    def _safe_backlash_target_radec(
+        self, current_az_deg: float
+    ) -> Optional[tuple[float, float]]:
+        latitude, longitude, elevation, dt = self._shared_location_time_values()
+        if latitude is None or longitude is None or dt is None:
+            self._backlash_auto_status(
+                "failed",
+                (
+                    "A locked PiFinder location and current time are required "
+                    "before moving to a safe backlash test position"
+                ),
+                phase="safe_position",
+            )
+            return None
+
+        if isinstance(dt, str):
+            try:
+                dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+            except ValueError:
+                self._backlash_auto_status(
+                    "failed",
+                    "Could not parse PiFinder time for safe backlash positioning",
+                    phase="safe_position",
+                )
+                return None
+        if getattr(dt, "tzinfo", None) is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+        try:
+            calc_utils.sf_utils.set_location(latitude, longitude, elevation or 0.0)
+            return calc_utils.sf_utils.altaz_to_radec(
+                BACKLASH_AUTO_SAFE_TARGET_ALT_DEG,
+                current_az_deg % 360.0,
+                dt,
+            )
+        except Exception:
+            logger.exception("Could not calculate safe backlash target")
+            self._backlash_auto_status(
+                "failed",
+                "Could not calculate a safe backlash test target from IMU/location/time",
+                phase="safe_position",
+            )
+            return None
+
+    def _ensure_backlash_safe_position(self) -> bool:
+        altaz = self._current_imu_altaz()
+        if altaz is None:
+            self._backlash_auto_status(
+                "failed",
+                (
+                    "Could not read a calibrated IMU altitude for safe backlash "
+                    "positioning"
+                ),
+                phase="safe_position",
+            )
+            return False
+
+        altitude_deg, azimuth_deg = altaz
+        if self._backlash_altitude_is_safe(altitude_deg):
+            self._backlash_auto_status(
+                "running",
+                f"IMU altitude {altitude_deg:.1f} deg is safe for backlash test",
+                phase="safe_position",
+                imu_altitude_deg=altitude_deg,
+                imu_azimuth_deg=azimuth_deg,
+                safe_min_alt_deg=BACKLASH_AUTO_SAFE_MIN_ALT_DEG,
+                safe_max_alt_deg=BACKLASH_AUTO_SAFE_MAX_ALT_DEG,
+            )
+            return True
+
+        self._backlash_auto_status(
+            "running",
+            (
+                f"IMU altitude {altitude_deg:.1f} deg is outside the safe "
+                "backlash range; moving to a safe test altitude"
+            ),
+            phase="safe_position",
+            imu_altitude_deg=altitude_deg,
+            imu_azimuth_deg=azimuth_deg,
+            safe_min_alt_deg=BACKLASH_AUTO_SAFE_MIN_ALT_DEG,
+            safe_max_alt_deg=BACKLASH_AUTO_SAFE_MAX_ALT_DEG,
+            safe_target_alt_deg=BACKLASH_AUTO_SAFE_TARGET_ALT_DEG,
+        )
+
+        target = self._safe_backlash_target_radec(azimuth_deg)
+        if target is None:
+            return False
+
+        target_ra, target_dec = target
+        if not self._goto_target_and_wait(
+            target_ra,
+            target_dec,
+            "Safe backlash test position",
+            timeout=BACKLASH_AUTO_SAFE_GOTO_TIMEOUT_SECONDS,
+        ):
+            self.stop_mount()
+            self._backlash_auto_status(
+                "failed",
+                (
+                    "Could not move to a safe backlash test position. "
+                    "OnStep may have blocked the GoTo because of mount limits."
+                ),
+                phase="safe_position",
+                target_ra=target_ra % 360.0,
+                target_dec=target_dec,
+            )
+            return False
+
+        settle = self._wait_for_backlash_baseline("safe position")
+        if settle is None:
+            return False
+
+        altaz = self._current_imu_altaz()
+        if altaz is None:
+            self._backlash_auto_status(
+                "failed",
+                "Safe GoTo completed, but IMU altitude could not be re-read",
+                phase="safe_position",
+            )
+            return False
+
+        altitude_deg, azimuth_deg = altaz
+        if not self._backlash_altitude_is_safe(altitude_deg):
+            self.stop_mount()
+            self._backlash_auto_status(
+                "failed",
+                (
+                    f"Safe GoTo completed, but IMU altitude is still "
+                    f"{altitude_deg:.1f} deg. Stop and check mount limits/"
+                    "orientation before retrying."
+                ),
+                phase="safe_position",
+                imu_altitude_deg=altitude_deg,
+                imu_azimuth_deg=azimuth_deg,
+                target_ra=target_ra % 360.0,
+                target_dec=target_dec,
+            )
+            return False
+
+        self._backlash_auto_status(
+            "running",
+            f"Safe backlash test altitude confirmed at {altitude_deg:.1f} deg",
+            phase="safe_position",
+            imu_altitude_deg=altitude_deg,
+            imu_azimuth_deg=azimuth_deg,
+            target_ra=target_ra % 360.0,
+            target_dec=target_dec,
+        )
+        return True
+
+    def _wait_for_imu_stable(
+        self, seconds: float = BACKLASH_AUTO_SETTLE_SECONDS
+    ) -> Optional[dict[str, Any]]:
+        baseline = self._wait_for_imu_sample(timeout=seconds)
+        if baseline is None:
+            return None
+
+        readings: list[float] = [0.0]
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            angle = self._imu_angle_diff_deg(baseline)
+            if angle is not None:
+                readings.append(angle)
+            time.sleep(BACKLASH_AUTO_SAMPLE_SECONDS)
+
+        spread = max(readings) - min(readings)
+        threshold = max(BACKLASH_AUTO_MIN_DETECT_DEG, spread * 4.0)
+        return {
+            "quat": baseline,
+            "spread_deg": spread,
+            "threshold_deg": threshold,
+            "samples": len(readings),
+        }
+
+    def _wait_for_backlash_baseline(self, phase_label: str) -> Optional[dict[str, Any]]:
+        last_settle = None
+        for attempt in range(1, BACKLASH_AUTO_STABILITY_RETRIES + 1):
+            self._backlash_auto_status(
+                "running",
+                (
+                    f"{phase_label}: waiting for IMU stability "
+                    f"{attempt}/{BACKLASH_AUTO_STABILITY_RETRIES}"
+                ),
+                phase=phase_label,
+                stability_attempt=attempt,
+            )
+            settle = self._wait_for_imu_stable()
+            if settle is None:
+                return None
+            last_settle = settle
+            if settle["spread_deg"] <= BACKLASH_AUTO_MAX_STABLE_NOISE_DEG:
+                return settle
+            self._backlash_auto_status(
+                "running",
+                (
+                    f"{phase_label}: IMU still settling, noise "
+                    f"{settle['spread_deg']:.3f} deg"
+                ),
+                phase=phase_label,
+                stability_attempt=attempt,
+                imu_noise_deg=settle["spread_deg"],
+                max_stable_noise_deg=BACKLASH_AUTO_MAX_STABLE_NOISE_DEG,
+            )
+            time.sleep(BACKLASH_AUTO_TRACKING_SETTLE_SECONDS)
+
+        if last_settle is not None:
+            self._backlash_auto_status(
+                "failed",
+                (
+                    f"{phase_label}: IMU baseline noise "
+                    f"{last_settle['spread_deg']:.3f} deg is too high; "
+                    "wait for the mount/IMU to settle and retry."
+                ),
+                phase=phase_label,
+                imu_noise_deg=last_settle["spread_deg"],
+                max_stable_noise_deg=BACKLASH_AUTO_MAX_STABLE_NOISE_DEG,
+            )
+        return None
+
+    def _backlash_pulse(self, direction: str, pulse_seconds: float) -> bool:
+        if not self.manual_move(direction, lease_seconds=pulse_seconds):
+            return False
+        try:
+            time.sleep(pulse_seconds)
+        finally:
+            self.stop_mount()
+            time.sleep(BACKLASH_AUTO_SETTLE_AFTER_PULSE_SECONDS)
+        return True
+
+    def _pulse_until_imu_motion(
+        self,
+        direction: str,
+        baseline_quat: Any,
+        max_pulses: int,
+        threshold_deg: float,
+        phase_label: str,
+    ) -> tuple[Optional[int], float]:
+        last_angle = 0.0
+        for pulse_count in range(1, max_pulses + 1):
+            self._backlash_auto_status(
+                "running",
+                f"{phase_label}: pulse {pulse_count}/{max_pulses}",
+                pulse_count=pulse_count,
+                phase=phase_label,
+            )
+            if not self._backlash_pulse(direction, BACKLASH_AUTO_PULSE_SECONDS):
+                return None, last_angle
+            angle = self._imu_angle_diff_deg(baseline_quat)
+            if angle is not None:
+                last_angle = angle
+            self._backlash_auto_status(
+                "running",
+                (
+                    f"{phase_label}: pulse {pulse_count}/{max_pulses}, "
+                    f"IMU delta {last_angle:.3f} deg"
+                ),
+                pulse_count=pulse_count,
+                phase=phase_label,
+                angle_delta_deg=last_angle,
+                threshold_deg=threshold_deg,
+            )
+            if last_angle >= threshold_deg:
+                return pulse_count, last_angle
+        return None, last_angle
+
+    def _estimate_backlash_arcsec(self, pulse_count: int, slew_rate: int) -> int:
+        multiplier = BACKLASH_AUTO_RATE_MULTIPLIERS.get(slew_rate)
+        if multiplier is None:
+            return BACKLASH_MIN_VALUE
+        estimated = math.ceil(
+            pulse_count
+            * BACKLASH_AUTO_PULSE_SECONDS
+            * SIDEREAL_ARCSEC_PER_SECOND
+            * multiplier
+        )
+        return max(BACKLASH_MIN_VALUE, min(BACKLASH_MAX_VALUE, estimated))
+
+    def _backlash_mount_model(self) -> str:
+        try:
+            mount_type = str(config.Config().get_option("mount_type", "Alt/Az"))
+        except Exception:
+            logger.warning("Could not read mount type; using Alt/Az", exc_info=True)
+            return "altaz"
+        mount_type = mount_type.strip().lower()
+        if "eq" in mount_type or "equatorial" in mount_type:
+            return "eq"
+        return "altaz"
+
+    def _axis_goto_target(
+        self, axis: str, start_ra: float, start_dec: float, move_degrees: float
+    ) -> tuple[float, float]:
+        if axis == "ra":
+            dec_cos = max(0.25, abs(math.cos(math.radians(start_dec))))
+            return (start_ra + move_degrees / dec_cos) % 360.0, start_dec
+
+        direction = 1.0 if move_degrees >= 0 else -1.0
+        if start_dec + move_degrees > 85.0:
+            direction = -1.0
+        elif start_dec + move_degrees < -85.0:
+            direction = 1.0
+        signed_degrees = abs(move_degrees) * direction
+        return start_ra % 360.0, max(
+            -85.0, min(85.0, start_dec + signed_degrees)
+        )
+
+    def _axis_goto_plan(
+        self,
+        axis: str,
+        start_ra: float,
+        start_dec: float,
+        move_degrees: float,
+        mount_model: str,
+    ) -> dict[str, float]:
+        if mount_model == "eq":
+            if axis == "ra":
+                target_ra = (start_ra + move_degrees) % 360.0
+                signed_move = shortest_ra_delta_deg(target_ra, start_ra)
+                return {
+                    "target_ra": target_ra,
+                    "target_dec": start_dec,
+                    "commanded_degrees": abs(signed_move),
+                    "signed_move_degrees": signed_move,
+                }
+
+            target_ra, target_dec = self._axis_goto_target(
+                "dec", start_ra, start_dec, move_degrees
+            )
+            return {
+                "target_ra": target_ra,
+                "target_dec": target_dec,
+                "commanded_degrees": abs(target_dec - start_dec),
+                "signed_move_degrees": target_dec - start_dec,
+            }
+
+        target_ra, target_dec = self._axis_goto_target(
+            axis, start_ra, start_dec, move_degrees
+        )
+        commanded_degrees = (
+            radec_separation_arcmin(start_ra, start_dec, target_ra, target_dec) / 60.0
+        )
+        if axis == "ra":
+            signed_move = shortest_ra_delta_deg(target_ra, start_ra) * max(
+                0.25, abs(math.cos(math.radians(start_dec)))
+            )
+        else:
+            signed_move = target_dec - start_dec
+        return {
+            "target_ra": target_ra,
+            "target_dec": target_dec,
+            "commanded_degrees": commanded_degrees,
+            "signed_move_degrees": signed_move,
+        }
+
+    def _axis_position_delta_degrees(
+        self,
+        axis: str,
+        start_ra: float,
+        start_dec: float,
+        end_ra: float,
+        end_dec: float,
+        mount_model: str,
+    ) -> float:
+        if mount_model == "eq":
+            if axis == "ra":
+                return abs(shortest_ra_delta_deg(end_ra, start_ra))
+            return abs(end_dec - start_dec)
+        return radec_separation_arcmin(start_ra, start_dec, end_ra, end_dec) / 60.0
+
+    def _goto_target_and_wait(
+        self,
+        ra_deg: float,
+        dec_deg: float,
+        phase_label: str,
+        timeout: float = BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS,
+    ) -> bool:
+        self._backlash_auto_status(
+            "running",
+            f"{phase_label}: GoTo sent",
+            phase=phase_label,
+            target_ra=ra_deg % 360.0,
+            target_dec=dec_deg,
+        )
+        if not self.goto_target(ra_deg, dec_deg, refine_after_goto=False):
+            self._backlash_auto_status(
+                "failed",
+                f"{phase_label}: could not send GoTo",
+                phase=phase_label,
+            )
+            return False
+
+        start = time.monotonic()
+        while time.monotonic() - start < timeout:
+            elapsed = time.monotonic() - start
+            if elapsed >= GOTO_COMPLETE_MIN_SECONDS:
+                busy = self._indi_mount_is_busy()
+                if busy is False:
+                    current_position = self._read_current_position()
+                    if current_position is not None:
+                        separation_deg = (
+                            radec_separation_arcmin(
+                                current_position[0],
+                                current_position[1],
+                                ra_deg,
+                                dec_deg,
+                            )
+                            / 60.0
+                        )
+                        if separation_deg > BACKLASH_AUTO_GOTO_TARGET_TOLERANCE_DEG:
+                            self._backlash_auto_status(
+                                "running",
+                                (
+                                    f"{phase_label}: INDI is idle but target is "
+                                    f"still {separation_deg:.2f} deg away"
+                                ),
+                                phase=phase_label,
+                                target_ra=ra_deg % 360.0,
+                                target_dec=dec_deg,
+                                current_ra=current_position[0],
+                                current_dec=current_position[1],
+                                target_error_deg=separation_deg,
+                                target_tolerance_deg=(
+                                    BACKLASH_AUTO_GOTO_TARGET_TOLERANCE_DEG
+                                ),
+                            )
+                            time.sleep(BACKLASH_AUTO_GOTO_POLL_SECONDS)
+                            continue
+                    self._complete_goto_motion(f"{phase_label}: GoTo complete")
+                    return True
+                if busy is None:
+                    self._read_current_position()
+            self._backlash_auto_status(
+                "running",
+                f"{phase_label}: waiting for GoTo completion",
+                phase=phase_label,
+                goto_wait_seconds=round(elapsed, 1),
+            )
+            time.sleep(BACKLASH_AUTO_GOTO_POLL_SECONDS)
+
+        self.stop_mount()
+        self._backlash_auto_status(
+            "failed",
+            (
+                f"{phase_label}: GoTo did not complete or target was not reached "
+                f"within {timeout:.0f} seconds; check OnStep mount limits"
+            ),
+            phase=phase_label,
+        )
+        return False
+
+    def _measure_backlash_goto_roundtrip(
+        self,
+        cfg: dict[str, str],
+        repeat_index: int,
+        move_degrees: float,
+        mount_model: Optional[str] = None,
+        phase_prefix: str = "",
+    ) -> Optional[dict[str, Any]]:
+        if mount_model is None:
+            mount_model = self._backlash_mount_model()
+        current_position = self._read_current_position()
+        if current_position is None:
+            self._backlash_auto_status(
+                "failed",
+                "Could not read current mount position before GoTo backlash test",
+            )
+            return None
+
+        start_ra, start_dec = current_position
+        forward_plan = self._axis_goto_plan(
+            cfg["coord"], start_ra, start_dec, move_degrees, mount_model
+        )
+        target_ra = forward_plan["target_ra"]
+        target_dec = forward_plan["target_dec"]
+        commanded_degrees = forward_plan["commanded_degrees"]
+        if commanded_degrees <= 0:
+            self._backlash_auto_status(
+                "failed", "Computed GoTo movement is too small for backlash test"
+            )
+            return None
+
+        phase_name = f"{phase_prefix}{cfg['axis']} repeat {repeat_index}"
+        start_settle = self._wait_for_backlash_baseline(
+            f"{phase_name} start"
+        )
+        if start_settle is None:
+            return None
+
+        if not self._goto_target_and_wait(
+            target_ra,
+            target_dec,
+            f"{phase_name} outward",
+        ):
+            return None
+
+        outward_settle = self._wait_for_backlash_baseline(
+            f"{phase_name} outward baseline"
+        )
+        if outward_settle is None:
+            return None
+
+        outward_angle = self._imu_angle_diff_deg(start_settle["quat"])
+        if outward_angle is None:
+            self._backlash_auto_status(
+                "failed",
+                f"{phase_name}: could not read outward IMU motion",
+            )
+            return None
+
+        outward_position = self._read_current_position()
+        if outward_position is None:
+            self._backlash_auto_status(
+                "failed",
+                f"{phase_name}: could not read current position after outward GoTo",
+            )
+            return None
+        outward_ra, outward_dec = outward_position
+        actual_forward_degrees = self._axis_position_delta_degrees(
+            cfg["coord"],
+            start_ra,
+            start_dec,
+            outward_ra,
+            outward_dec,
+            mount_model,
+        )
+        if actual_forward_degrees <= 0:
+            self._backlash_auto_status(
+                "failed",
+                f"{phase_name}: actual outward coordinate motion is too small",
+            )
+            return None
+        min_motion = actual_forward_degrees * BACKLASH_AUTO_MIN_GOTO_MOTION_FRACTION
+        if outward_angle < min_motion:
+            measurement_noise = max(
+                float(start_settle["spread_deg"]), float(outward_settle["spread_deg"])
+            )
+            self._backlash_auto_status(
+                "running",
+                (
+                    f"{phase_name}: outward IMU motion "
+                    f"{outward_angle:.3f} deg is below actual coordinate motion "
+                    f"{min_motion:.3f} deg"
+                ),
+                phase=phase_name,
+                commanded_degrees=actual_forward_degrees,
+                planned_commanded_degrees=commanded_degrees,
+                outward_angle_deg=outward_angle,
+                min_motion_deg=min_motion,
+                imu_noise_deg=measurement_noise,
+            )
+            return {
+                "valid": False,
+                "reason": "outward_motion_too_small",
+                "mount_model": mount_model,
+                "move_degrees": move_degrees,
+                "signed_move_degrees": forward_plan["signed_move_degrees"],
+                "commanded_degrees": actual_forward_degrees,
+                "planned_commanded_degrees": commanded_degrees,
+                "forward_commanded_degrees": actual_forward_degrees,
+                "planned_forward_commanded_degrees": commanded_degrees,
+                "outward_angle_deg": outward_angle,
+                "start_ra": start_ra,
+                "start_dec": start_dec,
+                "outward_ra": outward_ra,
+                "outward_dec": outward_dec,
+                "start_noise_deg": start_settle["spread_deg"],
+                "outward_noise_deg": outward_settle["spread_deg"],
+                "imu_noise_deg": measurement_noise,
+            }
+
+        reverse_plan = self._axis_goto_plan(
+            cfg["coord"],
+            outward_ra,
+            outward_dec,
+            -float(forward_plan["signed_move_degrees"]),
+            mount_model,
+        )
+        reverse_commanded_degrees = reverse_plan["commanded_degrees"]
+        if reverse_commanded_degrees <= 0:
+            self._backlash_auto_status(
+                "failed", "Computed reverse GoTo movement is too small for backlash test"
+            )
+            return None
+
+        if not self._goto_target_and_wait(
+            reverse_plan["target_ra"],
+            reverse_plan["target_dec"],
+            f"{phase_name} return",
+        ):
+            return None
+
+        return_settle = self._wait_for_backlash_baseline(
+            f"{phase_name} return baseline"
+        )
+        if return_settle is None:
+            return None
+
+        reverse_angle = self._imu_angle_diff_deg(outward_settle["quat"])
+        if reverse_angle is None:
+            self._backlash_auto_status(
+                "failed",
+                f"{phase_name}: could not read return IMU motion",
+            )
+            return None
+
+        return_position = self._read_current_position()
+        if return_position is None:
+            self._backlash_auto_status(
+                "failed",
+                f"{phase_name}: could not read current position after return GoTo",
+            )
+            return None
+        return_ra, return_dec = return_position
+        actual_reverse_degrees = self._axis_position_delta_degrees(
+            cfg["coord"],
+            outward_ra,
+            outward_dec,
+            return_ra,
+            return_dec,
+            mount_model,
+        )
+        if actual_reverse_degrees <= 0:
+            self._backlash_auto_status(
+                "failed",
+                f"{phase_name}: actual return coordinate motion is too small",
+            )
+            return None
+
+        reverse_min_motion = actual_reverse_degrees * BACKLASH_AUTO_MIN_GOTO_MOTION_FRACTION
+        if reverse_angle < reverse_min_motion:
+            measurement_noise = max(
+                float(start_settle["spread_deg"]),
+                float(outward_settle["spread_deg"]),
+                float(return_settle["spread_deg"]),
+            )
+            self._backlash_auto_status(
+                "running",
+                (
+                    f"{phase_name}: return IMU motion "
+                    f"{reverse_angle:.3f} deg is below expected "
+                    f"{reverse_min_motion:.3f} deg"
+                ),
+                phase=phase_name,
+                commanded_degrees=actual_reverse_degrees,
+                planned_commanded_degrees=reverse_commanded_degrees,
+                forward_commanded_degrees=actual_forward_degrees,
+                planned_forward_commanded_degrees=commanded_degrees,
+                reverse_commanded_degrees=actual_reverse_degrees,
+                planned_reverse_commanded_degrees=reverse_commanded_degrees,
+                reverse_angle_deg=reverse_angle,
+                min_motion_deg=reverse_min_motion,
+                imu_noise_deg=measurement_noise,
+            )
+            return {
+                "valid": False,
+                "reason": "return_motion_too_small",
+                "mount_model": mount_model,
+                "move_degrees": move_degrees,
+                "signed_move_degrees": forward_plan["signed_move_degrees"],
+                "commanded_degrees": actual_reverse_degrees,
+                "planned_commanded_degrees": reverse_commanded_degrees,
+                "forward_commanded_degrees": actual_forward_degrees,
+                "planned_forward_commanded_degrees": commanded_degrees,
+                "reverse_commanded_degrees": actual_reverse_degrees,
+                "planned_reverse_commanded_degrees": reverse_commanded_degrees,
+                "outward_angle_deg": outward_angle,
+                "reverse_angle_deg": reverse_angle,
+                "start_ra": start_ra,
+                "start_dec": start_dec,
+                "outward_ra": outward_ra,
+                "outward_dec": outward_dec,
+                "return_ra": return_ra,
+                "return_dec": return_dec,
+                "start_noise_deg": start_settle["spread_deg"],
+                "outward_noise_deg": outward_settle["spread_deg"],
+                "return_noise_deg": return_settle["spread_deg"],
+                "imu_noise_deg": measurement_noise,
+            }
+
+        measurement_noise = max(
+            float(start_settle["spread_deg"]),
+            float(outward_settle["spread_deg"]),
+            float(return_settle["spread_deg"]),
+        )
+        error_degrees = max(0.0, actual_reverse_degrees - reverse_angle)
+        estimated_arcsec = max(
+            BACKLASH_MIN_VALUE,
+            min(BACKLASH_MAX_VALUE, int(round(error_degrees * 3600.0))),
+        )
+        if (
+            estimated_arcsec >= BACKLASH_MAX_VALUE
+            and move_degrees < BACKLASH_AUTO_GOTO_MAX_DEGREES
+        ):
+            self._backlash_auto_status(
+                "running",
+                (
+                    f"{phase_name}: estimate hit "
+                    f"{BACKLASH_MAX_VALUE} arc-sec at {move_degrees:.1f} deg, "
+                    "retrying with a larger GoTo angle"
+                ),
+                phase=phase_name,
+                commanded_degrees=actual_reverse_degrees,
+                planned_commanded_degrees=reverse_commanded_degrees,
+                forward_commanded_degrees=actual_forward_degrees,
+                planned_forward_commanded_degrees=commanded_degrees,
+                reverse_commanded_degrees=actual_reverse_degrees,
+                planned_reverse_commanded_degrees=reverse_commanded_degrees,
+                outward_angle_deg=outward_angle,
+                reverse_angle_deg=reverse_angle,
+                estimated_arcsec=estimated_arcsec,
+                move_degrees=move_degrees,
+                imu_noise_deg=measurement_noise,
+            )
+            return {
+                "valid": False,
+                "reason": "estimate_saturated",
+                "mount_model": mount_model,
+                "move_degrees": move_degrees,
+                "signed_move_degrees": forward_plan["signed_move_degrees"],
+                "commanded_degrees": actual_reverse_degrees,
+                "planned_commanded_degrees": reverse_commanded_degrees,
+                "forward_commanded_degrees": actual_forward_degrees,
+                "planned_forward_commanded_degrees": commanded_degrees,
+                "reverse_commanded_degrees": actual_reverse_degrees,
+                "planned_reverse_commanded_degrees": reverse_commanded_degrees,
+                "outward_angle_deg": outward_angle,
+                "reverse_angle_deg": reverse_angle,
+                "estimated_arcsec": estimated_arcsec,
+                "start_ra": start_ra,
+                "start_dec": start_dec,
+                "outward_ra": outward_ra,
+                "outward_dec": outward_dec,
+                "return_ra": return_ra,
+                "return_dec": return_dec,
+                "start_noise_deg": start_settle["spread_deg"],
+                "outward_noise_deg": outward_settle["spread_deg"],
+                "return_noise_deg": return_settle["spread_deg"],
+                "imu_noise_deg": measurement_noise,
+            }
+        return {
+            "valid": True,
+            "mount_model": mount_model,
+            "move_degrees": move_degrees,
+            "signed_move_degrees": forward_plan["signed_move_degrees"],
+            "commanded_degrees": actual_reverse_degrees,
+            "planned_commanded_degrees": reverse_commanded_degrees,
+            "forward_commanded_degrees": actual_forward_degrees,
+            "planned_forward_commanded_degrees": commanded_degrees,
+            "reverse_commanded_degrees": actual_reverse_degrees,
+            "planned_reverse_commanded_degrees": reverse_commanded_degrees,
+            "outward_angle_deg": outward_angle,
+            "reverse_angle_deg": reverse_angle,
+            "error_degrees": error_degrees,
+            "estimated_arcsec": estimated_arcsec,
+            "start_ra": start_ra,
+            "start_dec": start_dec,
+            "outward_ra": outward_ra,
+            "outward_dec": outward_dec,
+            "return_ra": return_ra,
+            "return_dec": return_dec,
+            "start_noise_deg": start_settle["spread_deg"],
+            "outward_noise_deg": outward_settle["spread_deg"],
+            "return_noise_deg": return_settle["spread_deg"],
+            "imu_noise_deg": measurement_noise,
+        }
+
+    def _verification_error_rate_percent(
+        self, residual_arcsec: int, estimated_value: int
+    ) -> Optional[float]:
+        if estimated_value <= 0:
+            return 0.0 if residual_arcsec <= 0 else None
+        return round((residual_arcsec / estimated_value) * 100.0, 1)
+
+    def _run_backlash_verification(
+        self,
+        cfg: dict[str, str],
+        estimated_value: int,
+        original_ra: int,
+        original_de: int,
+        move_degrees: float,
+        mount_model: str,
+    ) -> dict[str, Any]:
+        verify_ra = original_ra
+        verify_de = original_de
+        if cfg["value_key"] == "backlash_ra":
+            verify_ra = estimated_value
+        else:
+            verify_de = estimated_value
+
+        self._backlash_auto_status(
+            "running",
+            (
+                f"Applying estimated {cfg['axis']} backlash temporarily "
+                "for verification"
+            ),
+            phase=f"{cfg['axis']} verification",
+            verification_ra=verify_ra,
+            verification_de=verify_de,
+            verification_repeats=BACKLASH_AUTO_VERIFY_REPEATS,
+        )
+        if not self._apply_backlash_values(verify_ra, verify_de):
+            return {
+                "ok": False,
+                "message": "Could not apply estimated backlash for verification",
+                "measurements": [],
+                "invalid_measurements": [],
+            }
+
+        verification_measurements: list[dict[str, Any]] = []
+        invalid_measurements: list[dict[str, Any]] = []
+        for repeat_index in range(1, BACKLASH_AUTO_VERIFY_REPEATS + 1):
+            self._backlash_auto_status(
+                "running",
+                (
+                    f"{cfg['axis']} verification "
+                    f"{repeat_index}/{BACKLASH_AUTO_VERIFY_REPEATS} "
+                    f"using {move_degrees:.1f} deg"
+                ),
+                phase=f"{cfg['axis']} verification",
+                repeat_index=repeat_index,
+                move_degrees=move_degrees,
+                valid_measurements=len(verification_measurements),
+            )
+            measurement = self._measure_backlash_goto_roundtrip(
+                cfg,
+                repeat_index,
+                move_degrees,
+                mount_model=mount_model,
+                phase_prefix="verification ",
+            )
+            if measurement is None:
+                return {
+                    "ok": False,
+                    "message": "Verification stopped before completing a round-trip",
+                    "measurements": verification_measurements,
+                    "invalid_measurements": invalid_measurements,
+                }
+            if not measurement.get("valid"):
+                invalid_measurements.append(measurement)
+                continue
+            verification_measurements.append(measurement)
+
+        if len(verification_measurements) < BACKLASH_AUTO_VERIFY_REPEATS:
+            return {
+                "ok": False,
+                "message": (
+                    f"Verification produced only {len(verification_measurements)}/"
+                    f"{BACKLASH_AUTO_VERIFY_REPEATS} reliable round-trips"
+                ),
+                "measurements": verification_measurements,
+                "invalid_measurements": invalid_measurements,
+            }
+
+        average_residual_arcsec = int(
+            round(
+                sum(m["estimated_arcsec"] for m in verification_measurements)
+                / len(verification_measurements)
+            )
+        )
+        error_rate = self._verification_error_rate_percent(
+            average_residual_arcsec, estimated_value
+        )
+        warn = average_residual_arcsec > BACKLASH_AUTO_VERIFY_WARN_ARCSEC
+        if error_rate is not None:
+            warn = warn or error_rate > BACKLASH_AUTO_VERIFY_WARN_PERCENT
+        return {
+            "ok": True,
+            "message": (
+                f"Verification residual average {average_residual_arcsec} arc-sec"
+            ),
+            "measurements": verification_measurements,
+            "invalid_measurements": invalid_measurements,
+            "average_residual_arcsec": average_residual_arcsec,
+            "error_rate_percent": error_rate,
+            "warning": warn,
+        }
+
     def auto_calculate_backlash(self, axis: str) -> bool:
         axis = axis.lower()
         if axis not in BACKLASH_AXES:
             logger.warning("Unknown backlash axis: %s", axis)
             return False
 
+        cfg = self._backlash_axis_config(axis)
+        mount_model = self._backlash_mount_model()
         self._backlash_auto = {
-            "axis": axis.upper(),
-            "state": "pending_hardware_test",
-            "message": (
-                "Auto backlash sequence is staged for UI review. "
-                "Hardware movement is disabled until field-test thresholds are set."
-            ),
+            "axis": cfg["axis"],
+            "state": "running",
+            "message": f"Auto backlash calculation started for {cfg['axis']}",
             "steps": [
+                "Disable tracking during measurement",
+                "Confirm the IMU altitude is safe; move to a safe test position if needed",
                 "Reset selected backlash to 0",
-                "Move slowly until IMU angle changes",
-                "Wait 3 seconds for IMU stabilization",
-                "Apply minimum reverse backlash pulses",
-                "Detect first angle change",
-                "Confirm from the opposite direction",
-                "Copy calculated value into the input field",
+                "Move far enough with coordinate GoTo to load the axis",
+                "Return with coordinate GoTo and compare commanded vs IMU motion",
+                "Repeat and average stable measurements",
+                "Temporarily apply the measured backlash and verify with 3 more round-trips",
+                "Restore original Backlash, slew rate, and tracking",
+                "Copy calculated value into the input field only",
             ],
             "started_at": time.time(),
+            "method": "coordinate_goto_roundtrip",
+            "mount_model": mount_model,
+            "method_note": (
+                "Each reverse GoTo starts from the actual completed position; "
+                "coordinate GoTo may move both physical axes during DEC or RA tests."
+            ),
+            "move_degrees": BACKLASH_AUTO_GOTO_DEGREES,
+            "max_move_degrees": BACKLASH_AUTO_GOTO_MAX_DEGREES,
+            "repeats": BACKLASH_AUTO_GOTO_REPEATS,
+            "verification_repeats": BACKLASH_AUTO_VERIFY_REPEATS,
+            "slew_rate": BACKLASH_AUTO_SLEW_RATE,
         }
         self._write_controller_status(
-            "backlash_auto_pending",
-            f"Backlash auto calculation staged for {axis.upper()}",
+            "backlash_auto_running",
+            f"Backlash auto calculation started for {cfg['axis']}",
         )
-        self._console(f"Backlash {axis.upper()}\nauto staged")
+        self._console(f"Backlash {cfg['axis']}\nauto start")
+
+        original_ra: Optional[int] = None
+        original_de: Optional[int] = None
+        original_slew: Optional[int] = None
+        original_tracking: Optional[bool] = None
+        restored = False
+
+        try:
+            imu_sample = self._current_imu_sample()
+            if imu_sample is None:
+                self._backlash_auto_status(
+                    "failed",
+                    "No fresh IMU sample is available for auto backlash calculation",
+                )
+                self._console("Backlash auto\nno IMU")
+                return False
+            if getattr(imu_sample, "uses_magnetometer", False):
+                self._backlash_auto_status(
+                    "failed",
+                    (
+                        "IMU compass/NDOF mode is active. Set Settings > IMU "
+                        "Settings > Compass to Off, restart PiFinder, then retry "
+                        "auto backlash."
+                    ),
+                    fusion_mode=getattr(imu_sample, "fusion_mode", "unknown"),
+                    calibration_status=getattr(imu_sample, "calibration_status", None),
+                )
+                self._console("Backlash auto\nCompass off")
+                return False
+            if self._wait_for_imu_sample(timeout=3.0) is None:
+                self._backlash_auto_status(
+                    "failed",
+                    "No fresh IMU orientation is available for auto backlash calculation",
+                )
+                self._console("Backlash auto\nno IMU")
+                return False
+
+            current_ra, current_de = self.refresh_backlash()
+            original_ra = (
+                current_ra if current_ra is not None else self.backlash_ra or 0
+            )
+            original_de = (
+                current_de if current_de is not None else self.backlash_de or 0
+            )
+            original_slew = self._read_driver_slew_rate()
+            if original_slew is None:
+                self._backlash_auto_status(
+                    "failed",
+                    "Could not read the current driver slew rate; auto test was not started",
+                )
+                self._console("Backlash auto\nno speed")
+                return False
+            self.slew_rate = original_slew
+
+            original_tracking = self._read_tracking_enabled()
+            if original_tracking is None:
+                self._backlash_auto_status(
+                    "failed",
+                    "Could not read the current tracking state; auto test was not started",
+                )
+                self._console("Backlash auto\nno tracking")
+                return False
+            if original_tracking and not self.set_tracking(False):
+                self._backlash_auto_status(
+                    "failed", "Could not disable tracking before backlash test"
+                )
+                return False
+            if original_tracking:
+                self._backlash_auto_status(
+                    "running",
+                    (
+                        "Tracking disabled; waiting for mount and IMU to settle "
+                        f"for {BACKLASH_AUTO_TRACKING_SETTLE_SECONDS:.0f} seconds"
+                    ),
+                )
+                time.sleep(BACKLASH_AUTO_TRACKING_SETTLE_SECONDS)
+
+            if not self.set_slew_rate(BACKLASH_AUTO_SLEW_RATE):
+                self._backlash_auto_status(
+                    "failed", "Could not set slow slew rate for backlash test"
+                )
+                return False
+
+            if not self._ensure_backlash_safe_position():
+                self._console("Backlash auto\nunsafe")
+                return False
+
+            test_ra = original_ra
+            test_de = original_de
+            if axis == "ra":
+                test_ra = 0
+            else:
+                test_de = 0
+            if not self._apply_backlash_values(test_ra, test_de):
+                self._backlash_auto_status(
+                    "failed", "Could not reset selected backlash to 0"
+                )
+                self._console("Backlash auto\nreset failed")
+                return False
+
+            measurements: list[dict[str, Any]] = []
+            invalid_measurements: list[dict[str, Any]] = []
+            move_degrees = BACKLASH_AUTO_GOTO_DEGREES
+            repeat_index = 1
+            while (
+                repeat_index <= BACKLASH_AUTO_GOTO_REPEATS
+                and move_degrees <= BACKLASH_AUTO_GOTO_MAX_DEGREES
+            ):
+                self._backlash_auto_status(
+                    "running",
+                    (
+                        f"{cfg['axis']} GoTo round-trip "
+                        f"{repeat_index}/{BACKLASH_AUTO_GOTO_REPEATS} "
+                        f"using {move_degrees:.1f} deg"
+                    ),
+                    phase=f"{cfg['axis']} GoTo round-trip",
+                    repeat_index=repeat_index,
+                    move_degrees=move_degrees,
+                    valid_measurements=len(measurements),
+                )
+                measurement = self._measure_backlash_goto_roundtrip(
+                    cfg, repeat_index, move_degrees, mount_model=mount_model
+                )
+                if measurement is None:
+                    return False
+                if not measurement.get("valid"):
+                    invalid_measurements.append(measurement)
+                    move_degrees *= 2.0
+                    continue
+                measurements.append(measurement)
+                self._backlash_auto_status(
+                    "running",
+                    (
+                        f"{cfg['axis']} GoTo round-trip "
+                        f"{repeat_index}/{BACKLASH_AUTO_GOTO_REPEATS} measured"
+                    ),
+                    phase=f"{cfg['axis']} GoTo round-trip",
+                    repeat_index=repeat_index,
+                    move_degrees=move_degrees,
+                    valid_measurements=len(measurements),
+                    last_measurement=measurement,
+                    imu_noise_deg=measurement.get("imu_noise_deg"),
+                )
+                repeat_index += 1
+
+            if len(measurements) < BACKLASH_AUTO_GOTO_REPEATS:
+                self._backlash_auto_status(
+                    "failed",
+                    (
+                        f"{cfg['axis']} GoTo round-trip did not produce reliable "
+                        f"IMU motion for all repeats "
+                        f"({len(measurements)}/{BACKLASH_AUTO_GOTO_REPEATS}). "
+                        "Increase movement distance or inspect IMU mounting/"
+                        "calibration before applying backlash."
+                    ),
+                    measurements=measurements,
+                    invalid_measurements=invalid_measurements,
+                )
+                return False
+
+            estimated_value = int(
+                round(
+                    sum(m["estimated_arcsec"] for m in measurements) / len(measurements)
+                )
+            )
+            estimated_value = max(
+                BACKLASH_MIN_VALUE, min(BACKLASH_MAX_VALUE, estimated_value)
+            )
+            saturated = any(
+                int(m.get("estimated_arcsec", 0)) >= BACKLASH_MAX_VALUE
+                for m in measurements
+            )
+            verification_move_degrees = max(
+                float(m.get("move_degrees", BACKLASH_AUTO_GOTO_DEGREES))
+                for m in measurements
+            )
+            verification = self._run_backlash_verification(
+                cfg,
+                estimated_value,
+                original_ra,
+                original_de,
+                verification_move_degrees,
+                mount_model,
+            )
+            if not self._apply_backlash_values(original_ra, original_de):
+                self._backlash_auto_status(
+                    "failed",
+                    (
+                        "Backlash was measured and verified, but restoring the "
+                        "original driver values failed"
+                    ),
+                )
+                return False
+            restored = True
+            if original_slew is not None:
+                self.set_slew_rate(original_slew)
+
+            verification_residual = verification.get("average_residual_arcsec")
+            verification_error_rate = verification.get("error_rate_percent")
+            completion_message = (
+                f"{cfg['axis']} backlash estimated as {estimated_value} arc-sec. "
+                "Original driver value restored; press Save Backlash to apply."
+            )
+            if verification.get("ok") and verification_residual is not None:
+                completion_message = (
+                    f"{cfg['axis']} backlash estimated as {estimated_value} arc-sec; "
+                    f"verification residual average {verification_residual} arc-sec"
+                )
+                if verification_error_rate is not None:
+                    completion_message += (
+                        f" ({verification_error_rate:.1f}% of estimate)"
+                    )
+                completion_message += (
+                    ". Original driver value restored; press Save Backlash to apply."
+                )
+            elif not verification.get("ok"):
+                completion_message = (
+                    f"{cfg['axis']} backlash estimated as {estimated_value} arc-sec, "
+                    f"but verification was incomplete: {verification.get('message')}. "
+                    "Original driver value restored; inspect repeat data before applying."
+                )
+            if saturated:
+                completion_message = (
+                    f"{cfg['axis']} backlash reached the {BACKLASH_MAX_VALUE} "
+                    "arc-sec limit during measurement. Original driver value "
+                    "restored; inspect measurement and verification data before applying."
+                )
+
+            confidence = "low" if saturated else "normal"
+            if verification.get("warning") or not verification.get("ok"):
+                confidence = "low"
+            self._backlash_auto_status(
+                "complete",
+                completion_message,
+                estimated_value=estimated_value,
+                value_key=cfg["value_key"],
+                measurements=measurements,
+                invalid_measurements=invalid_measurements,
+                verification=verification,
+                verification_average_residual_arcsec=verification_residual,
+                verification_error_rate_percent=verification_error_rate,
+                restored_ra=original_ra,
+                restored_de=original_de,
+                valid_measurements=len(measurements),
+                saturated=saturated,
+                confidence=confidence,
+            )
+            self._console(f"Backlash {cfg['axis']}\n{estimated_value} arcsec")
+            return True
+        except Exception as exc:
+            logger.exception("Auto backlash calculation failed")
+            self._backlash_auto_status("failed", f"Auto backlash failed: {exc}")
+            self._console("Backlash auto\nfailed")
+            return False
+        finally:
+            self.stop_mount()
+            if original_ra is not None and original_de is not None and not restored:
+                if self._apply_backlash_values(original_ra, original_de):
+                    self._backlash_auto_status(
+                        self._backlash_auto.get("state", "failed")
+                        if self._backlash_auto
+                        else "failed",
+                        (
+                            self._backlash_auto.get("message", "")
+                            if self._backlash_auto
+                            else "Auto backlash calculation stopped"
+                        ),
+                        restored_ra=original_ra,
+                        restored_de=original_de,
+                    )
+            if original_slew is not None and self.slew_rate != original_slew:
+                self.set_slew_rate(original_slew)
+            if original_tracking is not None:
+                current_tracking = self._read_tracking_enabled()
+                if current_tracking is None or current_tracking != original_tracking:
+                    self.set_tracking(original_tracking)
+
+    def _align_session_status(self, state: str, message: str) -> None:
+        if self._multipoint_align is not None:
+            self._multipoint_align["state"] = state
+            self._multipoint_align["message"] = message
+            self._multipoint_align["updated"] = time.time()
+        self._write_controller_status(
+            "align_" + state,
+            message,
+        )
+
+    def _current_align_session(self) -> Optional[dict[str, Any]]:
+        session = self._multipoint_align
+        if not session or not session.get("active"):
+            return None
+        return session
+
+    def _set_current_align_star(
+        self, session: dict[str, Any], star: dict[str, Any]
+    ) -> dict[str, Any]:
+        current_star = {
+            "name": str(star.get("name") or "SkySafari Target"),
+            "ra": float(star["ra"]) % 360.0,
+            "dec": float(star["dec"]),
+            "mag": star.get("mag"),
+        }
+        session["current_star"] = current_star
+        session["updated"] = time.time()
+        return current_star
+
+    def _align_auto_star(self, session: dict[str, Any]) -> dict[str, Any]:
+        completed = session.get("completed", [])
+        used_names = {str(star.get("name", "")).casefold() for star in completed}
+        try:
+            latitude, longitude, elevation, dt = self._shared_location_time_values()
+            if latitude is None or longitude is None or dt is None:
+                raise ValueError("No locked location/time for altitude filtering")
+            if isinstance(dt, str):
+                dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+            if getattr(dt, "tzinfo", None) is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            calc_utils.sf_utils.set_location(latitude, longitude, elevation or 0.0)
+            visible_candidates = []
+            for star in BRIGHT_ALIGN_STARS:
+                if star["name"].casefold() in used_names:
+                    continue
+                alt, _az = calc_utils.sf_utils.radec_to_altaz(
+                    float(star["ra"]), float(star["dec"]), dt
+                )
+                if alt >= 20.0:
+                    visible_candidates.append((alt, star))
+            if visible_candidates:
+                return dict(max(visible_candidates, key=lambda item: item[0])[1])
+        except Exception:
+            logger.debug(
+                "Could not altitude-filter auto alignment stars", exc_info=True
+            )
+        return next_align_star(completed)
+
+    def _align_goto_current_star(self, session: dict[str, Any]) -> bool:
+        current_star = session.get("current_star")
+        if not current_star:
+            self._align_session_status("waiting", "Select an alignment star")
+            return False
+
+        session["state"] = "moving"
+        session["message"] = f"GoTo {current_star['name']} sent"
+        session["updated"] = time.time()
+        if not self.goto_target(
+            float(current_star["ra"]),
+            float(current_star["dec"]),
+            refine_after_goto=False,
+        ):
+            self._align_session_status(
+                "failed", f"Could not GoTo {current_star['name']}"
+            )
+            return False
+
+        self._align_session_status(
+            "adjust",
+            (
+                f"Center {current_star['name']} manually, "
+                "then confirm the alignment point"
+            ),
+        )
+        self._console(
+            f"Align {session['completed_points'] + 1}\n{current_star['name']}"
+        )
+        return True
+
+    def start_multipoint_align(
+        self,
+        mode: str = "manual",
+        points: Any = None,
+        star_name: str | None = None,
+    ) -> bool:
+        mode = (mode or "manual").strip().lower()
+        if mode not in {"manual", "auto"}:
+            mode = "manual"
+        total_points = clamp_align_points(points)
+        self._multipoint_align = {
+            "active": True,
+            "mode": mode,
+            "total_points": total_points,
+            "completed_points": 0,
+            "completed": [],
+            "current_star": None,
+            "available_stars": [star["name"] for star in BRIGHT_ALIGN_STARS],
+            "state": "waiting",
+            "message": "Select an alignment star",
+            "started_at": time.time(),
+            "updated": time.time(),
+        }
+        session = self._multipoint_align
+
+        if mode == "auto":
+            star = self._align_auto_star(session)
+            self._set_current_align_star(session, star)
+            self._align_session_status(
+                "moving", f"Auto alignment point 1/{total_points}: {star['name']}"
+            )
+            return self._align_goto_current_star(session)
+
+        if star_name:
+            return self.select_multipoint_align_star(star_name)
+
+        self._align_session_status(
+            "waiting", f"Manual alignment 0/{total_points}: select a star"
+        )
+        self._console("Multi align\nselect star")
+        return True
+
+    def select_multipoint_align_star(self, star_name: str) -> bool:
+        session = self._current_align_session()
+        if session is None:
+            session_started = self.start_multipoint_align(
+                mode="manual", points=None, star_name=None
+            )
+            if not session_started:
+                return False
+            session = self._current_align_session()
+        if session is None:
+            return False
+
+        star = get_align_star(star_name)
+        if star is None:
+            self._align_session_status("failed", f"Unknown alignment star: {star_name}")
+            return False
+
+        session["mode"] = "manual"
+        self._set_current_align_star(session, star)
+        return self._align_goto_current_star(session)
+
+    def confirm_multipoint_align(
+        self,
+        ra_deg: Any = None,
+        dec_deg: Any = None,
+        source: str = "ui",
+    ) -> bool:
+        session = self._current_align_session()
+        if session is None:
+            self._align_session_status("idle", "No active multi-point alignment")
+            return False
+
+        current_star = session.get("current_star")
+        if ra_deg is not None and dec_deg is not None:
+            try:
+                ra_deg = float(ra_deg) % 360.0
+                dec_deg = float(dec_deg)
+            except (TypeError, ValueError):
+                self._align_session_status("failed", "Invalid alignment coordinates")
+                return False
+            if not current_star:
+                current_star = self._set_current_align_star(
+                    session,
+                    {
+                        "name": f"SkySafari Target {session['completed_points'] + 1}",
+                        "ra": ra_deg,
+                        "dec": dec_deg,
+                        "mag": None,
+                    },
+                )
+            else:
+                current_star = dict(current_star)
+                current_star["ra"] = ra_deg
+                current_star["dec"] = dec_deg
+                session["current_star"] = current_star
+
+        if not current_star:
+            self._align_session_status("waiting", "Select an alignment star first")
+            return False
+
+        ra = float(current_star["ra"]) % 360.0
+        dec = float(current_star["dec"])
+        if not self.sync_mount(ra, dec):
+            self._align_session_status(
+                "failed", f"Could not confirm {current_star['name']}"
+            )
+            return False
+
+        completed = list(session.get("completed", []))
+        completed.append(
+            {
+                "name": current_star["name"],
+                "ra": ra,
+                "dec": dec,
+                "source": source,
+                "confirmed_at": time.time(),
+            }
+        )
+        session["completed"] = completed
+        session["completed_points"] = len(completed)
+        session["current_star"] = None
+
+        if len(completed) >= int(session["total_points"]):
+            session["active"] = False
+            self._align_session_status(
+                "complete",
+                f"Multi-point alignment complete: {len(completed)} points",
+            )
+            self._console("Multi align\ncomplete")
+            return True
+
+        if session.get("mode") == "auto":
+            star = self._align_auto_star(session)
+            self._set_current_align_star(session, star)
+            self._align_session_status(
+                "moving",
+                (
+                    f"Auto alignment point {len(completed) + 1}/"
+                    f"{session['total_points']}: {star['name']}"
+                ),
+            )
+            return self._align_goto_current_star(session)
+
+        self._align_session_status(
+            "waiting",
+            (
+                f"Alignment point {len(completed)}/{session['total_points']} saved; "
+                "select the next star"
+            ),
+        )
+        self._console(f"Align point\n{len(completed)} saved")
+        return True
+
+    def cancel_multipoint_align(self) -> bool:
+        if self._multipoint_align is not None:
+            self._multipoint_align["active"] = False
+            self._multipoint_align["state"] = "cancelled"
+            self._multipoint_align["message"] = "Multi-point alignment cancelled"
+            self._multipoint_align["updated"] = time.time()
+        self._write_controller_status(
+            "align_cancelled", "Multi-point alignment cancelled"
+        )
+        self._console("Multi align\ncancelled")
         return True
 
     def change_slew_rate(self, delta: int) -> None:
@@ -1574,6 +3332,22 @@ class MountControlIndi:
             self.set_backlash(command.get("ra"), command.get("de"))
         elif command_type == "auto_backlash":
             self.auto_calculate_backlash(str(command.get("axis", "")))
+        elif command_type == "multipoint_align_start":
+            self.start_multipoint_align(
+                str(command.get("mode", "manual")),
+                command.get("points"),
+                command.get("star_name"),
+            )
+        elif command_type == "multipoint_align_select_star":
+            self.select_multipoint_align_star(str(command.get("star_name", "")))
+        elif command_type == "multipoint_align_confirm":
+            self.confirm_multipoint_align(
+                command.get("ra"),
+                command.get("dec"),
+                str(command.get("source", "ui")),
+            )
+        elif command_type == "multipoint_align_cancel":
+            self.cancel_multipoint_align()
         elif command_type == "sync_location_time":
             self.sync_location_time()
         elif command_type == "park_action":

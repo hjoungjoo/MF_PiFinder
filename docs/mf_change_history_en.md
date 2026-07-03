@@ -1122,9 +1122,59 @@ Added `python/views/indi_mount.html` and the `/indi` route in
 - `Send Location and Time` does not trust a stale browser-supplied timestamp.
   The Flask route recalculates PiFinder system UTC when it receives the POST and
   sends that timestamp to OnStep.
-- `Mount Control` adds Park/Unpark state display, At Home, Return Home, Park,
-  Unpark, Set-Park, native OnStep 0-9 Slew Rate selection, and press-and-hold
-  direction movement.
+- `Mount Control` displays Home state, Park state, and raw `:GU#` mount status
+  separately so `At Home` is not confused with `Parked`; it also adds At Home,
+  Return Home, Park, Unpark, Set-Park, native OnStep 0-9 Slew Rate selection,
+  and press-and-hold direction movement.
+- The OnStepX `Settings` area adds manual Backlash read/write controls using
+  the driver's `Backlash.Backlash RA` and `Backlash.Backlash DEC` properties.
+  Automatic Backlash calculation now uses GoTo round trips with a large enough
+  movement angle, compares commanded angle to IMU-measured return motion, and
+  proposes the averaged value in the input field. The original driver Backlash
+  and slew rate are restored afterward.
+- Hardware testing showed that tracking and NDOF/Compass magnetometer
+  corrections can mix into the IMU delta used for Backlash detection. Automatic
+  Backlash now disables tracking before measurement and restores the original
+  state afterward, and it refuses to start while Compass/NDOF mode is active,
+  instructing the user to switch to IMUPLUS first. The actual measurement method
+  was then settled on a GoTo round-trip correction procedure.
+- A 2026-07-03 `Compass Off` restart hardware test confirmed that the IMU stays
+  in `imuplus` / `uses_magnetometer=false`. It also showed that Auto Backlash
+  needs `TELESCOPE_TRACK_STATE.TRACK_ON/OFF` in the collected status properties
+  before it can safely disable and restore tracking, so those properties were
+  added. A stability guard now fails before motion when the IMU baseline noise
+  is too high.
+- The same test showed that short manual pulses can change INDI coordinates
+  while IMU angle delta remains 0 for some axes/directions in the current pose
+  and IMUPLUS mode. Auto Backlash therefore changed from short-pulse detection
+  to GoTo round trips with repeated averaging. If reliable round-trip IMU motion
+  is not measured, no value is applied and the original Backlash, slew rate, and
+  tracking state are restored.
+- Measurements that hit the configured limit at 5 or 10 degrees are treated as
+  invalid and retried with a larger GoTo angle. If the 20-degree round trip still
+  reaches the Backlash limit, the result is marked low-confidence.
+- Auto Backlash round trips no longer force a recovery GoTo near the original
+  coordinate. After each completed GoTo, the routine stores the actual readback
+  position as the new baseline and computes the next reverse move from there.
+  This keeps the backlash state caused by the direction change visible to the
+  measurement instead of hiding it behind an extra recovery move.
+- A 2026-07-04 current-position round-trip hardware test estimated RA at
+  `1073 arc-sec` from three 5-degree round trips, but all three verification
+  passes hit the configured limit, so the result was marked low-confidence. DE
+  estimated `2359 arc-sec` from 10/20-degree round trips; verification completed
+  all three passes, but the residual average was `3600 arc-sec` (`152.6%`), so it
+  was also marked low-confidence. Both tests restored the original Backlash
+  `0/0`, tracking On, and slew rate 6 afterward.
+- 2026-07-03 live RA/DE GoTo round-trip tests reached the `999 arc-sec` limit
+  on both axes even at 20 degrees because that was the PiFinder/INDI write limit
+  at the time. PiFinder, the web UI, and the OnStepX driver write path now use
+  `3600 arc-sec`, matching the OnStep firmware and the INDI property metadata.
+  When the limit is reached, the automatic value is shown as low-confidence and
+  is not applied automatically; tracking, slew rate, and the original Backlash
+  RA/DEC values were confirmed restored after the test. Because tracking-state
+  reads can briefly fail right after a service restart, the code now retries
+  through the PyIndi cache, `indi_getprop`, and OnStep text state. Each
+  measurement also records start/outward/return IMU stability noise.
 - Direction movement is handled through AJAX: pressing a button sends the motion
   command, and pointer up/cancel/leave sends stop.
 - Red Night theme CSS now covers selects/dropdowns/tables so INDI controls do

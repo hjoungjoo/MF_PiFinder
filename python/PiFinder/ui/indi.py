@@ -7,6 +7,7 @@ import time
 from PIL import ImageChops
 
 from PiFinder import utils
+from PiFinder.indi_align import BRIGHT_ALIGN_STARS, clamp_align_points
 from PiFinder.ui.base import UIModule
 from PiFinder.ui.camera_render import resize_for_display
 
@@ -193,6 +194,9 @@ class UIIndiStatus(UIIndiBase):
             ("Msg", status.get("message", "--")),
             ("Age", self._format_age(status.get("updated"))),
             ("Device", status.get("device", "--")),
+            ("Home", status.get("home_state", "--")),
+            ("Park", status.get("park_state", "--")),
+            ("Raw", status.get("raw_mount_status", "--")),
             ("RA", self._format_float(status.get("ra"), 2)),
             ("Dec", self._format_float(status.get("dec"), 2)),
             ("Speed", status.get("slew_rate", "--")),
@@ -560,3 +564,217 @@ class UIIndiGuide(UIIndiBase):
             return
         if self._send_mount({"type": "sync", "ra": pointing[0], "dec": pointing[1]}):
             self.message(_("Aligned"), 1)
+
+
+class UIIndiMultiPointAlign(UIIndiGuide):
+    __title__ = "INDI ALIGN"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.align_points = 3
+        self.star_index = 0
+
+    def _align_status(self):
+        status = self._status()
+        align_status = status.get("multipoint_align", {})
+        return align_status if isinstance(align_status, dict) else {}
+
+    def _selected_star(self):
+        return BRIGHT_ALIGN_STARS[self.star_index % len(BRIGHT_ALIGN_STARS)]
+
+    def _current_star(self):
+        return self._align_status().get("current_star") or {}
+
+    def _is_adjusting(self):
+        align_status = self._align_status()
+        return bool(align_status.get("active") and align_status.get("current_star"))
+
+    def _draw_setup(self):
+        self.clear_screen()
+        align_status = self._align_status()
+        y = self.display_class.titlebar_height + 4
+        line_h = max(10, self.fonts.small.height + 2)
+        font = self.fonts.small.font
+        selected_star = self._selected_star()
+        completed = align_status.get("completed_points", 0)
+        total = align_status.get("total_points", self.align_points)
+        message = align_status.get("message") or _("Idle")
+
+        rows = [
+            _("Points: {points}").format(points=self.align_points),
+            _("Star: {star}").format(star=selected_star["name"]),
+            _("Progress: {done}/{total}").format(done=completed, total=total),
+            str(message),
+        ]
+        for row in rows:
+            if y + line_h > self.display_class.resY:
+                break
+            self._draw_text((4, y), row[:28], font=font, fill=self.colors.get(192))
+            y += line_h
+
+        hints = [
+            _("1 Manual  2 Auto"),
+            _("+/- Points  4/6 Star"),
+            _("Square Start/Confirm"),
+            _("0 Cancel"),
+        ]
+        hint_y = self.display_class.resY - (len(hints) * line_h) - 2
+        for hint in hints:
+            self._draw_text(
+                (4, hint_y), hint[:28], font=font, fill=self.colors.get(128)
+            )
+            hint_y += line_h
+
+    def _draw_align_overlay(self):
+        align_status = self._align_status()
+        current_star = self._current_star()
+        completed = align_status.get("completed_points", 0)
+        total = align_status.get("total_points", self.align_points)
+        star_name = current_star.get("name") or _("Align Star")
+        font = self.fonts.base.font
+        small_font = self.fonts.small.font
+        line_h = self.fonts.base.height + 2
+        small_h = self.fonts.small.height + 2
+        bright = self.colors.get(192)
+        shadow = self.colors.get(0)
+
+        def overlay_text(x, y, text, use_font=font, fill=bright):
+            self.draw.text((x + 1, y + 1), text, font=use_font, fill=shadow)
+            self.draw.text((x, y), text, font=use_font, fill=fill)
+
+        top_y = self.display_class.titlebar_height + 2
+        overlay_text(4, top_y, str(star_name)[:18])
+        overlay_text(
+            4,
+            top_y + line_h,
+            _("Point {done}/{total}").format(done=completed + 1, total=total)[:22],
+            use_font=small_font,
+        )
+
+        bottom_y = self.display_class.resY - (small_h * 4) - 2
+        overlay_text(4, bottom_y, _("789 / 4 6 / 123 move"), use_font=small_font)
+        overlay_text(4, bottom_y + small_h, _("Release: stop"), use_font=small_font)
+        overlay_text(4, bottom_y + small_h * 2, _("+/- Speed"), use_font=small_font)
+        overlay_text(
+            4, bottom_y + small_h * 3, _("Square confirm"), use_font=small_font
+        )
+
+    def update(self, force=False):
+        if self._is_adjusting():
+            self._send_motion_keepalive()
+            self._draw_camera_background()
+            self._draw_align_overlay()
+            return self.screen_update(title_bar=True, button_hints=False)
+
+        self._draw_setup()
+        return self.screen_update()
+
+    def key_number(self, number):
+        if self._is_adjusting():
+            if number == 0:
+                self._send_mount({"type": "multipoint_align_cancel"})
+                self.message(_("Align Cancelled"), 1)
+            return
+
+        if number == 0:
+            self._send_mount({"type": "multipoint_align_cancel"})
+            self.message(_("Align Cancelled"), 1)
+        elif number == 1:
+            self._start_manual()
+        elif number == 2:
+            self._start_auto()
+        elif 1 <= number <= 9:
+            self.align_points = clamp_align_points(number)
+            self.update()
+
+    def key_number_press(self, number):
+        if self._is_adjusting():
+            direction = self._number_direction.get(number)
+            if direction:
+                self._move(direction)
+                return
+        self.key_number(number)
+
+    def key_number_release(self, number):
+        if self._is_adjusting() and number in self._number_direction:
+            self._move("stop")
+
+    def key_text(self, char: str):
+        if self._is_adjusting():
+            super().key_text(char)
+
+    def key_text_press(self, char: str):
+        if self._is_adjusting():
+            super().key_text_press(char)
+
+    def key_text_release(self, char: str):
+        if self._is_adjusting():
+            super().key_text_release(char)
+
+    def key_plus(self):
+        if self._is_adjusting():
+            super().key_plus()
+            return
+        self.align_points = clamp_align_points(self.align_points + 1)
+        self.update()
+
+    def key_minus(self):
+        if self._is_adjusting():
+            super().key_minus()
+            return
+        self.align_points = clamp_align_points(self.align_points - 1)
+        self.update()
+
+    def key_left(self):
+        if self._is_adjusting():
+            return False
+        self.star_index = (self.star_index - 1) % len(BRIGHT_ALIGN_STARS)
+        self.update()
+        return False
+
+    def key_right(self):
+        if self._is_adjusting():
+            return False
+        self.star_index = (self.star_index + 1) % len(BRIGHT_ALIGN_STARS)
+        self.update()
+        return False
+
+    def _start_manual(self):
+        star = self._selected_star()
+        if self._send_mount(
+            {
+                "type": "multipoint_align_start",
+                "mode": "manual",
+                "points": self.align_points,
+                "star_name": star["name"],
+            }
+        ):
+            self.message(_("Manual Align"), 1)
+
+    def _start_auto(self):
+        if self._send_mount(
+            {
+                "type": "multipoint_align_start",
+                "mode": "auto",
+                "points": self.align_points,
+            }
+        ):
+            self.message(_("Auto Align"), 1)
+
+    def key_square(self):
+        align_status = self._align_status()
+        if align_status.get("active") and align_status.get("current_star"):
+            if self._send_mount({"type": "multipoint_align_confirm"}):
+                self.message(_("Point Confirmed"), 1)
+            return
+        if align_status.get("active"):
+            star = self._selected_star()
+            if self._send_mount(
+                {
+                    "type": "multipoint_align_select_star",
+                    "star_name": star["name"],
+                }
+            ):
+                self.message(_("Align Star"), 1)
+            return
+        self._start_manual()

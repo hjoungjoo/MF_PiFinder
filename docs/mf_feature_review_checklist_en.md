@@ -440,6 +440,15 @@ Review points:
 - [ ] USB serial list appears
 - [ ] Network host/port list and manual entry work
 - [ ] INDI restart stops/starts server/profile/driver
+- [ ] Home state, Park state, and raw `:GU#` status are displayed separately
+- [ ] Manual Backlash reads/writes `Backlash.Backlash RA/DEC` without mount motion
+- [ ] Auto Backlash refuses to start in Compass/NDOF mode and instructs the user to switch to IMUPLUS
+- [ ] Auto Backlash disables tracking before measurement and restores the original tracking state after completion/failure
+- [ ] Auto Backlash measures the difference between commanded GoTo angle and IMU-measured return motion
+- [ ] Auto Backlash restores the original Backlash RA/DEC and slew rate after completion/failure
+- [ ] Auto Backlash fills the calculated value into the input only and does not apply it before `Save Backlash`
+- [ ] Auto Backlash retries with a larger GoTo angle when IMU motion is too small and proposes an averaged value
+- [ ] Auto Backlash records start/outward/return IMU stability noise for each repeat
 - [ ] PiFinder core features survive bad mount communications
 
 Test items:
@@ -451,6 +460,15 @@ Test items:
 - [ ] Configure LX200 OnStepX Network TCP
 - [ ] Configure LX200 OnStepX USB serial
 - [ ] Restart INDI
+- [ ] Compare OnStep Web UI, direct LX200 `:GU#`, and PiFinder INDI Home/Park states
+- [ ] Read current Backlash RA/DEC
+- [ ] Save temporary Backlash RA/DEC values and restore the original values
+- [ ] After a `Compass Off` restart, `/api/imu` keeps `fusion_mode=imuplus` and
+      `uses_magnetometer=false`
+- [ ] Auto RA/DEC disables tracking, checks IMU stability, and restores tracking,
+      slew rate, and Backlash RA/DEC on completion/failure
+- [ ] If GoTo round trips still do not produce enough IMU motion in the current
+      mount pose, Auto Backlash fails without applying a value
 - [ ] PiFinder UI while INDI server is stopped
 - [ ] PiFinder while OnStep device is offline
 

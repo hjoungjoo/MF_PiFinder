@@ -1005,9 +1005,51 @@ INDI 마운트 제어는 선택 기능이다. 기본 PiFinder 설치만으로는
 - `Send Location and Time`은 browser가 보낸 시간을 그대로 쓰지 않고,
   Flask route가 POST를 받은 시점의 PiFinder system UTC를 다시 계산해 OnStep에
   전송한다.
-- `Mount Control`에는 Park/Unpark 상태 표시, At Home, Return Home, Park,
-  Unpark, Set-Park 명령, OnStep 0-9 Slew Rate 선택, press-and-hold 방향 이동을
-  추가했다.
+- `Mount Control`에는 `At Home`을 `Parked`로 혼동하지 않도록 Home 상태,
+  Park 상태, 원시 `:GU#` 마운트 상태를 분리 표시하고, At Home, Return Home,
+  Park, Unpark, Set-Park 명령, OnStep 0-9 Slew Rate 선택, press-and-hold 방향
+  이동을 추가했다.
+- OnStepX `Settings` 영역에는 driver의 `Backlash.Backlash RA`,
+  `Backlash.Backlash DEC` 속성을 사용하는 수동 Backlash 읽기/쓰기 제어를
+  추가했다. 자동 Backlash 계산은 Goto 왕복으로 충분한 각도를 이동한 뒤,
+  명령 각도와 IMU 실제 이동각의 차이를 여러 번 측정해 평균값을 입력창에
+  제안한다. 측정 후 원래 driver Backlash와 slew rate를 복구한다.
+- 실제 백래시 테스트 중 tracking과 NDOF/Compass 지자계 보정이 IMU 변화에
+  섞일 수 있음을 확인했다. 자동 Backlash는 시작 전 tracking을 끄고 종료 후
+  원래 상태를 복구하도록 보강했으며, Compass/NDOF 모드에서는 시작하지 않고
+  IMUPLUS 전환 안내를 표시하도록 했다. 이후 실제 측정 방식은 Goto 왕복
+  기반 보정 절차로 정리했다.
+- 2026-07-03 `Compass Off` 재시작 실장 테스트에서 IMU가 `imuplus` /
+  `uses_magnetometer=false`로 유지되는 것을 확인했다. 또한 Auto Backlash가
+  tracking 상태를 읽으려면 `TELESCOPE_TRACK_STATE.TRACK_ON/OFF`를 상태 수집
+  목록에 포함해야 함을 확인하고 반영했다. IMU 기준 노이즈가 큰 경우에는
+  이동 전에 실패 처리하도록 안정화 guard를 추가했다.
+- 같은 테스트에서 짧은 수동 펄스는 INDI 좌표를 실제로 변화시키지만, 현재
+  자세와 IMUPLUS 조건에서는 일부 축/방향에서 IMU angle delta가 0으로 유지될
+  수 있음을 확인했다. 따라서 Auto Backlash를 짧은 펄스 감지 방식에서 Goto
+  왕복/반복 평균 방식으로 전환했다. 왕복 이동각이 충분히 측정되지 않으면
+  값을 적용하지 않고 원래 Backlash, slew rate, tracking 상태를 복구한다.
+- 5도/10도 왕복에서 상한값에 걸리는 측정은 무효로 보고 더 큰 각도로 재시도하며,
+  최대 20도 왕복에서도 Backlash 상한에 도달하면 낮은 신뢰도 상태로 표시한다.
+- Auto Backlash 왕복은 원래 좌표 근처로 강제 복귀하지 않고, 각 GoTo 완료 후
+  읽은 실제 위치를 새 기준으로 저장한 뒤 다음 역방향 이동을 계산하도록 수정했다.
+  Backlash는 방향 전환 시 유격으로 인해 지연되는 값이므로, 추가 복귀 GoTo가
+  유격 상태를 바꾸지 않도록 하기 위한 변경이다.
+- 2026-07-04 현재 위치 기준 왕복 실장 테스트에서 RA는 5도 왕복 3회로
+  `1073 arc-sec`을 산출했지만 검증 3회가 모두 상한에 걸려 낮은 신뢰도로
+  표시했다. DE는 10도/20도 왕복으로 `2359 arc-sec`을 산출했고 검증은
+  3회 완료했지만 평균 잔차가 `3600 arc-sec`(`152.6%`)로 커서 낮은 신뢰도로
+  표시했다. 두 테스트 모두 원래 Backlash `0/0`, tracking On, slew rate 6으로
+  복구되는 것을 확인했다.
+- 2026-07-03 실제 RA/DE GoTo 왕복 테스트에서는 두 축 모두 20도 왕복에서도
+  당시 PiFinder/INDI write 제한이던 `999 arc-sec` 상한에 도달했다. 이후
+  OnStep 펌웨어와 INDI property 표시 범위에 맞춰 PiFinder, Web UI, OnStepX
+  driver write 제한을 모두 `3600 arc-sec`으로 통일했다. 상한 도달 시 자동
+  계산값은 바로 적용하지 않고 낮은 신뢰도로 표시하며, 원래 tracking,
+  slew rate, Backlash RA/DEC가 복구되는 것을 확인했다. 서비스 재시작 직후
+  tracking 상태 읽기가 일시적으로 실패할 수 있어 PyIndi 캐시, `indi_getprop`,
+  OnStep text 상태를 짧게 재시도하도록 보강했고, 각 측정에는 시작/외향/복귀
+  IMU 안정화 노이즈를 기록하도록 했다.
 - 방향 이동은 버튼을 누르고 있는 동안 motion 명령을 보내고, pointer up/cancel/leave
   시 stop 명령을 보내도록 AJAX로 처리한다.
 - Red Night theme에서도 select/dropdown/table이 흰색으로 뜨지 않도록 CSS를

@@ -258,8 +258,8 @@ msgid "Backlash must be a number"
 msgstr "백래시는 숫자여야 합니다"
 
 #: PiFinder/server.py:1315
-msgid "Backlash must be between 0 and 999"
-msgstr "백래시는 0에서 999 사이여야 합니다"
+msgid "Backlash must be between 0 and %(max)d"
+msgstr "백래시는 0에서 %(max)d 사이여야 합니다"
 
 #: PiFinder/server.py:1347 PiFinder/ui/menu_structure.py:75 views/base.html:77
 #: views/base.html:89 views/indi_mount.html:7
@@ -1177,10 +1177,9 @@ msgstr "백래시 자동"
 msgid "Backlash Saved"
 msgstr "백래시 저장됨"
 
-#: PiFinder/ui/indi.py:457
-#, fuzzy
+#: PiFinder/ui/indi.py:457 PiFinder/ui/indi.py:653
 msgid "Release: stop"
-msgstr "릴리스 버전"
+msgstr "떼면 정지"
 
 #: PiFinder/ui/indi.py:461
 msgid "+/-:Speed {rate} {label}"
@@ -3517,8 +3516,32 @@ msgid "Send Location and Time"
 msgstr "위치와 시간 전송"
 
 #: views/indi_mount.html:162
+msgid "Home State"
+msgstr "홈 상태"
+
+#: views/indi_mount.html:166
 msgid "Park State"
 msgstr "파크 상태"
+
+#: views/indi_mount.html:170
+msgid "Raw Mount Status"
+msgstr "마운트 원시 상태"
+
+#: views/indi_mount.html:433
+msgid "Not at Home"
+msgstr "홈 위치 아님"
+
+#: views/indi_mount.html:434
+msgid "Waiting at Home"
+msgstr "홈 위치 대기 중"
+
+#: views/indi_mount.html:437
+msgid "Parking"
+msgstr "파크 진행 중"
+
+#: views/indi_mount.html:438
+msgid "Parking Failed"
+msgstr "파크 실패"
 
 #: views/indi_mount.html:165 views/indi_mount.html:516
 msgid "Parked"
@@ -3647,6 +3670,14 @@ msgstr "현재 백래시"
 #: views/indi_mount.html:310
 msgid "Auto Calculation"
 msgstr "자동 계산"
+
+#: views/indi_mount.html:377
+msgid "Auto Method"
+msgstr "자동 방식"
+
+#: views/indi_mount.html:378
+msgid "Current-position GoTo round trips; each return starts from the actual completed position, and physical axes may move together during RA/DEC tests."
+msgstr "현재 위치 기준 GoTo 왕복 방식입니다. 각 역방향 이동은 실제 완료 위치에서 시작하며, RA/DEC 테스트 중 물리 축이 함께 움직일 수 있습니다."
 
 #: views/indi_mount.html:322
 msgid "RA Backlash"
@@ -4222,6 +4253,146 @@ msgid ""
 "This will use the provided file to restore your user data. This will "
 "overwrite any existing preference and observations. Are you sure?"
 msgstr "제공한 파일로 사용자 데이터를 복원합니다. 기존 환경설정과 관측 기록을 덮어씁니다. 계속할까요?"
+
+#: PiFinder/ui/menu_structure.py:137 views/indi_mount.html:299
+msgid "Multi-Point Align"
+msgstr "멀티포인트 정렬"
+
+#: views/indi_mount.html:303
+msgid "Align Status"
+msgstr "정렬 상태"
+
+#: views/indi_mount.html:309
+msgid "Align Progress"
+msgstr "정렬 진행"
+
+#: views/indi_mount.html:315
+msgid "Current Align Star"
+msgstr "현재 정렬 별"
+
+#: views/indi_mount.html:330
+msgid "Align Mode"
+msgstr "정렬 모드"
+
+#: views/indi_mount.html:334
+msgid "Align Points"
+msgstr "정렬점 수"
+
+#: views/indi_mount.html:345
+msgid "Alignment Star"
+msgstr "정렬 별"
+
+#: views/indi_mount.html:349
+msgid "Start Align"
+msgstr "정렬 시작"
+
+#: views/indi_mount.html:350
+msgid "GoTo Selected Star"
+msgstr "선택 별로 이동"
+
+#: views/indi_mount.html:351
+msgid "Confirm Point"
+msgstr "정렬점 확정"
+
+#: views/indi_mount.html:352
+msgid "Cancel Align"
+msgstr "정렬 취소"
+
+#: views/indi_mount.html:341
+msgid "mag"
+msgstr "등급"
+
+#: PiFinder/server.py:1790
+msgid "Invalid alignment mode"
+msgstr "올바르지 않은 정렬 모드"
+
+#: PiFinder/server.py:1794 PiFinder/server.py:1808
+msgid "Select a valid alignment star"
+msgstr "올바른 정렬 별을 선택하세요"
+
+#: PiFinder/server.py:1803
+msgid "Multi-point alignment started"
+msgstr "멀티포인트 정렬을 시작했습니다"
+
+#: PiFinder/server.py:1815
+msgid "Alignment star selected"
+msgstr "정렬 별을 선택했습니다"
+
+#: PiFinder/server.py:1821
+msgid "Alignment point confirmed"
+msgstr "정렬점을 확정했습니다"
+
+#: PiFinder/server.py:1827
+msgid "Multi-point alignment cancelled"
+msgstr "멀티포인트 정렬을 취소했습니다"
+
+#: PiFinder/server.py:1829
+msgid "Invalid alignment action"
+msgstr "올바르지 않은 정렬 동작"
+
+#: PiFinder/ui/indi.py:599
+msgid "Points: {points}"
+msgstr "점수: {points}"
+
+#: PiFinder/ui/indi.py:600
+msgid "Star: {star}"
+msgstr "별: {star}"
+
+#: PiFinder/ui/indi.py:601
+msgid "Progress: {done}/{total}"
+msgstr "진행: {done}/{total}"
+
+#: PiFinder/ui/indi.py:613
+msgid "1 Manual  2 Auto"
+msgstr "1 수동  2 자동"
+
+#: PiFinder/ui/indi.py:614
+msgid "+/- Points  4/6 Star"
+msgstr "+/- 점수  4/6 별"
+
+#: PiFinder/ui/indi.py:615
+msgid "Square Start/Confirm"
+msgstr "네모 시작/확정"
+
+#: PiFinder/ui/indi.py:616
+msgid "0 Cancel"
+msgstr "0 취소"
+
+#: PiFinder/ui/indi.py:632
+msgid "Align Star"
+msgstr "정렬 별"
+
+#: PiFinder/ui/indi.py:650
+msgid "Point {done}/{total}"
+msgstr "점 {done}/{total}"
+
+#: PiFinder/ui/indi.py:652
+msgid "789 / 4 6 / 123 move"
+msgstr "789/4 6/123 이동"
+
+#: PiFinder/ui/indi.py:654
+msgid "+/- Speed"
+msgstr "+/- 속도"
+
+#: PiFinder/ui/indi.py:655
+msgid "Square confirm"
+msgstr "네모 확정"
+
+#: PiFinder/ui/indi.py:673 PiFinder/ui/indi.py:678
+msgid "Align Cancelled"
+msgstr "정렬 취소됨"
+
+#: PiFinder/ui/indi.py:749
+msgid "Manual Align"
+msgstr "수동 정렬"
+
+#: PiFinder/ui/indi.py:759
+msgid "Auto Align"
+msgstr "자동 정렬"
+
+#: PiFinder/ui/indi.py:765
+msgid "Point Confirmed"
+msgstr "정렬점 확정됨"
 
 #~ msgid "Cluster/Neb"
 #~ msgstr "성단/성운"
