@@ -152,6 +152,7 @@ class Server:
         keyboard_queue=None,
         ui_queue=None,
         gps_queue=None,
+        mountcontrol_queue=None,
         shared_state=None,
         is_debug=False,
     ):
@@ -159,6 +160,7 @@ class Server:
         self.keyboard_queue = keyboard_queue or multiprocessing.Queue()
         self.ui_queue = ui_queue or multiprocessing.Queue()
         self.gps_queue = gps_queue or multiprocessing.Queue()
+        self.mountcontrol_queue = mountcontrol_queue
         self.shared_state = shared_state or MockSharedState()
         self.ki = KeyboardInterface()
         # gps info
@@ -1276,6 +1278,43 @@ class Server:
                 device_name=indi_cfg["device_name"],
             )
 
+        def _mount_control_status():
+            try:
+                with open(
+                    utils.data_dir / "mount_control_status.json",
+                    encoding="utf-8",
+                ) as status_in:
+                    return json.load(status_in)
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                return {}
+
+        def _parse_backlash_value(value):
+            try:
+                if value in (None, ""):
+                    return ""
+                return int(float(value))
+            except (TypeError, ValueError):
+                return ""
+
+        def _onstep_backlash_values(onstep_props, indi_cfg):
+            return {
+                "ra": _parse_backlash_value(
+                    onstep_props.get(_onstep_property_name("Backlash.RA", indi_cfg))
+                ),
+                "de": _parse_backlash_value(
+                    onstep_props.get(_onstep_property_name("Backlash.DE", indi_cfg))
+                ),
+            }
+
+        def _validate_backlash_form_value(name):
+            try:
+                value = int(float(request.form.get(name) or "0"))
+            except ValueError as exc:
+                raise ValueError(_("Backlash must be a number")) from exc
+            if not 0 <= value <= 999:
+                raise ValueError(_("Backlash must be between 0 and 999"))
+            return value
+
         def _wait_for_onstep_location_match(indi_cfg, latitude, longitude, timeout=5.0):
             deadline = time.monotonic() + timeout
             onstep_props = {}
@@ -1303,6 +1342,7 @@ class Server:
 
             if onstep_props is None:
                 onstep_props = _get_indi_onstep_properties(indi_cfg)
+            backlash_values = _onstep_backlash_values(onstep_props, indi_cfg)
             return app.jinja_env.get_template("indi_mount.html").render(
                 title=_("INDI"),
                 **indi_cfg,
@@ -1316,6 +1356,8 @@ class Server:
                 ),
                 onstep_effective_location=_onstep_effective_location(onstep_props),
                 pifinder_location_time=_pifinder_location_time_values(),
+                backlash_values=backlash_values,
+                mount_control_status=_mount_control_status(),
                 web_motion_keepalive_ms=int(WEB_MOTION_KEEPALIVE_INTERVAL * 1000),
                 slew_rate_labels=[
                     "Off",
@@ -1362,6 +1404,8 @@ class Server:
                     "onstep_effective_location_display": (
                         _onstep_effective_location_display(onstep_props)
                     ),
+                    "backlash_values": _onstep_backlash_values(onstep_props, indi_cfg),
+                    "mount_control_status": _mount_control_status(),
                 }
             )
 
@@ -1717,6 +1761,53 @@ class Server:
             except (RuntimeError, ValueError) as e:
                 return _render_indi_page(error_message=str(e))
 
+        @app.route("/indi/backlash", methods=["POST"])
+        @auth_required
+        def indi_backlash_save():
+            try:
+                indi_cfg = _indi_config_values()
+                _require_onstepx_driver(indi_cfg)
+                backlash_ra = _validate_backlash_form_value("backlash_ra")
+                backlash_de = _validate_backlash_form_value("backlash_de")
+                result = sys_utils.apply_indi_onstep_properties(
+                    [
+                        f"{_onstep_property_name('Backlash.RA', indi_cfg)}={backlash_ra}",
+                        f"{_onstep_property_name('Backlash.DE', indi_cfg)}={backlash_de}",
+                    ],
+                    server_host=indi_cfg["server_host"],
+                    server_port=indi_cfg["server_port"],
+                )
+                if not result.get("ok"):
+                    raise RuntimeError(
+                        result.get("stderr")
+                        or result.get("stdout")
+                        or "INDI backlash command failed"
+                    )
+                if self.mountcontrol_queue is not None:
+                    self.mountcontrol_queue.put({"type": "refresh_backlash"})
+                return _render_indi_page(_("Backlash settings saved"))
+            except (RuntimeError, ValueError) as e:
+                return _render_indi_page(error_message=str(e))
+
+        @app.route("/indi/backlash/auto", methods=["POST"])
+        @auth_required
+        def indi_backlash_auto():
+            try:
+                indi_cfg = _indi_config_values()
+                _require_onstepx_driver(indi_cfg)
+                axis = (request.form.get("axis") or "").strip().lower()
+                if axis not in {"ra", "de"}:
+                    raise ValueError(_("Invalid backlash axis"))
+                if self.mountcontrol_queue is None:
+                    raise RuntimeError(_("Mount-control process is not available"))
+                self.mountcontrol_queue.put({"type": "auto_backlash", "axis": axis})
+                return _indi_json_response(
+                    message=_("%(axis)s backlash auto calculation started")
+                    % {"axis": axis.upper()}
+                )
+            except (RuntimeError, ValueError) as e:
+                return _indi_json_response(ok=False, error=str(e))
+
         @app.route("/logs")
         @auth_required
         def logs_page():
@@ -2061,10 +2152,23 @@ class Server:
 
 
 def run_server(
-    keyboard_queue, ui_queue, gps_queue, shared_state, log_queue, verbose=False
+    keyboard_queue,
+    ui_queue,
+    gps_queue,
+    shared_state,
+    log_queue,
+    verbose=False,
+    mountcontrol_queue=None,
 ):
     MultiprocLogging.configurer(log_queue)
-    server = Server(keyboard_queue, ui_queue, gps_queue, shared_state, verbose)
+    server = Server(
+        keyboard_queue,
+        ui_queue,
+        gps_queue,
+        mountcontrol_queue,
+        shared_state,
+        verbose,
+    )
     server.run()
 
 

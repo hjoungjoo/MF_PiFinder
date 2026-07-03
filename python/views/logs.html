@@ -45,20 +45,36 @@
   .controls {
     margin-bottom: 10px;
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 10px;
     align-items: center;
   }
   .controls .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    height: auto;
+    line-height: 1.2;
     margin-right: 0;
+    padding: 0 16px;
     white-space: nowrap;
   }
+  .controls .btn .material-icons.left {
+    float: none;
+    flex: 0 0 auto;
+    height: auto;
+    margin: 0 8px 0 0;
+    line-height: 1;
+  }
   .controls select {
+    flex: 1 1 16rem;
     height: 36px;
     margin: 0;
     padding: 0 10px;
     width: auto;
-    min-width: fit-content;
+    min-width: 12rem;
+    max-width: 100%;
   }
   .log-stats {
     color: #888;
@@ -91,6 +107,10 @@
     .controls .btn {
       width: 100%;
       margin-bottom: 5px;
+    }
+    .controls select {
+      width: 100%;
+      min-width: 0;
     }
     .log-line {
       font-size: 11px;

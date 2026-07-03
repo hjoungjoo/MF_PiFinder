@@ -292,6 +292,48 @@
     </form>
   </div>
 </div>
+
+<div class="card grey darken-2">
+  <div class="card-content">
+    <h5 class="grey-text">{{ _('Settings') }}</h5>
+    <h6 class="grey-text">{{ _('Backlash') }}</h6>
+    <table class="striped grey-text">
+      <tbody>
+        <tr>
+          <td>{{ _('Current Backlash') }}</td>
+          <td id="backlash_current_value">
+            RA {{ backlash_values.ra if backlash_values.ra != '' else '-' }} /
+            DE {{ backlash_values.de if backlash_values.de != '' else '-' }}
+          </td>
+        </tr>
+        <tr>
+          <td>{{ _('Auto Calculation') }}</td>
+          <td id="backlash_auto_status">
+            {% set backlash_auto = mount_control_status.get('backlash_auto', {}) %}
+            {{ backlash_auto.get('message') or mount_control_status.get('message') or '-' }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <form action="/indi/backlash" method="post" id="indi_backlash_form" class="col s12">
+      <div class="row">
+        <div class="input-field col s12 m6">
+          <input id="backlash_ra" type="number" min="0" max="999" step="1" name="backlash_ra" value="{{ backlash_values.ra }}">
+          <label for="backlash_ra" class="active">{{ _('RA Backlash') }}</label>
+        </div>
+        <div class="input-field col s12 m6">
+          <input id="backlash_de" type="number" min="0" max="999" step="1" name="backlash_de" value="{{ backlash_values.de }}">
+          <label for="backlash_de" class="active">{{ _('DEC Backlash') }}</label>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn indi-backlash-auto" data-axis="ra">{{ _('Auto RA') }}</button>
+        <button type="button" class="btn indi-backlash-auto" data-axis="de">{{ _('Auto DEC') }}</button>
+        <button type="submit" class="btn">{{ _('Save Backlash') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% else %}
 <div class="card grey darken-2">
   <div class="card-content">
@@ -322,6 +364,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var reloadLocationValues = document.getElementById('reload_location_values');
   var locationTimeForm = document.getElementById('location_time_form');
   var utcTimeInput = document.getElementById('utc_time');
+  var backlashStatus = document.getElementById('backlash_auto_status');
   var serverUtcBaseMs = null;
   var serverUtcBasePerf = null;
   var initializedNetworkManual = false;
@@ -462,6 +505,7 @@ document.addEventListener('DOMContentLoaded', function() {
       )
     );
     setText('onstep_utc_time_value', textOrDash(onstep[onstepKey('TIME_UTC.UTC')]));
+    updateBacklashValues(payload.backlash_values || {}, payload.mount_control_status || {});
     setText('onstep_connection_value', textOrDash(onstep[onstepKey('CONNECTION.CONNECT')]));
     setText('onstep_serial_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_SERIAL')]));
     setText('onstep_tcp_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_TCP')]));
@@ -485,6 +529,25 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     M.updateTextFields();
+  }
+
+  function updateBacklashValues(values, mountStatus) {
+    var raValue = valueOrEmpty(values.ra);
+    var deValue = valueOrEmpty(values.de);
+    setText(
+      'backlash_current_value',
+      'RA ' + textOrDash(raValue) + ' / DE ' + textOrDash(deValue)
+    );
+    if (raValue !== '') {
+      setInputValue('backlash_ra', raValue);
+    }
+    if (deValue !== '') {
+      setInputValue('backlash_de', deValue);
+    }
+    if (backlashStatus) {
+      var autoInfo = mountStatus.backlash_auto || {};
+      backlashStatus.textContent = autoInfo.message || mountStatus.message || '-';
+    }
   }
 
   function refreshIndiState(showStatus) {
@@ -577,6 +640,26 @@ document.addEventListener('DOMContentLoaded', function() {
       postIndiAction('/indi/park', {park_action: button.dataset.parkAction})
         .then(function() { setActionStatus('{{ _("Command sent") }}'); })
         .catch(function(error) { setActionStatus(error.message); });
+    });
+  });
+
+  document.querySelectorAll('.indi-backlash-auto').forEach(function(button) {
+    button.addEventListener('click', function(event) {
+      event.preventDefault();
+      if (backlashStatus) {
+        backlashStatus.textContent = '{{ _("Starting auto calculation") }}';
+      }
+      postIndiAction('/indi/backlash/auto', {axis: button.dataset.axis})
+        .then(function(payload) {
+          if (backlashStatus) {
+            backlashStatus.textContent = payload.message || '{{ _("Auto calculation requested") }}';
+          }
+        })
+        .catch(function(error) {
+          if (backlashStatus) {
+            backlashStatus.textContent = error.message;
+          }
+        });
     });
   });
 

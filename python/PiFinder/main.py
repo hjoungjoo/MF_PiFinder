@@ -541,6 +541,7 @@ def main(
                 shared_state,
                 server_logqueue,
                 verbose,
+                mountcontrol_queue,
             ),
         )
         server_process.start()

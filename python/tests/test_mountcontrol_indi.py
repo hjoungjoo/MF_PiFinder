@@ -130,7 +130,10 @@ def test_manual_motion_deadman_sends_stop_after_expired_lease():
     mount._check_manual_motion_deadline()
 
     assert mount._manual_motion_direction is None
-    assert any("TELESCOPE_ABORT_MOTION.ABORT=On" in prop for prop in mount.applied_properties[-1])
+    assert any(
+        "TELESCOPE_ABORT_MOTION.ABORT=On" in prop
+        for prop in mount.applied_properties[-1]
+    )
 
 
 def test_manual_motion_keepalive_extends_matching_motion():
@@ -169,6 +172,28 @@ def test_manual_motion_east_west_are_reversed_for_onstep_guide_axis():
         "TELESCOPE_MOTION_WE.MOTION_EAST=On" in prop
         for prop in mount.applied_properties[-1]
     )
+
+
+def test_set_backlash_sends_indi_backlash_properties():
+    mount = DummyMountControl()
+
+    assert mount.set_backlash(12, 34)
+
+    assert any("Backlash.RA=12" in prop for prop in mount.applied_properties[-1])
+    assert any("Backlash.DE=34" in prop for prop in mount.applied_properties[-1])
+    assert mount.backlash_ra == 12
+    assert mount.backlash_de == 34
+
+
+def test_auto_backlash_is_staged_without_hardware_motion():
+    mount = DummyMountControl()
+
+    assert mount.auto_calculate_backlash("ra")
+
+    assert mount._backlash_auto is not None
+    assert mount._backlash_auto["axis"] == "RA"
+    assert mount._backlash_auto["state"] == "pending_hardware_test"
+    assert mount.applied_properties == []
 
 
 def test_sync_location_time_uses_direct_lx200_for_onstep(monkeypatch):
@@ -215,9 +240,7 @@ def test_sync_location_time_uses_direct_lx200_for_onstep(monkeypatch):
             "server_port": 7624,
         }
     ]
-    assert cache_calls == [
-        (37.52704, 127.10936, 30.0, "2026-07-01T14:45:00+00:00")
-    ]
+    assert cache_calls == [(37.52704, 127.10936, 30.0, "2026-07-01T14:45:00+00:00")]
 
 
 def test_radec_separation_arcmin_handles_small_offsets():

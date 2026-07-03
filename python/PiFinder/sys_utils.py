@@ -1,5 +1,6 @@
 import glob
 import configparser
+import importlib.util
 import ipaddress
 import json
 import os
@@ -92,6 +93,8 @@ ONSTEP_DISPLAY_PROPERTIES = [
     "TELESCOPE_PARK_OPTION.PARK_DEFAULT",
     "TELESCOPE_PARK_OPTION.PARK_WRITE_DATA",
     "TELESCOPE_PARK_OPTION.PARK_PURGE_DATA",
+    "Backlash.DE",
+    "Backlash.RA",
     *[f"TELESCOPE_SLEW_RATE.{rate}" for rate in range(10)],
 ]
 
@@ -558,7 +561,9 @@ def list_onstep_serial_ports() -> list[dict[str, str]]:
     return sorted(ports.values(), key=lambda item: item["path"])
 
 
-def _run_indi_command(args: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess:
+def _run_indi_command(
+    args: list[str], timeout: float = 5.0
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         args,
         capture_output=True,
@@ -738,10 +743,8 @@ def apply_indi_onstep_location_time(
     if not properties:
         raise ValueError("No INDI location/time values were provided")
 
-    try:
-        import PyIndi  # type: ignore[import-not-found]
-    except ImportError as exc:
-        raise RuntimeError("PyIndi is not installed") from exc
+    if importlib.util.find_spec("PyIndi") is None:
+        raise RuntimeError("PyIndi is not installed")
     from PiFinder.mountcontrol_indi import PiFinderIndiClient
 
     coord_values: dict[str, float] = {}
@@ -787,20 +790,14 @@ def apply_indi_onstep_location_time(
                 except Exception:
                     device = None
                 try:
-                    if (
-                        device is not None
-                        and device.getDeviceName() != device_name
-                    ):
+                    if device is not None and device.getDeviceName() != device_name:
                         device = None
                 except Exception:
                     device = None
             if device is None:
                 device = client.get_telescope_device()
                 try:
-                    if (
-                        device is not None
-                        and device.getDeviceName() != device_name
-                    ):
+                    if device is not None and device.getDeviceName() != device_name:
                         device = None
                 except Exception:
                     device = None
@@ -840,7 +837,9 @@ def apply_indi_onstep_location_time(
                         pass
                     time.sleep(0.2)
 
-        if coord_values and not client.set_number(device, "GEOGRAPHIC_COORD", coord_values):
+        if coord_values and not client.set_number(
+            device, "GEOGRAPHIC_COORD", coord_values
+        ):
             return {
                 "ok": False,
                 "returncode": 1,
@@ -910,7 +909,9 @@ def set_indi_web_manager_running(
     except FileNotFoundError as exc:
         raise RuntimeError("systemctl or sudo is not available") from exc
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"Timed out while running {action} on INDI Web Manager") from exc
+        raise RuntimeError(
+            f"Timed out while running {action} on INDI Web Manager"
+        ) from exc
 
     return {
         "ok": result.returncode == 0,
@@ -953,7 +954,9 @@ def _send_onstep_lx200_serial_commands(
         raise RuntimeError("pyserial is not installed") from exc
 
     responses = []
-    with serial.Serial(serial_port, baudrate=baudrate, timeout=1, write_timeout=2) as ser:
+    with serial.Serial(
+        serial_port, baudrate=baudrate, timeout=1, write_timeout=2
+    ) as ser:
         for command in commands:
             ser.write(command.encode("ascii"))
             ser.flush()
@@ -1000,7 +1003,9 @@ def sync_onstep_location_time_exclusive(
     stop_result = set_indi_web_manager_running("stop")
     result["stop_result"] = stop_result
     if not stop_result["ok"]:
-        result["stderr"] = stop_result.get("stderr") or "Could not stop INDI Web Manager"
+        result["stderr"] = (
+            stop_result.get("stderr") or "Could not stop INDI Web Manager"
+        )
         return result
 
     try:
@@ -1049,7 +1054,9 @@ def sync_onstep_location_time_exclusive(
         return result
     if result["start_result"] and not result["start_result"].get("ok"):
         result["ok"] = False
-        result["stderr"] = result["start_result"].get("stderr") or "Could not restart INDI"
+        result["stderr"] = (
+            result["start_result"].get("stderr") or "Could not restart INDI"
+        )
     elif result["connect_result"] and not result["connect_result"].get("ok"):
         result["ok"] = False
         result["stderr"] = (
@@ -1336,9 +1343,7 @@ class Network:
             if network.get("ssid")
         }
         profile_by_ssid = {
-            profile["ssid"]: profile
-            for profile in profiles
-            if profile.get("ssid")
+            profile["ssid"]: profile for profile in profiles if profile.get("ssid")
         }
 
         for profile in profiles:
@@ -1424,9 +1429,7 @@ class Network:
         raise ValueError("Unsupported STA band preference")
 
     @staticmethod
-    def _rewrite_wpa_supplicant_band_preference(
-        contents: str, preference: str
-    ) -> str:
+    def _rewrite_wpa_supplicant_band_preference(contents: str, preference: str) -> str:
         scan_freq = Network._sta_scan_freq_for_preference(preference)
         lines = contents.splitlines(keepends=True)
         output = []
@@ -1485,8 +1488,7 @@ class Network:
     def set_sta_band_preference(self, preference):
         preference = Network._normalize_sta_band_preference(preference)
         contents = (
-            "# PiFinder STA band preference\n"
-            f"PIFINDER_STA_BAND={preference}\n"
+            "# PiFinder STA band preference\n" f"PIFINDER_STA_BAND={preference}\n"
         )
         Network._write_root_file(PIFINDER_STA_BAND_CONF_PATH, contents)
         self._apply_sta_band_preference(preference)
@@ -1800,9 +1802,7 @@ class Network:
         return ""
 
     def get_ap_security(self):
-        if self._get_hostapd_value("wpa") or self._get_hostapd_value(
-            "wpa_passphrase"
-        ):
+        if self._get_hostapd_value("wpa") or self._get_hostapd_value("wpa_passphrase"):
             return AP_SECURITY_WPA2
         return AP_SECURITY_OPEN
 
@@ -2242,9 +2242,7 @@ def list_bluetooth_devices(scan_output: str = "") -> list[dict[str, Any]]:
         _merge_bluetooth_device_name(device, str(scanned_device.get("name", "")))
 
     for address, device in devices.items():
-        info = _parse_bluetooth_info(
-            _bluetoothctl([f"info {address}"], timeout=8)
-        )
+        info = _parse_bluetooth_info(_bluetoothctl([f"info {address}"], timeout=8))
         for key, value in info.items():
             if key in ["name", "alias"]:
                 _merge_bluetooth_device_name(device, str(value))
@@ -2587,7 +2585,9 @@ def update_gpsd_config(baud_rate: int, device: str = DEFAULT_GPSD_DEVICE) -> Non
         device: The serial device path to configure for gpsd
     """
     device = resolve_gpsd_device(device)
-    logger.info(f"SYS: Updating GPSD config with device {device}, baud rate {baud_rate}")
+    logger.info(
+        f"SYS: Updating GPSD config with device {device}, baud rate {baud_rate}"
+    )
 
     try:
         # Read the current config

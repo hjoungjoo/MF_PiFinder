@@ -52,6 +52,9 @@ GUIDE_CORRECTION_INTERVAL_SECONDS = 10.0
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4
 GOTO_COMPLETE_MIN_SECONDS = 1.0
 GOTO_COMPLETE_FALLBACK_SECONDS = 180.0
+BACKLASH_MIN_VALUE = 0
+BACKLASH_MAX_VALUE = 999
+BACKLASH_AXES = {"ra", "de"}
 
 
 def radec_separation_arcmin(
@@ -61,10 +64,9 @@ def radec_separation_arcmin(
     dec_a = math.radians(dec_a_deg)
     ra_b = math.radians(ra_b_deg)
     dec_b = math.radians(dec_b_deg)
-    cos_sep = (
-        math.sin(dec_a) * math.sin(dec_b)
-        + math.cos(dec_a) * math.cos(dec_b) * math.cos(ra_a - ra_b)
-    )
+    cos_sep = math.sin(dec_a) * math.sin(dec_b) + math.cos(dec_a) * math.cos(
+        dec_b
+    ) * math.cos(ra_a - ra_b)
     sep_rad = math.acos(max(-1.0, min(1.0, cos_sep)))
     return math.degrees(sep_rad) * 60.0
 
@@ -206,10 +208,7 @@ if PyIndi is not None:
 
             is_parked = False
             for i in range(len(park_switch)):
-                if (
-                    park_switch[i].name == "PARK"
-                    and park_switch[i].s == PyIndi.ISS_ON
-                ):
+                if park_switch[i].name == "PARK" and park_switch[i].s == PyIndi.ISS_ON:
                     is_parked = True
                     break
 
@@ -236,14 +235,18 @@ if PyIndi is not None:
             )
             if is_preferred or (self.telescope_device is None and is_telescope_like):
                 self.telescope_device = device
-                clientlogger.info("Telescope device detected: %s", device.getDeviceName())
+                clientlogger.info(
+                    "Telescope device detected: %s", device.getDeviceName()
+                )
 
         def removeDevice(self, device):
             if (
                 self.telescope_device
                 and device.getDeviceName() == self.telescope_device.getDeviceName()
             ):
-                clientlogger.warning("Telescope device removed: %s", device.getDeviceName())
+                clientlogger.warning(
+                    "Telescope device removed: %s", device.getDeviceName()
+                )
                 self.telescope_device = None
 
         def newNumber(self, nvp):
@@ -278,7 +281,9 @@ if PyIndi is not None:
         def serverDisconnected(self, code):
             clientlogger.warning("Disconnected from INDI server: %s", code)
             if self.mount_control is not None:
-                self.mount_control.mark_disconnected(f"INDI server disconnected: {code}")
+                self.mount_control.mark_disconnected(
+                    f"INDI server disconnected: {code}"
+                )
 
 else:
 
@@ -323,6 +328,9 @@ class MountControlIndi:
         self._guide_correction_accuracy_arcmin = DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN
         self._guide_correction_next_at = 0.0
         self._guide_correction_last_solve_time = 0.0
+        self.backlash_ra: Optional[int] = None
+        self.backlash_de: Optional[int] = None
+        self._backlash_auto: Optional[dict[str, Any]] = None
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -356,6 +364,12 @@ class MountControlIndi:
             payload["guide_correction_accuracy_arcmin"] = (
                 self._guide_correction_accuracy_arcmin
             )
+        if self.backlash_ra is not None:
+            payload["backlash_ra"] = self.backlash_ra
+        if self.backlash_de is not None:
+            payload["backlash_de"] = self.backlash_de
+        if self._backlash_auto is not None:
+            payload["backlash_auto"] = self._backlash_auto
         if self.device is not None:
             try:
                 payload["device"] = self.device.getDeviceName()
@@ -449,7 +463,10 @@ class MountControlIndi:
             and self.device is not None
             and self.client.isServerConnected()
         ):
-            if self._goto_motion is not None or self._manual_motion_direction is not None:
+            if (
+                self._goto_motion is not None
+                or self._manual_motion_direction is not None
+            ):
                 return
             self._write_controller_status("connected", "INDI mount connected")
         elif not self.connected:
@@ -475,9 +492,7 @@ class MountControlIndi:
 
         if not result.get("ok"):
             error = (
-                result.get("stderr")
-                or result.get("stdout")
-                or "INDI command failed"
+                result.get("stderr") or result.get("stdout") or "INDI command failed"
             )
             logger.warning("INDI setprop returned failure: %s", error)
             self._write_controller_status(failure_state, error)
@@ -564,7 +579,10 @@ class MountControlIndi:
             return
 
         now = time.monotonic()
-        if now < self._manual_motion_deadline or now < self._manual_motion_stop_retry_at:
+        if (
+            now < self._manual_motion_deadline
+            or now < self._manual_motion_stop_retry_at
+        ):
             return
 
         logger.warning("Manual mount motion lease expired; sending stop")
@@ -611,7 +629,9 @@ class MountControlIndi:
             "connecting",
             f"Connecting to INDI server {self.indi_host}:{self.indi_port}",
         )
-        logger.info("Connecting to INDI server at %s:%s", self.indi_host, self.indi_port)
+        logger.info(
+            "Connecting to INDI server at %s:%s", self.indi_host, self.indi_port
+        )
 
         if not self.client.connectServer():
             self._write_controller_status(
@@ -706,7 +726,9 @@ class MountControlIndi:
                 or connect_result.get("stdout")
                 or "Could not connect INDI OnStep driver"
             )
-            logger.error("Could not connect INDI OnStep driver after restart: %s", error)
+            logger.error(
+                "Could not connect INDI OnStep driver after restart: %s", error
+            )
             self._write_controller_status("device_connect_failed", error)
             self._console("INDI connect\nfailed")
             return False
@@ -761,11 +783,7 @@ class MountControlIndi:
         if location and location.lock:
             latitude = float(location.lat)
             longitude = float(location.lon)
-            elevation = (
-                None
-                if location.altitude is None
-                else float(location.altitude)
-            )
+            elevation = None if location.altitude is None else float(location.altitude)
 
         try:
             dt = self.shared_state.datetime()
@@ -783,12 +801,8 @@ class MountControlIndi:
         reconnect_after: bool,
     ) -> bool:
         onstep_cfg = self._onstep_connection_config()
-        was_connected = (
-            self.connected
-            or (
-                self.client is not None
-                and self.client.isServerConnected()
-            )
+        was_connected = self.connected or (
+            self.client is not None and self.client.isServerConnected()
         )
 
         if self.client is not None:
@@ -1020,7 +1034,9 @@ class MountControlIndi:
 
         self._pending_goto_refine = None
         if not self.sync_mount(current_ra, current_dec):
-            self._write_controller_status("refine_failed", "Could not sync current solve")
+            self._write_controller_status(
+                "refine_failed", "Could not sync current solve"
+            )
             return
         self.goto_target(target_ra, target_dec, refine_after_goto=False)
         self._write_controller_status(
@@ -1230,7 +1246,9 @@ class MountControlIndi:
             "EQUATORIAL_EOD_COORD",
             {"RA": (ra_deg % 360.0) / 15.0, "DEC": dec_deg},
         ):
-            self._write_controller_status("sync_failed", "Could not set sync coordinates")
+            self._write_controller_status(
+                "sync_failed", "Could not set sync coordinates"
+            )
             return False
 
         self.client.set_switch(self.device, "ON_COORD_SET", "TRACK")
@@ -1260,7 +1278,9 @@ class MountControlIndi:
             "EQUATORIAL_EOD_COORD",
             {"RA": (ra_deg % 360.0) / 15.0, "DEC": dec_deg},
         ):
-            self._write_controller_status("goto_failed", "Could not set target coordinates")
+            self._write_controller_status(
+                "goto_failed", "Could not set target coordinates"
+            )
             return False
 
         self._arm_goto_motion(ra_deg, dec_deg)
@@ -1295,18 +1315,10 @@ class MountControlIndi:
     def manual_move(self, direction: str, lease_seconds: Any = None) -> bool:
         direction = direction.lower()
         motion_map = {
-            "north": [
-                self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH")
-            ],
-            "south": [
-                self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH")
-            ],
-            "east": [
-                self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_WEST")
-            ],
-            "west": [
-                self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_EAST")
-            ],
+            "north": [self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH")],
+            "south": [self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH")],
+            "east": [self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_WEST")],
+            "west": [self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_EAST")],
             "northeast": [
                 self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH"),
                 self._indi_property_on("TELESCOPE_MOTION_WE.MOTION_WEST"),
@@ -1410,6 +1422,96 @@ class MountControlIndi:
         self._console(f"INDI speed\n{self.slew_rate}")
         return True
 
+    def _validate_backlash_value(self, value: Any) -> int:
+        try:
+            backlash = int(float(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Backlash must be a number") from exc
+        if not BACKLASH_MIN_VALUE <= backlash <= BACKLASH_MAX_VALUE:
+            raise ValueError(
+                f"Backlash must be between {BACKLASH_MIN_VALUE} and {BACKLASH_MAX_VALUE}"
+            )
+        return backlash
+
+    def _read_float_property(self, properties: dict[str, str], property_name: str):
+        try:
+            value = properties.get(self._indi_property_name(property_name))
+            if value in (None, ""):
+                return None
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
+    def refresh_backlash(self) -> tuple[Optional[int], Optional[int]]:
+        properties = sys_utils.get_indi_onstep_properties(
+            server_host=self.indi_host,
+            server_port=self.indi_port,
+            device_name=self._indi_device_name(),
+        )
+        self.backlash_de = self._read_float_property(properties, "Backlash.DE")
+        self.backlash_ra = self._read_float_property(properties, "Backlash.RA")
+        self._write_controller_status(
+            "connected" if self.connected else "idle",
+            "Backlash values refreshed",
+        )
+        return self.backlash_ra, self.backlash_de
+
+    def set_backlash(self, ra_value: Any, de_value: Any) -> bool:
+        backlash_ra = self._validate_backlash_value(ra_value)
+        backlash_de = self._validate_backlash_value(de_value)
+        if not self._apply_indi_properties(
+            [
+                f"{self._indi_property_name('Backlash.RA')}={backlash_ra}",
+                f"{self._indi_property_name('Backlash.DE')}={backlash_de}",
+            ],
+            "connected" if self.connected else "idle",
+            f"Backlash saved RA {backlash_ra} DE {backlash_de}",
+            "backlash_failed",
+        ):
+            self._console("Backlash\nsave failed")
+            return False
+
+        self.backlash_ra = backlash_ra
+        self.backlash_de = backlash_de
+        self._backlash_auto = None
+        self._write_controller_status(
+            "connected" if self.connected else "idle",
+            f"Backlash saved RA {backlash_ra} DE {backlash_de}",
+        )
+        self._console("Backlash\nsaved")
+        return True
+
+    def auto_calculate_backlash(self, axis: str) -> bool:
+        axis = axis.lower()
+        if axis not in BACKLASH_AXES:
+            logger.warning("Unknown backlash axis: %s", axis)
+            return False
+
+        self._backlash_auto = {
+            "axis": axis.upper(),
+            "state": "pending_hardware_test",
+            "message": (
+                "Auto backlash sequence is staged for UI review. "
+                "Hardware movement is disabled until field-test thresholds are set."
+            ),
+            "steps": [
+                "Reset selected backlash to 0",
+                "Move slowly until IMU angle changes",
+                "Wait 3 seconds for IMU stabilization",
+                "Apply minimum reverse backlash pulses",
+                "Detect first angle change",
+                "Confirm from the opposite direction",
+                "Copy calculated value into the input field",
+            ],
+            "started_at": time.time(),
+        }
+        self._write_controller_status(
+            "backlash_auto_pending",
+            f"Backlash auto calculation staged for {axis.upper()}",
+        )
+        self._console(f"Backlash {axis.upper()}\nauto staged")
+        return True
+
     def change_slew_rate(self, delta: int) -> None:
         self.refresh_slew_rate()
         self.set_slew_rate(self.slew_rate + delta)
@@ -1466,6 +1568,12 @@ class MountControlIndi:
             self.set_slew_rate(int(command.get("rate", self.slew_rate)))
         elif command_type == "refresh_slew_rate":
             self.refresh_slew_rate()
+        elif command_type == "refresh_backlash":
+            self.refresh_backlash()
+        elif command_type == "set_backlash":
+            self.set_backlash(command.get("ra"), command.get("de"))
+        elif command_type == "auto_backlash":
+            self.auto_calculate_backlash(str(command.get("axis", "")))
         elif command_type == "sync_location_time":
             self.sync_location_time()
         elif command_type == "park_action":

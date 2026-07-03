@@ -95,7 +95,9 @@ class UIIndiInit(UIIndiBase):
         if slew_rate is not None:
             rate = int(slew_rate)
             label = SLEW_STEPS[rate] if 0 <= rate < len(SLEW_STEPS) else ""
-            self._draw_text((6, y), _("Speed: {rate} {label}").format(rate=rate, label=label))
+            self._draw_text(
+                (6, y), _("Speed: {rate} {label}").format(rate=rate, label=label)
+            )
             y += line_h
         if ra is not None and dec is not None:
             self._draw_text(
@@ -126,7 +128,9 @@ class UIIndiInit(UIIndiBase):
         ]
         hint_y = max(y + 4, self.display_class.resY - (len(hints) * hint_line_h) - 2)
         for hint in hints:
-            self._draw_text((6, hint_y), hint, font=hint_font, fill=self.colors.get(128))
+            self._draw_text(
+                (6, hint_y), hint, font=hint_font, fill=self.colors.get(128)
+            )
             hint_y += hint_line_h
 
         return self.screen_update()
@@ -217,6 +221,126 @@ class UIIndiStatus(UIIndiBase):
             y += line_h
 
         return self.screen_update()
+
+
+class UIIndiBacklash(UIIndiBase):
+    __title__ = "INDI BACKLASH"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.selected_axis = "ra"
+        self.inputs = {"ra": "", "de": ""}
+
+    def active(self):
+        self._send_mount({"type": "refresh_backlash"})
+
+    def _status_value(self, axis):
+        status = self._status()
+        value = status.get(f"backlash_{axis}")
+        if value is None:
+            return "--"
+        return str(value)
+
+    def _input_value(self, axis):
+        if self.inputs[axis] != "":
+            return self.inputs[axis]
+        current = self._status_value(axis)
+        return "" if current == "--" else current
+
+    def _draw_row(self, y, axis, label):
+        selected = axis == self.selected_axis
+        marker = ">" if selected else " "
+        value = self._input_value(axis) or "--"
+        current = self._status_value(axis)
+        fill = self.colors.get(255 if selected else 160)
+        self._draw_text(
+            (4, y),
+            f"{marker}{label} in:{value:<3} cur:{current:<3}"[:28],
+            font=self.fonts.small.font,
+            fill=fill,
+        )
+
+    def update(self, force=False):
+        self.clear_screen()
+        status = self._status()
+        y = self.display_class.titlebar_height + 4
+        line_h = max(10, self.fonts.small.height + 2)
+
+        self._draw_row(y, "ra", "RA")
+        y += line_h
+        self._draw_row(y, "de", "DE")
+        y += line_h
+
+        auto = status.get("backlash_auto", {})
+        auto_message = auto.get("message") or status.get("message") or _("Idle")
+        self._draw_text(
+            (4, y),
+            str(auto_message)[:28],
+            font=self.fonts.small.font,
+            fill=self.colors.get(128),
+        )
+        y += line_h
+        if auto.get("axis"):
+            self._draw_text(
+                (4, y),
+                _("Axis: {axis}").format(axis=auto.get("axis")),
+                font=self.fonts.small.font,
+                fill=self.colors.get(128),
+            )
+
+        hints = [
+            _("+/- Axis"),
+            _("Digits input  0 clear"),
+            _("Right Auto  Square Save"),
+        ]
+        hint_y = self.display_class.resY - (len(hints) * line_h) - 2
+        for hint in hints:
+            self._draw_text(
+                (4, hint_y),
+                hint[:28],
+                font=self.fonts.small.font,
+                fill=self.colors.get(128),
+            )
+            hint_y += line_h
+
+        return self.screen_update()
+
+    def _toggle_axis(self):
+        self.selected_axis = "de" if self.selected_axis == "ra" else "ra"
+        self.update()
+
+    def key_plus(self):
+        self._toggle_axis()
+
+    def key_minus(self):
+        self._toggle_axis()
+
+    def key_number(self, number):
+        axis = self.selected_axis
+        if number == 0:
+            self.inputs[axis] = ""
+        elif len(self.inputs[axis]) < 3:
+            candidate = f"{self.inputs[axis]}{number}"
+            if 0 <= int(candidate) <= 999:
+                self.inputs[axis] = candidate
+        self.update()
+
+    def key_right(self):
+        if self._send_mount({"type": "auto_backlash", "axis": self.selected_axis}):
+            self.message(_("Auto Backlash"), 1)
+        return False
+
+    def key_square(self):
+        ra_value = self._input_value("ra") or "0"
+        de_value = self._input_value("de") or "0"
+        if self._send_mount(
+            {
+                "type": "set_backlash",
+                "ra": ra_value,
+                "de": de_value,
+            }
+        ):
+            self.message(_("Backlash Saved"), 1)
 
 
 class UIIndiGuide(UIIndiBase):

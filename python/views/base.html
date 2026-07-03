@@ -37,9 +37,37 @@
 </head>
 <body class="grey darken-3">
   {% set selected_web_language = current_web_language() %}
-  <nav class="grey darken-1" role="navigation">
-    <div class="nav-wrapper container"><a id="logo-container" href="/#" class="brand-logo"><img src="/images/WebLogo_RED.png" class="pf-logo"></a>
-      <ul class="right hide-on-med-and-down">
+  <nav class="grey darken-1 pf-main-nav" role="navigation">
+    <div class="container pf-nav-shell">
+      <div class="pf-nav-top-row">
+        <a id="logo-container" href="/#" class="pf-brand-logo"><img src="/images/WebLogo_RED.png" class="pf-logo"></a>
+        <div class="pf-nav-controls hide-on-med-and-down">
+          <div class="pf-fullscreen-menu">
+            <button type="button" class="pf-nav-icon-button pf-fullscreen-button" title="{{ _('Fullscreen') }}" aria-label="{{ _('Fullscreen') }}">
+              <i class="material-icons">fullscreen</i>
+            </button>
+          </div>
+          <div class="pf-language-menu">
+            <form action="/language" method="post" class="pf-language-form">
+              <input type="hidden" name="next" value="{{ web_language_next() }}">
+              <select name="language" class="browser-default pf-language-select" aria-label="{{ _('Language') }}">
+                {% for code, label in web_language_options %}
+                <option value="{{ code }}" {% if code == selected_web_language %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </div>
+          <div class="pf-theme-menu">
+            <select class="browser-default pf-theme-select" aria-label="{{ _('Web theme') }}">
+              <option value="grey">{{ _('Gray') }}</option>
+              <option value="red">{{ _('Red Night') }}</option>
+            </select>
+          </div>
+        </div>
+        <a href="#" data-target="nav-mobile" class="sidenav-trigger pf-mobile-trigger"><i class="material-icons">menu</i></a>
+      </div>
+
+      <ul class="pf-nav-links hide-on-med-and-down">
         <li><a href="/">{{ _('Home') }}</a></li>
         <li><a href="/remote">{{ _('Remote') }}</a></li>
         <li><a href="/network">{{ _('Network Setup') }}</a></li>
@@ -49,27 +77,6 @@
         <li><a href="/indi">{{ _('INDI') }}</a></li>
         <li><a href="/tools">{{ _('Tools') }}</a></li>
         <li><a href="/logs">{{ _('Logs') }}</a></li>
-        <li class="pf-fullscreen-menu">
-          <button type="button" class="pf-nav-icon-button pf-fullscreen-button" title="{{ _('Fullscreen') }}" aria-label="{{ _('Fullscreen') }}">
-            <i class="material-icons">fullscreen</i>
-          </button>
-        </li>
-        <li class="pf-language-menu">
-          <form action="/language" method="post" class="pf-language-form">
-            <input type="hidden" name="next" value="{{ web_language_next() }}">
-            <select name="language" class="browser-default pf-language-select" aria-label="{{ _('Language') }}">
-              {% for code, label in web_language_options %}
-              <option value="{{ code }}" {% if code == selected_web_language %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </form>
-        </li>
-        <li class="pf-theme-menu">
-          <select class="browser-default pf-theme-select" aria-label="{{ _('Web theme') }}">
-            <option value="grey">{{ _('Gray') }}</option>
-            <option value="red">{{ _('Red Night') }}</option>
-          </select>
-        </li>
       </ul>
 
       <ul id="nav-mobile" class="sidenav">
@@ -106,7 +113,6 @@
           </select>
         </li>
       </ul>
-      <a href="#" data-target="nav-mobile" class="sidenav-trigger"><i class="material-icons">menu</i></a>
     </div>
   </nav>
   <main>

@@ -42,16 +42,71 @@ def test_base_template_exposes_language_selector():
     assert '@app.route("/language", methods=["POST"])' in server_py
 
 
+def test_korean_web_translations_cover_recent_pages():
+    ko_po = (
+        Path(__file__).resolve().parents[1]
+        / "locale"
+        / "ko"
+        / "LC_MESSAGES"
+        / "messages.po"
+    ).read_text()
+    remote_html = (VIEWS_DIR / "remote.html").read_text()
+    location_form_html = (VIEWS_DIR / "location_form.html").read_text()
+
+    assert "{{ _('Long') }}" in remote_html
+    assert "{{ _('Manual Entry') }}" in location_form_html
+
+    expected_pairs = {
+        "PiFinder Logs": "PiFinder 로그",
+        "Download All Logs": "모든 로그 다운로드",
+        "Current INDI Driver State": "현재 INDI 드라이버 상태",
+        "Send Location and Time": "위치와 시간 전송",
+        "Location Management": "위치 관리",
+        "Network Settings": "네트워크 설정",
+        "AP Connected Devices": "AP 접속 장치",
+        "User Data and Settings": "사용자 데이터와 설정",
+        "Long": "길게",
+        "Manual Entry": "수동 입력",
+    }
+    for msgid, msgstr in expected_pairs.items():
+        assert f'msgid "{msgid}"' in ko_po
+        assert f'msgstr "{msgstr}"' in ko_po
+
+
 def test_desktop_nav_controls_share_one_alignment_context():
     style_css = (VIEWS_DIR / "css" / "style.css").read_text()
+    base_html = (VIEWS_DIR / "base.html").read_text()
 
-    assert "nav ul.right.hide-on-med-and-down" in style_css
+    assert "pf-nav-top-row" in base_html
+    assert "pf-nav-controls" in base_html
+    assert "pf-nav-links hide-on-med-and-down" in base_html
+    assert "pf-main-nav" in style_css
+    assert ".pf-nav-top-row" in style_css
+    assert ".pf-nav-controls" in style_css
+    assert ".pf-nav-links" in style_css
     assert "display: flex" in style_css
     assert "align-items: center" in style_css
     assert ".pf-nav-icon-button .material-icons" in style_css
     assert ".pf-language-form" in style_css
     assert "height: 2.5rem" in style_css
     assert "line-height: 1" in style_css
+
+
+def test_indi_backlash_controls_are_present():
+    indi_html = (VIEWS_DIR / "indi_mount.html").read_text()
+    server_py = SERVER_PATH.read_text()
+
+    assert 'id="indi_backlash_form"' in indi_html
+    assert 'id="backlash_current_value"' in indi_html
+    assert 'id="backlash_auto_status"' in indi_html
+    assert 'name="backlash_ra"' in indi_html
+    assert 'name="backlash_de"' in indi_html
+    assert 'data-axis="ra"' in indi_html
+    assert 'data-axis="de"' in indi_html
+    assert "/indi/backlash/auto" in indi_html
+
+    assert '@app.route("/indi/backlash", methods=["POST"])' in server_py
+    assert '@app.route("/indi/backlash/auto", methods=["POST"])' in server_py
 
 
 def test_red_theme_is_defined_without_overriding_log_viewer_colors():
@@ -65,6 +120,18 @@ def test_red_theme_is_defined_without_overriding_log_viewer_colors():
     assert ".log-container" in logs_html
     assert "color: #d4d4d4" in logs_html
     assert "logLine.style.color = '#ff6b6b'" in logs_html
+
+
+def test_log_toolbar_controls_wrap_and_center_button_content():
+    logs_html = (VIEWS_DIR / "logs.html").read_text()
+
+    assert "flex-wrap: wrap" in logs_html
+    assert ".controls .btn" in logs_html
+    assert "display: inline-flex" in logs_html
+    assert "align-items: center" in logs_html
+    assert ".controls .btn .material-icons.left" in logs_html
+    assert "float: none" in logs_html
+    assert "flex: 1 1 16rem" in logs_html
 
 
 def test_pwa_manifest_and_assets_are_present():

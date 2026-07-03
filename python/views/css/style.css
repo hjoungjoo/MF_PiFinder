@@ -53,41 +53,93 @@ main {
   height: 50px;
 }
 
+.pf-main-nav {
+  height: auto;
+  min-height: 64px;
+  line-height: normal;
+}
+
+.pf-nav-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 64px;
+}
+
+.pf-nav-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  gap: 1rem;
+}
+
+.pf-brand-logo {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.pf-nav-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+.pf-nav-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-height: 48px;
+  margin: 0;
+}
+
+.pf-nav-links > li {
+  float: none;
+  display: flex;
+  align-items: center;
+}
+
+.pf-nav-links > li > a {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 0.9rem;
+  line-height: 1.2;
+}
+
+.pf-mobile-trigger {
+  margin: 0;
+}
+
 @media only screen and (min-width: 993px) {
-  nav ul.right.hide-on-med-and-down {
-    display: flex;
-    align-items: center;
-    height: 64px;
+  .pf-nav-shell {
+    min-height: 112px;
   }
+}
 
-  nav ul.right.hide-on-med-and-down > li {
-    float: none;
-    display: flex;
-    align-items: center;
-    height: 64px;
-  }
-
-  nav ul.right.hide-on-med-and-down > li > a {
-    display: flex;
-    align-items: center;
-    height: 64px;
-    line-height: 1;
+@media only screen and (max-width: 992px) {
+  .pf-logo {
+    height: 44px;
   }
 }
 
 .pf-theme-menu,
 .pf-language-menu {
-  height: 64px;
   display: flex;
   align-items: center;
-  margin-left: 0.5rem;
+  min-height: 2.5rem;
+  margin-left: 0;
 }
 
 .pf-fullscreen-menu {
-  height: 64px;
   display: flex;
   align-items: center;
-  margin-left: 0.25rem;
+  min-height: 2.5rem;
+  margin-left: 0;
 }
 
 .pf-nav-icon-button {

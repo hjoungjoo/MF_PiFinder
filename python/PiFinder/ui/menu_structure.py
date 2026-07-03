@@ -22,7 +22,7 @@ from PiFinder.ui.locationentry import UILocationEntry
 from PiFinder.ui.radec_entry import UIRADecEntry
 from PiFinder.ui.telemetry_list import UITelemetryList
 from PiFinder.ui.bluetooth_keyboard import UIBluetoothKeyboard
-from PiFinder.ui.indi import UIIndiGuide, UIIndiStatus
+from PiFinder.ui.indi import UIIndiBacklash, UIIndiGuide, UIIndiStatus
 import PiFinder.ui.callbacks as callbacks
 
 
@@ -122,6 +122,17 @@ pifinder_menu = {
                         {
                             "name": _("Guide"),
                             "class": UIIndiGuide,
+                        },
+                        {
+                            "name": _("Setting"),
+                            "class": UITextMenu,
+                            "select": "single",
+                            "items": [
+                                {
+                                    "name": _("Backlash"),
+                                    "class": UIIndiBacklash,
+                                },
+                            ],
                         },
                     ],
                 },
