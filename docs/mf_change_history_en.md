@@ -1133,15 +1133,20 @@ Added `python/views/indi_mount.html` and the `/indi` route in
 - Hardware testing showed that tracking and NDOF/Compass magnetometer
   corrections can mix into the IMU delta used for Backlash detection. Automatic
   Backlash therefore disables tracking before measurement and restores the
-  original tracking state afterward.
-- GoTo-based Backlash round-trip tests were tried first, but OnStep can enable
-  tracking after GoTo. The current automatic method keeps the historical
-  internal name `compass_goto_loop` for compatibility, but the actual movement
-  uses INDI `TELESCOPE_TIMED_GUIDE_*` pulse guiding with one active axis at a
-  time. Alt/Az tests `AZ` and `ALT`; EQ tests `RA` and `DEC`.
+  original tracking state only after successful completion.
+- Auto Backlash uses the historical internal name `compass_goto_loop` for
+  compatibility, but the current measurement movement is INDI GoTo again.
+  PiFinder disables tracking before the test and again after every GoTo leg so
+  OnStep's automatic post-GoTo tracking does not contaminate the IMU delta.
+  Alt/Az tests `AZ` and `ALT`; EQ tests `RA` and `DEC`, one active axis at a
+  time.
+- GoTo completion handling now waits for a stable idle window and, when
+  OnStep status is available, the `:GU#` `N` (`No goto`) state before recording
+  Backlash IMU samples. This avoids sampling during OnStepX's near-destination
+  settle wait before the final fine approach.
 - Auto Backlash requires IMU Compass/NDOF mode and MAG calibration level 3, then
-  syncs the mount coordinates to the current IMU direction before the pulse
-  loop. It records each pulse leg's mount start/end coordinates and IMU
+  syncs the mount coordinates to the current IMU direction before the GoTo
+  loop. It records each GoTo leg's mount start/end coordinates and IMU
   start/end coordinates, filters out legs where mount-vs-IMU travel differs by
   at least 1 degree, trims the lowest/highest 30%, and reports the middle 40%
   mean by movement direction.
@@ -1157,12 +1162,14 @@ Added `python/views/indi_mount.html` and the `/indi` route in
   is not applied automatically.
 - The OnStepX driver patch now makes `GUIDE_RATE` writable for the OnStepX
   device, maps the requested value to OnStep rate selectors, and reads the
-  actual pulse-guide rate back from the device. PiFinder requests Half-Max
-  (`96x` estimate) before Auto Backlash. If firmware configuration, such as
-  `GUIDE_SEPARATE_PULSE_RATE`, limits timed pulse guide to a slower value, the
-  driver reports the actual value and PiFinder fails before moving the mount.
-  The source installer applies this patch and the binary archive was rebuilt
-  with the patched OnStepX driver.
+  actual pulse-guide rate back from the device. Auto Backlash no longer depends
+  on `GUIDE_RATE`, but the writable/readback behavior remains part of the
+  OnStepX driver compatibility patch. The source installer applies this patch
+  and the binary archive was rebuilt with the patched OnStepX driver.
+- The INDI binary archive can now be stored as `.tar.gz.part-*` split files in
+  git. The archive installer rebuilds the full archive from those parts and
+  verifies the `.sha256` checksum; the packaging script creates split parts
+  automatically for large archives.
 - Direction movement is handled through AJAX: pressing a button sends the motion
   command, and pointer up/cancel/leave sends stop.
 - Red Night theme CSS now covers selects/dropdowns/tables so INDI controls do

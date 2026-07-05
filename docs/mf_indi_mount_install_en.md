@@ -52,7 +52,7 @@ cd ~/PiFinder
 bash scripts/install_indi_mount_OnstepX.sh
 ```
 
-The script checks out INDI `v2.2.3.1` under `~/indi-latest`, builds it, and automatically applies `scripts/patches/indi-v2.2.3.1-onstepx.patch`. The patch leaves the upstream `LX200 OnStep` driver unchanged and adds a separate `LX200 OnStepX` device and executable link. The OnStepX patch also carries the PiFinder Backlash range/readback fixes and writable `GUIDE_RATE` handling used by Auto Backlash.
+The script checks out INDI `v2.2.3.1` under `~/indi-latest`, builds it, and automatically applies `scripts/patches/indi-v2.2.3.1-onstepx.patch`. The patch leaves the upstream `LX200 OnStep` driver unchanged and adds a separate `LX200 OnStepX` device and executable link. The OnStepX patch also carries the PiFinder Backlash range/readback fixes and writable `GUIDE_RATE` handling for driver compatibility.
 
 `install_indi_mount_OnstepX.sh` strips `-march=native`, `-mcpu=*`, and `-mtune=*`, then uses `-march=armv8-a` so a build made on Raspberry Pi 5 stays compatible with Raspberry Pi 4. To test pure upstream INDI without the bundled PiFinder patch:
 
@@ -68,6 +68,11 @@ Instead of building from source, you can install a prebuilt Bookworm 64-bit/aarc
 cd ~/PiFinder
 bash scripts/install_indi_mount_archive.sh dist/mf-pifinder-indi-bookworm-arm64-v2.2.3.1-current.tar.gz
 ```
+
+The Git repository may store large archives as split files named
+`.tar.gz.part-00`, `.part-01`, and so on. Use the same `.tar.gz` path in the
+command above; `install_indi_mount_archive.sh` rebuilds the archive from the
+parts and verifies the `.sha256` checksum before installation.
 
 The main PiFinder setup script can use the same archive installer:
 
@@ -89,6 +94,11 @@ To create a new binary archive from the currently installed build:
 cd ~/PiFinder
 bash scripts/package_indi_mount_archive.sh
 ```
+
+`package_indi_mount_archive.sh` creates the full `.tar.gz` and `.sha256` files.
+When the archive is larger than the GitHub-friendly threshold, it also creates
+`.tar.gz.part-*` split files automatically so the archive can be committed with
+the source tree.
 
 A binary archive created after the latest source build includes the patched `LX200 OnStepX` driver and can be reused on Raspberry Pi 4 and Raspberry Pi 5 Bookworm 64-bit systems. Archive metadata records the OnStepX patch name and checksum so the installed binary can be traced back to the patch file.
 
@@ -165,11 +175,10 @@ The `Settings` area on the INDI page includes OnStepX maintenance controls.
 - The manual `Save Backlash` action is safe to test indoors because it only
   updates driver/device settings and does not command mount motion.
 - `Auto Backlash` keeps the internal `compass_goto_loop` mode name, but the
-  actual measurement motion is now INDI `TELESCOPE_TIMED_GUIDE_*` pulse guiding,
-  not GoTo. The calculation, filtering, and recommendation logic stay
-  unchanged. Alt/Az mounts test `AZ` and `ALT` separately, while EQ mounts test
-  `RA` and `DEC` separately. See `docs/mf_backlash_measurement_flow_en.md` for
-  the detailed flow and formulas.
+  actual measurement motion is INDI GoTo. The calculation, filtering, and
+  recommendation logic stay unchanged. Alt/Az mounts test `AZ` and `ALT`
+  separately, while EQ mounts test `RA` and `DEC` separately. See
+  `docs/mf_backlash_measurement_flow_en.md` for the detailed flow and formulas.
 - The automatic Backlash test must turn tracking off with
   `TELESCOPE_TRACK_STATE.TRACK_OFF` before measurement and restore the original
   tracking state afterward. With tracking enabled, sidereal motion can appear as
@@ -177,10 +186,6 @@ The `Settings` area on the INDI page includes OnStepX maintenance controls.
 - The automatic Backlash test requires IMU Compass/NDOF mode and MAG calibration
   level 3. The user moves/rotates the device until calibration is ready, then
   presses `Continue` to start the actual motion test.
-- Before motion starts, PiFinder sets the OnStepX driver's INDI `GUIDE_RATE` to
-  `Half-Max (estimated 96x)` and verifies the readback. If the OnStep firmware
-  limits pulse guide rate to 1x or slower, the requested rate is not applied and
-  Auto Backlash fails before moving the mount.
 - If a measurement reaches the `3600 arc-sec` limit, the UI reports low
   confidence. Do not save that value blindly; it may mean the mechanical
   backlash exceeds the configured range or that IMU pose/axis sensitivity is
@@ -188,8 +193,8 @@ The `Settings` area on the INDI page includes OnStepX maintenance controls.
 - Automatic measurement does not reset Backlash to zero and does not apply the
   calculated value automatically. Results are shown as recommendations only; the
   user reviews the input values and presses `Save Backlash` to write them. On
-  completion or failure, PiFinder restores the original tracking state and
-  original INDI `GUIDE_RATE`.
+  completion, PiFinder restores the original tracking state when it was enabled
+  before the test.
 
 ## Enable PiFinder Control
 

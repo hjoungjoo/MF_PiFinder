@@ -1014,15 +1014,19 @@ INDI 마운트 제어는 선택 기능이다. 기본 PiFinder 설치만으로는
   추가했다. 수동 저장은 마운트 이동 없이 설정값만 쓴다. Alt/Az 모드에서는
   같은 driver property를 `AZ`/`ALT`로, EQ 모드에서는 `RA`/`DEC`로 표시한다.
 - 실제 백래시 테스트 중 tracking과 NDOF/Compass 지자계 보정이 IMU 변화에
-  섞일 수 있음을 확인했다. 자동 Backlash는 시작 전 tracking을 끄고 종료 후
-  원래 tracking 상태를 복구하도록 보강했다.
-- GoTo 기반 Backlash 왕복 테스트를 먼저 시도했지만, OnStep이 GoTo 뒤 tracking을
-  자동으로 켤 수 있음을 확인했다. 현재 자동 측정은 호환성을 위해 내부 이름
-  `compass_goto_loop`를 유지하지만, 실제 이동은 INDI
-  `TELESCOPE_TIMED_GUIDE_*` pulse guide를 사용한다. 한 번에 한 축만 움직이며,
-  Alt/Az에서는 `AZ`와 `ALT`, EQ에서는 `RA`와 `DEC`를 분리 측정한다.
+  섞일 수 있음을 확인했다. 자동 Backlash는 시작 전 tracking을 끄고 정상 완료
+  후에만 원래 tracking 상태를 복구하도록 보강했다.
+- Auto Backlash는 호환성을 위해 내부 이름 `compass_goto_loop`를 유지하지만,
+  현재 측정 이동은 다시 INDI GoTo를 사용한다. PiFinder는 테스트 시작 전과
+  각 GoTo leg 이후 tracking을 다시 끄므로, OnStep이 GoTo 뒤 자동으로 tracking을
+  켜더라도 IMU delta에 섞이지 않도록 한다. Alt/Az에서는 `AZ`와 `ALT`,
+  EQ에서는 `RA`와 `DEC`를 한 축씩 분리 측정한다.
+- GoTo 완료 처리는 stable idle window와, OnStep status를 읽을 수 있는 경우
+  `:GU#`의 `N`(`No goto`) 상태를 기다린 뒤 Backlash IMU 샘플을 기록하도록
+  보강했다. OnStepX가 근처 목표점에서 settle wait 후 최종 미세 접근을 다시
+  수행하는 동안 측정하는 문제를 막기 위한 처리다.
 - Auto Backlash는 IMU Compass/NDOF 모드와 MAG calibration 3을 요구하고,
-  pulse loop 전에 현재 IMU 방향으로 mount 좌표를 sync한다. 각 pulse leg의
+  GoTo loop 전에 현재 IMU 방향으로 mount 좌표를 sync한다. 각 GoTo leg의
   mount 시작/종료 좌표와 IMU 시작/종료 좌표를 기록하고, mount-IMU 이동 차이가
   1도 이상인 leg를 제외한 뒤 하위/상위 30%를 버리고 가운데 40% 평균을 이동
   방향별 추천값으로 표시한다.
@@ -1036,11 +1040,13 @@ INDI 마운트 제어는 선택 기능이다. 기본 PiFinder 설치만으로는
   계산값은 바로 적용하지 않고 낮은 신뢰도로 표시한다.
 - OnStepX driver patch는 이제 OnStepX 장치의 `GUIDE_RATE`를 writable로 만들고,
   요청값을 OnStep rate selector로 변환한 뒤 실제 pulse-guide rate를 다시
-  읽어 검증한다. PiFinder는 Auto Backlash 시작 전 Half-Max(`96x` 추정)를
-  요청한다. 펌웨어의 `GUIDE_SEPARATE_PULSE_RATE` 같은 설정 때문에 timed pulse
-  guide가 더 낮은 속도로 제한되면 driver가 실제값을 보고하고, PiFinder는
-  마운트를 움직이기 전에 실패 처리한다. 소스 설치 스크립트는 이 패치를
-  적용하며, 바이너리 아카이브도 패치된 OnStepX driver로 다시 생성했다.
+  읽어 검증한다. Auto Backlash는 더 이상 `GUIDE_RATE`에 의존하지 않지만,
+  writable/readback 동작은 OnStepX driver 호환성 패치로 유지한다. 소스 설치
+  스크립트는 이 패치를 적용하며, 바이너리 아카이브도 패치된 OnStepX driver로
+  다시 생성했다.
+- INDI 바이너리 아카이브는 이제 git에 `.tar.gz.part-*` 조각 파일로 저장할 수
+  있다. 아카이브 설치 스크립트는 조각을 다시 합친 뒤 `.sha256` checksum을
+  검증하고, 패키지 생성 스크립트는 큰 아카이브의 조각 파일을 자동 생성한다.
 - 방향 이동은 버튼을 누르고 있는 동안 motion 명령을 보내고, pointer up/cancel/leave
   시 stop 명령을 보내도록 AJAX로 처리한다.
 - Red Night theme에서도 select/dropdown/table이 흰색으로 뜨지 않도록 CSS를

@@ -4404,20 +4404,36 @@ msgid "Motion test repeats must be between 1 and %(max)d"
 msgstr "모션 테스트 반복 횟수는 1에서 %(max)d 사이여야 합니다"
 
 #: views/indi_mount.html:389
-msgid "Compass GoTo motion test; repeated return/offset moves are recorded and filtered by direction before recommending candidate backlash values."
-msgstr "컴퍼스 모션 테스트입니다. 반복되는 복귀/오프셋 이동을 기록한 뒤 방향별로 필터링해 후보 백래시 값을 추천합니다."
+msgid "Compass GoTo round-trip test; repeated return/offset GoTo moves are recorded and filtered by direction before recommending candidate backlash values."
+msgstr "컴퍼스 GoTo 왕복 테스트입니다. 반복되는 복귀/오프셋 GoTo 이동을 기록한 뒤 방향별로 필터링해 후보 백래시 값을 추천합니다."
 
 #: views/indi_mount.html:393
-msgid "Guide Rate"
-msgstr "가이드 속도"
+msgid "Motion Command"
+msgstr "이동 명령"
 
 #: views/indi_mount.html:394
-msgid "Half-Max (estimated 96x)"
-msgstr "Half-Max (추정 96x)"
+msgid "INDI GoTo"
+msgstr "INDI GoTo"
 
 #: views/indi_mount.html:397
 msgid "Motion Test Repeats"
 msgstr "모션 테스트 반복 횟수"
+
+#: views/indi_mount.html:965
+msgid "Records"
+msgstr "레코드"
+
+#: views/indi_mount.html:977 views/indi_mount.html:990
+msgid "calculated"
+msgstr "계산값"
+
+#: views/indi_mount.html:978 views/indi_mount.html:991
+msgid "filtered"
+msgstr "필터됨"
+
+#: views/indi_mount.html:982
+msgid "By movement direction"
+msgstr "이동 방향별"
 
 #~ msgid "Cluster/Neb"
 #~ msgstr "성단/성운"

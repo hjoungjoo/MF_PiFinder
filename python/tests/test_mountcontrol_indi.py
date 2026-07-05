@@ -258,8 +258,6 @@ def test_auto_backlash_uses_compass_goto_loop(monkeypatch):
     assert mount._backlash_auto["auto_mode"] == mci.BACKLASH_AUTO_MODE_COMPASS_GOTO
     assert mount._backlash_auto["state"] == "waiting_for_calibration"
     assert mount._backlash_auto["repeats"] == mci.BACKLASH_COMPASS_GOTO_REPEATS
-    assert mount._backlash_auto["guide_rate"] == mci.BACKLASH_COMPASS_GUIDE_RATE
-    assert mount._backlash_auto["guide_rate_label"] == "Half-Max (est. 96x)"
     assert mount._backlash_auto["imu_status"]["heading_ready"] is True
     assert mount._backlash_auto["original_tracking"] is True
     assert tracking_writes == [False]
@@ -327,6 +325,33 @@ def test_backlash_goto_wait_requires_target_reached(monkeypatch):
     assert "target was not reached" in mount._backlash_auto["message"]
 
 
+def test_backlash_goto_waits_for_onstep_final_no_goto(monkeypatch):
+    mount = DummyMountControl(shared_state=object())
+    clock = [0.0]
+    onstep_states = [False, True, True, True]
+
+    def fake_monotonic():
+        return clock[0]
+
+    def fake_sleep(seconds):
+        clock[0] += seconds
+
+    def fake_onstep_complete():
+        return onstep_states.pop(0) if onstep_states else True
+
+    monkeypatch.setattr(mci.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(mci.time, "sleep", fake_sleep)
+    mount._backlash_auto = {}
+    mount._indi_mount_is_busy = lambda: False
+    mount._read_current_position = lambda: (30.0, 30.0)
+    monkeypatch.setattr(mount, "_onstep_goto_complete", fake_onstep_complete)
+
+    assert mount._goto_target_and_wait(30.0, 30.0, "settle", timeout=10.0)
+
+    assert clock[0] >= mci.GOTO_COMPLETE_STABLE_SECONDS
+    assert mount._backlash_auto["state"] == "running"
+
+
 def test_compass_goto_loop_records_initial_offset_and_repeats():
     mount = DummyMountControl(shared_state=object())
     mount._backlash_auto = {
@@ -335,8 +360,7 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
         "offset_deg": 3.0,
     }
     current_position = [10.0, 20.0]
-    pulse_calls = []
-    guide_rates = []
+    goto_calls = []
 
     mount.connect = lambda: True
     mount._current_imu_sample = lambda: SimpleNamespace(
@@ -352,23 +376,22 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
     mount._read_current_position = lambda: (current_position[0], current_position[1])
     mount._backlash_mount_model = lambda: "eq"
     mount.set_tracking = lambda enabled: True
-    mount._read_driver_guide_rate = lambda: (0.5, 0.5)
-    mount.set_guide_rate = lambda rate: guide_rates.append(rate) or True
-    mount.sync_mount = lambda ra, dec: current_position.__setitem__(slice(None), [ra % 360.0, dec]) or True
+    mount.sync_mount = (
+        lambda ra, dec: current_position.__setitem__(slice(None), [ra % 360.0, dec])
+        or True
+    )
     mount.stop_mount = lambda: True
+    mount._backlash_cancelable_sleep = lambda seconds, label: True
 
-    def fake_pulse(active_axis, positive, label, offset_deg):
-        pulse_calls.append((active_axis, positive, label, round(offset_deg, 3)))
-        signed_offset = offset_deg if positive else -offset_deg
-        if active_axis == "ra":
-            current_position[0] = (current_position[0] + signed_offset) % 360.0
-        elif active_axis == "dec":
-            current_position[1] += signed_offset
-        else:
-            raise AssertionError(f"Unexpected test axis {active_axis}")
+    def fake_goto(
+        ra_deg, dec_deg, phase_label, timeout=mci.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
+    ):
+        goto_calls.append((phase_label, round(ra_deg % 360.0, 3), round(dec_deg, 3)))
+        current_position[0] = ra_deg % 360.0
+        current_position[1] = dec_deg
         return True
 
-    mount._backlash_pulse_axis_and_wait = fake_pulse
+    mount._goto_target_and_wait = fake_goto
 
     assert mount.continue_backlash_compass_goto_loop()
 
@@ -387,19 +410,19 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
         "return 2 DEC",
         "offset 2 DEC",
     ]
-    assert pulse_calls == [
-        ("ra", False, "init RA", 3.0),
-        ("ra", True, "offset initial RA", 3.0),
-        ("ra", False, "return 1 RA", 3.0),
-        ("ra", True, "offset 1 RA", 3.0),
-        ("ra", False, "return 2 RA", 3.0),
-        ("ra", True, "offset 2 RA", 3.0),
-        ("dec", False, "init DEC", 3.0),
-        ("dec", True, "offset initial DEC", 3.0),
-        ("dec", False, "return 1 DEC", 3.0),
-        ("dec", True, "offset 1 DEC", 3.0),
-        ("dec", False, "return 2 DEC", 3.0),
-        ("dec", True, "offset 2 DEC", 3.0),
+    assert goto_calls == [
+        ("init RA", 7.0, 20.0),
+        ("offset initial RA", 10.0, 20.0),
+        ("return 1 RA", 7.0, 20.0),
+        ("offset 1 RA", 10.0, 20.0),
+        ("return 2 RA", 7.0, 20.0),
+        ("offset 2 RA", 10.0, 20.0),
+        ("init DEC", 10.0, 17.0),
+        ("offset initial DEC", 10.0, 20.0),
+        ("return 1 DEC", 10.0, 17.0),
+        ("offset 1 DEC", 10.0, 20.0),
+        ("return 2 DEC", 10.0, 17.0),
+        ("offset 2 DEC", 10.0, 20.0),
     ]
     assert records[0]["mount_ra"] == 7.0
     assert records[0]["active_axis"] == "ra"
@@ -407,7 +430,6 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
     assert records[-1]["mount_ra"] == 10.0
     assert records[-1]["mount_dec"] == 20.0
     assert mount.applied_properties == []
-    assert guide_rates == [mci.BACKLASH_COMPASS_GUIDE_RATE, (0.5, 0.5)]
     assert records[0]["imu_status"]["heading_ready"] is True
     assert records[0]["imu_status"]["fully_calibrated"] is False
     analysis = mount._backlash_auto["directional_analysis"]
@@ -426,26 +448,34 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
     assert mount._backlash_auto["state"] == "complete"
 
 
-def test_backlash_pulse_guide_uses_timed_guide_properties(monkeypatch):
+def test_backlash_goto_command_disables_tracking_after_goto(monkeypatch):
     mount = DummyMountControl(shared_state=object())
-    monkeypatch.setattr(mount, "_backlash_cancelable_sleep", lambda seconds, label: True)
-    stop_calls = []
-    mount.stop_mount = lambda: stop_calls.append(True) or True
+    monkeypatch.setattr(
+        mount, "_backlash_cancelable_sleep", lambda seconds, label: True
+    )
+    goto_calls = []
+    tracking_writes = []
+    mount._backlash_auto = {}
 
-    assert mount._pulse_guide_move_and_wait("east", 1.234, "pulse test")
+    def fake_goto(
+        ra_deg, dec_deg, phase_label, timeout=mci.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
+    ):
+        goto_calls.append((ra_deg, dec_deg, phase_label, timeout))
+        return True
 
-    assert mount.applied_properties[-1] == [
-        "LX200 OnStepX.TELESCOPE_TIMED_GUIDE_WE.TIMED_GUIDE_W=1234"
+    mount._goto_target_and_wait = fake_goto
+    mount._read_tracking_enabled = lambda: True
+    mount.set_tracking = lambda enabled: tracking_writes.append(enabled) or True
+
+    assert mount._backlash_goto_command_and_wait(
+        {"target_ra": 12.3, "target_dec": -4.5},
+        "goto phase",
+        "ra",
+    )
+    assert goto_calls == [
+        (12.3, -4.5, "goto phase", mci.BACKLASH_COMPASS_GOTO_TIMEOUT_SECONDS)
     ]
-    assert stop_calls == [True]
-
-
-def test_backlash_pulse_duration_uses_default_half_max_rate():
-    mount = DummyMountControl(shared_state=object())
-
-    duration = mount._backlash_pulse_duration_seconds(2.0)
-
-    assert round(duration, 2) == 4.99
+    assert tracking_writes == [False]
 
 
 def test_compass_goto_loop_plan_uses_altaz_offset_for_altaz_mount():
@@ -633,7 +663,7 @@ def test_compass_goto_loop_restores_tracking_after_test():
     }
     current_position = [10.0, 20.0]
     tracking_writes = []
-    guide_rates = []
+    goto_calls = []
 
     mount._current_imu_sample = lambda: SimpleNamespace(
         uses_magnetometer=True,
@@ -647,27 +677,31 @@ def test_compass_goto_loop_restores_tracking_after_test():
     mount._home_park_status_fields = lambda: {"park_state": "Unparked"}
     mount._read_tracking_enabled = lambda: True
     mount.set_tracking = lambda enabled: tracking_writes.append(enabled) or True
-    mount._read_driver_guide_rate = lambda: (0.5, 0.5)
-    mount.set_guide_rate = lambda rate: guide_rates.append(rate) or True
     mount._read_current_position = lambda: (current_position[0], current_position[1])
     mount._backlash_mount_model = lambda: "eq"
-    mount.sync_mount = lambda ra, dec: current_position.__setitem__(slice(None), [ra % 360.0, dec]) or True
+    mount.sync_mount = (
+        lambda ra, dec: current_position.__setitem__(slice(None), [ra % 360.0, dec])
+        or True
+    )
     mount.stop_mount = lambda: True
+    mount._backlash_cancelable_sleep = lambda seconds, label: True
 
-    def fake_pulse(active_axis, positive, label, offset_deg):
-        signed_offset = offset_deg if positive else -offset_deg
-        if active_axis == "ra":
-            current_position[0] = (current_position[0] + signed_offset) % 360.0
-        elif active_axis == "dec":
-            current_position[1] += signed_offset
+    def fake_goto(
+        ra_deg, dec_deg, phase_label, timeout=mci.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
+    ):
+        goto_calls.append((phase_label, round(ra_deg % 360.0, 3), round(dec_deg, 3)))
+        current_position[0] = ra_deg % 360.0
+        current_position[1] = dec_deg
         return True
 
-    mount._backlash_pulse_axis_and_wait = fake_pulse
+    mount._goto_target_and_wait = fake_goto
 
     assert mount.continue_backlash_compass_goto_loop()
 
-    assert tracking_writes == [False, False, True]
-    assert guide_rates == [mci.BACKLASH_COMPASS_GUIDE_RATE, (0.5, 0.5)]
+    assert len(goto_calls) == 8
+    assert tracking_writes[:2] == [False, False]
+    assert tracking_writes[-1] is True
+    assert tracking_writes.count(False) == 10
     assert mount._backlash_auto["state"] == "complete"
 
 
@@ -685,6 +719,31 @@ def test_read_tracking_enabled_retries_after_empty_property_snapshot(monkeypatch
     monkeypatch.setattr(mci.time, "sleep", lambda seconds: None)
 
     assert mount._read_tracking_enabled() is False
+
+
+def test_read_tracking_enabled_treats_onstep_idle_as_off(monkeypatch):
+    mount = DummyMountControl()
+    monkeypatch.setattr(mount, "_device_switch_on", lambda *args: None)
+    monkeypatch.setattr(mount, "_read_tracking_enabled_from_properties", lambda: None)
+    monkeypatch.setattr(
+        mount,
+        "_device_text_value",
+        lambda property_name, element_name: "Idle"
+        if property_name == "OnStep Status" and element_name == "Tracking"
+        else "",
+    )
+
+    assert mount._read_tracking_enabled() is False
+
+
+def test_set_tracking_accepts_desired_readback_after_command_failure(monkeypatch):
+    mount = DummyMountControl()
+    mount.connected = True
+    mount._apply_indi_properties = lambda *args, **kwargs: False
+    monkeypatch.setattr(mount, "_confirm_tracking_state", lambda enabled: not enabled)
+
+    assert mount.set_tracking(False)
+    assert mount.applied_properties == []
 
 
 def test_multipoint_align_manual_start_sends_goto_to_selected_star():
@@ -819,17 +878,67 @@ def test_goto_target_uses_slew_mode_for_onstep():
     assert mount.statuses[-1][0] == "slewing"
 
 
-def test_goto_motion_completes_when_indi_state_is_not_busy(monkeypatch):
+def test_goto_motion_completes_after_stable_idle(monkeypatch):
     mount = DummyConnectedMount()
+    clock = [100.0]
+
+    def fake_monotonic():
+        return clock[0]
+
+    monkeypatch.setattr(mci.time, "monotonic", fake_monotonic)
     monkeypatch.setattr(mount, "_read_current_position", lambda: None)
     monkeypatch.setattr(mount, "_indi_mount_is_busy", lambda: False)
 
     assert mount.goto_target(132.0, 49.5)
-    mount._goto_motion["started_at"] = time.monotonic() - 2.0
+    mount._goto_motion["started_at"] = clock[0] - 2.0
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is not None
+
+    clock[0] += mci.GOTO_COMPLETE_STABLE_SECONDS + 0.1
     mount._check_goto_motion()
 
     assert mount._goto_motion is None
     assert mount.statuses[-1][0] == "connected"
+    assert mount.statuses[-1][1] == "GoTo complete"
+
+
+def test_goto_motion_waits_for_stable_position(monkeypatch):
+    mount = DummyConnectedMount()
+    clock = [100.0]
+    current_position = [(132.0, 49.5)]
+
+    def fake_monotonic():
+        return clock[0]
+
+    def fake_position():
+        return current_position[-1]
+
+    monkeypatch.setattr(mci.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(mount, "_read_current_position", fake_position)
+    monkeypatch.setattr(mount, "_indi_mount_is_busy", lambda: False)
+
+    assert mount.goto_target(132.0, 49.5)
+    mount._goto_motion["started_at"] = clock[0] - 2.0
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is not None
+
+    clock[0] += mci.GOTO_COMPLETE_STABLE_SECONDS + 0.1
+    current_position.append((132.08, 49.5))
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is not None
+
+    clock[0] += mci.GOTO_COMPLETE_STABLE_SECONDS + 0.1
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is not None
+
+    clock[0] += mci.GOTO_COMPLETE_STABLE_SECONDS + 0.1
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is None
     assert mount.statuses[-1][1] == "GoTo complete"
 
 
@@ -843,6 +952,41 @@ def test_goto_motion_waits_while_indi_state_is_busy(monkeypatch):
 
     assert mount._goto_motion is not None
     assert mount.statuses[-1][0] == "slewing"
+
+
+def test_goto_motion_waits_for_onstep_no_goto_after_active(monkeypatch):
+    mount = DummyConnectedMount()
+    clock = [100.0]
+    onstep_states = [False, True, True]
+
+    def fake_monotonic():
+        return clock[0]
+
+    def fake_onstep_complete():
+        return onstep_states.pop(0) if onstep_states else True
+
+    monkeypatch.setattr(mci.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(mount, "_read_current_position", lambda: None)
+    monkeypatch.setattr(mount, "_indi_mount_is_busy", lambda: False)
+    monkeypatch.setattr(mount, "_onstep_goto_complete", fake_onstep_complete)
+
+    assert mount.goto_target(132.0, 49.5)
+    mount._goto_motion["started_at"] = clock[0] - 5.0
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is not None
+    assert mount._goto_motion["onstep_seen_goto_active"]
+
+    clock[0] += mci.GOTO_COMPLETE_STABLE_SECONDS + 0.1
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is not None
+
+    clock[0] += mci.GOTO_COMPLETE_STABLE_SECONDS + 0.1
+    mount._check_goto_motion()
+
+    assert mount._goto_motion is None
+    assert mount.statuses[-1][1] == "GoTo complete"
 
 
 def test_goto_refine_completes_without_regoto_inside_accuracy():

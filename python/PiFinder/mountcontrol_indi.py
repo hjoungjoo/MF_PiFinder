@@ -62,8 +62,11 @@ GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
 DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 10.0
 GUIDE_CORRECTION_INTERVAL_SECONDS = 10.0
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4
-SIDEREAL_ARCSEC_PER_SECOND = 15.041067
 GOTO_COMPLETE_MIN_SECONDS = 1.0
+GOTO_COMPLETE_STABLE_SECONDS = 4.0
+GOTO_COMPLETE_POSITION_STABLE_DEG = 0.02
+GOTO_COMPLETE_TARGET_TOLERANCE_DEG = 0.5
+GOTO_ONSTEP_ACTIVE_OBSERVE_GRACE_SECONDS = 3.0
 GOTO_COMPLETE_FALLBACK_SECONDS = 180.0
 BACKLASH_MIN_VALUE = 0
 BACKLASH_MAX_VALUE = 3600
@@ -84,21 +87,6 @@ BACKLASH_COMPASS_GOTO_REPEATS = 10
 BACKLASH_COMPASS_GOTO_SETTLE_SECONDS = 0.5
 BACKLASH_COMPASS_GOTO_BETWEEN_SECONDS = 1.0
 BACKLASH_COMPASS_GOTO_TIMEOUT_SECONDS = 180.0
-BACKLASH_COMPASS_GUIDE_RATE = 96.0
-BACKLASH_COMPASS_GUIDE_RATE_MULTIPLIERS = {
-    0: 0.25,
-    1: 0.5,
-    2: 1.0,
-    3: 2.0,
-    4: 4.0,
-    5: 8.0,
-    6: 20.0,
-    7: 48.0,
-    # OnStep exposes rate 8 as Half-Max. The exact physical speed depends on
-    # mount configuration, so use a conservative 96x estimate for timing.
-    8: 96.0,
-}
-BACKLASH_COMPASS_GUIDE_RATE_LABEL = "Half-Max (est. 96x)"
 BACKLASH_GOTO_RETRY_AFTER_SECONDS = 8.0
 BACKLASH_GOTO_MAX_RETRIES = 3
 
@@ -566,6 +554,90 @@ class MountControlIndi:
             if self._indi_state_is_busy(state):
                 return True
         return False if saw_state else None
+
+    def _raw_onstep_status(self) -> str:
+        return self._device_text_value("OnStep Status", ":GU# return").strip()
+
+    def _onstep_goto_complete(self) -> Optional[bool]:
+        raw_status = self._raw_onstep_status()
+        if not raw_status:
+            return None
+        return "N" in raw_status
+
+    def _goto_completion_ready(
+        self,
+        motion: dict[str, Any],
+        is_busy: Optional[bool],
+        now: float,
+        current_position: Optional[tuple[float, float]] = None,
+    ) -> bool:
+        elapsed = now - float(motion.get("started_at", now))
+        onstep_complete = self._onstep_goto_complete()
+
+        if is_busy is True:
+            motion["indi_seen_busy"] = True
+            motion["complete_ready_since"] = None
+            return False
+
+        if onstep_complete is False:
+            motion["onstep_seen_goto_active"] = True
+            motion["complete_ready_since"] = None
+            return False
+
+        if onstep_complete is True:
+            saw_active = bool(
+                motion.get("indi_seen_busy") or motion.get("onstep_seen_goto_active")
+            )
+            if not saw_active and elapsed < GOTO_ONSTEP_ACTIVE_OBSERVE_GRACE_SECONDS:
+                motion["complete_ready_since"] = None
+                return False
+
+        if is_busy is not False:
+            motion["complete_ready_since"] = None
+            return False
+
+        if current_position is not None:
+            target_ra = motion.get("target_ra")
+            target_dec = motion.get("target_dec")
+            if target_ra is not None and target_dec is not None:
+                target_error_deg = (
+                    radec_separation_arcmin(
+                        current_position[0],
+                        current_position[1],
+                        float(target_ra),
+                        float(target_dec),
+                    )
+                    / 60.0
+                )
+                motion["target_error_deg"] = target_error_deg
+                if target_error_deg > GOTO_COMPLETE_TARGET_TOLERANCE_DEG:
+                    motion["complete_ready_since"] = None
+                    motion["last_complete_position"] = current_position
+                    return False
+
+            last_position = motion.get("last_complete_position")
+            if last_position is not None:
+                position_change_deg = (
+                    radec_separation_arcmin(
+                        current_position[0],
+                        current_position[1],
+                        float(last_position[0]),
+                        float(last_position[1]),
+                    )
+                    / 60.0
+                )
+                motion["position_change_deg"] = position_change_deg
+                if position_change_deg > GOTO_COMPLETE_POSITION_STABLE_DEG:
+                    motion["complete_ready_since"] = None
+                    motion["last_complete_position"] = current_position
+                    return False
+            motion["last_complete_position"] = current_position
+
+        ready_since = motion.get("complete_ready_since")
+        if ready_since is None:
+            motion["complete_ready_since"] = now
+            return False
+        return now - float(ready_since) >= GOTO_COMPLETE_STABLE_SECONDS
 
     def _write_status_heartbeat(self) -> None:
         now = time.monotonic()
@@ -1203,6 +1275,9 @@ class MountControlIndi:
             "target_ra": ra_deg % 360.0,
             "target_dec": dec_deg,
             "started_at": time.monotonic(),
+            "complete_ready_since": None,
+            "indi_seen_busy": False,
+            "onstep_seen_goto_active": False,
         }
 
     def _complete_goto_motion(self, message: str = "GoTo complete") -> None:
@@ -1235,9 +1310,13 @@ class MountControlIndi:
             return
 
         is_busy = self._indi_mount_is_busy()
-        if is_busy is True:
-            return
-        if is_busy is False:
+        current_position = None if is_busy is True else self._read_current_position()
+        if self._goto_completion_ready(
+            self._goto_motion,
+            is_busy,
+            time.monotonic(),
+            current_position=current_position,
+        ):
             self._complete_goto_motion()
             return
 
@@ -1652,8 +1731,30 @@ class MountControlIndi:
         self._console("INDI guide\nmismatch")
         return False
 
+    def _read_tracking_enabled_from_properties(self) -> Optional[bool]:
+        properties = sys_utils.get_indi_onstep_properties(
+            server_host=self.indi_host,
+            server_port=self.indi_port,
+            device_name=self._indi_device_name(),
+        )
+        track_on = properties.get(
+            self._indi_property_name("TELESCOPE_TRACK_STATE.TRACK_ON")
+        )
+        track_off = properties.get(
+            self._indi_property_name("TELESCOPE_TRACK_STATE.TRACK_OFF")
+        )
+        if track_on in {"On", "Off"}:
+            return track_on == "On"
+        if track_off in {"On", "Off"}:
+            return track_off != "On"
+        return None
+
     def _read_tracking_enabled(self) -> Optional[bool]:
         for attempt in range(3):
+            property_state = self._read_tracking_enabled_from_properties()
+            if property_state is not None:
+                return property_state
+
             track_on_switch = self._device_switch_on(
                 "TELESCOPE_TRACK_STATE", "TRACK_ON"
             )
@@ -1665,32 +1766,30 @@ class MountControlIndi:
             if track_off_switch is not None:
                 return not track_off_switch
 
-            properties = sys_utils.get_indi_onstep_properties(
-                server_host=self.indi_host,
-                server_port=self.indi_port,
-                device_name=self._indi_device_name(),
-            )
-            track_on = properties.get(
-                self._indi_property_name("TELESCOPE_TRACK_STATE.TRACK_ON")
-            )
-            track_off = properties.get(
-                self._indi_property_name("TELESCOPE_TRACK_STATE.TRACK_OFF")
-            )
-            if track_on in {"On", "Off"}:
-                return track_on == "On"
-            if track_off in {"On", "Off"}:
-                return track_off != "On"
-
             tracking_text = self._device_text_value("OnStep Status", "Tracking")
             tracking_lower = tracking_text.strip().lower()
             if tracking_lower in {"on", "tracking", "active"}:
                 return True
-            if tracking_lower in {"off", "not tracking", "inactive"}:
+            if tracking_lower in {"off", "idle", "not tracking", "inactive"}:
                 return False
 
             if attempt < 2:
                 time.sleep(0.2)
         return None
+
+    def _confirm_tracking_state(self, enabled: bool, timeout: float = 2.0) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            property_state = self._read_tracking_enabled_from_properties()
+            if property_state is enabled:
+                return True
+            if property_state is None:
+                cached_state = self._read_tracking_enabled()
+                if cached_state is enabled:
+                    return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.2)
 
     def set_tracking(self, enabled: bool) -> bool:
         property_name = (
@@ -1704,7 +1803,24 @@ class MountControlIndi:
             "Tracking enabled" if enabled else "Tracking disabled",
             "tracking_failed",
         ):
+            if self._confirm_tracking_state(enabled):
+                self._write_controller_status(
+                    "connected" if self.connected else "idle",
+                    "Tracking enabled" if enabled else "Tracking disabled",
+                )
+                self._console("Tracking\n" + ("on" if enabled else "off"))
+                return True
             self._console("INDI tracking\nfailed")
+            return False
+        if not self._confirm_tracking_state(enabled):
+            self._write_controller_status(
+                "tracking_failed",
+                (
+                    "Tracking command was sent but driver readback did not "
+                    f"confirm {'On' if enabled else 'Off'}"
+                ),
+            )
+            self._console("INDI tracking\nmismatch")
             return False
         self._console("Tracking\n" + ("on" if enabled else "off"))
         return True
@@ -1828,8 +1944,7 @@ class MountControlIndi:
         self.set_tracking(False)
         if (
             not self._backlash_auto
-            or self._backlash_auto.get("auto_mode")
-            != BACKLASH_AUTO_MODE_COMPASS_GOTO
+            or self._backlash_auto.get("auto_mode") != BACKLASH_AUTO_MODE_COMPASS_GOTO
         ):
             self._backlash_auto = {
                 "axis": "Mount frame",
@@ -2016,9 +2131,7 @@ class MountControlIndi:
         )
         return {
             "available": True,
-            "uses_magnetometer": bool(
-                getattr(imu_sample, "uses_magnetometer", False)
-            ),
+            "uses_magnetometer": bool(getattr(imu_sample, "uses_magnetometer", False)),
             "fusion_mode": getattr(imu_sample, "fusion_mode", "unknown"),
             "calibration_status": calibration_status,
             "fully_calibrated": full_calibration,
@@ -2038,27 +2151,25 @@ class MountControlIndi:
         self._backlash_auto = {
             "axis": "Mount frame",
             "state": "starting",
-            "message": "Compass pulse loop setup started",
+            "message": "Compass GoTo loop setup started",
             "started_at": time.time(),
             "mode": "motion_test",
             "auto_mode": BACKLASH_AUTO_MODE_COMPASS_GOTO,
             "method": "compass_goto_loop_motion_record",
             "repeats": repeats,
             "offset_deg": offset_deg,
-            "guide_rate": BACKLASH_COMPASS_GUIDE_RATE,
-            "guide_rate_label": BACKLASH_COMPASS_GUIDE_RATE_LABEL,
             "coordinate_records": [],
             "steps": [
                 "Enable IMU compass/NDOF mode and restart if required",
-                "Wait for full compass calibration; move the device by hand",
-                "Continue after calibration is complete",
-                "Verify location/time, Unparked state, tracking Off, Half-Max guide rate, and current mount coordinates",
+                "Wait until IMU MAG calibration reaches 3",
+                "Press Continue after MAG calibration is ready",
+                "Verify location/time, Unparked state, tracking Off, and current mount coordinates",
                 "Sync mount coordinates to the current IMU Alt/Az",
                 "Run one-axis tests in mount order: AZ/ALT for Alt/Az or RA/DEC for EQ",
                 "For each axis, move to the initial anti-offset point",
                 "Record initial mount and IMU coordinates for the active axis",
-                "Pulse-guide active-axis offset while holding the inactive axis idle",
-                "Repeat return-to-start and offset pulse cycles for each active axis",
+                "GoTo the active-axis offset point while holding the inactive-axis coordinate fixed",
+                "Repeat return-to-start and offset GoTo cycles for each active axis",
             ],
         }
 
@@ -2128,12 +2239,20 @@ class MountControlIndi:
             )
             return False
 
-        self._backlash_auto_status(
-            "waiting_for_calibration",
-            (
+        if imu_status["heading_ready"]:
+            calibration_message = (
+                "IMU MAG calibration is ready; press Continue Motion Test to "
+                "start the backlash movement."
+            )
+        else:
+            calibration_message = (
                 "Move/rotate the PiFinder by hand until IMU MAG calibration is 3, "
                 "then press Continue Motion Test."
-            ),
+            )
+
+        self._backlash_auto_status(
+            "waiting_for_calibration",
+            calibration_message,
             phase="compass_calibration",
             imu_status=imu_status,
             original_tracking=original_tracking,
@@ -2195,7 +2314,9 @@ class MountControlIndi:
             "target_ra": None if target_ra is None else target_ra % 360.0,
             "target_dec": target_dec,
             "target_altitude": target_altitude,
-            "target_azimuth": None if target_azimuth is None else target_azimuth % 360.0,
+            "target_azimuth": None
+            if target_azimuth is None
+            else target_azimuth % 360.0,
             "movement_frame": movement_frame,
             "active_axis": active_axis,
             "imu_status": imu_status,
@@ -2251,98 +2372,52 @@ class MountControlIndi:
     def _backlash_active_axes(self, mount_model: str) -> tuple[str, ...]:
         return ("ra", "dec") if mount_model == "eq" else ("az", "alt")
 
-    def _backlash_pulse_duration_seconds(
-        self, offset_deg: float, rate: float = BACKLASH_COMPASS_GUIDE_RATE
-    ) -> float:
-        try:
-            rate_multiplier = BACKLASH_COMPASS_GUIDE_RATE_MULTIPLIERS.get(
-                int(rate), float(rate)
-            )
-        except (TypeError, ValueError):
-            rate_multiplier = BACKLASH_COMPASS_GUIDE_RATE
-        degrees_per_second = (rate_multiplier * SIDEREAL_ARCSEC_PER_SECOND) / 3600.0
-        if degrees_per_second <= 0:
-            raise ValueError(f"Invalid pulse-guide rate multiplier: {rate_multiplier}")
-        return abs(float(offset_deg)) / degrees_per_second
-
-    def _backlash_axis_pulse_direction(
-        self, active_axis: str, positive: bool
-    ) -> str:
-        axis = active_axis.lower()
-        if axis in {"ra", "az"}:
-            return "east" if positive else "west"
-        if axis in {"dec", "alt"}:
-            return "north" if positive else "south"
-        raise ValueError(f"Unsupported backlash pulse axis: {active_axis}")
-
-    def _pulse_guide_properties(
-        self, direction: str, duration_seconds: float
-    ) -> list[str]:
-        duration_ms = max(1, min(60000, int(round(duration_seconds * 1000.0))))
-        direction = direction.lower()
-        timed_guide_map = {
-            "north": "TELESCOPE_TIMED_GUIDE_NS.TIMED_GUIDE_N",
-            "south": "TELESCOPE_TIMED_GUIDE_NS.TIMED_GUIDE_S",
-            # OnStep guide-axis direction is reversed in the existing manual
-            # motion path, so keep the same logical east/west mapping here.
-            "east": "TELESCOPE_TIMED_GUIDE_WE.TIMED_GUIDE_W",
-            "west": "TELESCOPE_TIMED_GUIDE_WE.TIMED_GUIDE_E",
-        }
-        property_name = timed_guide_map.get(direction)
-        if property_name is None:
-            raise ValueError(f"Unsupported pulse guide direction: {direction}")
-        return [f"{self._indi_property_name(property_name)}={duration_ms}"]
-
-    def _pulse_guide_move_and_wait(
-        self, direction: str, duration_seconds: float, phase_label: str
-    ) -> bool:
-        duration_seconds = max(0.001, min(60.0, float(duration_seconds)))
-        try:
-            properties = self._pulse_guide_properties(direction, duration_seconds)
-        except ValueError as exc:
-            self._backlash_auto_status("failed", str(exc), phase=phase_label)
-            return False
-
-        duration_ms = int(round(duration_seconds * 1000.0))
-        if not self._apply_indi_properties(
-            properties,
-            "moving",
-            f"{phase_label}: pulse guide {direction} for {duration_ms} ms",
-            "pulse_guide_failed",
-        ):
-            self._console("INDI pulse\nfailed")
-            return False
-        if not self._backlash_cancelable_sleep(
-            duration_seconds, f"{phase_label} pulse"
-        ):
-            return False
-        self.stop_mount()
-        return True
-
-    def _backlash_pulse_axis_and_wait(
+    def _backlash_goto_command_and_wait(
         self,
-        active_axis: str,
-        positive: bool,
+        command: dict[str, Any],
         phase_label: str,
-        offset_deg: float,
+        active_axis: Optional[str] = None,
     ) -> bool:
-        direction = self._backlash_axis_pulse_direction(active_axis, positive)
-        duration_seconds = self._backlash_pulse_duration_seconds(offset_deg)
+        target_ra = float(command["target_ra"]) % 360.0
+        target_dec = float(command["target_dec"])
         self._backlash_auto_status(
             "running",
-            (
-                f"{phase_label}: pulse guide {direction} for "
-                f"{duration_seconds:.2f}s"
-            ),
+            (f"{phase_label}: GoTo RA {target_ra:.4f}, " f"DEC {target_dec:.4f}"),
             phase=phase_label,
             active_axis=active_axis,
-            pulse_direction=direction,
-            pulse_duration_seconds=duration_seconds,
-            guide_rate=BACKLASH_COMPASS_GUIDE_RATE,
-            offset_deg=offset_deg,
+            target_ra=target_ra,
+            target_dec=target_dec,
+            target_altitude=command.get("target_altitude"),
+            target_azimuth=command.get("target_azimuth"),
+            movement_frame=command.get("movement_frame"),
         )
-        return self._pulse_guide_move_and_wait(
-            direction, duration_seconds, phase_label
+        if not self._goto_target_and_wait(
+            target_ra,
+            target_dec,
+            phase_label,
+            timeout=BACKLASH_COMPASS_GOTO_TIMEOUT_SECONDS,
+        ):
+            return False
+
+        tracking_enabled = self._read_tracking_enabled()
+        if tracking_enabled and not self.set_tracking(False):
+            self._backlash_auto_status(
+                "failed",
+                f"{phase_label}: could not disable tracking after GoTo",
+                phase=phase_label,
+                active_axis=active_axis,
+            )
+            return False
+        if tracking_enabled is None:
+            self._backlash_auto_status(
+                "running",
+                f"{phase_label}: GoTo complete, tracking state unreadable",
+                phase=phase_label,
+                active_axis=active_axis,
+            )
+        return self._backlash_cancelable_sleep(
+            BACKLASH_COMPASS_GOTO_SETTLE_SECONDS,
+            f"{phase_label} settle",
         )
 
     def _compass_goto_loop_plan(
@@ -2662,10 +2737,7 @@ class MountControlIndi:
         sync_ra, sync_dec = imu_radec
         self._backlash_auto_status(
             "running",
-            (
-                "Syncing mount coordinates to current IMU Alt/Az before "
-                "backlash test"
-            ),
+            ("Syncing mount coordinates to current IMU Alt/Az before " "backlash test"),
             phase="imu_mount_sync",
             imu_altitude=imu_altaz[0],
             imu_azimuth=imu_altaz[1],
@@ -2739,10 +2811,9 @@ class MountControlIndi:
         alt1 = math.radians(alt1_deg)
         alt2 = math.radians(alt2_deg)
         az_delta = math.radians((az2_deg - az1_deg + 180.0) % 360.0 - 180.0)
-        cos_sep = (
-            math.sin(alt1) * math.sin(alt2)
-            + math.cos(alt1) * math.cos(alt2) * math.cos(az_delta)
-        )
+        cos_sep = math.sin(alt1) * math.sin(alt2) + math.cos(alt1) * math.cos(
+            alt2
+        ) * math.cos(az_delta)
         return math.degrees(math.acos(max(-1.0, min(1.0, cos_sep))))
 
     def _compass_goto_loop_directional_analysis(
@@ -2922,7 +2993,11 @@ class MountControlIndi:
                 else None
             )
             coordinate_error_ra_arcsec = (
-                int(round(shortest_ra_delta_deg(mount_end_ra, float(target_ra)) * 3600.0))
+                int(
+                    round(
+                        shortest_ra_delta_deg(mount_end_ra, float(target_ra)) * 3600.0
+                    )
+                )
                 if target_ra is not None
                 else None
             )
@@ -2988,9 +3063,7 @@ class MountControlIndi:
                 previous["imu_altitude"]
             )
             imu_delta_az = (
-                float(current["imu_azimuth"])
-                - float(previous["imu_azimuth"])
-                + 180.0
+                float(current["imu_azimuth"]) - float(previous["imu_azimuth"]) + 180.0
             ) % 360.0 - 180.0
             motion_difference_ra_deg = None
             motion_difference_dec_deg = None
@@ -3103,11 +3176,15 @@ class MountControlIndi:
                     "alt": target_delta_alt
                     if target_delta_alt is not None
                     else mount_delta_alt,
-                    "az": target_delta_az if target_delta_az is not None else mount_delta_az,
+                    "az": target_delta_az
+                    if target_delta_az is not None
+                    else mount_delta_az,
                 }
             else:
                 movement_direction_deltas = {
-                    "ra": target_delta_ra if target_delta_ra is not None else mount_delta_ra,
+                    "ra": target_delta_ra
+                    if target_delta_ra is not None
+                    else mount_delta_ra,
                     "dec": target_delta_dec
                     if target_delta_dec is not None
                     else mount_delta_dec,
@@ -3145,7 +3222,9 @@ class MountControlIndi:
                 "target_ra": None if target_ra is None else float(target_ra) % 360.0,
                 "target_dec": None if target_dec is None else float(target_dec),
                 "target_altitude": None if target_alt is None else float(target_alt),
-                "target_azimuth": None if target_az is None else float(target_az) % 360.0,
+                "target_azimuth": None
+                if target_az is None
+                else float(target_az) % 360.0,
                 "movement_frame": movement_frame,
                 "axis_movement_directions": axis_movement_directions,
                 "target_delta_ra": target_delta_ra,
@@ -3174,18 +3253,14 @@ class MountControlIndi:
                 "imu_end_dec": imu_end_dec,
                 "imu_delta_ra": imu_delta_ra,
                 "imu_delta_dec": imu_delta_dec,
-                "motion_difference_ra_arcsec": signed_arcsec(
-                    motion_difference_ra_deg
-                ),
+                "motion_difference_ra_arcsec": signed_arcsec(motion_difference_ra_deg),
                 "motion_difference_dec_arcsec": signed_arcsec(
                     motion_difference_dec_deg
                 ),
                 "motion_difference_alt_arcsec": signed_arcsec(
                     motion_difference_alt_deg
                 ),
-                "motion_difference_az_arcsec": signed_arcsec(
-                    motion_difference_az_deg
-                ),
+                "motion_difference_az_arcsec": signed_arcsec(motion_difference_az_deg),
                 "mount_sep_deg": mount_sep_deg,
                 "imu_sep_deg": imu_sep_deg,
                 "raw_estimated_arcsec": raw_estimated_arcsec,
@@ -3349,12 +3424,12 @@ class MountControlIndi:
         return {
             "method": "mount_minus_imu_angular_travel_filtered_by_direction",
             "note": (
-                "Indoor directional estimate: each pulse leg compares mount "
+                "Indoor directional estimate: each GoTo leg compares mount "
                 "travel from the previous settled mount readback to the actual "
-                "mount readback after the pulse, then compares that with IMU "
+                "mount readback after the GoTo, then compares that with IMU "
                 "travel recorded across the same leg. Alt/Az and EQ fixed S/T "
-                "points are expected points for record analysis; actual motion "
-                "uses timed pulse guide on the active axis only. "
+                "points are reused for record analysis; actual motion uses "
+                "GoTo commands with only the active-axis coordinate offset. "
                 "The offset-initial warm-up leg, legs with degraded IMU heading "
                 "calibration, and legs where mount-vs-IMU travel differs by at "
                 "least 1 degree are excluded. Remaining values are sorted, the "
@@ -3369,8 +3444,7 @@ class MountControlIndi:
     def continue_backlash_compass_goto_loop(self) -> bool:
         if (
             not self._backlash_auto
-            or self._backlash_auto.get("auto_mode")
-            != BACKLASH_AUTO_MODE_COMPASS_GOTO
+            or self._backlash_auto.get("auto_mode") != BACKLASH_AUTO_MODE_COMPASS_GOTO
         ):
             return self.start_backlash_compass_goto_loop()
 
@@ -3396,15 +3470,10 @@ class MountControlIndi:
             return False
 
         records: list[dict[str, Any]] = []
-        original_tracking: Optional[bool] = self._backlash_auto.get(
-            "original_tracking"
-        )
-        original_guide_rate: Optional[tuple[float, float]] = None
+        original_tracking: Optional[bool] = self._backlash_auto.get("original_tracking")
         try:
             if not self.connect():
-                self._backlash_auto_status(
-                    "failed", "Could not connect to INDI mount"
-                )
+                self._backlash_auto_status("failed", "Could not connect to INDI mount")
                 return False
 
             latitude, longitude, _elevation, dt = self._shared_location_time_values()
@@ -3428,7 +3497,7 @@ class MountControlIndi:
             if park_state != "Unparked":
                 self._backlash_auto_status(
                     "failed",
-                    f"Mount must be Unparked before the compass pulse loop ({park_state})",
+                    f"Mount must be Unparked before the compass GoTo loop ({park_state})",
                     phase="device_state",
                     park_state=park_state,
                 )
@@ -3438,7 +3507,7 @@ class MountControlIndi:
             if current_tracking is None:
                 self._backlash_auto_status(
                     "failed",
-                    "Could not read tracking state before compass pulse loop",
+                    "Could not read tracking state before compass GoTo loop",
                     phase="device_state",
                 )
                 return False
@@ -3447,21 +3516,8 @@ class MountControlIndi:
             if current_tracking and not self.set_tracking(False):
                 self._backlash_auto_status(
                     "failed",
-                    "Could not disable tracking before compass pulse loop",
+                    "Could not disable tracking before compass GoTo loop",
                     phase="device_state",
-                )
-                return False
-            original_guide_rate = self._read_driver_guide_rate()
-            if not self.set_guide_rate(BACKLASH_COMPASS_GUIDE_RATE):
-                self._backlash_auto_status(
-                    "failed",
-                    (
-                        "Could not set INDI GUIDE_RATE before compass pulse "
-                        "loop"
-                    ),
-                    phase="device_state",
-                    guide_rate=BACKLASH_COMPASS_GUIDE_RATE,
-                    original_guide_rate=original_guide_rate,
                 )
                 return False
 
@@ -3515,16 +3571,10 @@ class MountControlIndi:
                     offset_deg=offset_deg,
                     imu_status=imu_status,
                 )
-                if not self._backlash_pulse_axis_and_wait(
-                    active_axis,
-                    False,
+                if not self._backlash_goto_command_and_wait(
+                    init_command,
                     init_label,
-                    offset_deg,
-                ):
-                    return False
-                if not self._backlash_cancelable_sleep(
-                    BACKLASH_COMPASS_GOTO_SETTLE_SECONDS,
-                    f"{init_label} settle",
+                    active_axis,
                 ):
                     return False
 
@@ -3557,7 +3607,7 @@ class MountControlIndi:
                     self._backlash_auto_status(
                         "failed",
                         (
-                            f"{axis_label}: could not calculate compass pulse loop "
+                            f"{axis_label}: could not calculate compass GoTo loop "
                             "start/offset commands"
                         ),
                         phase="target_calculation",
@@ -3573,7 +3623,7 @@ class MountControlIndi:
                 self._backlash_auto_status(
                     "running",
                     (
-                        f"Compass pulse loop {axis_label} using "
+                        f"Compass GoTo loop {axis_label} using "
                         f"{movement_frame.upper()} frame: start RA "
                         f"{start_ra:.4f}, DEC {start_dec:.4f}; target RA "
                         f"{target_ra:.4f}, DEC {target_dec:.4f}"
@@ -3605,16 +3655,10 @@ class MountControlIndi:
                     return False
 
                 offset_initial_label = f"offset initial {axis_label}"
-                if not self._backlash_pulse_axis_and_wait(
-                    active_axis,
-                    True,
+                if not self._backlash_goto_command_and_wait(
+                    offset_command,
                     offset_initial_label,
-                    offset_deg,
-                ):
-                    return False
-                if not self._backlash_cancelable_sleep(
-                    BACKLASH_COMPASS_GOTO_SETTLE_SECONDS,
-                    f"{offset_initial_label} settle",
+                    active_axis,
                 ):
                     return False
                 if not self._append_compass_goto_record(
@@ -3651,16 +3695,10 @@ class MountControlIndi:
                             active_axis=active_axis,
                         )
                         return False
-                    if not self._backlash_pulse_axis_and_wait(
-                        active_axis,
-                        False,
+                    if not self._backlash_goto_command_and_wait(
+                        start_command,
                         return_label,
-                        offset_deg,
-                    ):
-                        return False
-                    if not self._backlash_cancelable_sleep(
-                        BACKLASH_COMPASS_GOTO_SETTLE_SECONDS,
-                        f"{return_label} settle",
+                        active_axis,
                     ):
                         return False
                     if not self._append_compass_goto_record(
@@ -3691,16 +3729,10 @@ class MountControlIndi:
                             active_axis=active_axis,
                         )
                         return False
-                    if not self._backlash_pulse_axis_and_wait(
-                        active_axis,
-                        True,
+                    if not self._backlash_goto_command_and_wait(
+                        offset_command,
                         offset_label,
-                        offset_deg,
-                    ):
-                        return False
-                    if not self._backlash_cancelable_sleep(
-                        BACKLASH_COMPASS_GOTO_SETTLE_SECONDS,
-                        f"{offset_label} settle",
+                        active_axis,
                     ):
                         return False
                     if not self._append_compass_goto_record(
@@ -3719,13 +3751,11 @@ class MountControlIndi:
                     ):
                         return False
 
-            directional_analysis = self._compass_goto_loop_directional_analysis(
-                records
-            )
+            directional_analysis = self._compass_goto_loop_directional_analysis(records)
             self._backlash_auto_status(
                 "complete",
                 (
-                    f"Compass pulse loop complete: {len(records)} coordinate "
+                    f"Compass GoTo loop complete: {len(records)} coordinate "
                     "records captured"
                 ),
                 phase="complete",
@@ -3751,10 +3781,10 @@ class MountControlIndi:
             self._console("Compass loop\ncomplete")
             return True
         except Exception as exc:
-            logger.exception("Compass pulse loop failed")
+            logger.exception("Compass GoTo loop failed")
             self._backlash_auto_status(
                 "failed",
-                f"Compass pulse loop failed: {exc}",
+                f"Compass GoTo loop failed: {exc}",
                 coordinate_records=records,
             )
             self._console("Compass loop\nfailed")
@@ -3764,8 +3794,6 @@ class MountControlIndi:
             final_state = (
                 self._backlash_auto.get("state") if self._backlash_auto else None
             )
-            if original_guide_rate is not None:
-                self.set_guide_rate(original_guide_rate)
             if original_tracking and final_state == "complete":
                 self.set_tracking(True)
 
@@ -3773,7 +3801,9 @@ class MountControlIndi:
         try:
             return str(config.Config().get_option("screen_direction", "right"))
         except Exception:
-            logger.warning("Could not read screen direction; using right", exc_info=True)
+            logger.warning(
+                "Could not read screen direction; using right", exc_info=True
+            )
             return "right"
 
     def _current_imu_altaz(self) -> Optional[tuple[float, float]]:
@@ -3796,9 +3826,7 @@ class MountControlIndi:
             ):
                 return None
 
-            boresight = (
-                q_x2cam * quaternion.quaternion(0, 0, 0, 1) * q_x2cam.conj()
-            )
+            boresight = q_x2cam * quaternion.quaternion(0, 0, 0, 1) * q_x2cam.conj()
             east, north, up = boresight.x, boresight.y, boresight.z
             norm = math.sqrt(east * east + north * north + up * up)
             if norm <= 0:
@@ -3897,6 +3925,14 @@ class MountControlIndi:
             return False
 
         start = time.monotonic()
+        motion = self._goto_motion
+        if motion is None:
+            motion = {
+                "started_at": start,
+                "complete_ready_since": None,
+                "indi_seen_busy": False,
+                "onstep_seen_goto_active": False,
+            }
         last_retry_at = start
         retry_count = 0
         while time.monotonic() - start < timeout:
@@ -3905,6 +3941,8 @@ class MountControlIndi:
             elapsed = time.monotonic() - start
             if elapsed >= GOTO_COMPLETE_MIN_SECONDS:
                 busy = self._indi_mount_is_busy()
+                if busy is True:
+                    self._goto_completion_ready(motion, busy, time.monotonic())
                 if busy is False:
                     current_position = self._read_current_position()
                     if current_position is not None:
@@ -3945,8 +3983,10 @@ class MountControlIndi:
                                 self.goto_target(
                                     ra_deg, dec_deg, refine_after_goto=False
                                 )
+                                motion = self._goto_motion or motion
                                 time.sleep(BACKLASH_AUTO_GOTO_POLL_SECONDS)
                                 continue
+                            motion["complete_ready_since"] = None
                             self._backlash_auto_status(
                                 "running",
                                 (
@@ -3965,8 +4005,14 @@ class MountControlIndi:
                             )
                             time.sleep(BACKLASH_AUTO_GOTO_POLL_SECONDS)
                             continue
-                    self._complete_goto_motion(f"{phase_label}: GoTo complete")
-                    return True
+                    if self._goto_completion_ready(
+                        motion,
+                        busy,
+                        time.monotonic(),
+                        current_position=current_position,
+                    ):
+                        self._complete_goto_motion(f"{phase_label}: GoTo complete")
+                        return True
                 if busy is None:
                     self._read_current_position()
             self._backlash_auto_status(

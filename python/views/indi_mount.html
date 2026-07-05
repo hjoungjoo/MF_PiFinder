@@ -385,11 +385,11 @@
         </tr>
         <tr>
           <td>{{ _('Auto Method') }}</td>
-          <td>{{ _('Compass GoTo motion test; repeated return/offset moves are recorded and filtered by direction before recommending candidate backlash values.') }}</td>
+          <td>{{ _('Compass GoTo round-trip test; repeated return/offset GoTo moves are recorded and filtered by direction before recommending candidate backlash values.') }}</td>
         </tr>
         <tr>
-          <td>{{ _('Guide Rate') }}</td>
-          <td>{{ _('Half-Max (estimated 96x)') }}</td>
+          <td>{{ _('Motion Command') }}</td>
+          <td>{{ _('INDI GoTo') }}</td>
         </tr>
         <tr>
           <td>{{ _('Motion Test Repeats') }}</td>
@@ -960,12 +960,10 @@ document.addEventListener('DOMContentLoaded', function() {
   function formatBacklashEstimateDetails(autoInfo) {
     var records = autoInfo.coordinate_records || [];
     if (records.length) {
-      var useAltAz = backlashAnalysisUsesAltAz(autoInfo);
       var recordLines = [
         '{{ _("Mode") }}: ' + (autoInfo.auto_mode || autoInfo.method || '-'),
         '{{ _("Records") }}: ' + records.length
       ];
-      var directional = (autoInfo.directional_analysis || {}).direction_stats || {};
       var axisDirectional = (autoInfo.directional_analysis || {}).axis_direction_stats || {};
       var axisDirectionLines = [];
       orderedAxisDirectionKeys(axisDirectional).forEach(function(key) {
@@ -977,79 +975,22 @@ document.addEventListener('DOMContentLoaded', function() {
         axisDirectionLines.push(
           axisDirectionDisplayLabel(key, stats) + ' ' +
           '{{ _("calculated") }} ' + formatArcsec(value) +
-          ', {{ _("median") }} ' + formatArcsec(firstPresent(stats.recommended_median, stats.median)) +
-          ', p75 ' + formatArcsec(firstPresent(stats.recommended_p75, stats.p75)) +
           ', {{ _("filtered") }} ' + textOrDash(stats.filtered_count) + '/' + textOrDash(stats.sample_count)
         );
       });
       if (axisDirectionLines.length) {
-        recordLines.push('{{ _("By movement direction") }}:');
-        axisDirectionLines.forEach(function(line) {
-          recordLines.push('  ' + line);
+        recordLines.push('{{ _("By movement direction") }}: ' + axisDirectionLines.join(' / '));
+      }
+      if (!axisDirectionLines.length) {
+        var directional = (autoInfo.directional_analysis || {}).direction_stats || {};
+        Object.keys(directional).sort().forEach(function(key) {
+          var stats = directional[key] || {};
+          recordLines.push(
+            key + ': ' +
+            '{{ _("calculated") }} ' + formatArcsec(firstPresent(stats.recommended_trimmed_mean, stats.trimmed_mean)) +
+            ', {{ _("filtered") }} ' + textOrDash(stats.filtered_count) + '/' + textOrDash(stats.sample_count)
+          );
         });
-      }
-      Object.keys(directional).sort().forEach(function(key) {
-        var stats = directional[key] || {};
-        var raStats = stats.ra_motion_backlash || {};
-        var decStats = stats.dec_motion_backlash || {};
-        var altStats = stats.alt_motion_backlash || {};
-        var azStats = stats.az_motion_backlash || {};
-        recordLines.push(
-          key + ': ' +
-          '{{ _("calculated") }} ' + formatArcsec(firstPresent(stats.recommended_trimmed_mean, stats.trimmed_mean)) +
-          ', {{ _("median") }} ' + formatArcsec(firstPresent(stats.recommended_median, stats.median)) +
-          ', p75 ' + formatArcsec(firstPresent(stats.recommended_p75, stats.p75)) +
-          ', {{ _("filtered") }} ' + textOrDash(stats.filtered_count) + '/' + textOrDash(stats.sample_count) +
-          ', threshold skipped ' + textOrDash(stats.threshold_skipped_count) +
-          ', {{ _("IMU skipped") }} ' + textOrDash(stats.imu_skipped_count) +
-          ', trim ' + textOrDash(stats.trim_low_count) + '/' + textOrDash(stats.trim_high_count) +
-          ', {{ _("range") }} ' + formatArcsec(stats.normal_min) + '-' + formatArcsec(stats.normal_max)
-        );
-        if (useAltAz) {
-          recordLines.push(
-            '  Axis: AZ ' + formatArcsec(firstPresent(azStats.recommended_trimmed_mean, azStats.trimmed_mean)) +
-            ', ALT ' + formatArcsec(firstPresent(altStats.recommended_trimmed_mean, altStats.trimmed_mean))
-          );
-        } else {
-          recordLines.push(
-            '  Axis: RA ' + formatArcsec(firstPresent(raStats.recommended_trimmed_mean, raStats.trimmed_mean)) +
-            ', DEC ' + formatArcsec(firstPresent(decStats.recommended_trimmed_mean, decStats.trimmed_mean))
-          );
-        }
-      });
-      var latestRecord = records[records.length - 1];
-      if (latestRecord) {
-        if (useAltAz) {
-          recordLines.push(
-            '{{ _("Latest") }}: ' + latestRecord.sequence + ' ' + latestRecord.label +
-            ': M AZ ' + textOrDash(formatNumber(latestRecord.mount_azimuth, 4)) +
-            ' ALT ' + textOrDash(formatNumber(latestRecord.mount_altitude, 4)) +
-            ' / IMU AZ ' + textOrDash(formatNumber(latestRecord.imu_azimuth, 2)) +
-            ' ALT ' + textOrDash(formatNumber(latestRecord.imu_altitude, 2))
-          );
-        } else {
-          recordLines.push(
-            '{{ _("Latest") }}: ' + latestRecord.sequence + ' ' + latestRecord.label +
-            ': M RA ' + textOrDash(formatNumber(latestRecord.mount_ra, 4)) +
-            ' DEC ' + textOrDash(formatNumber(latestRecord.mount_dec, 4)) +
-            ' / IMU RA ' + textOrDash(formatNumber(latestRecord.imu_ra, 2)) +
-            ' DEC ' + textOrDash(formatNumber(latestRecord.imu_dec, 2))
-          );
-        }
-      }
-      var legs = (autoInfo.directional_analysis || {}).legs || [];
-      if (legs.length) {
-        var thresholdSkipped = legs.filter(function(leg) {
-          return leg.motion_difference_threshold_rejected;
-        }).length;
-        var imuSkipped = legs.filter(function(leg) {
-          return !leg.imu_heading_ready && !leg.warmup;
-        }).length;
-        recordLines.push(
-          '{{ _("Legs") }}: ' + legs.length +
-          ', threshold skipped ' + thresholdSkipped +
-          ', {{ _("IMU skipped") }} ' + imuSkipped
-        );
       }
       return recordLines.join('\n');
     }
@@ -1066,16 +1007,6 @@ document.addEventListener('DOMContentLoaded', function() {
       '{{ _("Spread") }}: ' + textOrDash(rec.spread_percent) + '% / ' +
         '{{ _("direction delta") }} ' + textOrDash(rec.direction_delta_percent) + '%'
     ];
-    var directionStats = rec.direction_stats || {};
-    Object.keys(directionStats).sort().forEach(function(key) {
-      var stats = directionStats[key] || {};
-      lines.push(
-        key + ': ' +
-        '{{ _("median") }} ' + textOrDash(stats.median) +
-        ', p75 ' + textOrDash(stats.p75) +
-        ', {{ _("range") }} ' + textOrDash(stats.min) + '-' + textOrDash(stats.max)
-      );
-    });
     return lines.join('\n');
   }
 
