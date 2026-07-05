@@ -9,6 +9,9 @@ INDI_3RDPARTY_BUILD_DIR="${INDI_3RDPARTY_BUILD_DIR:-${BUILD_ROOT}/indi-3rdparty/
 INDI_MANIFEST="${INDI_BUILD_DIR}/install_manifest.txt"
 INDI_3RDPARTY_MANIFEST="${INDI_3RDPARTY_BUILD_DIR}/install_manifest.txt"
 PYTHON_SITE="${PYTHON_SITE:-$(python3 -c 'import site; print(site.getsitepackages()[0])')}"
+SPLIT_ARCHIVE="${SPLIT_ARCHIVE:-auto}"
+ARCHIVE_SPLIT_SIZE="${ARCHIVE_SPLIT_SIZE:-47M}"
+ARCHIVE_SPLIT_THRESHOLD_BYTES="${ARCHIVE_SPLIT_THRESHOLD_BYTES:-95000000}"
 
 require_file() {
     if [ ! -f "$1" ]; then
@@ -40,6 +43,47 @@ copy_manifest_paths() {
         [ -n "${path}" ] || continue
         copy_path_to_rootfs "${path}" "${rootfs}"
     done < "${manifest}"
+}
+
+split_archive_if_needed() {
+    local archive_path="$1"
+    local mode
+    local archive_size
+    local part_prefix
+
+    mode="${SPLIT_ARCHIVE,,}"
+    archive_size="$(stat -c '%s' "${archive_path}")"
+    part_prefix="${archive_path}.part-"
+
+    case "${mode}" in
+        1|true|yes|on|always)
+            ;;
+        auto|"")
+            if [ "${archive_size}" -le "${ARCHIVE_SPLIT_THRESHOLD_BYTES}" ]; then
+                echo "Archive is ${archive_size} bytes; split parts not needed."
+                return 0
+            fi
+            ;;
+        0|false|no|off|none|skip)
+            echo "Skipping split archive parts."
+            return 0
+            ;;
+        *)
+            echo "Invalid SPLIT_ARCHIVE value: ${SPLIT_ARCHIVE}" >&2
+            echo "Use auto, true, or false." >&2
+            exit 1
+            ;;
+    esac
+
+    rm -f "${part_prefix}"*
+    split -b "${ARCHIVE_SPLIT_SIZE}" -d -a 2 "${archive_path}" "${part_prefix}"
+    echo "Created split archive parts:"
+    find "$(dirname "${archive_path}")" \
+        -maxdepth 1 \
+        -type f \
+        -name "$(basename "${archive_path}").part-*" \
+        -printf "  %f (%s bytes)\n" \
+        | sort
 }
 
 check_arm64_compatibility() {
@@ -138,6 +182,7 @@ ARCHIVE_PATH="${OUT_DIR}/${ARCHIVE_NAME}"
 
 tar --owner=0 --group=0 --numeric-owner -C "${STAGING}" -czf "${ARCHIVE_PATH}" .
 sha256sum "${ARCHIVE_PATH}" > "${ARCHIVE_PATH}.sha256"
+split_archive_if_needed "${ARCHIVE_PATH}"
 
 echo "Created archive: ${ARCHIVE_PATH}"
 echo "Checksum: ${ARCHIVE_PATH}.sha256"
