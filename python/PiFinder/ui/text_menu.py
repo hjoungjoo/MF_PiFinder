@@ -6,12 +6,12 @@ This module contains all the UI Module classes
 """
 
 from typing import Union
-from PiFinder.ui.base import UIModule
+from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.ui.layout import carousel_layout
 from PiFinder.ui.marking_menus import MarkingMenuOption, MarkingMenu
 
 
-class UITextMenu(UIModule):
+class UITextMenu(GuideKeyMixin, UIModule):
     """
     General module for displaying a scrolling
     text list

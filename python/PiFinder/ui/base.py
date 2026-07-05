@@ -50,6 +50,39 @@ INDI_PROBLEM_STATES = {
 }
 
 
+class GuideKeyMixin:
+    """Keyboard guide controls for passive LCD screens.
+
+    Screens using this mixin keep their normal arrow/square controls while
+    Bluetooth/USB keyboard letters, numeric keypad keys, and +/- provide quick
+    INDI guide movement when mount control is enabled.
+    """
+
+    def key_number(self, number=None):
+        self._guide_key_number(number)
+
+    def key_number_press(self, number=None):
+        self._guide_key_number_press(number)
+
+    def key_number_release(self, number=None):
+        self._guide_key_number_release(number)
+
+    def key_text(self, char: str = ""):
+        self._guide_key_text(char)
+
+    def key_text_press(self, char: str = ""):
+        self._guide_key_text_press(char)
+
+    def key_text_release(self, char: str = ""):
+        self._guide_key_text_release(char)
+
+    def key_plus(self):
+        self._guide_key_plus()
+
+    def key_minus(self):
+        self._guide_key_minus()
+
+
 class RotatingInfoDisplay:
     """Alternates between constellation and SQM with cross-fade animation."""
 
@@ -200,7 +233,7 @@ class UIModule:
         Called when a module becomes inactive
         i.e. leaving a UI screen
         """
-        pass
+        self._guide_stop_motion_if_active()
 
     def help(self) -> Union[None, list[Image.Image]]:
         """
@@ -406,6 +439,7 @@ class UIModule:
         takes self.screen adds title bar and
         writes to display
         """
+        self._guide_send_motion_keepalive()
 
         # Don't redraw screen if message popup is active
         if time.time() < self.ui_state.message_timeout():
@@ -516,22 +550,169 @@ class UIModule:
         """
         self.display_mode = next(self._display_mode_cycle)
 
+    _GUIDE_NUMBER_DIRECTIONS = {
+        1: "southwest",
+        2: "south",
+        3: "southeast",
+        4: "west",
+        6: "east",
+        7: "northwest",
+        8: "north",
+        9: "northeast",
+    }
+    _GUIDE_TEXT_DIRECTIONS = {
+        "z": "southwest",
+        "x": "south",
+        "c": "southeast",
+        "a": "west",
+        "s": "stop",
+        "d": "east",
+        "q": "northwest",
+        "w": "north",
+        "e": "northeast",
+    }
+    _GUIDE_MOTION_LEASE_SECONDS = 2.5
+    _GUIDE_MOTION_KEEPALIVE_INTERVAL = 0.25
+
+    def _guide_mount_queue(self):
+        try:
+            mount_control_enabled = self.config_object.get_option(
+                "mount_control", False
+            )
+        except Exception:
+            mount_control_enabled = False
+
+        if not mount_control_enabled:
+            return None
+        return self.command_queues.get("mountcontrol")
+
+    def _guide_send_mount(self, command: dict) -> bool:
+        mount_queue = self._guide_mount_queue()
+        if mount_queue is None:
+            return False
+        mount_queue.put(command)
+        return True
+
+    def _guide_send_motion_keepalive(self) -> None:
+        direction = getattr(self, "_guide_active_motion_direction", None)
+        if direction is None:
+            return
+
+        now = time.monotonic()
+        next_keepalive_at = getattr(self, "_guide_next_motion_keepalive_at", 0.0)
+        if now < next_keepalive_at:
+            return
+
+        self._guide_send_mount(
+            {
+                "type": "manual_movement_keepalive",
+                "direction": direction,
+                "lease_seconds": self._GUIDE_MOTION_LEASE_SECONDS,
+            }
+        )
+        self._guide_next_motion_keepalive_at = (
+            now + self._GUIDE_MOTION_KEEPALIVE_INTERVAL
+        )
+
+    def _guide_stop_motion_if_active(self) -> None:
+        if getattr(self, "_guide_active_motion_direction", None) is None:
+            return
+        self._guide_move("stop")
+
+    def _guide_move(self, direction: str, keepalive: bool = False) -> bool:
+        if direction == "stop":
+            self._guide_active_motion_direction = None
+            self._guide_next_motion_keepalive_at = 0.0
+            return self._guide_send_mount({"type": "stop_movement"})
+        if keepalive:
+            self._guide_active_motion_direction = direction
+            self._guide_next_motion_keepalive_at = (
+                time.monotonic() + self._GUIDE_MOTION_KEEPALIVE_INTERVAL
+            )
+        return self._guide_send_mount(
+            {
+                "type": "manual_movement",
+                "direction": direction,
+                "lease_seconds": self._GUIDE_MOTION_LEASE_SECONDS,
+            }
+        )
+
+    def _guide_key_number(self, number) -> bool:
+        if number is None:
+            return False
+        if number in (0, 5):
+            return self._guide_move("stop")
+        direction = self._GUIDE_NUMBER_DIRECTIONS.get(number)
+        if direction:
+            return self._guide_move(direction)
+        return False
+
+    def _guide_key_number_press(self, number) -> bool:
+        if number is None:
+            return False
+        if number in (0, 5):
+            return self._guide_move("stop")
+        direction = self._GUIDE_NUMBER_DIRECTIONS.get(number)
+        if direction:
+            return self._guide_move(direction, keepalive=True)
+        return False
+
+    def _guide_key_number_release(self, number) -> bool:
+        if number is None:
+            return False
+        if number in self._GUIDE_NUMBER_DIRECTIONS:
+            return self._guide_move("stop")
+        return False
+
+    def _guide_key_text(self, char: str) -> bool:
+        if not char:
+            return False
+        direction = self._GUIDE_TEXT_DIRECTIONS.get(char.lower())
+        if direction:
+            return self._guide_move(direction)
+        return False
+
+    def _guide_key_text_press(self, char: str) -> bool:
+        if not char:
+            return False
+        direction = self._GUIDE_TEXT_DIRECTIONS.get(char.lower())
+        if direction:
+            return self._guide_move(direction, keepalive=True)
+        return False
+
+    def _guide_key_text_release(self, char: str) -> bool:
+        if not char:
+            return False
+        if char.lower() in self._GUIDE_TEXT_DIRECTIONS:
+            return self._guide_move("stop")
+        return False
+
+    def _guide_key_plus(self) -> bool:
+        return self._guide_send_mount({"type": "increase_slew_rate"})
+
+    def _guide_key_minus(self) -> bool:
+        return self._guide_send_mount({"type": "reduce_slew_rate"})
+
     def key_number(self, number):
         pass
 
-    def key_number_press(self, number):
+    def key_number_press(self, number=None):
+        if number is None:
+            return
         self.key_number(number)
 
-    def key_number_release(self, number):
+    def key_number_release(self, number=None):
         pass
 
-    def key_text(self, char: str):
+    def key_text(self, char: str = ""):
         pass
 
-    def key_text_press(self, char: str):
+    def key_text_press(self, char: str = ""):
         pass
 
-    def key_text_release(self, char: str):
+    def key_text_release(self, char: str = ""):
+        if not char:
+            return
         self.key_text(char)
 
     def key_plus(self):

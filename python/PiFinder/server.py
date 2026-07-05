@@ -1917,7 +1917,10 @@ class Server:
                             "star_name": star_name if mode == "manual" else "",
                         }
                     )
-                    return _render_indi_page(_("Multi-point alignment started"))
+                    message = _("Multi-point alignment started")
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                        return _indi_json_response(message=message)
+                    return _render_indi_page(message)
 
                 if action == "select_star":
                     star_name = (request.form.get("align_star") or "").strip()
@@ -1927,22 +1930,34 @@ class Server:
                         {
                             "type": "multipoint_align_select_star",
                             "star_name": star_name,
+                            "goto": True,
                         }
                     )
-                    return _render_indi_page(_("Alignment star selected"))
+                    message = _("Alignment star GoTo requested")
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                        return _indi_json_response(message=message)
+                    return _render_indi_page(message)
 
                 if action == "confirm":
                     _queue_multipoint_align_command(
                         {"type": "multipoint_align_confirm", "source": "web"}
                     )
-                    return _render_indi_page(_("Alignment point confirmed"))
+                    message = _("Alignment point confirmed")
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                        return _indi_json_response(message=message)
+                    return _render_indi_page(message)
 
                 if action == "cancel":
                     _queue_multipoint_align_command({"type": "multipoint_align_cancel"})
-                    return _render_indi_page(_("Multi-point alignment cancelled"))
+                    message = _("Multi-point alignment cancelled")
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                        return _indi_json_response(message=message)
+                    return _render_indi_page(message)
 
                 raise ValueError(_("Invalid alignment action"))
             except (RuntimeError, ValueError) as e:
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _indi_json_response(ok=False, error=str(e))
                 return _render_indi_page(error_message=str(e))
 
         @app.route("/indi/backlash", methods=["POST"])

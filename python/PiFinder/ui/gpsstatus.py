@@ -7,7 +7,7 @@ This module contains all the UI Module classes
 
 import logging
 from typing import TYPE_CHECKING, Any
-from PiFinder.ui.base import UIModule
+from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.locations import Location
 from PiFinder.ui.marking_menus import MarkingMenuOption, MarkingMenu
 from PiFinder.ui.textentry import UITextEntry
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
         return a
 
 
-class UIGPSStatus(UIModule):
+class UIGPSStatus(GuideKeyMixin, UIModule):
     """
     UI for seeing GPS status
     """
@@ -136,6 +136,7 @@ class UIGPSStatus(UIModule):
         self.command_queues["camera"].put("stop")
 
     def inactive(self):
+        self._guide_stop_motion_if_active()
         self.command_queues["camera"].put("start")
 
     def update(self, force=False):

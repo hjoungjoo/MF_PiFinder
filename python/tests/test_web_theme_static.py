@@ -125,6 +125,11 @@ def test_indi_multipoint_align_controls_are_present():
     assert 'name="align_points"' in indi_html
     assert 'name="align_mode"' in indi_html
     assert 'name="align_star"' in indi_html
+    assert 'id="multipoint_align_start"' in indi_html
+    assert 'id="multipoint_align_goto"' in indi_html
+    assert 'id="multipoint_align_confirm"' in indi_html
+    assert 'id="multipoint_align_cancel"' in indi_html
+    assert "updateMultipointAlignButtons" in indi_html
     assert 'value="confirm"' in indi_html
     assert 'value="cancel"' in indi_html
     assert "/indi/multipoint_align" in indi_html

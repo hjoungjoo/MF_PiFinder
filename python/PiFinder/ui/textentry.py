@@ -364,7 +364,7 @@ class UITextEntry(UIModule):
         self.current_text = ""
         self.update_search_results()
 
-    def key_text(self, char: str):
+    def key_text(self, char: str = ""):
         if len(char) != 1:
             return
         self.last_key = None

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from PiFinder.gps_time_sync import HELPER_STATUS_FILE, REQUEST_FILE, STATUS_FILE
-from PiFinder.ui.base import UIModule
+from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.ui.layout import rows_below_titlebar
 from PiFinder.ui.ui_utils import TextLayouter
 
@@ -29,7 +29,7 @@ def _get(payload: dict[str, Any] | None, *keys: str, default: Any = None) -> Any
     return current
 
 
-class UIGPSTimeSyncStatus(UIModule):
+class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
     """Read-only time-sync status screen."""
 
     __title__ = "TIME SYNC"

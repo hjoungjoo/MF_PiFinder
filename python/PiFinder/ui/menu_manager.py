@@ -281,6 +281,8 @@ class MenuManager:
         time.sleep(0.15)
 
     def update(self) -> None:
+        self.stack[-1]._guide_send_motion_keepalive()
+
         if self.help_images is not None:
             # We are in help mode, just chill...
             return
@@ -291,6 +293,7 @@ class MenuManager:
 
         # Business as usual, update the module at the top of the stack
         self.stack[-1].update()  # type: ignore[call-arg]
+        self.stack[-1]._guide_send_motion_keepalive()
 
         # are we animating?
         if self._stack_anim_counter > time.time():

@@ -8,7 +8,7 @@ from PIL import ImageChops
 
 from PiFinder import utils
 from PiFinder.indi_align import BRIGHT_ALIGN_STARS, clamp_align_points
-from PiFinder.ui.base import UIModule
+from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.ui.camera_render import resize_for_display
 
 
@@ -166,7 +166,7 @@ class UIIndiInit(UIIndiBase):
         self.key_number(1)
 
 
-class UIIndiStatus(UIIndiBase):
+class UIIndiStatus(GuideKeyMixin, UIIndiBase):
     __title__ = "INDI STATUS"
 
     def _format_age(self, updated):
@@ -520,7 +520,9 @@ class UIIndiGuide(UIIndiBase):
             self.command_queues["ui_queue"].put("reload_config")
             self.message(_("Refine On") if enabled else _("Refine Off"), 1)
 
-    def key_number_press(self, number):
+    def key_number_press(self, number=None):
+        if number is None:
+            return
         if number in (0, 5):
             self.key_number(number)
             return
@@ -528,24 +530,40 @@ class UIIndiGuide(UIIndiBase):
         if direction:
             self._move(direction)
 
-    def key_number_release(self, number):
+    def key_number_release(self, number=None):
+        if number is None:
+            return
         if number in (0, 5):
             return
         if number in self._number_direction:
             self._move("stop")
 
-    def key_text(self, char: str):
-        # Legacy text events have no release pair, so only allow explicit stop.
+    def key_text(self, char: str = ""):
+        if not char:
+            return
         direction = self._text_direction.get(char.lower())
         if direction == "stop":
             self._move(direction)
+        elif direction:
+            self._send_mount(
+                {
+                    "type": "manual_movement",
+                    "direction": direction,
+                    "lease_seconds": MANUAL_MOTION_LEASE_SECONDS,
+                }
+            )
+            self.update(force=True)
 
-    def key_text_press(self, char: str):
+    def key_text_press(self, char: str = ""):
+        if not char:
+            return
         direction = self._text_direction.get(char.lower())
         if direction:
             self._move(direction)
 
-    def key_text_release(self, char: str):
+    def key_text_release(self, char: str = ""):
+        if not char:
+            return
         if char.lower() in self._text_direction:
             self._move("stop")
 
@@ -687,7 +705,9 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             self.align_points = clamp_align_points(number)
             self.update()
 
-    def key_number_press(self, number):
+    def key_number_press(self, number=None):
+        if number is None:
+            return
         if self._is_adjusting():
             direction = self._number_direction.get(number)
             if direction:
@@ -695,19 +715,21 @@ class UIIndiMultiPointAlign(UIIndiGuide):
                 return
         self.key_number(number)
 
-    def key_number_release(self, number):
+    def key_number_release(self, number=None):
+        if number is None:
+            return
         if self._is_adjusting() and number in self._number_direction:
             self._move("stop")
 
-    def key_text(self, char: str):
+    def key_text(self, char: str = ""):
         if self._is_adjusting():
             super().key_text(char)
 
-    def key_text_press(self, char: str):
+    def key_text_press(self, char: str = ""):
         if self._is_adjusting():
             super().key_text_press(char)
 
-    def key_text_release(self, char: str):
+    def key_text_release(self, char: str = ""):
         if self._is_adjusting():
             super().key_text_release(char)
 

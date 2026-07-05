@@ -18,7 +18,7 @@ from PIL import Image, ImageChops
 from PiFinder import focus, utils
 from PiFinder.ui.camera_render import resize_for_display
 from PiFinder.ui.marking_menus import MarkingMenuOption, MarkingMenu
-from PiFinder.ui.base import UIModule
+from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.ui.ui_utils import outline_text
 
 sys.path.append(str(utils.tetra3_dir))
@@ -45,7 +45,7 @@ STRETCH_BRIGHT_BACKGROUND = 220.0  # show saturated/daylit focus frames directly
 CAMERA_NATIVE_RES = 512
 
 
-class UIPreview(UIModule):
+class UIPreview(GuideKeyMixin, UIModule):
     from PiFinder import tetra3
 
     __title__ = "CAMERA"

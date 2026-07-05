@@ -4184,7 +4184,7 @@ class MountControlIndi:
             return self._align_goto_current_star(session)
 
         if star_name:
-            return self.select_multipoint_align_star(star_name)
+            return self.select_multipoint_align_star(star_name, goto=False)
 
         self._align_session_status(
             "waiting", f"Manual alignment 0/{total_points}: select a star"
@@ -4192,7 +4192,7 @@ class MountControlIndi:
         self._console("Multi align\nselect star")
         return True
 
-    def select_multipoint_align_star(self, star_name: str) -> bool:
+    def select_multipoint_align_star(self, star_name: str, goto: bool = False) -> bool:
         session = self._current_align_session()
         if session is None:
             session_started = self.start_multipoint_align(
@@ -4211,7 +4211,18 @@ class MountControlIndi:
 
         session["mode"] = "manual"
         self._set_current_align_star(session, star)
-        return self._align_goto_current_star(session)
+        if goto:
+            return self._align_goto_current_star(session)
+
+        self._align_session_status(
+            "adjust",
+            (
+                f"Selected {star['name']}; center the target manually, "
+                "then confirm the alignment point"
+            ),
+        )
+        self._console(f"Align star\n{star['name']}")
+        return True
 
     def confirm_multipoint_align(
         self,
@@ -4394,7 +4405,10 @@ class MountControlIndi:
                 command.get("star_name"),
             )
         elif command_type == "multipoint_align_select_star":
-            self.select_multipoint_align_star(str(command.get("star_name", "")))
+            self.select_multipoint_align_star(
+                str(command.get("star_name", "")),
+                bool(command.get("goto", False)),
+            )
         elif command_type == "multipoint_align_confirm":
             self.confirm_multipoint_align(
                 command.get("ra"),

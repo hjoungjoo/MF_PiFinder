@@ -757,6 +757,26 @@ class UIObjectDetails(UIModule):
         else:
             logger.warning("Unhandled mount-control number key: %s", number)
 
+    def key_number_press(self, number=None):
+        """Use physical keyboard number keys as guide controls on details."""
+        if number is None:
+            return
+        if self._guide_key_number_press(number):
+            return
+        self.key_number(number)
+
+    def key_number_release(self, number=None):
+        self._guide_key_number_release(number)
+
+    def key_text(self, char: str = ""):
+        self._guide_key_text(char)
+
+    def key_text_press(self, char: str = ""):
+        self._guide_key_text_press(char)
+
+    def key_text_release(self, char: str = ""):
+        self._guide_key_text_release(char)
+
     def key_down(self):
         self.maybe_add_to_recents()
         self.scroll_object(1)
@@ -790,6 +810,9 @@ class UIObjectDetails(UIModule):
         self.update()
 
     def key_plus(self):
+        if self._guide_key_plus():
+            self.message(_("Speed +"), 0.5)
+            return
         if self.object_display_mode == DM_DESC:
             self.descTextLayout.next()
             typeconst = self.texts.get("type-const")
@@ -799,6 +822,9 @@ class UIObjectDetails(UIModule):
             self.change_fov(1)
 
     def key_minus(self):
+        if self._guide_key_minus():
+            self.message(_("Speed -"), 0.5)
+            return
         if self.object_display_mode == DM_DESC:
             self.descTextLayout.previous()
             typeconst = self.texts.get("type-const")

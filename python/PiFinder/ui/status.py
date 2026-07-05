@@ -7,7 +7,7 @@ This module contains the UI Status class
 
 import time
 
-from PiFinder.ui.base import UIModule
+from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder import calc_utils
 from PiFinder import utils
 from PiFinder.ui.ui_utils import TextLayouter, TextLayouterScroll, SpaceCalculatorFixed
@@ -16,7 +16,7 @@ from PiFinder.ui.layout import rows_below_titlebar
 sys_utils = utils.get_sys_utils()
 
 
-class UIStatus(UIModule):
+class UIStatus(GuideKeyMixin, UIModule):
     """
     Displays various status information
     """

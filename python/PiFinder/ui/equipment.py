@@ -1,4 +1,4 @@
-from PiFinder.ui.base import UIModule
+from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder import utils
 from PiFinder.ui.marking_menus import MarkingMenuOption, MarkingMenu
 from PiFinder.ui.layout import rows_below_titlebar
@@ -6,7 +6,7 @@ from PiFinder.ui.layout import rows_below_titlebar
 sys_utils = utils.get_sys_utils()
 
 
-class UIEquipment(UIModule):
+class UIEquipment(GuideKeyMixin, UIModule):
     """
     Displays various status information
     """

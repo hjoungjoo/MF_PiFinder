@@ -746,7 +746,7 @@ def test_set_tracking_accepts_desired_readback_after_command_failure(monkeypatch
     assert mount.applied_properties == []
 
 
-def test_multipoint_align_manual_start_sends_goto_to_selected_star():
+def test_multipoint_align_manual_start_selects_star_without_goto():
     mount = DummyMountControl()
 
     assert mount.start_multipoint_align("manual", 2, "Vega")
@@ -754,6 +754,18 @@ def test_multipoint_align_manual_start_sends_goto_to_selected_star():
     assert mount._multipoint_align is not None
     assert mount._multipoint_align["active"]
     assert mount._multipoint_align["total_points"] == 2
+    assert mount._multipoint_align["current_star"]["name"] == "Vega"
+    assert mount._multipoint_align["state"] == "adjust"
+    assert mount.goto_calls == []
+
+
+def test_multipoint_align_explicit_goto_moves_to_selected_star():
+    mount = DummyMountControl()
+
+    assert mount.start_multipoint_align("manual", 2)
+    assert mount.select_multipoint_align_star("Vega", goto=True)
+
+    assert mount._multipoint_align is not None
     assert mount._multipoint_align["current_star"]["name"] == "Vega"
     assert mount.goto_calls[-1][0] == 279.234735
     assert mount.goto_calls[-1][1] == 38.783689

@@ -326,6 +326,7 @@
         </tr>
       </tbody>
     </table>
+    {% set multipoint_active = multipoint_align.get('active') %}
     <form action="/indi/multipoint_align" method="post" id="indi_multipoint_align_form" class="col s12">
       <div class="row">
         <div class="input-field col s12 m3">
@@ -352,10 +353,10 @@
         </div>
       </div>
       <div class="row">
-        <button type="submit" name="align_action" value="start" class="btn">{{ _('Start Align') }}</button>
-        <button type="submit" name="align_action" value="select_star" class="btn">{{ _('GoTo Selected Star') }}</button>
-        <button type="submit" name="align_action" value="confirm" class="btn">{{ _('Confirm Point') }}</button>
-        <button type="submit" name="align_action" value="cancel" class="btn">{{ _('Cancel Align') }}</button>
+        <button type="submit" name="align_action" value="start" class="btn{% if multipoint_active %} disabled{% endif %}" id="multipoint_align_start" {% if multipoint_active %}disabled{% endif %}>{{ _('Start Align') }}</button>
+        <button type="submit" name="align_action" value="select_star" class="btn{% if not multipoint_active %} disabled{% endif %}" id="multipoint_align_goto" {% if not multipoint_active %}disabled{% endif %}>{{ _('GoTo Selected Star') }}</button>
+        <button type="submit" name="align_action" value="confirm" class="btn{% if not multipoint_active %} disabled{% endif %}" id="multipoint_align_confirm" {% if not multipoint_active %}disabled{% endif %}>{{ _('Confirm Point') }}</button>
+        <button type="submit" name="align_action" value="cancel" class="btn" id="multipoint_align_cancel">{{ _('Cancel Align') }}</button>
       </div>
     </form>
     <h6 class="grey-text">{{ _('Backlash') }}</h6>
@@ -465,6 +466,11 @@ document.addEventListener('DOMContentLoaded', function() {
   var actionStatus = document.getElementById('indi_action_status');
   var reloadLocationValues = document.getElementById('reload_location_values');
   var locationTimeForm = document.getElementById('location_time_form');
+  var multipointAlignForm = document.getElementById('indi_multipoint_align_form');
+  var multipointAlignStart = document.getElementById('multipoint_align_start');
+  var multipointAlignGoto = document.getElementById('multipoint_align_goto');
+  var multipointAlignConfirm = document.getElementById('multipoint_align_confirm');
+  var multipointAlignCancel = document.getElementById('multipoint_align_cancel');
   var utcTimeInput = document.getElementById('utc_time');
   var backlashStatus = document.getElementById('backlash_auto_status');
   var backlashDetails = document.getElementById('backlash_auto_details');
@@ -1041,6 +1047,26 @@ document.addEventListener('DOMContentLoaded', function() {
     setText('multipoint_align_status', alignStatus.message || '{{ _("Idle") }}');
     setText('multipoint_align_progress', completed + ' / ' + total);
     setText('multipoint_align_star', currentStar.name || '-');
+    updateMultipointAlignButtons(!!alignStatus.active);
+  }
+
+  function updateMultipointAlignButtons(active) {
+    setButtonEnabled(multipointAlignStart, !active);
+    setButtonEnabled(multipointAlignGoto, active);
+    setButtonEnabled(multipointAlignConfirm, active);
+    setButtonEnabled(multipointAlignCancel, true);
+  }
+
+  function multipointAlignPayload(action) {
+    var mode = document.getElementById('align_mode');
+    var points = document.getElementById('align_points');
+    var star = document.getElementById('align_star');
+    return {
+      align_action: action,
+      align_mode: mode ? mode.value : 'manual',
+      align_points: points ? points.value : '3',
+      align_star: star ? star.value : ''
+    };
   }
 
   function refreshIndiState(showStatus) {
@@ -1206,6 +1232,44 @@ document.addEventListener('DOMContentLoaded', function() {
             backlashStatus.textContent = error.message;
           }
           setButtonEnabled(backlashMotionControl, true);
+        });
+    });
+  }
+
+  if (multipointAlignForm) {
+    multipointAlignForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+      var submitter = event.submitter || document.activeElement;
+      var action = submitter && submitter.name === 'align_action'
+        ? submitter.value
+        : 'start';
+      var statusText = submitter ? submitter.textContent.trim() : '{{ _("Working") }}';
+      if (action === 'start') {
+        updateMultipointAlignButtons(true);
+      } else if (action === 'cancel') {
+        updateMultipointAlignButtons(false);
+      }
+      setActionStatus(statusText);
+      postIndiAction('/indi/multipoint_align', multipointAlignPayload(action))
+        .then(function(payload) {
+          setActionStatus(payload.message || statusText);
+          if (action === 'cancel') {
+            updateMultipointAlignButtons(false);
+            setTimeout(function() {
+              refreshIndiState(false);
+            }, 1500);
+            setTimeout(function() {
+              refreshIndiState(false);
+            }, 3000);
+            return;
+          }
+          refreshIndiState(false);
+          setTimeout(function() {
+            refreshIndiState(false);
+          }, 500);
+        })
+        .catch(function(error) {
+          setActionStatus(error.message);
         });
     });
   }
