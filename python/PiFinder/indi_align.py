@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import csv
+import math
+from datetime import datetime, timezone
 from typing import Any
+
+from PiFinder import calc_utils, utils
 
 
 ALIGN_POINT_MIN = 1
 ALIGN_POINT_MAX = 9
 DEFAULT_ALIGN_POINTS = 3
+ALIGN_STAR_MIN_ALTITUDE_DEG = 20.0
+ALIGN_STAR_MAX_ALTITUDE_DEG = 78.0
 
-BRIGHT_ALIGN_STARS: list[dict[str, Any]] = [
+_FALLBACK_BRIGHT_ALIGN_STARS: list[dict[str, Any]] = [
     {"name": "Sirius", "ra": 101.287155, "dec": -16.716116, "mag": -1.46},
     {"name": "Canopus", "ra": 95.987958, "dec": -52.695661, "mag": -0.74},
     {"name": "Arcturus", "ra": 213.915300, "dec": 19.182410, "mag": -0.05},
@@ -51,6 +58,49 @@ BRIGHT_ALIGN_STARS: list[dict[str, Any]] = [
 ]
 
 
+def _csv_dec_to_deg(dec_degrees: str, dec_minutes: str) -> float:
+    degrees = float(dec_degrees)
+    minutes = abs(float(dec_minutes))
+    sign = -1.0 if degrees < 0 else 1.0
+    return sign * (abs(degrees) + minutes / 60.0)
+
+
+def _load_bright_align_stars() -> list[dict[str, Any]]:
+    stars_by_name: dict[str, dict[str, Any]] = {
+        str(star["name"]).casefold(): dict(star)
+        for star in _FALLBACK_BRIGHT_ALIGN_STARS
+    }
+    csv_path = utils.astro_data_dir / "bright_stars.csv"
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as csv_in:
+            for row in csv.DictReader(csv_in):
+                name = (row.get("NamedStar") or "").strip()
+                if not name:
+                    continue
+                key = name.casefold()
+                if key in stars_by_name:
+                    continue
+                ra = (
+                    float(row["RA Hr"]) + float(row["RA Min"]) / 60.0
+                ) * 15.0
+                stars_by_name[key] = {
+                    "name": name,
+                    "ra": ra % 360.0,
+                    "dec": _csv_dec_to_deg(row["Dec Deg"], row["Dec Min"]),
+                    "mag": float(row["Magnitude"]),
+                }
+    except (FileNotFoundError, OSError, KeyError, ValueError):
+        return list(_FALLBACK_BRIGHT_ALIGN_STARS)
+
+    return sorted(
+        stars_by_name.values(),
+        key=lambda star: (float(star.get("mag", 99.0)), str(star.get("name", ""))),
+    )
+
+
+BRIGHT_ALIGN_STARS: list[dict[str, Any]] = _load_bright_align_stars()
+
+
 def clamp_align_points(value: Any) -> int:
     try:
         points = int(float(value))
@@ -75,3 +125,102 @@ def next_align_star(completed: list[dict[str, Any]]) -> dict[str, Any]:
         if star["name"].casefold() not in used_names:
             return dict(star)
     return dict(BRIGHT_ALIGN_STARS[len(completed) % len(BRIGHT_ALIGN_STARS)])
+
+
+def angular_separation_degrees(
+    ra_a: float, dec_a: float, ra_b: float, dec_b: float
+) -> float:
+    ra_a_rad = math.radians(float(ra_a))
+    dec_a_rad = math.radians(float(dec_a))
+    ra_b_rad = math.radians(float(ra_b))
+    dec_b_rad = math.radians(float(dec_b))
+    cos_sep = (
+        math.sin(dec_a_rad) * math.sin(dec_b_rad)
+        + math.cos(dec_a_rad)
+        * math.cos(dec_b_rad)
+        * math.cos(ra_a_rad - ra_b_rad)
+    )
+    cos_sep = max(-1.0, min(1.0, cos_sep))
+    return math.degrees(math.acos(cos_sep))
+
+
+def nearest_align_star(
+    ra_deg: float,
+    dec_deg: float,
+    completed: list[dict[str, Any]] | None = None,
+    candidates: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    used_names = {
+        str(star.get("name", "")).casefold() for star in (completed or [])
+    }
+    pool = candidates or BRIGHT_ALIGN_STARS
+    usable = [
+        star
+        for star in pool
+        if str(star.get("name", "")).casefold() not in used_names
+    ]
+    if not usable:
+        usable = pool or BRIGHT_ALIGN_STARS
+    if not usable:
+        return next_align_star(completed or [])
+    return dict(
+        min(
+            usable,
+            key=lambda star: angular_separation_degrees(
+                ra_deg,
+                dec_deg,
+                float(star["ra"]),
+                float(star["dec"]),
+            ),
+        )
+    )
+
+
+def _normalize_datetime(dt: Any) -> datetime:
+    if dt is None:
+        return datetime.now(timezone.utc)
+    if isinstance(dt, str):
+        dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+    if getattr(dt, "tzinfo", None) is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def align_star_altaz(
+    star: dict[str, Any],
+    latitude: float,
+    longitude: float,
+    elevation: float | None,
+    dt: Any,
+) -> tuple[float, float]:
+    dt = _normalize_datetime(dt)
+    calc_utils.sf_utils.set_location(latitude, longitude, elevation or 0.0)
+    alt_deg, az_deg = calc_utils.sf_utils.radec_to_altaz(
+        float(star["ra"]), float(star["dec"]), dt
+    )
+    return float(alt_deg), float(az_deg) % 360.0
+
+
+def visible_align_stars(
+    latitude: float,
+    longitude: float,
+    elevation: float | None,
+    dt: Any,
+    completed: list[dict[str, Any]] | None = None,
+    min_altitude: float = ALIGN_STAR_MIN_ALTITUDE_DEG,
+    max_altitude: float = ALIGN_STAR_MAX_ALTITUDE_DEG,
+) -> list[dict[str, Any]]:
+    used_names = {
+        str(star.get("name", "")).casefold() for star in (completed or [])
+    }
+    visible: list[dict[str, Any]] = []
+    for star in BRIGHT_ALIGN_STARS:
+        if str(star.get("name", "")).casefold() in used_names:
+            continue
+        alt_deg, az_deg = align_star_altaz(star, latitude, longitude, elevation, dt)
+        if min_altitude <= alt_deg <= max_altitude:
+            candidate = dict(star)
+            candidate["alt"] = alt_deg
+            candidate["az"] = az_deg
+            visible.append(candidate)
+    return visible

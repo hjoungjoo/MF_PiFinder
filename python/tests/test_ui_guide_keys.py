@@ -92,6 +92,27 @@ def test_guide_mixin_press_keeps_motion_alive_until_release():
     ]
 
 
+def test_guide_mixin_long_hold_restarts_motion_before_controller_limit():
+    screen = _screen()
+
+    screen.key_text_press("q")
+    screen._guide_next_motion_restart_at = -1.0
+    screen._guide_send_motion_keepalive()
+
+    assert screen.command_queues["mountcontrol"].commands == [
+        {
+            "type": "manual_movement",
+            "direction": "northwest",
+            "lease_seconds": 2.5,
+        },
+        {
+            "type": "manual_movement",
+            "direction": "northwest",
+            "lease_seconds": 2.5,
+        },
+    ]
+
+
 def test_guide_mixin_plain_text_event_does_not_keep_motion_alive():
     screen = _screen()
 

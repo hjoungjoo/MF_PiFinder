@@ -91,11 +91,11 @@ pifinder_menu = {
                             "select": "single",
                             "items": [
                                 {
-                                    "name": _("Connect / Init"),
+                                    "name": _("Connect"),
                                     "callback": callbacks.indi_init,
                                 },
                                 {
-                                    "name": _("Send Location/Time"),
+                                    "name": _("Set Location"),
                                     "callback": callbacks.indi_sync_location_time,
                                 },
                                 {
@@ -134,7 +134,7 @@ pifinder_menu = {
                             "select": "single",
                             "items": [
                                 {
-                                    "name": _("Multi-Point Align"),
+                                    "name": _("Multi Align"),
                                     "class": UIIndiMultiPointAlign,
                                 },
                                 {

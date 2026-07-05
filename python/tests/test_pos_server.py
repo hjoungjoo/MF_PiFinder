@@ -327,6 +327,39 @@ def test_skysafari_ms_command_triggers_indi_goto(monkeypatch):
     }
 
 
+def test_skysafari_ms_command_does_not_push_ui_during_multipoint_align(monkeypatch):
+    commands = queue.Queue()
+    ui_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "ui_queue", ui_commands, raising=False)
+    monkeypatch.setattr(pos_server, "is_stellarium", True)
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(
+        pos_server,
+        "_mount_control_status",
+        lambda: {"multipoint_align": {"active": True}},
+    )
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True, "skysafari_indi_goto": False}),
+    )
+
+    assert pos_server.parse_sr_command(None, ":Sr12:30:00#") == "1"
+    assert pos_server.parse_sd_command(DummyState(None), ":Sd-34*15:00#") == "1"
+    assert pos_server.handle_slew_command(DummyState(None), ":MS#") == "0"
+
+    with pytest.raises(queue.Empty):
+        ui_commands.get_nowait()
+    assert commands.get_nowait() == {
+        "type": "multipoint_align_goto_target",
+        "ra": 187.5,
+        "dec": -34.25,
+        "name": "SkySafari Target",
+    }
+
+
 def test_skysafari_ms_command_returns_error_without_target(monkeypatch):
     monkeypatch.setattr(pos_server, "sr_result", None)
     monkeypatch.setattr(pos_server, "sd_result", None)

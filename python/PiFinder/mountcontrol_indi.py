@@ -25,9 +25,12 @@ import quaternion
 from PiFinder import calc_utils, config
 from PiFinder import sys_utils, utils
 from PiFinder.indi_align import (
+    ALIGN_STAR_MAX_ALTITUDE_DEG,
+    ALIGN_STAR_MIN_ALTITUDE_DEG,
     BRIGHT_ALIGN_STARS,
     clamp_align_points,
     get_align_star,
+    nearest_align_star,
     next_align_star,
 )
 from PiFinder.multiproclogging import MultiprocLogging
@@ -68,6 +71,11 @@ GOTO_COMPLETE_POSITION_STABLE_DEG = 0.02
 GOTO_COMPLETE_TARGET_TOLERANCE_DEG = 0.5
 GOTO_ONSTEP_ACTIVE_OBSERVE_GRACE_SECONDS = 3.0
 GOTO_COMPLETE_FALLBACK_SECONDS = 180.0
+GOTO_TARGET_COMMAND_ATTEMPTS = 2
+GOTO_TARGET_ACCEPT_TIMEOUT_SECONDS = 2.0
+GOTO_TARGET_ACCEPT_POLL_SECONDS = 0.1
+GOTO_TARGET_ACCEPT_TOLERANCE_ARCMIN = 3.0
+MULTIPOINT_ALIGN_SYNC_THRESHOLD_ARCMIN = 30.0
 BACKLASH_MIN_VALUE = 0
 BACKLASH_MAX_VALUE = 3600
 BACKLASH_AUTO_IMU_STALE_SECONDS = 5.0
@@ -1068,9 +1076,15 @@ class MountControlIndi:
             return self.connect(announce=False, sync_on_connect=False)
         return True
 
-    def sync_location_time(self, reconnect_after: bool = True) -> bool:
+    def sync_location_time(
+        self,
+        reconnect_after: bool = True,
+        include_default_location: bool = False,
+    ) -> bool:
         try:
-            latitude, longitude, elevation, dt = self._shared_location_time_values()
+            latitude, longitude, elevation, dt = self._shared_location_time_values(
+                include_default_location=include_default_location
+            )
             if self._use_direct_onstep_location_time_sync():
                 if latitude is None or longitude is None:
                     self._write_controller_status(
@@ -1134,11 +1148,13 @@ class MountControlIndi:
             logger.exception("Could not sync INDI location/time")
             return False
 
-    def _read_cached_current_position(self) -> Optional[tuple[float, float]]:
+    def _read_cached_number_position(
+        self, property_name: str
+    ) -> Optional[tuple[float, float]]:
         if self.device is None:
             return None
 
-        coord_prop = self.device.getNumber("EQUATORIAL_EOD_COORD")
+        coord_prop = self.device.getNumber(property_name)
         if not coord_prop:
             return None
 
@@ -1154,7 +1170,14 @@ class MountControlIndi:
         if ra_hours is None or dec_deg is None:
             return None
 
-        self.set_current_position(ra_hours * 15.0, dec_deg)
+        return ra_hours * 15.0, dec_deg
+
+    def _read_cached_current_position(self) -> Optional[tuple[float, float]]:
+        position = self._read_cached_number_position("EQUATORIAL_EOD_COORD")
+        if position is None:
+            return None
+
+        self.set_current_position(position[0], position[1])
         return self.current_ra, self.current_dec
 
     def _read_current_position(self) -> Optional[tuple[float, float]]:
@@ -1167,6 +1190,62 @@ class MountControlIndi:
             return None
 
         return self._read_cached_current_position()
+
+    def _read_target_position(self) -> Optional[tuple[float, float]]:
+        if self.client is None or self.device is None:
+            return None
+
+        if not self.client._wait_for_property(
+            self.device, "TARGET_EOD_COORD", timeout=0.25
+        ):
+            return None
+
+        return self._read_cached_number_position("TARGET_EOD_COORD")
+
+    def _goto_target_accepted(self, ra_deg: float, dec_deg: float) -> bool:
+        target_ra = ra_deg % 360.0
+        started_at = time.monotonic()
+        while True:
+            target_position = self._read_target_position()
+            if (
+                target_position is not None
+                and radec_separation_arcmin(
+                    target_position[0],
+                    target_position[1],
+                    target_ra,
+                    dec_deg,
+                )
+                <= GOTO_TARGET_ACCEPT_TOLERANCE_ARCMIN
+            ):
+                return True
+
+            if self._indi_mount_is_busy() is True:
+                return True
+
+            onstep_complete = self._onstep_goto_complete()
+            if onstep_complete is False:
+                return True
+
+            current_position = self._read_cached_current_position()
+            if (
+                current_position is not None
+                and radec_separation_arcmin(
+                    current_position[0],
+                    current_position[1],
+                    target_ra,
+                    dec_deg,
+                )
+                <= GOTO_TARGET_ACCEPT_TOLERANCE_ARCMIN
+            ):
+                return True
+
+            if (
+                time.monotonic() - started_at
+                >= GOTO_TARGET_ACCEPT_TIMEOUT_SECONDS
+            ):
+                return False
+
+            time.sleep(GOTO_TARGET_ACCEPT_POLL_SECONDS)
 
     def _current_plate_solve(self) -> Optional[tuple[float, float, Optional[float]]]:
         try:
@@ -1494,35 +1573,60 @@ class MountControlIndi:
         refine_after_goto: bool = False,
         refine_accuracy_arcmin: Any = None,
     ) -> bool:
-        self._last_goto_target = (ra_deg % 360.0, dec_deg)
+        target_ra = ra_deg % 360.0
         if not self.connect() or self.client is None or self.device is None:
             return False
 
-        if not self.client.set_switch(self.device, "ON_COORD_SET", "SLEW"):
-            self._write_controller_status("goto_failed", "Could not set INDI SLEW mode")
-            return False
+        for attempt in range(1, GOTO_TARGET_COMMAND_ATTEMPTS + 1):
+            if not self.client.set_switch(self.device, "ON_COORD_SET", "SLEW"):
+                self._write_controller_status(
+                    "goto_failed", "Could not set INDI SLEW mode"
+                )
+                return False
 
-        if not self.client.set_number(
-            self.device,
-            "EQUATORIAL_EOD_COORD",
-            {"RA": (ra_deg % 360.0) / 15.0, "DEC": dec_deg},
-        ):
-            self._write_controller_status(
-                "goto_failed", "Could not set target coordinates"
+            if not self.client.set_number(
+                self.device,
+                "EQUATORIAL_EOD_COORD",
+                {"RA": target_ra / 15.0, "DEC": dec_deg},
+            ):
+                self._write_controller_status(
+                    "goto_failed", "Could not set target coordinates"
+                )
+                return False
+
+            if self._goto_target_accepted(target_ra, dec_deg):
+                break
+
+            logger.warning(
+                "INDI GoTo target RA %.4f Dec %.4f was not accepted "
+                "after attempt %d/%d",
+                target_ra,
+                dec_deg,
+                attempt,
+                GOTO_TARGET_COMMAND_ATTEMPTS,
             )
+        else:
+            self._write_controller_status(
+                "goto_failed",
+                "INDI GoTo target was not accepted",
+                target_ra=target_ra,
+                target_dec=dec_deg,
+            )
+            self._console("INDI mount\nGoTo failed")
             return False
 
-        self._arm_goto_motion(ra_deg, dec_deg)
+        self._last_goto_target = (target_ra, dec_deg)
+        self._arm_goto_motion(target_ra, dec_deg)
         self._write_controller_status(
             "slewing",
             "GoTo target command sent",
-            target_ra=ra_deg % 360.0,
+            target_ra=target_ra,
             target_dec=dec_deg,
         )
-        logger.info("Mount GoTo RA %.4f Dec %.4f", ra_deg, dec_deg)
+        logger.info("Mount GoTo RA %.4f Dec %.4f", target_ra, dec_deg)
         self._console("INDI mount\nGoTo sent")
         if refine_after_goto:
-            self._arm_goto_refine(ra_deg, dec_deg, refine_accuracy_arcmin)
+            self._arm_goto_refine(target_ra, dec_deg, refine_accuracy_arcmin)
         return True
 
     def stop_mount(self) -> bool:
@@ -4077,6 +4181,132 @@ class MountControlIndi:
             return None
         return session
 
+    def _current_pifinder_pointing_for_align(
+        self,
+    ) -> Optional[tuple[str, float, float]]:
+        try:
+            solution = self.shared_state.solution()
+        except Exception:
+            solution = None
+        if solution is not None and solution.has_pointing():
+            try:
+                pointing = solution.pointing.aligned.estimate
+                if pointing is None:
+                    pointing = solution.pointing.aligned.solve
+                if pointing is not None:
+                    return "solve", float(pointing.RA) % 360.0, float(pointing.Dec)
+            except (AttributeError, TypeError, ValueError):
+                logger.debug(
+                    "Could not read PiFinder solved pointing for multi-align",
+                    exc_info=True,
+                )
+
+        imu_altaz = self._current_imu_altaz()
+        if imu_altaz is None:
+            return None
+        imu_radec = self._imu_altaz_to_radec(imu_altaz[0], imu_altaz[1])
+        if imu_radec is None:
+            return None
+        return "imu", imu_radec[0] % 360.0, imu_radec[1]
+
+    def _sync_multipoint_location_time(self, session: dict[str, Any]) -> bool:
+        if not self.sync_location_time(
+            reconnect_after=True,
+            include_default_location=True,
+        ):
+            self._align_session_status(
+                "failed",
+                "Could not sync location/time before multi-point alignment",
+            )
+            return False
+        session["location_time_synced"] = True
+        return True
+
+    def _sync_multipoint_mount_to_pifinder(self, session: dict[str, Any]) -> bool:
+        pointing = self._current_pifinder_pointing_for_align()
+        if pointing is None:
+            self._align_session_status(
+                "failed",
+                "No PiFinder solve or IMU pointing available for alignment sync",
+            )
+            return False
+
+        source, pifinder_ra, pifinder_dec = pointing
+        session["pifinder_sync_source"] = source
+        session["pifinder_sync_ra"] = pifinder_ra
+        session["pifinder_sync_dec"] = pifinder_dec
+
+        mount_position = self._read_current_position()
+        separation_arcmin = None
+        if mount_position is not None:
+            separation_arcmin = radec_separation_arcmin(
+                mount_position[0],
+                mount_position[1],
+                pifinder_ra,
+                pifinder_dec,
+            )
+        session["pifinder_mount_separation_arcmin"] = separation_arcmin
+
+        if not self.sync_mount(pifinder_ra, pifinder_dec):
+            self._align_session_status(
+                "failed",
+                "Could not sync mount coordinates to PiFinder before alignment",
+            )
+            return False
+
+        session["pifinder_mount_synced"] = True
+        self._align_session_status(
+            "waiting",
+            f"Mount synced to PiFinder {source} before alignment",
+        )
+
+        return True
+
+    def start_mount_alignment_session(self, points: Any) -> bool:
+        total_points = clamp_align_points(points)
+        if not self.connect() or self.client is None or self.device is None:
+            logger.warning("Could not connect before starting mount alignment session")
+            return False
+
+        def set_switch(property_name: str, element_name: str) -> bool:
+            try:
+                return bool(
+                    self.client.set_switch(
+                        self.device,
+                        property_name,
+                        element_name,
+                        timeout=1.0,
+                    )
+                )
+            except TypeError:
+                return bool(
+                    self.client.set_switch(
+                        self.device,
+                        property_name,
+                        element_name,
+                    )
+                )
+
+        if not set_switch("AlignStars", str(total_points)):
+            logger.info(
+                "INDI mount does not expose AlignStars; "
+                "continuing PiFinder multi-point alignment without mount session"
+            )
+            return False
+
+        if not set_switch("NewAlignStar", "0"):
+            logger.info(
+                "INDI mount does not expose NewAlignStar start; "
+                "continuing PiFinder multi-point alignment without mount session"
+            )
+            return False
+
+        logger.info(
+            "Started INDI mount native alignment session for %d point(s)",
+            total_points,
+        )
+        return True
+
     def _set_current_align_star(
         self, session: dict[str, Any], star: dict[str, Any]
     ) -> dict[str, Any]:
@@ -4093,8 +4323,11 @@ class MountControlIndi:
     def _align_auto_star(self, session: dict[str, Any]) -> dict[str, Any]:
         completed = session.get("completed", [])
         used_names = {str(star.get("name", "")).casefold() for star in completed}
+        reference = session.get("auto_reference")
         try:
-            latitude, longitude, elevation, dt = self._shared_location_time_values()
+            latitude, longitude, elevation, dt = self._shared_location_time_values(
+                include_default_location=True
+            )
             if latitude is None or longitude is None or dt is None:
                 raise ValueError("No locked location/time for altitude filtering")
             if isinstance(dt, str):
@@ -4109,13 +4342,31 @@ class MountControlIndi:
                 alt, _az = calc_utils.sf_utils.radec_to_altaz(
                     float(star["ra"]), float(star["dec"]), dt
                 )
-                if alt >= 20.0:
+                if (
+                    ALIGN_STAR_MIN_ALTITUDE_DEG
+                    <= alt
+                    <= ALIGN_STAR_MAX_ALTITUDE_DEG
+                ):
                     visible_candidates.append((alt, star))
             if visible_candidates:
+                visible_stars = [star for _alt, star in visible_candidates]
+                if reference:
+                    return nearest_align_star(
+                        float(reference["ra"]),
+                        float(reference["dec"]),
+                        completed,
+                        visible_stars,
+                    )
                 return dict(max(visible_candidates, key=lambda item: item[0])[1])
         except Exception:
             logger.debug(
                 "Could not altitude-filter auto alignment stars", exc_info=True
+            )
+        if reference:
+            return nearest_align_star(
+                float(reference["ra"]),
+                float(reference["dec"]),
+                completed,
             )
         return next_align_star(completed)
 
@@ -4125,14 +4376,54 @@ class MountControlIndi:
             self._align_session_status("waiting", "Select an alignment star")
             return False
 
+        altaz = self._radec_to_altaz(
+            float(current_star["ra"]),
+            float(current_star["dec"]),
+        )
+        if altaz is not None and altaz[0] < ALIGN_STAR_MIN_ALTITUDE_DEG:
+            session["current_star"] = None
+            self._align_session_status(
+                "failed",
+                (
+                    f"{current_star['name']} is below the "
+                    f"{ALIGN_STAR_MIN_ALTITUDE_DEG:.0f} deg alignment limit"
+                ),
+            )
+            self._console("Align star\nbelow horizon")
+            return False
+        if altaz is not None and altaz[0] > ALIGN_STAR_MAX_ALTITUDE_DEG:
+            session["current_star"] = None
+            self._align_session_status(
+                "failed",
+                (
+                    f"{current_star['name']} is above the "
+                    f"{ALIGN_STAR_MAX_ALTITUDE_DEG:.0f} deg alignment limit"
+                ),
+            )
+            self._console("Align star\nnear zenith")
+            return False
+
         session["state"] = "moving"
         session["message"] = f"GoTo {current_star['name']} sent"
         session["updated"] = time.time()
+        logger.info(
+            "Multi-align GoTo requested for %s: RA %.6f Dec %.6f",
+            current_star["name"],
+            float(current_star["ra"]) % 360.0,
+            float(current_star["dec"]),
+        )
         if not self.goto_target(
             float(current_star["ra"]),
             float(current_star["dec"]),
             refine_after_goto=False,
         ):
+            logger.warning(
+                "Multi-align GoTo failed for %s: RA %.6f Dec %.6f",
+                current_star["name"],
+                float(current_star["ra"]) % 360.0,
+                float(current_star["dec"]),
+            )
+            session["current_star"] = None
             self._align_session_status(
                 "failed", f"Could not GoTo {current_star['name']}"
             )
@@ -4155,6 +4446,8 @@ class MountControlIndi:
         mode: str = "manual",
         points: Any = None,
         star_name: str | None = None,
+        target_ra: Any = None,
+        target_dec: Any = None,
     ) -> bool:
         mode = (mode or "manual").strip().lower()
         if mode not in {"manual", "auto"}:
@@ -4174,6 +4467,39 @@ class MountControlIndi:
             "updated": time.time(),
         }
         session = self._multipoint_align
+        self._align_session_status("preparing", "Preparing multi-point alignment")
+
+        if not self._sync_multipoint_location_time(session):
+            session["active"] = False
+            session["updated"] = time.time()
+            return False
+
+        if not self._sync_multipoint_mount_to_pifinder(session):
+            session["active"] = False
+            session["updated"] = time.time()
+            return False
+
+        mount_align_started = self.start_mount_alignment_session(total_points)
+        session["mount_align_started"] = mount_align_started
+        session["mount_align_message"] = (
+            "Mount native alignment session started"
+            if mount_align_started
+            else "Mount native alignment session unavailable"
+        )
+
+        if target_ra is not None and target_dec is not None:
+            try:
+                session["auto_reference"] = {
+                    "ra": float(target_ra) % 360.0,
+                    "dec": float(target_dec),
+                }
+            except (TypeError, ValueError):
+                session["auto_reference"] = None
+        elif session.get("pifinder_sync_ra") is not None:
+            session["auto_reference"] = {
+                "ra": float(session["pifinder_sync_ra"]) % 360.0,
+                "dec": float(session["pifinder_sync_dec"]),
+            }
 
         if mode == "auto":
             star = self._align_auto_star(session)
@@ -4211,6 +4537,13 @@ class MountControlIndi:
 
         session["mode"] = "manual"
         self._set_current_align_star(session, star)
+        logger.info(
+            "Multi-align selected star %s, goto=%s, point %d/%d",
+            star["name"],
+            goto,
+            int(session.get("completed_points", 0)) + 1,
+            int(session.get("total_points", 0)),
+        )
         if goto:
             return self._align_goto_current_star(session)
 
@@ -4222,6 +4555,46 @@ class MountControlIndi:
             ),
         )
         self._console(f"Align star\n{star['name']}")
+        return True
+
+    def select_multipoint_align_target(
+        self,
+        ra_deg: Any,
+        dec_deg: Any,
+        name: str | None = None,
+        goto: bool = True,
+    ) -> bool:
+        session = self._current_align_session()
+        if session is None:
+            return False
+        try:
+            ra = float(ra_deg) % 360.0
+            dec = float(dec_deg)
+        except (TypeError, ValueError):
+            self._align_session_status("failed", "Invalid alignment target")
+            return False
+
+        current_star = self._set_current_align_star(
+            session,
+            {
+                "name": name or f"SkySafari Target {session['completed_points'] + 1}",
+                "ra": ra,
+                "dec": dec,
+                "mag": None,
+            },
+        )
+        session["mode"] = session.get("mode") or "manual"
+        if goto:
+            return self._align_goto_current_star(session)
+
+        self._align_session_status(
+            "adjust",
+            (
+                f"Selected {current_star['name']}; center the target manually, "
+                "then confirm the alignment point"
+            ),
+        )
+        self._console(f"Align target\n{current_star['name']}")
         return True
 
     def confirm_multipoint_align(
@@ -4253,11 +4626,6 @@ class MountControlIndi:
                         "mag": None,
                     },
                 )
-            else:
-                current_star = dict(current_star)
-                current_star["ra"] = ra_deg
-                current_star["dec"] = dec_deg
-                session["current_star"] = current_star
 
         if not current_star:
             self._align_session_status("waiting", "Select an alignment star first")
@@ -4278,6 +4646,7 @@ class MountControlIndi:
                 "ra": ra,
                 "dec": dec,
                 "source": source,
+                "mount_align_started": bool(session.get("mount_align_started")),
                 "confirmed_at": time.time(),
             }
         )
@@ -4403,11 +4772,20 @@ class MountControlIndi:
                 str(command.get("mode", "manual")),
                 command.get("points"),
                 command.get("star_name"),
+                command.get("target_ra"),
+                command.get("target_dec"),
             )
         elif command_type == "multipoint_align_select_star":
             self.select_multipoint_align_star(
                 str(command.get("star_name", "")),
                 bool(command.get("goto", False)),
+            )
+        elif command_type == "multipoint_align_goto_target":
+            self.select_multipoint_align_target(
+                command.get("ra"),
+                command.get("dec"),
+                command.get("name"),
+                True,
             )
         elif command_type == "multipoint_align_confirm":
             self.confirm_multipoint_align(
@@ -4418,7 +4796,11 @@ class MountControlIndi:
         elif command_type == "multipoint_align_cancel":
             self.cancel_multipoint_align()
         elif command_type == "sync_location_time":
-            self.sync_location_time()
+            self.sync_location_time(
+                include_default_location=bool(
+                    command.get("include_default_location", False)
+                )
+            )
         elif command_type == "park_action":
             self.park_action(str(command.get("action", "")))
         else:

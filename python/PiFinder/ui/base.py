@@ -573,6 +573,7 @@ class UIModule:
     }
     _GUIDE_MOTION_LEASE_SECONDS = 2.5
     _GUIDE_MOTION_KEEPALIVE_INTERVAL = 0.25
+    _GUIDE_MOTION_RESTART_INTERVAL = 8.0
 
     def _guide_mount_queue(self):
         try:
@@ -599,6 +600,23 @@ class UIModule:
             return
 
         now = time.monotonic()
+        next_restart_at = getattr(self, "_guide_next_motion_restart_at", 0.0)
+        if next_restart_at and now >= next_restart_at:
+            self._guide_send_mount(
+                {
+                    "type": "manual_movement",
+                    "direction": direction,
+                    "lease_seconds": self._GUIDE_MOTION_LEASE_SECONDS,
+                }
+            )
+            self._guide_next_motion_restart_at = (
+                now + self._GUIDE_MOTION_RESTART_INTERVAL
+            )
+            self._guide_next_motion_keepalive_at = (
+                now + self._GUIDE_MOTION_KEEPALIVE_INTERVAL
+            )
+            return
+
         next_keepalive_at = getattr(self, "_guide_next_motion_keepalive_at", 0.0)
         if now < next_keepalive_at:
             return
@@ -623,11 +641,16 @@ class UIModule:
         if direction == "stop":
             self._guide_active_motion_direction = None
             self._guide_next_motion_keepalive_at = 0.0
+            self._guide_next_motion_restart_at = 0.0
             return self._guide_send_mount({"type": "stop_movement"})
         if keepalive:
+            now = time.monotonic()
             self._guide_active_motion_direction = direction
             self._guide_next_motion_keepalive_at = (
-                time.monotonic() + self._GUIDE_MOTION_KEEPALIVE_INTERVAL
+                now + self._GUIDE_MOTION_KEEPALIVE_INTERVAL
+            )
+            self._guide_next_motion_restart_at = (
+                now + self._GUIDE_MOTION_RESTART_INTERVAL
             )
         return self._guide_send_mount(
             {

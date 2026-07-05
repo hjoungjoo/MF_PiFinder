@@ -441,25 +441,36 @@ def _has_solved_pointing(shared_state) -> bool:
 def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> bool:
     if not _mount_control_enabled():
         return False
-    if not _get_config_option("skysafari_indi_goto", False):
+    multipoint_active = _multipoint_align_active()
+    if not _get_config_option("skysafari_indi_goto", False) and not multipoint_active:
         logger.info("SkySafari INDI GoTo skipped; skysafari_indi_goto is off")
         return False
 
     has_solved_pointing = _has_solved_pointing(shared_state)
     refine_after_goto = bool(_get_config_option("indi_goto_refine_once", False))
+    if multipoint_active:
+        refine_after_goto = False
     if refine_after_goto and not has_solved_pointing:
         logger.info("SkySafari INDI GoTo queued without refine; PiFinder is not solved")
         refine_after_goto = False
 
-    command = {
-        "type": "goto_target",
-        "ra": ra_deg,
-        "dec": dec_deg,
-        "refine_after_goto": refine_after_goto,
-        "refine_accuracy_arcmin": float(
-            _get_config_option("indi_goto_refine_accuracy_arcmin", 10.0)
-        ),
-    }
+    if multipoint_active:
+        command = {
+            "type": "multipoint_align_goto_target",
+            "ra": ra_deg,
+            "dec": dec_deg,
+            "name": "SkySafari Target",
+        }
+    else:
+        command = {
+            "type": "goto_target",
+            "ra": ra_deg,
+            "dec": dec_deg,
+            "refine_after_goto": refine_after_goto,
+            "refine_accuracy_arcmin": float(
+                _get_config_option("indi_goto_refine_accuracy_arcmin", 10.0)
+            ),
+        }
     mountcontrol_queue.put(command)
     logger.info("SkySafari INDI GoTo queued: RA %.4f Dec %.4f", ra_deg, dec_deg)
     return True
@@ -766,6 +777,16 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
     sequence += 1
     last_target_j2000 = (comp_ra, comp_dec)
     logger.debug("Goto ra,dec in deg, J2000: %s, %s", comp_ra, comp_dec)
+    if _multipoint_align_active():
+        logger.info(
+            "SkySafari GoTo routed to INDI multi-point alignment without "
+            "push-to UI transition: RA %.4f Dec %.4f",
+            comp_ra,
+            comp_dec,
+        )
+        _queue_indi_goto_if_enabled(shared_state, comp_ra, comp_dec)
+        return "1"
+
     constellation = sf_utils.radec_to_constellation(comp_ra, comp_dec)
     obj = CompositeObject.from_dict(
         {
