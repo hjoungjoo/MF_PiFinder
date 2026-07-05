@@ -1,3 +1,4 @@
+import json
 import time
 from multiprocessing import Queue
 from types import SimpleNamespace
@@ -53,22 +54,13 @@ class DummyMountControl(MountControlIndi):
         )
         return True
 
-    def _ensure_backlash_safe_position(self):
-        return True
 
-
-class SafetyMountControl(MountControlIndi):
+class DummyCommandQueue:
     def __init__(self):
-        super().__init__(Queue(), Queue(), None)
-        self.statuses = []
-        self.stopped = False
+        self.commands = []
 
-    def _write_controller_status(self, state, message="", **extra):
-        self.statuses.append((state, message, extra))
-
-    def stop_mount(self):
-        self.stopped = True
-        return True
+    def put(self, command):
+        self.commands.append(command)
 
 
 class DummyPointing:
@@ -217,163 +209,99 @@ def test_set_backlash_sends_indi_backlash_properties():
     assert mount.backlash_de == 34
 
 
-def test_auto_backlash_fails_without_fresh_imu():
-    mount = DummyMountControl()
+def test_auto_backlash_enables_compass_when_needed(monkeypatch):
+    options = {}
 
-    assert not mount.auto_calculate_backlash("ra")
+    class FakeConfig:
+        def get_option(self, name, default=None):
+            return options.get(name, default)
 
+        def set_option(self, name, value):
+            options[name] = value
+
+    monkeypatch.setattr(mci.config, "Config", FakeConfig)
+    mount = DummyMountControl(shared_state=object())
+
+    assert not mount.auto_calculate_backlash()
+
+    assert options["imu_use_magnetometer"] is True
     assert mount._backlash_auto is not None
-    assert mount._backlash_auto["axis"] == "RA"
-    assert mount._backlash_auto["state"] == "failed"
-    assert len(mount.applied_properties) == 1
-    assert any(
-        "TELESCOPE_ABORT_MOTION.ABORT=On" in prop
-        for prop in mount.applied_properties[0]
-    )
+    assert mount._backlash_auto["auto_mode"] == mci.BACKLASH_AUTO_MODE_COMPASS_GOTO
+    assert mount._backlash_auto["state"] == "restart_required"
 
 
-def test_auto_backlash_refuses_compass_mode():
+def test_auto_backlash_uses_compass_goto_loop(monkeypatch):
+    class FakeConfig:
+        def get_option(self, name, default=None):
+            return True if name == "imu_use_magnetometer" else default
+
+        def set_option(self, name, value):
+            raise AssertionError("Compass setting should already be enabled")
+
+    monkeypatch.setattr(mci.config, "Config", FakeConfig)
     mount = DummyMountControl(shared_state=object())
     mount._current_imu_sample = lambda: SimpleNamespace(
         uses_magnetometer=True,
         fusion_mode="ndof",
-        calibration_status=(3, 3, 3, 3),
+        calibration_status=(3, 3, 1, 3),
     )
+    tracking_writes = []
+    mount.connect = lambda: True
+    mount.stop_mount = lambda: True
+    mount._read_tracking_enabled = lambda: True
+    mount.set_tracking = lambda enabled: tracking_writes.append(enabled) or True
 
-    assert not mount.auto_calculate_backlash("ra")
+    assert mount.auto_calculate_backlash(mode="compass_goto_loop")
 
     assert mount._backlash_auto is not None
-    assert mount._backlash_auto["state"] == "failed"
-    assert "Compass" in mount._backlash_auto["message"]
-    assert len(mount.applied_properties) == 1
-    assert any(
-        "TELESCOPE_ABORT_MOTION.ABORT=On" in prop
-        for prop in mount.applied_properties[0]
-    )
+    assert mount._backlash_auto["axis"] == "Mount frame"
+    assert mount._backlash_auto["auto_mode"] == mci.BACKLASH_AUTO_MODE_COMPASS_GOTO
+    assert mount._backlash_auto["state"] == "waiting_for_calibration"
+    assert mount._backlash_auto["repeats"] == mci.BACKLASH_COMPASS_GOTO_REPEATS
+    assert mount._backlash_auto["guide_rate"] == mci.BACKLASH_COMPASS_GUIDE_RATE
+    assert mount._backlash_auto["guide_rate_label"] == "Half-Max (est. 96x)"
+    assert mount._backlash_auto["imu_status"]["heading_ready"] is True
+    assert mount._backlash_auto["original_tracking"] is True
+    assert tracking_writes == [False]
 
 
-def test_auto_backlash_refuses_unstable_imu_baseline(monkeypatch):
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_TRACKING_SETTLE_SECONDS", 0)
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_STABILITY_RETRIES", 1)
+def test_auto_backlash_accepts_repeat_count():
     mount = DummyMountControl(shared_state=object())
-    mount.backlash_ra = 0
-    mount.backlash_de = 0
-    mount.slew_rate = 8
-    goto_calls = []
+    calls = {}
 
-    mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=False,
-        fusion_mode="imuplus",
-        calibration_status=(0, 3, 1, 0),
-    )
-    mount._wait_for_imu_sample = lambda timeout=3.0: object()
-    mount._wait_for_imu_stable = lambda seconds=3.0: {
-        "quat": object(),
-        "spread_deg": 0.2,
-        "threshold_deg": 0.8,
-        "samples": 3,
-    }
-    mount.refresh_backlash = lambda: (mount.backlash_ra, mount.backlash_de)
-    mount._read_driver_slew_rate = lambda: mount.slew_rate
-    mount._read_tracking_enabled = lambda: False
-    mount.set_slew_rate = lambda rate: True
-    mount.stop_mount = lambda: True
-    mount._read_current_position = lambda: (30.0, 20.0)
-    mount._goto_target_and_wait = lambda *args, **kwargs: goto_calls.append(args)
+    def fake_start(repeats=mci.BACKLASH_COMPASS_GOTO_REPEATS, offset_deg=2.0):
+        calls["repeats"] = repeats
+        calls["offset_deg"] = offset_deg
+        return True
 
-    assert not mount.auto_calculate_backlash("ra")
+    mount.start_backlash_compass_goto_loop = fake_start
 
-    assert mount._backlash_auto is not None
-    assert mount._backlash_auto["state"] == "failed"
-    assert "baseline noise" in mount._backlash_auto["message"]
-    assert goto_calls == []
+    assert mount.auto_calculate_backlash(mode="compass_goto_loop", repeats="7")
+
+    assert calls["repeats"] == 7
 
 
-def test_auto_backlash_stops_before_reset_when_imu_safety_fails(monkeypatch):
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_TRACKING_SETTLE_SECONDS", 0)
+def test_backlash_stop_request_aborts_motion_test(monkeypatch, tmp_path):
+    stop_request = tmp_path / "mount_control_stop_request.json"
+    stop_request.write_text(json.dumps({"requested_at": 1234.0}), encoding="utf-8")
+    monkeypatch.setattr(mci, "STOP_REQUEST_FILE", stop_request)
     mount = DummyMountControl(shared_state=object())
-    mount.backlash_ra = 12
-    mount.backlash_de = 34
-    mount.slew_rate = 6
-    roundtrips = []
-
-    mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=False,
-        fusion_mode="imuplus",
-        calibration_status=(3, 3, 1, 0),
-    )
-    mount._wait_for_imu_sample = lambda timeout=3.0: object()
-    mount.refresh_backlash = lambda: (mount.backlash_ra, mount.backlash_de)
-    mount._read_driver_slew_rate = lambda: mount.slew_rate
-    mount._read_tracking_enabled = lambda: False
-    mount.set_slew_rate = lambda rate: True
-    mount.stop_mount = lambda: True
-    mount._ensure_backlash_safe_position = lambda: False
-    mount._measure_backlash_goto_roundtrip = lambda *args, **kwargs: roundtrips.append(
-        args
-    )
-
-    assert not mount.auto_calculate_backlash("ra")
-
-    assert roundtrips == []
-    assert not any(
-        "Backlash.Backlash RA=0" in prop
-        for props in mount.applied_properties
-        for prop in props
-    )
-
-
-def test_backlash_safety_moves_to_safe_imu_altitude(monkeypatch):
-    mount = SafetyMountControl()
-    altaz_reads = iter([(5.0, 180.0), (45.0, 180.0)])
-    goto_calls = []
-
-    mount._backlash_auto = {}
-    mount._current_imu_altaz = lambda: next(altaz_reads)
-    mount._safe_backlash_target_radec = lambda az: (123.0, 45.0)
-    mount._goto_target_and_wait = (
-        lambda ra, dec, label, timeout: goto_calls.append((ra, dec, label, timeout))
-        or True
-    )
-    mount._wait_for_backlash_baseline = lambda label: {
-        "quat": object(),
-        "spread_deg": 0.01,
-        "threshold_deg": 0.04,
-        "samples": 5,
+    mount._backlash_auto = {
+        "auto_mode": mci.BACKLASH_AUTO_MODE_COMPASS_GOTO,
+        "state": "running",
     }
+    stop_calls = []
+    tracking_writes = []
+    mount.stop_mount = lambda: stop_calls.append(True) or True
+    mount.set_tracking = lambda enabled: tracking_writes.append(enabled) or True
 
-    assert mount._ensure_backlash_safe_position()
+    assert mount._abort_backlash_if_requested("test phase")
 
-    assert goto_calls == [
-        (
-            123.0,
-            45.0,
-            "Safe backlash test position",
-            mci.BACKLASH_AUTO_SAFE_GOTO_TIMEOUT_SECONDS,
-        )
-    ]
-    assert mount._backlash_auto["state"] == "running"
-    assert "confirmed" in mount._backlash_auto["message"]
-
-
-def test_backlash_safety_fails_when_safe_goto_is_blocked():
-    mount = SafetyMountControl()
-    goto_calls = []
-
-    mount._backlash_auto = {}
-    mount._current_imu_altaz = lambda: (5.0, 180.0)
-    mount._safe_backlash_target_radec = lambda az: (123.0, 45.0)
-    mount._goto_target_and_wait = (
-        lambda ra, dec, label, timeout: goto_calls.append((ra, dec, label, timeout))
-        and False
-    )
-
-    assert not mount._ensure_backlash_safe_position()
-
-    assert goto_calls
-    assert mount.stopped
-    assert mount._backlash_auto["state"] == "failed"
-    assert "OnStep may have blocked" in mount._backlash_auto["message"]
+    assert stop_calls == [True]
+    assert tracking_writes == [False]
+    assert mount._backlash_auto["state"] == "stopped"
+    assert "test phase" in mount._backlash_auto["message"]
+    assert not stop_request.exists()
 
 
 def test_backlash_goto_wait_requires_target_reached(monkeypatch):
@@ -399,227 +327,348 @@ def test_backlash_goto_wait_requires_target_reached(monkeypatch):
     assert "target was not reached" in mount._backlash_auto["message"]
 
 
-def test_auto_backlash_completes_with_mocked_goto_roundtrip(monkeypatch):
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_TRACKING_SETTLE_SECONDS", 0)
+def test_compass_goto_loop_records_initial_offset_and_repeats():
     mount = DummyMountControl(shared_state=object())
-    mount.backlash_ra = 5
-    mount.backlash_de = 7
-    mount.slew_rate = 4
-    slew_rates = []
-    roundtrips = []
+    mount._backlash_auto = {
+        "auto_mode": mci.BACKLASH_AUTO_MODE_COMPASS_GOTO,
+        "repeats": 2,
+        "offset_deg": 3.0,
+    }
+    current_position = [10.0, 20.0]
+    pulse_calls = []
+    guide_rates = []
 
+    mount.connect = lambda: True
     mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=False,
-        fusion_mode="imuplus",
-        calibration_status=(3, 3, 1, 0),
+        uses_magnetometer=True,
+        fusion_mode="ndof",
+        calibration_status=(3, 3, 1, 3),
+        is_calibrated=lambda: True,
     )
-    mount._wait_for_imu_sample = lambda timeout=3.0: object()
+    mount._current_imu_altaz = lambda: (current_position[1], current_position[0])
+    mount._imu_altaz_to_radec = lambda alt, az: (az, alt)
+    mount._home_park_status_fields = lambda: {"park_state": "Unparked"}
+    mount._read_tracking_enabled = lambda: False
+    mount._read_current_position = lambda: (current_position[0], current_position[1])
+    mount._backlash_mount_model = lambda: "eq"
+    mount.set_tracking = lambda enabled: True
+    mount._read_driver_guide_rate = lambda: (0.5, 0.5)
+    mount.set_guide_rate = lambda rate: guide_rates.append(rate) or True
+    mount.sync_mount = lambda ra, dec: current_position.__setitem__(slice(None), [ra % 360.0, dec]) or True
+    mount.stop_mount = lambda: True
 
-    def fake_roundtrip(cfg, repeat_index, move_degrees, **kwargs):
-        roundtrips.append((cfg["axis"], repeat_index, move_degrees))
-        return {
-            "valid": True,
-            "move_degrees": move_degrees,
-            "commanded_degrees": 5.0,
-            "outward_angle_deg": 5.0,
-            "reverse_angle_deg": 4.95,
-            "error_degrees": 0.05,
-            "estimated_arcsec": 180 + repeat_index,
-        }
-
-    mount._measure_backlash_goto_roundtrip = fake_roundtrip
-    mount.refresh_backlash = lambda: (mount.backlash_ra, mount.backlash_de)
-    mount._read_driver_slew_rate = lambda: mount.slew_rate
-    tracking_reads = [True, False]
-    mount._read_tracking_enabled = (
-        lambda: tracking_reads.pop(0) if tracking_reads else True
-    )
-
-    def fake_set_slew_rate(rate):
-        mount.slew_rate = rate
-        slew_rates.append(rate)
+    def fake_pulse(active_axis, positive, label, offset_deg):
+        pulse_calls.append((active_axis, positive, label, round(offset_deg, 3)))
+        signed_offset = offset_deg if positive else -offset_deg
+        if active_axis == "ra":
+            current_position[0] = (current_position[0] + signed_offset) % 360.0
+        elif active_axis == "dec":
+            current_position[1] += signed_offset
+        else:
+            raise AssertionError(f"Unexpected test axis {active_axis}")
         return True
 
-    mount.set_slew_rate = fake_set_slew_rate
-    mount.stop_mount = lambda: True
+    mount._backlash_pulse_axis_and_wait = fake_pulse
 
-    assert mount.auto_calculate_backlash("ra")
+    assert mount.continue_backlash_compass_goto_loop()
 
-    assert mount._backlash_auto is not None
-    assert mount._backlash_auto["axis"] == "RA"
-    assert mount._backlash_auto["state"] == "complete"
-    assert mount._backlash_auto["estimated_value"] == 182
-    assert len(mount._backlash_auto["measurements"]) == 3
-    assert roundtrips == [
-        ("RA", 1, 5.0),
-        ("RA", 2, 5.0),
-        ("RA", 3, 5.0),
-        ("RA", 1, 5.0),
-        ("RA", 2, 5.0),
-        ("RA", 3, 5.0),
+    records = mount._backlash_auto["coordinate_records"]
+    assert [record["label"] for record in records] == [
+        "initial RA",
+        "offset initial RA",
+        "return 1 RA",
+        "offset 1 RA",
+        "return 2 RA",
+        "offset 2 RA",
+        "initial DEC",
+        "offset initial DEC",
+        "return 1 DEC",
+        "offset 1 DEC",
+        "return 2 DEC",
+        "offset 2 DEC",
     ]
-    assert mount._backlash_auto["verification_average_residual_arcsec"] == 182
-    assert mount._backlash_auto["verification_error_rate_percent"] == 100.0
-    assert any(
-        "Backlash.Backlash RA=5" in prop
-        for props in mount.applied_properties
-        for prop in props
-    )
-    assert any(
-        "Backlash.Backlash DEC=7" in prop
-        for props in mount.applied_properties
-        for prop in props
-    )
-    assert any(
-        "Backlash.Backlash RA=182" in prop
-        for props in mount.applied_properties
-        for prop in props
-    )
-    assert any(
-        "TELESCOPE_TRACK_STATE.TRACK_OFF=On" in prop
-        for props in mount.applied_properties
-        for prop in props
-    )
-    assert any(
-        "TELESCOPE_TRACK_STATE.TRACK_ON=On" in prop
-        for props in mount.applied_properties
-        for prop in props
-    )
-    assert slew_rates[0] == 5
-    assert slew_rates[-1] == 4
+    assert pulse_calls == [
+        ("ra", False, "init RA", 3.0),
+        ("ra", True, "offset initial RA", 3.0),
+        ("ra", False, "return 1 RA", 3.0),
+        ("ra", True, "offset 1 RA", 3.0),
+        ("ra", False, "return 2 RA", 3.0),
+        ("ra", True, "offset 2 RA", 3.0),
+        ("dec", False, "init DEC", 3.0),
+        ("dec", True, "offset initial DEC", 3.0),
+        ("dec", False, "return 1 DEC", 3.0),
+        ("dec", True, "offset 1 DEC", 3.0),
+        ("dec", False, "return 2 DEC", 3.0),
+        ("dec", True, "offset 2 DEC", 3.0),
+    ]
+    assert records[0]["mount_ra"] == 7.0
+    assert records[0]["active_axis"] == "ra"
+    assert records[6]["active_axis"] == "dec"
+    assert records[-1]["mount_ra"] == 10.0
+    assert records[-1]["mount_dec"] == 20.0
+    assert mount.applied_properties == []
+    assert guide_rates == [mci.BACKLASH_COMPASS_GUIDE_RATE, (0.5, 0.5)]
+    assert records[0]["imu_status"]["heading_ready"] is True
+    assert records[0]["imu_status"]["fully_calibrated"] is False
+    analysis = mount._backlash_auto["directional_analysis"]
+    assert len(analysis["legs"]) == 10
+    assert analysis["direction_stats"]["offset"]["sample_count"] == 4
+    assert analysis["direction_stats"]["return"]["sample_count"] == 4
+    axis_direction_stats = analysis["axis_direction_stats"]
+    assert axis_direction_stats["ra_positive"]["display_label"] == "RA+"
+    assert axis_direction_stats["ra_positive"]["sample_count"] == 2
+    assert axis_direction_stats["ra_negative"]["display_label"] == "RA-"
+    assert axis_direction_stats["ra_negative"]["sample_count"] == 2
+    assert axis_direction_stats["dec_positive"]["display_label"] == "DEC+"
+    assert axis_direction_stats["dec_positive"]["sample_count"] == 2
+    assert axis_direction_stats["dec_negative"]["display_label"] == "DEC-"
+    assert axis_direction_stats["dec_negative"]["sample_count"] == 2
+    assert mount._backlash_auto["state"] == "complete"
 
 
-def test_auto_backlash_fails_when_goto_motion_is_not_measurable(monkeypatch):
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_TRACKING_SETTLE_SECONDS", 0)
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_GOTO_REPEATS", 1)
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_GOTO_MAX_DEGREES", 10.0)
+def test_backlash_pulse_guide_uses_timed_guide_properties(monkeypatch):
     mount = DummyMountControl(shared_state=object())
-    mount.backlash_ra = 0
-    mount.backlash_de = 0
-    mount.slew_rate = 8
-    move_degrees_seen = []
+    monkeypatch.setattr(mount, "_backlash_cancelable_sleep", lambda seconds, label: True)
+    stop_calls = []
+    mount.stop_mount = lambda: stop_calls.append(True) or True
 
-    mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=False,
-        fusion_mode="imuplus",
-        calibration_status=(0, 3, 1, 0),
-    )
-    mount._wait_for_imu_sample = lambda timeout=3.0: object()
-    mount.refresh_backlash = lambda: (mount.backlash_ra, mount.backlash_de)
-    mount._read_driver_slew_rate = lambda: mount.slew_rate
-    mount._read_tracking_enabled = lambda: False
-    mount.set_slew_rate = lambda rate: True
-    mount.stop_mount = lambda: True
+    assert mount._pulse_guide_move_and_wait("east", 1.234, "pulse test")
 
-    def fake_roundtrip(cfg, repeat_index, move_degrees, **kwargs):
-        move_degrees_seen.append(move_degrees)
-        return {
-            "valid": False,
-            "reason": "return_motion_too_small",
-            "move_degrees": move_degrees,
-            "commanded_degrees": move_degrees,
-            "reverse_angle_deg": 0.0,
-        }
-
-    mount._measure_backlash_goto_roundtrip = fake_roundtrip
-
-    assert not mount.auto_calculate_backlash("de")
-
-    assert mount._backlash_auto is not None
-    assert mount._backlash_auto["state"] == "failed"
-    assert "did not produce reliable IMU motion" in mount._backlash_auto["message"]
-    assert move_degrees_seen == [5.0, 10.0]
+    assert mount.applied_properties[-1] == [
+        "LX200 OnStepX.TELESCOPE_TIMED_GUIDE_WE.TIMED_GUIDE_W=1234"
+    ]
+    assert stop_calls == [True]
 
 
-def test_auto_backlash_retries_larger_angle_when_estimate_saturates(monkeypatch):
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_TRACKING_SETTLE_SECONDS", 0)
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_GOTO_REPEATS", 1)
+def test_backlash_pulse_duration_uses_default_half_max_rate():
     mount = DummyMountControl(shared_state=object())
-    mount.backlash_ra = 0
-    mount.backlash_de = 0
-    mount.slew_rate = 8
-    move_degrees_seen = []
 
-    mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=False,
-        fusion_mode="imuplus",
-        calibration_status=(0, 3, 1, 0),
-    )
-    mount._wait_for_imu_sample = lambda timeout=3.0: object()
-    mount.refresh_backlash = lambda: (mount.backlash_ra, mount.backlash_de)
-    mount._read_driver_slew_rate = lambda: mount.slew_rate
-    mount._read_tracking_enabled = lambda: False
-    mount.set_slew_rate = lambda rate: True
-    mount.stop_mount = lambda: True
+    duration = mount._backlash_pulse_duration_seconds(2.0)
 
-    def fake_roundtrip(cfg, repeat_index, move_degrees, **kwargs):
-        move_degrees_seen.append(move_degrees)
-        if move_degrees < 10:
-            return {
-                "valid": False,
-                "reason": "estimate_saturated",
-                "move_degrees": move_degrees,
-                "commanded_degrees": move_degrees,
-                "estimated_arcsec": mci.BACKLASH_MAX_VALUE,
-            }
-        return {
-            "valid": True,
-            "move_degrees": move_degrees,
-            "commanded_degrees": move_degrees,
-            "outward_angle_deg": move_degrees,
-            "reverse_angle_deg": move_degrees - 0.05,
-            "error_degrees": 0.05,
-            "estimated_arcsec": 180,
-        }
-
-    mount._measure_backlash_goto_roundtrip = fake_roundtrip
-
-    assert mount.auto_calculate_backlash("ra")
-
-    assert move_degrees_seen == [5.0, 10.0, 10.0, 10.0, 10.0]
-    assert mount._backlash_auto is not None
-    assert mount._backlash_auto["estimated_value"] == 180
+    assert round(duration, 2) == 4.99
 
 
-def test_auto_backlash_restores_tracking_off_after_goto_enables_it(monkeypatch):
-    monkeypatch.setattr(mci, "BACKLASH_AUTO_TRACKING_SETTLE_SECONDS", 0)
+def test_compass_goto_loop_plan_uses_altaz_offset_for_altaz_mount():
     mount = DummyMountControl(shared_state=object())
-    mount.backlash_ra = 0
-    mount.backlash_de = 0
-    mount.slew_rate = 6
-    tracking_reads = [False, True]
-    tracking_writes = []
+    mount._backlash_mount_model = lambda: "altaz"
+    mount._radec_to_altaz = lambda ra, dec: (40.0, 50.0)
 
-    mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=False,
-        fusion_mode="imuplus",
-        calibration_status=(0, 3, 1, 0),
+    def fake_altaz_to_radec(alt, az):
+        return (az + 100.0, alt - 10.0)
+
+    mount._altaz_to_radec = fake_altaz_to_radec
+
+    plan = mount._compass_goto_loop_plan(10.0, 20.0, 3.0, active_axis="az")
+
+    assert plan is not None
+    assert plan["movement_frame"] == "altaz"
+    assert plan["active_axis"] == "az"
+    assert plan["start_altitude"] == 40.0
+    assert plan["start_azimuth"] == 50.0
+    assert plan["target_altitude"] == 40.0
+    assert plan["target_azimuth"] == 53.0
+
+    start_command = mount._compass_goto_loop_command(plan, "start")
+    target_command = mount._compass_goto_loop_command(plan, "target")
+
+    assert start_command["target_ra"] == 150.0
+    assert start_command["target_dec"] == 30.0
+    assert target_command["target_ra"] == 153.0
+    assert target_command["target_dec"] == 30.0
+    assert target_command["target_altitude"] == 40.0
+    assert target_command["target_azimuth"] == 53.0
+
+    alt_plan = mount._compass_goto_loop_plan(10.0, 20.0, 3.0, active_axis="alt")
+    assert alt_plan is not None
+    assert alt_plan["active_axis"] == "alt"
+    assert alt_plan["target_altitude"] == 43.0
+    assert alt_plan["target_azimuth"] == 50.0
+    alt_target_command = mount._compass_goto_loop_command(alt_plan, "target")
+    assert alt_target_command["target_ra"] == 150.0
+    assert alt_target_command["target_dec"] == 33.0
+
+
+def test_compass_goto_loop_analysis_uses_actual_pre_goto_mount_start():
+    mount = DummyMountControl(shared_state=object())
+    ready_imu = {"heading_ready": True}
+    records = [
+        {
+            "sequence": 1,
+            "label": "initial",
+            "mount_ra": 100.0,
+            "mount_dec": 10.0,
+            "mount_altitude": 10.1,
+            "mount_azimuth": 20.2,
+            "imu_ra": 101.0,
+            "imu_dec": 11.0,
+            "imu_altitude": 11.0,
+            "imu_azimuth": 21.0,
+            "imu_status": ready_imu,
+        },
+        {
+            "sequence": 2,
+            "label": "offset initial",
+            "mount_ra": 103.0,
+            "mount_dec": 12.9,
+            "mount_altitude": 12.9,
+            "mount_azimuth": 23.1,
+            "imu_ra": 103.1,
+            "imu_dec": 13.1,
+            "imu_altitude": 13.1,
+            "imu_azimuth": 24.9,
+            "command_start_ra": 100.0,
+            "command_start_dec": 10.0,
+            "command_start_altitude": 10.0,
+            "command_start_azimuth": 20.0,
+            "target_ra": 103.0,
+            "target_dec": 13.0,
+            "target_altitude": 13.0,
+            "target_azimuth": 23.0,
+            "movement_frame": "altaz",
+            "imu_status": ready_imu,
+        },
+    ]
+
+    analysis = mount._compass_goto_loop_directional_analysis(records)
+    leg = analysis["legs"][0]
+
+    assert leg["command_start_altitude"] == 10.0
+    assert leg["command_start_azimuth"] == 20.0
+    assert round(leg["mount_start_altitude"], 1) == 10.1
+    assert round(leg["mount_start_azimuth"], 1) == 20.2
+    assert round(leg["mount_delta_altitude"], 1) == 2.8
+    assert round(leg["mount_delta_azimuth"], 1) == 2.9
+    assert round(leg["imu_delta_alt"], 1) == 2.1
+    assert round(leg["imu_delta_az"], 1) == 3.9
+    assert leg["motion_difference_alt_arcsec"] == 2520
+    assert leg["motion_difference_az_arcsec"] == -3600
+    assert leg["motion_backlash_alt_arcsec"] == 2520
+    assert leg["motion_backlash_az_arcsec"] == 3600
+
+
+def test_compass_goto_loop_analysis_groups_altaz_values_by_axis_direction():
+    mount = DummyMountControl(shared_state=object())
+    ready_imu = {"heading_ready": True}
+    records = [
+        {
+            "sequence": 1,
+            "label": "initial",
+            "mount_ra": 100.0,
+            "mount_dec": 10.0,
+            "mount_altitude": 10.0,
+            "mount_azimuth": 20.0,
+            "imu_ra": 100.0,
+            "imu_dec": 10.0,
+            "imu_altitude": 10.0,
+            "imu_azimuth": 20.0,
+            "imu_status": ready_imu,
+        },
+        {
+            "sequence": 2,
+            "label": "offset 1",
+            "mount_ra": 103.0,
+            "mount_dec": 13.0,
+            "mount_altitude": 13.0,
+            "mount_azimuth": 23.0,
+            "imu_ra": 102.9,
+            "imu_dec": 12.9,
+            "imu_altitude": 12.9,
+            "imu_azimuth": 22.8,
+            "target_altitude": 13.0,
+            "target_azimuth": 23.0,
+            "movement_frame": "altaz",
+            "imu_status": ready_imu,
+        },
+        {
+            "sequence": 3,
+            "label": "return 1",
+            "mount_ra": 100.0,
+            "mount_dec": 10.0,
+            "mount_altitude": 10.0,
+            "mount_azimuth": 20.0,
+            "imu_ra": 100.2,
+            "imu_dec": 10.2,
+            "imu_altitude": 10.2,
+            "imu_azimuth": 20.4,
+            "target_altitude": 10.0,
+            "target_azimuth": 20.0,
+            "movement_frame": "altaz",
+            "imu_status": ready_imu,
+        },
+    ]
+
+    analysis = mount._compass_goto_loop_directional_analysis(records)
+    axis_direction_stats = analysis["axis_direction_stats"]
+
+    assert axis_direction_stats["alt_positive"]["display_label"] == "ALT+"
+    assert axis_direction_stats["alt_positive"]["sample_count"] == 1
+    assert axis_direction_stats["az_positive"]["display_label"] == "AZ+"
+    assert axis_direction_stats["az_positive"]["sample_count"] == 1
+    assert axis_direction_stats["alt_negative"]["display_label"] == "ALT-"
+    assert axis_direction_stats["alt_negative"]["sample_count"] == 1
+    assert axis_direction_stats["az_negative"]["display_label"] == "AZ-"
+    assert axis_direction_stats["az_negative"]["sample_count"] == 1
+
+
+def test_compass_backlash_filter_uses_middle_40_percent_mean():
+    mount = DummyMountControl(shared_state=object())
+
+    stats = mount._filter_compass_backlash_values(
+        [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     )
-    mount._wait_for_imu_sample = lambda timeout=3.0: object()
-    mount.refresh_backlash = lambda: (mount.backlash_ra, mount.backlash_de)
-    mount._read_driver_slew_rate = lambda: mount.slew_rate
 
-    def fake_read_tracking():
-        if tracking_reads:
-            return tracking_reads.pop(0)
-        return False
+    assert stats["values"] == [40, 50, 60, 70]
+    assert stats["excluded_values"] == [10, 20, 30, 80, 90, 100]
+    assert stats["trim_low_count"] == 3
+    assert stats["trim_high_count"] == 3
+    assert stats["trimmed_mean"] == 55.0
 
-    mount._read_tracking_enabled = fake_read_tracking
-    mount.set_tracking = lambda enabled: tracking_writes.append(enabled) or True
-    mount.set_slew_rate = lambda rate: True
-    mount.stop_mount = lambda: True
-    mount._measure_backlash_goto_roundtrip = lambda *args, **kwargs: {
-        "valid": True,
-        "commanded_degrees": 5.0,
-        "outward_angle_deg": 5.0,
-        "reverse_angle_deg": 4.99,
-        "error_degrees": 0.01,
-        "estimated_arcsec": 36,
+
+def test_compass_goto_loop_restores_tracking_after_test():
+    mount = DummyMountControl(shared_state=object())
+    mount._backlash_auto = {
+        "auto_mode": mci.BACKLASH_AUTO_MODE_COMPASS_GOTO,
+        "repeats": 1,
+        "offset_deg": 3.0,
     }
+    current_position = [10.0, 20.0]
+    tracking_writes = []
+    guide_rates = []
 
-    assert mount.auto_calculate_backlash("ra")
+    mount._current_imu_sample = lambda: SimpleNamespace(
+        uses_magnetometer=True,
+        fusion_mode="ndof",
+        calibration_status=(3, 3, 1, 3),
+        is_calibrated=lambda: True,
+    )
+    mount.connect = lambda: True
+    mount._current_imu_altaz = lambda: (current_position[1], current_position[0])
+    mount._imu_altaz_to_radec = lambda alt, az: (az, alt)
+    mount._home_park_status_fields = lambda: {"park_state": "Unparked"}
+    mount._read_tracking_enabled = lambda: True
+    mount.set_tracking = lambda enabled: tracking_writes.append(enabled) or True
+    mount._read_driver_guide_rate = lambda: (0.5, 0.5)
+    mount.set_guide_rate = lambda rate: guide_rates.append(rate) or True
+    mount._read_current_position = lambda: (current_position[0], current_position[1])
+    mount._backlash_mount_model = lambda: "eq"
+    mount.sync_mount = lambda ra, dec: current_position.__setitem__(slice(None), [ra % 360.0, dec]) or True
+    mount.stop_mount = lambda: True
 
-    assert tracking_writes == [False]
+    def fake_pulse(active_axis, positive, label, offset_deg):
+        signed_offset = offset_deg if positive else -offset_deg
+        if active_axis == "ra":
+            current_position[0] = (current_position[0] + signed_offset) % 360.0
+        elif active_axis == "dec":
+            current_position[1] += signed_offset
+        return True
+
+    mount._backlash_pulse_axis_and_wait = fake_pulse
+
+    assert mount.continue_backlash_compass_goto_loop()
+
+    assert tracking_writes == [False, False, True]
+    assert guide_rates == [mci.BACKLASH_COMPASS_GUIDE_RATE, (0.5, 0.5)]
+    assert mount._backlash_auto["state"] == "complete"
 
 
 def test_read_tracking_enabled_retries_after_empty_property_snapshot(monkeypatch):
@@ -732,68 +781,6 @@ def test_radec_separation_arcmin_handles_small_offsets():
 def test_shortest_ra_delta_wraps_at_zero_hours():
     assert shortest_ra_delta_deg(1.0, 359.0) == 2.0
     assert shortest_ra_delta_deg(359.0, 1.0) == -2.0
-
-
-def test_backlash_eq_ra_plan_does_not_cos_correct():
-    mount = DummyMountControl()
-
-    eq_plan = mount._axis_goto_plan("ra", 10.0, 60.0, 5.0, "eq")
-    altaz_plan = mount._axis_goto_plan("ra", 10.0, 60.0, 5.0, "altaz")
-
-    assert eq_plan["target_ra"] == 15.0
-    assert eq_plan["commanded_degrees"] == 5.0
-    assert altaz_plan["target_ra"] > eq_plan["target_ra"]
-    assert 4.9 < altaz_plan["commanded_degrees"] < 5.1
-
-
-def test_backlash_eq_position_deltas_are_axis_specific():
-    mount = DummyMountControl()
-
-    dec_plan = mount._axis_goto_plan("dec", 10.0, 60.0, 5.0, "eq")
-
-    assert dec_plan["target_ra"] == 10.0
-    assert dec_plan["target_dec"] == 65.0
-    assert dec_plan["commanded_degrees"] == 5.0
-    assert dec_plan["signed_move_degrees"] == 5.0
-    assert (
-        mount._axis_position_delta_degrees("ra", 359.0, 10.0, 1.0, 10.0, "eq")
-        == 2.0
-    )
-    assert (
-        mount._axis_position_delta_degrees("dec", 10.0, 60.0, 10.0, 55.0, "eq")
-        == 5.0
-    )
-
-
-def test_backlash_roundtrip_uses_outward_position_for_reverse(monkeypatch):
-    mount = DummyMountControl(shared_state=object())
-    cfg = mount._backlash_axis_config("ra")
-    positions = [(10.0, 20.0), (16.0, 20.0), (11.0, 20.0)]
-    goto_calls = []
-    imu_angles = [5.0, 4.9]
-
-    mount._read_current_position = lambda: positions.pop(0)
-    mount._wait_for_backlash_baseline = lambda label: {
-        "quat": object(),
-        "spread_deg": 0.01,
-        "threshold_deg": 0.04,
-        "samples": 5,
-    }
-    mount._goto_target_and_wait = (
-        lambda ra, dec, label: goto_calls.append((ra, dec, label)) or True
-    )
-    mount._imu_angle_diff_deg = lambda quat: imu_angles.pop(0)
-
-    measurement = mount._measure_backlash_goto_roundtrip(
-        cfg, 1, 5.0, mount_model="eq"
-    )
-
-    assert measurement is not None
-    assert measurement["valid"]
-    assert goto_calls[0][0] == 15.0
-    assert goto_calls[1][0] == 11.0
-    assert goto_calls[1][0] != 10.0
-    assert measurement["estimated_arcsec"] == 360
 
 
 def test_goto_refine_syncs_fresh_solve_then_sends_one_regoto():

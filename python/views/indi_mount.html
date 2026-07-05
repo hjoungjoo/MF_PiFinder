@@ -2,6 +2,10 @@
 
 {% block content %}
 {% set onstep_device = onstep_device_name or '' %}
+{% set mount_type_text = mount_type|string %}
+{% set is_altaz_mount = 'eq' not in mount_type_text|lower and 'equatorial' not in mount_type_text|lower %}
+{% set backlash_axis1_label = 'AZ' if is_altaz_mount else 'RA' %}
+{% set backlash_axis2_label = 'ALT' if is_altaz_mount else 'DEC' %}
 <div class="row valign-wrapper" style="margin: 0px;">
   <div class="col s12">
     <h3 class="grey-text">{{ _('INDI') }}</h3>
@@ -360,8 +364,8 @@
         <tr>
           <td>{{ _('Current Backlash') }}</td>
           <td id="backlash_current_value">
-            RA {{ backlash_values.ra if backlash_values.ra != '' else '-' }} /
-            DE {{ backlash_values.de if backlash_values.de != '' else '-' }}
+            {{ backlash_axis1_label }} {{ backlash_values.ra if backlash_values.ra != '' else '-' }} /
+            {{ backlash_axis2_label }} {{ backlash_values.de if backlash_values.de != '' else '-' }}
           </td>
         </tr>
         <tr>
@@ -372,25 +376,61 @@
           </td>
         </tr>
         <tr>
+          <td>{{ _('IMU Calibration') }}</td>
+          <td id="imu_calibration_status">-</td>
+        </tr>
+        <tr>
+          <td>{{ _('Calculated Backlash') }}</td>
+          <td id="backlash_calculated_value">-</td>
+        </tr>
+        <tr>
           <td>{{ _('Auto Method') }}</td>
-          <td>{{ _('Current-position GoTo round trips; each return starts from the actual completed position, and physical axes may move together during RA/DEC tests.') }}</td>
+          <td>{{ _('Compass GoTo motion test; repeated return/offset moves are recorded and filtered by direction before recommending candidate backlash values.') }}</td>
+        </tr>
+        <tr>
+          <td>{{ _('Guide Rate') }}</td>
+          <td>{{ _('Half-Max (estimated 96x)') }}</td>
+        </tr>
+        <tr>
+          <td>{{ _('Motion Test Repeats') }}</td>
+          <td>
+            <input id="backlash_motion_repeats" type="number" min="1" max="50" step="1" value="{{ backlash_auto.get('repeats') or 10 }}" style="max-width: 7rem;">
+          </td>
+        </tr>
+        <tr>
+          <td>{{ _('Motion Test Details') }}</td>
+          <td id="backlash_auto_details" style="white-space: pre-line;">
+            {% set rec = backlash_auto.get('recommendation', {}) %}
+            {% if rec %}
+              {{ _('Filtered %(filtered)s / %(sample)s, warm-up %(warmup)s, excluded %(excluded)s, spread %(spread)s%%, direction delta %(delta)s%%') % {
+                'filtered': rec.get('filtered_count', '-'),
+                'sample': rec.get('sample_count', '-'),
+                'warmup': rec.get('warmup_discarded_count', '-'),
+                'excluded': rec.get('excluded_count', '-'),
+                'spread': rec.get('spread_percent', '-'),
+                'delta': rec.get('direction_delta_percent', '-')
+              } }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
         </tr>
       </tbody>
     </table>
     <form action="/indi/backlash" method="post" id="indi_backlash_form" class="col s12">
       <div class="row">
         <div class="input-field col s12 m6">
-          <input id="backlash_ra" type="number" min="0" max="3600" step="1" name="backlash_ra" value="{{ backlash_values.ra }}">
-          <label for="backlash_ra" class="active">{{ _('RA Backlash') }}</label>
+          <input id="backlash_ra" type="number" min="0" max="3600" step="1" name="backlash_ra" data-axis="ra" value="{{ backlash_values.ra }}">
+          <label for="backlash_ra" class="active" id="backlash_axis1_label">{{ _('%(axis)s Backlash') % {'axis': backlash_axis1_label} }}</label>
         </div>
         <div class="input-field col s12 m6">
-          <input id="backlash_de" type="number" min="0" max="3600" step="1" name="backlash_de" value="{{ backlash_values.de }}">
-          <label for="backlash_de" class="active">{{ _('DEC Backlash') }}</label>
+          <input id="backlash_de" type="number" min="0" max="3600" step="1" name="backlash_de" data-axis="de" value="{{ backlash_values.de }}">
+          <label for="backlash_de" class="active" id="backlash_axis2_label">{{ _('%(axis)s Backlash') % {'axis': backlash_axis2_label} }}</label>
         </div>
       </div>
       <div class="row">
-        <button type="button" class="btn indi-backlash-auto" data-axis="ra">{{ _('Auto RA') }}</button>
-        <button type="button" class="btn indi-backlash-auto" data-axis="de">{{ _('Auto DEC') }}</button>
+        <button type="button" class="btn indi-backlash-auto" id="backlash_motion_start">{{ _('Start Motion Test') }}</button>
+        <button type="button" class="btn" id="backlash_motion_control">{{ _('Continue Motion Test') }}</button>
         <button type="submit" class="btn">{{ _('Save Backlash') }}</button>
       </div>
     </form>
@@ -427,6 +467,11 @@ document.addEventListener('DOMContentLoaded', function() {
   var locationTimeForm = document.getElementById('location_time_form');
   var utcTimeInput = document.getElementById('utc_time');
   var backlashStatus = document.getElementById('backlash_auto_status');
+  var backlashDetails = document.getElementById('backlash_auto_details');
+  var backlashCalculated = document.getElementById('backlash_calculated_value');
+  var backlashMotionStart = document.getElementById('backlash_motion_start');
+  var backlashMotionControl = document.getElementById('backlash_motion_control');
+  var backlashMotionRepeats = document.getElementById('backlash_motion_repeats');
   var serverUtcBaseMs = null;
   var serverUtcBasePerf = null;
   var initializedNetworkManual = false;
@@ -434,6 +479,13 @@ document.addEventListener('DOMContentLoaded', function() {
   var activeMotionDirection = null;
   var motionKeepaliveTimer = null;
   var onstepDeviceName = {{ onstep_device_name|default('', true)|tojson }};
+  var pifinderMountType = {{ mount_type|default('', true)|tojson }};
+  var initialImuStatus = {{ imu_status|default({}, true)|tojson }};
+  var initialBacklashAuto = {{ mount_control_status.get('backlash_auto', {})|default({}, true)|tojson }};
+  var backlashLabelText = {{ _('Backlash')|tojson }};
+  var backlashStartLabel = {{ _('Start Motion Test')|tojson }};
+  var backlashContinueLabel = {{ _('Continue Motion Test')|tojson }};
+  var backlashStopLabel = {{ _('STOP')|tojson }};
   var mountStateLabels = {
     'At Home': {{ _('At Home')|tojson }},
     'Not at Home': {{ _('Not at Home')|tojson }},
@@ -444,6 +496,15 @@ document.addEventListener('DOMContentLoaded', function() {
     'Parking Failed': {{ _('Parking Failed')|tojson }},
     'Unknown': {{ _('Unknown')|tojson }}
   };
+
+  function isAltAzMount() {
+    var normalized = String(pifinderMountType || '').toLowerCase();
+    return normalized.indexOf('eq') === -1 && normalized.indexOf('equatorial') === -1;
+  }
+
+  function backlashAxisLabels() {
+    return isAltAzMount() ? ['AZ', 'ALT'] : ['RA', 'DEC'];
+  }
 
   function onstepKey(propertyName) {
     return onstepDeviceName + '.' + propertyName;
@@ -457,6 +518,55 @@ document.addEventListener('DOMContentLoaded', function() {
     if (actionStatus) {
       actionStatus.textContent = message || '';
     }
+  }
+
+  function setButtonEnabled(button, enabled) {
+    if (!button) {
+      return;
+    }
+    button.disabled = !enabled;
+    button.classList.toggle('disabled', !enabled);
+  }
+
+  function setButtonVisible(button, visible) {
+    if (!button) {
+      return;
+    }
+    button.style.display = visible ? '' : 'none';
+  }
+
+  function updateBacklashButtons(autoInfo) {
+    var state = String((autoInfo || {}).state || '').toLowerCase();
+    var waitingForCalibration = state === 'waiting_for_calibration';
+    var running = state === 'running' || state === 'starting';
+    var busy = waitingForCalibration || running;
+
+    if (backlashMotionStart) {
+      backlashMotionStart.textContent = backlashStartLabel;
+      setButtonEnabled(backlashMotionStart, !busy);
+    }
+
+    if (!backlashMotionControl) {
+      return;
+    }
+    if (waitingForCalibration) {
+      backlashMotionControl.textContent = backlashContinueLabel;
+      backlashMotionControl.dataset.action = 'continue';
+      setButtonVisible(backlashMotionControl, true);
+      setButtonEnabled(backlashMotionControl, true);
+      return;
+    }
+    if (running) {
+      backlashMotionControl.textContent = backlashStopLabel;
+      backlashMotionControl.dataset.action = 'stop';
+      setButtonVisible(backlashMotionControl, true);
+      setButtonEnabled(backlashMotionControl, true);
+      return;
+    }
+    backlashMotionControl.textContent = backlashContinueLabel;
+    backlashMotionControl.dataset.action = 'continue';
+    setButtonEnabled(backlashMotionControl, false);
+    setButtonVisible(backlashMotionControl, false);
   }
 
   function postIndiAction(url, data) {
@@ -478,6 +588,19 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  function backlashRepeatCount() {
+    if (!backlashMotionRepeats) {
+      return 10;
+    }
+    var repeats = parseInt(backlashMotionRepeats.value, 10);
+    if (!Number.isFinite(repeats)) {
+      repeats = 10;
+    }
+    repeats = Math.max(1, Math.min(50, repeats));
+    backlashMotionRepeats.value = String(repeats);
+    return repeats;
+  }
+
   function textOrDash(value) {
     if (value === undefined || value === null || value === '') {
       return '-';
@@ -485,11 +608,208 @@ document.addEventListener('DOMContentLoaded', function() {
     return value;
   }
 
+  function firstPresent() {
+    for (var index = 0; index < arguments.length; index += 1) {
+      if (
+        arguments[index] !== undefined &&
+        arguments[index] !== null &&
+        arguments[index] !== ''
+      ) {
+        return arguments[index];
+      }
+    }
+    return '';
+  }
+
   function valueOrEmpty(value) {
     if (value === undefined || value === null) {
       return '';
     }
     return value;
+  }
+
+  function formatNumber(value, digits) {
+    var number = Number(value);
+    if (!Number.isFinite(number)) {
+      return '';
+    }
+    return number.toFixed(digits);
+  }
+
+  function formatSignedNumber(value, digits) {
+    var text = formatNumber(value, digits);
+    if (text === '') {
+      return '';
+    }
+    return Number(value) > 0 ? '+' + text : text;
+  }
+
+  function formatArcsec(value) {
+    if (value === undefined || value === null || value === '') {
+      return '-';
+    }
+    return value + '"';
+  }
+
+  function formatBacklashDirectionResult(label, stats) {
+    if (!stats) {
+      return '';
+    }
+    var value = firstPresent(
+      stats.recommended_trimmed_mean,
+      stats.trimmed_mean,
+      stats.recommended_median,
+      stats.median,
+      stats.recommended_p75,
+      stats.p75
+    );
+    if (value === '') {
+      return '';
+    }
+    return label + ' ' + formatArcsec(value);
+  }
+
+  function orderedAxisDirectionKeys(axisDirectional) {
+    var preferredOrder = [
+      'az_positive',
+      'az_negative',
+      'alt_positive',
+      'alt_negative',
+      'ra_positive',
+      'ra_negative',
+      'dec_positive',
+      'dec_negative'
+    ];
+    var keys = Object.keys(axisDirectional || {});
+    return preferredOrder.filter(function(key) {
+      return keys.indexOf(key) !== -1;
+    }).concat(keys.filter(function(key) {
+      return preferredOrder.indexOf(key) === -1;
+    }).sort());
+  }
+
+  function axisDirectionDisplayLabel(key, stats) {
+    if (stats && stats.display_label) {
+      return stats.display_label;
+    }
+    return key
+      .replace('_positive', '+')
+      .replace('_negative', '-')
+      .replace('alt', 'ALT')
+      .replace('az', 'AZ')
+      .replace('dec', 'DEC')
+      .replace('ra', 'RA');
+  }
+
+  function recommendedBacklashValue(stats) {
+    return firstPresent(
+      stats.recommended_trimmed_mean,
+      stats.trimmed_mean,
+      stats.recommended_median,
+      stats.median,
+      stats.recommended_p75,
+      stats.p75
+    );
+  }
+
+  function backlashAnalysisUsesAltAz(autoInfo) {
+    var records = autoInfo.coordinate_records || [];
+    for (var index = records.length - 1; index >= 0; index -= 1) {
+      if (records[index].movement_frame) {
+        return records[index].movement_frame === 'altaz';
+      }
+    }
+    return isAltAzMount();
+  }
+
+  function backlashAxisStatsForMode(stats, useAltAz) {
+    if (useAltAz) {
+      return [
+        ['AZ', stats.az_motion_backlash || {}],
+        ['ALT', stats.alt_motion_backlash || {}]
+      ];
+    }
+    return [
+      ['RA', stats.ra_motion_backlash || {}],
+      ['DEC', stats.dec_motion_backlash || {}]
+    ];
+  }
+
+  function formatBacklashAxisStats(stats, useAltAz) {
+    var parts = [];
+    backlashAxisStatsForMode(stats, useAltAz).forEach(function(item) {
+      var value = recommendedBacklashValue(item[1]);
+      if (value !== '') {
+        parts.push(item[0] + ' ' + formatArcsec(value));
+      }
+    });
+    return parts.join(', ');
+  }
+
+  function formatBacklashCalculatedValue(autoInfo) {
+    var analysis = autoInfo.directional_analysis || {};
+    var axisDirectional = analysis.axis_direction_stats || {};
+    var axisParts = [];
+    orderedAxisDirectionKeys(axisDirectional).forEach(function(key) {
+      var stats = axisDirectional[key] || {};
+      var value = recommendedBacklashValue(stats);
+      if (value !== '') {
+        axisParts.push(axisDirectionDisplayLabel(key, stats) + ' ' + formatArcsec(value));
+      }
+    });
+    if (axisParts.length) {
+      return axisParts.join(' / ');
+    }
+
+    var directional = analysis.direction_stats || {};
+    var useAltAz = backlashAnalysisUsesAltAz(autoInfo);
+    var axisFallbackParts = [];
+    ['offset', 'return'].forEach(function(key) {
+      var text = formatBacklashAxisStats(directional[key] || {}, useAltAz);
+      if (text) {
+        axisFallbackParts.push(key.charAt(0).toUpperCase() + key.slice(1) + ' ' + text);
+      }
+    });
+    if (axisFallbackParts.length) {
+      return axisFallbackParts.join(' / ');
+    }
+
+    var parts = [];
+    var offsetText = formatBacklashDirectionResult('Offset', directional.offset);
+    var returnText = formatBacklashDirectionResult('Return', directional.return);
+    if (offsetText) {
+      parts.push(offsetText);
+    }
+    if (returnText) {
+      parts.push(returnText);
+    }
+    Object.keys(directional).sort().forEach(function(key) {
+      if ((key === 'offset' && offsetText) || (key === 'return' && returnText)) {
+        return;
+      }
+      var text = formatBacklashDirectionResult(key, directional[key]);
+      if (text) {
+        parts.push(text);
+      }
+    });
+    if (parts.length) {
+      return parts.join(' / ');
+    }
+    if (autoInfo.estimated_value !== undefined && autoInfo.estimated_value !== null) {
+      return textOrDash(autoInfo.axis || autoInfo.value_key || '{{ _("Estimated") }}') +
+        ' ' + formatArcsec(autoInfo.estimated_value);
+    }
+    return '-';
+  }
+
+  function formatRaDec(ra, dec, digits) {
+    return 'RA ' + textOrDash(formatNumber(ra, digits)) +
+      ' / DEC ' + textOrDash(formatNumber(dec, digits));
+  }
+
+  function formatAltAz(alt, az, digits) {
+    return 'Alt ' + textOrDash(formatNumber(alt, digits)) +
+      ' / Az ' + textOrDash(formatNumber(az, digits));
   }
 
   function formatLocation(lat, lon, elev) {
@@ -508,6 +828,34 @@ document.addEventListener('DOMContentLoaded', function() {
     if (element) {
       element.value = value;
     }
+  }
+
+  function formatImuCalibrationStatus(imuStatus) {
+    if (!imuStatus || !imuStatus.available) {
+      return '{{ _("Unavailable") }}';
+    }
+    var calibration = imuStatus.calibration_status || [];
+    var calibrationText = calibration.length >= 4
+      ? 'SYS ' + calibration[0] +
+        ' / GYRO ' + calibration[1] +
+        ' / ACCEL ' + calibration[2] +
+        ' / MAG ' + calibration[3]
+      : 'Status ' + textOrDash(imuStatus.status);
+    var modeText = String(imuStatus.fusion_mode || 'unknown').toUpperCase();
+    var readyText = imuStatus.uses_magnetometer
+      ? (imuStatus.heading_ready ? '{{ _("Heading ready") }}' : '{{ _("Heading waiting") }}')
+      : '{{ _("Compass off") }}';
+    var fullText = imuStatus.fully_calibrated ? '{{ _("Full") }}' : '{{ _("Partial") }}';
+    var movingText = imuStatus.moving ? '{{ _("moving") }}' : '{{ _("stable") }}';
+    var ageText = imuStatus.age_seconds !== undefined && imuStatus.age_seconds !== null
+      ? ', ' + textOrDash(imuStatus.age_seconds) + 's'
+      : '';
+    return modeText + ', ' + calibrationText + ', ' + readyText +
+      ', ' + fullText + ', ' + movingText + ageText;
+  }
+
+  function updateImuCalibrationStatus(imuStatus) {
+    setText('imu_calibration_status', formatImuCalibrationStatus(imuStatus));
   }
 
   function pad2(value) {
@@ -553,6 +901,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (payload.onstep_device_name) {
       onstepDeviceName = payload.onstep_device_name;
     }
+    if (payload.mount_type) {
+      pifinderMountType = payload.mount_type;
+    }
 
     setInputValue('latitude', valueOrEmpty(pifinder.latitude));
     setInputValue('longitude', valueOrEmpty(pifinder.longitude));
@@ -582,6 +933,7 @@ document.addEventListener('DOMContentLoaded', function() {
     );
     setText('onstep_utc_time_value', textOrDash(onstep[onstepKey('TIME_UTC.UTC')]));
     updateBacklashValues(payload.backlash_values || {}, payload.mount_control_status || {});
+    updateImuCalibrationStatus(payload.imu_status || {});
     updateMultipointAlign(payload.multipoint_align || {});
     setText('onstep_connection_value', textOrDash(onstep[onstepKey('CONNECTION.CONNECT')]));
     setText('onstep_serial_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_SERIAL')]));
@@ -605,31 +957,148 @@ document.addEventListener('DOMContentLoaded', function() {
     M.updateTextFields();
   }
 
+  function formatBacklashEstimateDetails(autoInfo) {
+    var records = autoInfo.coordinate_records || [];
+    if (records.length) {
+      var useAltAz = backlashAnalysisUsesAltAz(autoInfo);
+      var recordLines = [
+        '{{ _("Mode") }}: ' + (autoInfo.auto_mode || autoInfo.method || '-'),
+        '{{ _("Records") }}: ' + records.length
+      ];
+      var directional = (autoInfo.directional_analysis || {}).direction_stats || {};
+      var axisDirectional = (autoInfo.directional_analysis || {}).axis_direction_stats || {};
+      var axisDirectionLines = [];
+      orderedAxisDirectionKeys(axisDirectional).forEach(function(key) {
+        var stats = axisDirectional[key] || {};
+        var value = recommendedBacklashValue(stats);
+        if (value === '') {
+          return;
+        }
+        axisDirectionLines.push(
+          axisDirectionDisplayLabel(key, stats) + ' ' +
+          '{{ _("calculated") }} ' + formatArcsec(value) +
+          ', {{ _("median") }} ' + formatArcsec(firstPresent(stats.recommended_median, stats.median)) +
+          ', p75 ' + formatArcsec(firstPresent(stats.recommended_p75, stats.p75)) +
+          ', {{ _("filtered") }} ' + textOrDash(stats.filtered_count) + '/' + textOrDash(stats.sample_count)
+        );
+      });
+      if (axisDirectionLines.length) {
+        recordLines.push('{{ _("By movement direction") }}:');
+        axisDirectionLines.forEach(function(line) {
+          recordLines.push('  ' + line);
+        });
+      }
+      Object.keys(directional).sort().forEach(function(key) {
+        var stats = directional[key] || {};
+        var raStats = stats.ra_motion_backlash || {};
+        var decStats = stats.dec_motion_backlash || {};
+        var altStats = stats.alt_motion_backlash || {};
+        var azStats = stats.az_motion_backlash || {};
+        recordLines.push(
+          key + ': ' +
+          '{{ _("calculated") }} ' + formatArcsec(firstPresent(stats.recommended_trimmed_mean, stats.trimmed_mean)) +
+          ', {{ _("median") }} ' + formatArcsec(firstPresent(stats.recommended_median, stats.median)) +
+          ', p75 ' + formatArcsec(firstPresent(stats.recommended_p75, stats.p75)) +
+          ', {{ _("filtered") }} ' + textOrDash(stats.filtered_count) + '/' + textOrDash(stats.sample_count) +
+          ', threshold skipped ' + textOrDash(stats.threshold_skipped_count) +
+          ', {{ _("IMU skipped") }} ' + textOrDash(stats.imu_skipped_count) +
+          ', trim ' + textOrDash(stats.trim_low_count) + '/' + textOrDash(stats.trim_high_count) +
+          ', {{ _("range") }} ' + formatArcsec(stats.normal_min) + '-' + formatArcsec(stats.normal_max)
+        );
+        if (useAltAz) {
+          recordLines.push(
+            '  Axis: AZ ' + formatArcsec(firstPresent(azStats.recommended_trimmed_mean, azStats.trimmed_mean)) +
+            ', ALT ' + formatArcsec(firstPresent(altStats.recommended_trimmed_mean, altStats.trimmed_mean))
+          );
+        } else {
+          recordLines.push(
+            '  Axis: RA ' + formatArcsec(firstPresent(raStats.recommended_trimmed_mean, raStats.trimmed_mean)) +
+            ', DEC ' + formatArcsec(firstPresent(decStats.recommended_trimmed_mean, decStats.trimmed_mean))
+          );
+        }
+      });
+      var latestRecord = records[records.length - 1];
+      if (latestRecord) {
+        if (useAltAz) {
+          recordLines.push(
+            '{{ _("Latest") }}: ' + latestRecord.sequence + ' ' + latestRecord.label +
+            ': M AZ ' + textOrDash(formatNumber(latestRecord.mount_azimuth, 4)) +
+            ' ALT ' + textOrDash(formatNumber(latestRecord.mount_altitude, 4)) +
+            ' / IMU AZ ' + textOrDash(formatNumber(latestRecord.imu_azimuth, 2)) +
+            ' ALT ' + textOrDash(formatNumber(latestRecord.imu_altitude, 2))
+          );
+        } else {
+          recordLines.push(
+            '{{ _("Latest") }}: ' + latestRecord.sequence + ' ' + latestRecord.label +
+            ': M RA ' + textOrDash(formatNumber(latestRecord.mount_ra, 4)) +
+            ' DEC ' + textOrDash(formatNumber(latestRecord.mount_dec, 4)) +
+            ' / IMU RA ' + textOrDash(formatNumber(latestRecord.imu_ra, 2)) +
+            ' DEC ' + textOrDash(formatNumber(latestRecord.imu_dec, 2))
+          );
+        }
+      }
+      var legs = (autoInfo.directional_analysis || {}).legs || [];
+      if (legs.length) {
+        var thresholdSkipped = legs.filter(function(leg) {
+          return leg.motion_difference_threshold_rejected;
+        }).length;
+        var imuSkipped = legs.filter(function(leg) {
+          return !leg.imu_heading_ready && !leg.warmup;
+        }).length;
+        recordLines.push(
+          '{{ _("Legs") }}: ' + legs.length +
+          ', threshold skipped ' + thresholdSkipped +
+          ', {{ _("IMU skipped") }} ' + imuSkipped
+        );
+      }
+      return recordLines.join('\n');
+    }
+    var rec = autoInfo.recommendation || {};
+    if (!rec.sample_count) {
+      return '-';
+    }
+    var lines = [
+      '{{ _("Mode") }}: ' + (autoInfo.auto_mode || autoInfo.method || '-'),
+      '{{ _("Confidence") }}: ' + (autoInfo.confidence || '-'),
+      '{{ _("Filtered") }}: ' + textOrDash(rec.filtered_count) + ' / ' + textOrDash(rec.sample_count) +
+        ', {{ _("warm-up") }} ' + textOrDash(rec.warmup_discarded_count) +
+        ', {{ _("excluded") }} ' + textOrDash(rec.excluded_count),
+      '{{ _("Spread") }}: ' + textOrDash(rec.spread_percent) + '% / ' +
+        '{{ _("direction delta") }} ' + textOrDash(rec.direction_delta_percent) + '%'
+    ];
+    var directionStats = rec.direction_stats || {};
+    Object.keys(directionStats).sort().forEach(function(key) {
+      var stats = directionStats[key] || {};
+      lines.push(
+        key + ': ' +
+        '{{ _("median") }} ' + textOrDash(stats.median) +
+        ', p75 ' + textOrDash(stats.p75) +
+        ', {{ _("range") }} ' + textOrDash(stats.min) + '-' + textOrDash(stats.max)
+      );
+    });
+    return lines.join('\n');
+  }
+
   function updateBacklashValues(values, mountStatus) {
     var raValue = valueOrEmpty(values.ra);
     var deValue = valueOrEmpty(values.de);
+    var axisLabels = backlashAxisLabels();
+    setText('backlash_axis1_label', axisLabels[0] + ' ' + backlashLabelText);
+    setText('backlash_axis2_label', axisLabels[1] + ' ' + backlashLabelText);
     setText(
       'backlash_current_value',
-      'RA ' + textOrDash(raValue) + ' / DE ' + textOrDash(deValue)
+      axisLabels[0] + ' ' + textOrDash(raValue) +
+        ' / ' + axisLabels[1] + ' ' + textOrDash(deValue)
     );
-    if (raValue !== '') {
-      setInputValue('backlash_ra', raValue);
-    }
-    if (deValue !== '') {
-      setInputValue('backlash_de', deValue);
-    }
     if (backlashStatus) {
       var autoInfo = mountStatus.backlash_auto || {};
       backlashStatus.textContent = autoInfo.message || mountStatus.message || '-';
-      if (autoInfo.state === 'complete' && autoInfo.estimated_value !== undefined) {
-        var estimatedValue = valueOrEmpty(autoInfo.estimated_value);
-        if (estimatedValue !== '') {
-          if (autoInfo.value_key === 'backlash_ra' || autoInfo.axis === 'RA') {
-            setInputValue('backlash_ra', estimatedValue);
-          } else if (autoInfo.value_key === 'backlash_de' || autoInfo.axis === 'DE') {
-            setInputValue('backlash_de', estimatedValue);
-          }
-        }
+      updateBacklashButtons(autoInfo);
+      if (backlashCalculated) {
+        backlashCalculated.textContent = formatBacklashCalculatedValue(autoInfo);
+      }
+      if (backlashDetails) {
+        backlashDetails.textContent = formatBacklashEstimateDetails(autoInfo);
       }
     }
   }
@@ -674,6 +1143,9 @@ document.addEventListener('DOMContentLoaded', function() {
       refreshIndiState(true);
     });
   }
+
+  updateImuCalibrationStatus(initialImuStatus);
+  updateBacklashButtons(initialBacklashAuto);
 
   if (utcTimeInput) {
     setServerUtcBase(utcTimeInput.value);
@@ -736,25 +1208,76 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  document.querySelectorAll('.indi-backlash-auto').forEach(function(button) {
-    button.addEventListener('click', function(event) {
+  if (backlashMotionStart) {
+    backlashMotionStart.addEventListener('click', function(event) {
       event.preventDefault();
       if (backlashStatus) {
         backlashStatus.textContent = '{{ _("Starting auto calculation") }}';
       }
-      postIndiAction('/indi/backlash/auto', {axis: button.dataset.axis})
+      updateBacklashButtons({state: 'starting'});
+      postIndiAction('/indi/backlash/auto', {
+          mode: 'compass_goto_loop',
+          repeats: backlashRepeatCount()
+        })
         .then(function(payload) {
           if (backlashStatus) {
             backlashStatus.textContent = payload.message || '{{ _("Auto calculation requested") }}';
           }
+          refreshIndiState(false);
         })
         .catch(function(error) {
           if (backlashStatus) {
             backlashStatus.textContent = error.message;
           }
+          updateBacklashButtons({state: 'failed'});
         });
     });
-  });
+  }
+  if (backlashMotionControl) {
+    backlashMotionControl.addEventListener('click', function(event) {
+      event.preventDefault();
+      var action = backlashMotionControl.dataset.action || 'continue';
+      if (action === 'stop') {
+        if (backlashStatus) {
+          backlashStatus.textContent = '{{ _("Stopping motion test") }}';
+        }
+        setButtonEnabled(backlashMotionControl, false);
+        postIndiAction('/indi/backlash/auto/stop', {})
+          .then(function(payload) {
+            if (backlashStatus) {
+              backlashStatus.textContent = payload.message || '{{ _("Backlash motion test stop requested") }}';
+            }
+            updateBacklashButtons({state: 'stopped'});
+            refreshIndiState(false);
+          })
+          .catch(function(error) {
+            if (backlashStatus) {
+              backlashStatus.textContent = error.message;
+            }
+            setButtonEnabled(backlashMotionControl, true);
+          });
+        return;
+      }
+      if (backlashStatus) {
+        backlashStatus.textContent = '{{ _("Continue requested") }}';
+      }
+      setButtonEnabled(backlashMotionControl, false);
+      postIndiAction('/indi/backlash/auto/continue', {})
+        .then(function(payload) {
+          if (backlashStatus) {
+            backlashStatus.textContent = payload.message || '{{ _("Continue requested") }}';
+          }
+          updateBacklashButtons({state: 'running'});
+          refreshIndiState(false);
+        })
+        .catch(function(error) {
+          if (backlashStatus) {
+            backlashStatus.textContent = error.message;
+          }
+          setButtonEnabled(backlashMotionControl, true);
+        });
+    });
+  }
 
   function clearMotionKeepalive() {
     if (motionKeepaliveTimer !== null) {

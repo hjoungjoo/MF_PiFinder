@@ -442,13 +442,15 @@ Review points:
 - [ ] INDI restart stops/starts server/profile/driver
 - [ ] Home state, Park state, and raw `:GU#` status are displayed separately
 - [ ] Manual Backlash reads/writes `Backlash.Backlash RA/DEC` without mount motion
-- [ ] Auto Backlash refuses to start in Compass/NDOF mode and instructs the user to switch to IMUPLUS
-- [ ] Auto Backlash disables tracking before measurement and restores the original tracking state after completion/failure
-- [ ] Auto Backlash measures the difference between commanded GoTo angle and IMU-measured return motion
-- [ ] Auto Backlash restores the original Backlash RA/DEC and slew rate after completion/failure
-- [ ] Auto Backlash fills the calculated value into the input only and does not apply it before `Save Backlash`
-- [ ] Auto Backlash retries with a larger GoTo angle when IMU motion is too small and proposes an averaged value
-- [ ] Auto Backlash records start/outward/return IMU stability noise for each repeat
+- [ ] Auto Backlash requires Compass/NDOF mode and waits for MAG calibration 3
+- [ ] Auto Backlash syncs mount coordinates to IMU Alt/Az and disables tracking before the loop
+- [ ] Auto Backlash sets OnStepX `GUIDE_RATE` to the Half-Max/96x estimate before motion and verifies readback
+- [ ] If `GUIDE_RATE` readback does not match the requested value, Auto Backlash fails before moving the mount
+- [ ] Alt/Az mounts move `AZ`/`ALT`, while EQ mounts move `RA`/`DEC`, one axis at a time with timed pulse guide
+- [ ] Auto Backlash records each pulse-guide leg's start mount coordinates, end mount coordinates, and start/end IMU coordinates
+- [ ] Legs where mount delta and IMU delta differ by 1 degree or more are excluded, and the displayed estimate uses the middle 40% mean after trimming the lowest/highest 30%
+- [ ] Auto Backlash displays separate recommendations by actual movement direction, such as `AZ+/-`, `ALT+/-` in Alt/Az mode or `RA+/-`, `DEC+/-` in EQ mode
+- [ ] Auto Backlash only displays the calculated value and does not change input fields or apply anything before `Save Backlash`
 - [ ] PiFinder core features survive bad mount communications
 
 Test items:
@@ -462,13 +464,15 @@ Test items:
 - [ ] Restart INDI
 - [ ] Compare OnStep Web UI, direct LX200 `:GU#`, and PiFinder INDI Home/Park states
 - [ ] Read current Backlash RA/DEC
-- [ ] Save temporary Backlash RA/DEC values and restore the original values
-- [ ] After a `Compass Off` restart, `/api/imu` keeps `fusion_mode=imuplus` and
-      `uses_magnetometer=false`
-- [ ] Auto RA/DEC disables tracking, checks IMU stability, and restores tracking,
-      slew rate, and Backlash RA/DEC on completion/failure
-- [ ] If GoTo round trips still do not produce enough IMU motion in the current
-      mount pose, Auto Backlash fails without applying a value
+- [ ] Save Backlash RA/DEC manually from the UI and confirm the driver value changes
+- [ ] Auto Backlash enables/requires Compass/NDOF mode and waits for MAG calibration 3
+- [ ] Auto Backlash disables tracking for the motion test and restores only the
+      original tracking state on completion/failure
+- [ ] Auto Backlash does not reset, apply, or restore Backlash RA/DEC; it only
+      displays calculated candidate values for the user to review
+- [ ] Auto Backlash restores the original INDI `GUIDE_RATE` on completion/failure
+- [ ] If the compass timed pulse loop cannot capture reliable mount/IMU motion records,
+      Auto Backlash fails without applying a value
 - [ ] PiFinder UI while INDI server is stopped
 - [ ] PiFinder while OnStep device is offline
 

@@ -4394,6 +4394,31 @@ msgstr "자동 정렬"
 msgid "Point Confirmed"
 msgstr "정렬점 확정됨"
 
+#: PiFinder/server.py:1987
+msgid "Motion test repeats must be a number"
+msgstr "모션 테스트 반복 횟수는 숫자여야 합니다"
+
+#: PiFinder/server.py:1994
+#, python-format
+msgid "Motion test repeats must be between 1 and %(max)d"
+msgstr "모션 테스트 반복 횟수는 1에서 %(max)d 사이여야 합니다"
+
+#: views/indi_mount.html:389
+msgid "Compass GoTo motion test; repeated return/offset moves are recorded and filtered by direction before recommending candidate backlash values."
+msgstr "컴퍼스 모션 테스트입니다. 반복되는 복귀/오프셋 이동을 기록한 뒤 방향별로 필터링해 후보 백래시 값을 추천합니다."
+
+#: views/indi_mount.html:393
+msgid "Guide Rate"
+msgstr "가이드 속도"
+
+#: views/indi_mount.html:394
+msgid "Half-Max (estimated 96x)"
+msgstr "Half-Max (추정 96x)"
+
+#: views/indi_mount.html:397
+msgid "Motion Test Repeats"
+msgstr "모션 테스트 반복 횟수"
+
 #~ msgid "Cluster/Neb"
 #~ msgstr "성단/성운"
 

@@ -99,14 +99,21 @@ def test_indi_backlash_controls_are_present():
     assert 'id="indi_backlash_form"' in indi_html
     assert 'id="backlash_current_value"' in indi_html
     assert 'id="backlash_auto_status"' in indi_html
+    assert 'id="backlash_motion_start"' in indi_html
+    assert 'id="backlash_motion_control"' in indi_html
+    assert 'id="backlash_motion_repeats"' in indi_html
     assert 'name="backlash_ra"' in indi_html
     assert 'name="backlash_de"' in indi_html
     assert 'data-axis="ra"' in indi_html
     assert 'data-axis="de"' in indi_html
     assert "/indi/backlash/auto" in indi_html
+    assert "/indi/backlash/auto/stop" in indi_html
 
     assert '@app.route("/indi/backlash", methods=["POST"])' in server_py
     assert '@app.route("/indi/backlash/auto", methods=["POST"])' in server_py
+    assert '@app.route("/indi/backlash/auto/stop", methods=["POST"])' in server_py
+    assert "WEB_BACKLASH_DEFAULT_REPEATS = 10" in server_py
+    assert '"repeats": repeats' in server_py
 
 
 def test_indi_multipoint_align_controls_are_present():

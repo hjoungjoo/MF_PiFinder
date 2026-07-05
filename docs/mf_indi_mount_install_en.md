@@ -52,7 +52,7 @@ cd ~/PiFinder
 bash scripts/install_indi_mount_OnstepX.sh
 ```
 
-The script checks out INDI `v2.2.3.1` under `~/indi-latest`, builds it, and automatically applies `scripts/patches/indi-v2.2.3.1-onstepx.patch`. The patch leaves the upstream `LX200 OnStep` driver unchanged and adds a separate `LX200 OnStepX` device and executable link.
+The script checks out INDI `v2.2.3.1` under `~/indi-latest`, builds it, and automatically applies `scripts/patches/indi-v2.2.3.1-onstepx.patch`. The patch leaves the upstream `LX200 OnStep` driver unchanged and adds a separate `LX200 OnStepX` device and executable link. The OnStepX patch also carries the PiFinder Backlash range/readback fixes and writable `GUIDE_RATE` handling used by Auto Backlash.
 
 `install_indi_mount_OnstepX.sh` strips `-march=native`, `-mcpu=*`, and `-mtune=*`, then uses `-march=armv8-a` so a build made on Raspberry Pi 5 stays compatible with Raspberry Pi 4. To test pure upstream INDI without the bundled PiFinder patch:
 
@@ -90,7 +90,7 @@ cd ~/PiFinder
 bash scripts/package_indi_mount_archive.sh
 ```
 
-A binary archive created after the latest source build includes `LX200 OnStepX` and can be reused on Raspberry Pi 4 and Raspberry Pi 5 Bookworm 64-bit systems.
+A binary archive created after the latest source build includes the patched `LX200 OnStepX` driver and can be reused on Raspberry Pi 4 and Raspberry Pi 5 Bookworm 64-bit systems. Archive metadata records the OnStepX patch name and checksum so the installed binary can be traced back to the patch file.
 
 ## Configure The Mount Driver
 
@@ -159,45 +159,37 @@ The `Settings` area on the INDI page includes OnStepX maintenance controls.
 - `Backlash` reads and writes the INDI driver properties
   `Backlash.Backlash RA` and `Backlash.Backlash DEC`, which map to OnStep
   RA/Azm and Dec/Alt backlash in arc-seconds.
+- In Alt/Az mode, the UI labels the first value, `Backlash.Backlash RA`, as
+  `AZ` (Axis1 RA/Azm) and the second value, `Backlash.Backlash DEC`, as `ALT`
+  (Axis2 Dec/Alt). In EQ mode the UI keeps the normal `RA` / `DEC` labels.
 - The manual `Save Backlash` action is safe to test indoors because it only
   updates driver/device settings and does not command mount motion.
-- `Auto RA` and `Auto DEC` temporarily reset the selected axis Backlash to 0
-  and use a current-position GoTo round-trip measurement. The routine starts
-  with a 5-degree move, retries with a larger angle when IMU motion is not large
-  enough, and stores the actual readback coordinates after each completed move
-  as the baseline for the next reverse move. It averages repeated valid round
-  trips before proposing a Backlash value in the input field. The original driver
-  Backlash and slew rate are restored afterward; press `Save Backlash` to apply
-  the proposed value.
+- `Auto Backlash` keeps the internal `compass_goto_loop` mode name, but the
+  actual measurement motion is now INDI `TELESCOPE_TIMED_GUIDE_*` pulse guiding,
+  not GoTo. The calculation, filtering, and recommendation logic stay
+  unchanged. Alt/Az mounts test `AZ` and `ALT` separately, while EQ mounts test
+  `RA` and `DEC` separately. See `docs/mf_backlash_measurement_flow_en.md` for
+  the detailed flow and formulas.
 - The automatic Backlash test must turn tracking off with
   `TELESCOPE_TRACK_STATE.TRACK_OFF` before measurement and restore the original
   tracking state afterward. With tracking enabled, sidereal motion can appear as
   IMU movement and be misread as backlash.
-- The automatic Backlash test must run with `Settings > IMU Settings > Compass >
-  Off`, which uses IMUPLUS mode. NDOF/Compass mode can apply large yaw
-  corrections while the magnetometer is settling, so the current automatic test
-  refuses to start and shows an instruction message when Compass is active.
-- The GoTo round-trip principle is: set `Compass Off`, `Tracking Off`, and
-  `Backlash 0/0`; move one axis at a time by a large enough GoTo angle; wait for
-  completion and IMU stabilization; use the actual completed position as the new
-  baseline for the opposite-direction move; then use the difference between the
-  actual coordinate motion and IMU-measured motion as the Backlash arc-second
-  correction. The routine does not force a return to the original coordinate, so
-  the backlash state created by the direction change is not hidden by an
-  additional recovery GoTo. When yaw is not fully trustworthy, use repeated
-  measurements and average them. Verify again with both short moves and long
-  moves over 20 degrees.
+- The automatic Backlash test requires IMU Compass/NDOF mode and MAG calibration
+  level 3. The user moves/rotates the device until calibration is ready, then
+  presses `Continue` to start the actual motion test.
+- Before motion starts, PiFinder sets the OnStepX driver's INDI `GUIDE_RATE` to
+  `Half-Max (estimated 96x)` and verifies the readback. If the OnStep firmware
+  limits pulse guide rate to 1x or slower, the requested rate is not applied and
+  Auto Backlash fails before moving the mount.
 - If a measurement reaches the `3600 arc-sec` limit, the UI reports low
   confidence. Do not save that value blindly; it may mean the mechanical
   backlash exceeds the configured range or that IMU pose/axis sensitivity is
   contaminating the measurement.
-- A 2026-07-03 hardware test confirmed that IMUPLUS remains active after a
-  `Compass Off` restart and that tracking off/on restoration works. Short manual
-  pulses could change INDI coordinates while the IMU angle delta still remained
-  0 in the tested mount pose, so Auto RA/DEC now uses GoTo round trips with
-  repeated averaging. If a reliable round-trip IMU motion cannot be measured, no
-  value is applied and the original Backlash, slew rate, and tracking state are
-  restored.
+- Automatic measurement does not reset Backlash to zero and does not apply the
+  calculated value automatically. Results are shown as recommendations only; the
+  user reviews the input values and presses `Save Backlash` to write them. On
+  completion or failure, PiFinder restores the original tracking state and
+  original INDI `GUIDE_RATE`.
 
 ## Enable PiFinder Control
 

@@ -73,7 +73,7 @@ check_arm64_compatibility() {
         fi
     done
 
-    for binary in /usr/bin/indiserver /usr/bin/indi_lx200generic /usr/bin/indi_lx200_OnStep; do
+    for binary in /usr/bin/indiserver /usr/bin/indi_lx200generic /usr/bin/indi_lx200_OnStep /usr/bin/indi_lx200_OnStepX; do
         if [ -e "${binary}" ] || [ -L "${binary}" ]; then
             echo "file ${binary}: $(file -b "${binary}")" >> "${report}"
         fi
@@ -122,6 +122,10 @@ done
     echo "indiweb_version=1.0.0"
     echo "arm64_compatibility=checked-no-native-or-pi5-specific-cpu-flags"
     echo "recommended_build_flag=-march=armv8-a"
+    if [ -f "${REPO_ROOT}/scripts/patches/indi-v2.2.3.1-onstepx.patch" ]; then
+        echo "onstepx_patch=indi-v2.2.3.1-onstepx.patch"
+        echo "onstepx_patch_sha256=$(sha256sum "${REPO_ROOT}/scripts/patches/indi-v2.2.3.1-onstepx.patch" | awk '{print $1}')"
+    fi
 } > "${METADATA}/build_info.txt"
 
 ldd /usr/bin/indiserver > "${METADATA}/ldd-indiserver.txt"

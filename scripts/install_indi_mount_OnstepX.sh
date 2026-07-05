@@ -6,7 +6,8 @@ set -euo pipefail
 # This wrapper intentionally reuses install_indi_mount.sh so the INDI Web
 # Manager install and service setup stay identical to the stable installer.
 # A separate default build root avoids reusing an existing ~/indi v2.1.6 tree.
-# It also enables the bundled PiFinder INDI patch set, including LX200 OnStepX.
+# It also enables the bundled PiFinder INDI patch set, including LX200 OnStepX
+# Backlash and GUIDE_RATE readback fixes.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -32,6 +33,7 @@ echo "PYINDI_VERSION=${PYINDI_VERSION}"
 echo "INDI_PATCH_DIR=${INDI_PATCH_DIR}"
 echo "CFLAGS=${CFLAGS}"
 echo "CXXFLAGS=${CXXFLAGS}"
+echo "OnStepX patch includes Backlash 0..3600 and GUIDE_RATE readback handling."
 echo
 
 mkdir -p "${BUILD_ROOT}"

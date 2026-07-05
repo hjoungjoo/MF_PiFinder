@@ -58,6 +58,10 @@ WEB_MOTION_LEASE_SECONDS = 1.2
 WEB_MOTION_KEEPALIVE_INTERVAL = 0.4
 WEB_BACKLASH_MIN_VALUE = 0
 WEB_BACKLASH_MAX_VALUE = 3600
+WEB_BACKLASH_DEFAULT_REPEATS = 10
+WEB_BACKLASH_MIN_REPEATS = 1
+WEB_BACKLASH_MAX_REPEATS = 50
+WEB_BACKLASH_STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
 WEB_LANGUAGE_COOKIE = "pifinder_web_language"
 DEFAULT_WEB_LANGUAGE = "en"
 SUPPORTED_WEB_LANGUAGES = ("en", "de", "es", "fr", "ko", "zh")
@@ -1291,6 +1295,78 @@ class Server:
             except (FileNotFoundError, json.JSONDecodeError, OSError):
                 return {}
 
+        def _write_backlash_stop_request():
+            utils.create_path(utils.data_dir)
+            payload = {"requested_at": time.time(), "source": "web"}
+            tmp_path = WEB_BACKLASH_STOP_REQUEST_FILE.with_name(
+                f"{WEB_BACKLASH_STOP_REQUEST_FILE.name}.{os.getpid()}.tmp"
+            )
+            with open(tmp_path, "w", encoding="utf-8") as stop_out:
+                json.dump(payload, stop_out)
+                stop_out.flush()
+                os.fsync(stop_out.fileno())
+            tmp_path.replace(WEB_BACKLASH_STOP_REQUEST_FILE)
+
+        def _imu_status_values():
+            imu = None
+            try:
+                imu = self.shared_state.imu()
+            except Exception:
+                logger.debug("Could not read shared IMU state", exc_info=True)
+            if imu is None:
+                return {
+                    "available": False,
+                    "status": None,
+                    "moving": False,
+                    "calibration_status": None,
+                    "fusion_mode": "unknown",
+                    "uses_magnetometer": False,
+                    "heading_ready": False,
+                    "fully_calibrated": False,
+                    "age_seconds": None,
+                }
+
+            calibration_status = getattr(imu, "calibration_status", None)
+            status = getattr(imu, "status", None)
+            uses_magnetometer = bool(getattr(imu, "uses_magnetometer", False))
+            heading_ready = False
+            fully_calibrated = False
+            if calibration_status is not None and len(calibration_status) >= 4:
+                try:
+                    calibration_values = [int(value) for value in calibration_status]
+                    mag_level = calibration_values[3]
+                    gyro_level = calibration_values[1]
+                    heading_ready = uses_magnetometer and mag_level >= 3 and gyro_level > 0
+                    fully_calibrated = min(calibration_values) >= 3
+                except (TypeError, ValueError):
+                    calibration_values = None
+            else:
+                calibration_values = None
+                try:
+                    fully_calibrated = int(status) >= 3
+                except (TypeError, ValueError):
+                    fully_calibrated = False
+
+            timestamp = getattr(imu, "timestamp", None)
+            age_seconds = None
+            if timestamp:
+                try:
+                    age_seconds = max(0.0, round(time.time() - float(timestamp), 1))
+                except (TypeError, ValueError):
+                    age_seconds = None
+
+            return {
+                "available": True,
+                "status": status,
+                "moving": bool(getattr(imu, "moving", False)),
+                "calibration_status": calibration_values,
+                "fusion_mode": getattr(imu, "fusion_mode", "unknown"),
+                "uses_magnetometer": uses_magnetometer,
+                "heading_ready": heading_ready,
+                "fully_calibrated": fully_calibrated,
+                "age_seconds": age_seconds,
+            }
+
         def _parse_backlash_value(value):
             try:
                 if value in (None, ""):
@@ -1405,6 +1481,7 @@ class Server:
                 onstep_mount_state=_onstep_mount_state(onstep_props, indi_cfg),
                 pifinder_location_time=_pifinder_location_time_values(),
                 backlash_values=backlash_values,
+                imu_status=_imu_status_values(),
                 align_stars=BRIGHT_ALIGN_STARS,
                 multipoint_align=_multipoint_align_status(),
                 mount_control_status=_mount_control_status(),
@@ -1443,6 +1520,7 @@ class Server:
             return jsonify(
                 {
                     "ok": True,
+                    "mount_type": indi_cfg["mount_type"],
                     "onstep_device_name": indi_cfg["device_name"],
                     "is_onstepx_driver": indi_cfg["is_onstepx_driver"],
                     "pifinder_location_time": _pifinder_location_time_values(),
@@ -1456,6 +1534,7 @@ class Server:
                     ),
                     "onstep_mount_state": _onstep_mount_state(onstep_props, indi_cfg),
                     "backlash_values": _onstep_backlash_values(onstep_props, indi_cfg),
+                    "imu_status": _imu_status_values(),
                     "align_stars": BRIGHT_ALIGN_STARS,
                     "multipoint_align": _multipoint_align_status(),
                     "mount_control_status": _mount_control_status(),
@@ -1899,17 +1978,82 @@ class Server:
             try:
                 indi_cfg = _indi_config_values()
                 _require_onstepx_driver(indi_cfg)
-                axis = (request.form.get("axis") or "").strip().lower()
-                if axis not in {"ra", "de"}:
-                    raise ValueError(_("Invalid backlash axis"))
+                mode = (
+                    request.form.get("mode") or "compass_goto_loop"
+                ).strip().lower()
+                if mode != "compass_goto_loop":
+                    raise ValueError(_("Invalid backlash auto mode"))
+                repeats_raw = request.form.get(
+                    "repeats", str(WEB_BACKLASH_DEFAULT_REPEATS)
+                )
+                try:
+                    repeats = int(repeats_raw)
+                except (TypeError, ValueError):
+                    raise ValueError(_("Motion test repeats must be a number"))
+                if not (
+                    WEB_BACKLASH_MIN_REPEATS
+                    <= repeats
+                    <= WEB_BACKLASH_MAX_REPEATS
+                ):
+                    raise ValueError(
+                        _("Motion test repeats must be between 1 and %(max)d")
+                        % {"max": WEB_BACKLASH_MAX_REPEATS}
+                    )
                 if self.mountcontrol_queue is None:
                     raise RuntimeError(_("Mount-control process is not available"))
-                self.mountcontrol_queue.put({"type": "auto_backlash", "axis": axis})
+                self.mountcontrol_queue.put(
+                    {"type": "auto_backlash", "mode": mode, "repeats": repeats}
+                )
                 return _indi_json_response(
-                    message=_("%(axis)s backlash auto calculation started")
-                    % {"axis": axis.upper()}
+                    message=_("Compass GoTo motion test started")
                 )
             except (RuntimeError, ValueError) as e:
+                return _indi_json_response(ok=False, error=str(e))
+
+        @app.route("/indi/backlash/auto/continue", methods=["POST"])
+        @auth_required
+        def indi_backlash_auto_continue():
+            try:
+                indi_cfg = _indi_config_values()
+                _require_onstepx_driver(indi_cfg)
+                if self.mountcontrol_queue is None:
+                    raise RuntimeError(_("Mount-control process is not available"))
+                self.mountcontrol_queue.put({"type": "backlash_compass_continue"})
+                return _indi_json_response(
+                    message=_("Compass GoTo loop continue requested")
+                )
+            except (RuntimeError, ValueError) as e:
+                return _indi_json_response(ok=False, error=str(e))
+
+        @app.route("/indi/backlash/auto/stop", methods=["POST"])
+        @auth_required
+        def indi_backlash_auto_stop():
+            try:
+                indi_cfg = _indi_config_values()
+                _require_onstepx_driver(indi_cfg)
+                _write_backlash_stop_request()
+                if self.mountcontrol_queue is not None:
+                    self.mountcontrol_queue.put({"type": "backlash_compass_stop"})
+
+                result = sys_utils.apply_indi_onstep_properties(
+                    [
+                        _onstep_property_on("TELESCOPE_ABORT_MOTION.ABORT", indi_cfg),
+                        _onstep_property_on("TELESCOPE_TRACK_STATE.TRACK_OFF", indi_cfg),
+                    ],
+                    server_host=indi_cfg["server_host"],
+                    server_port=indi_cfg["server_port"],
+                )
+                message = _("Backlash motion test stop requested")
+                if not result.get("ok"):
+                    logger.warning(
+                        "Backlash stop requested, but immediate INDI stop failed: %s",
+                        result.get("stderr") or result.get("stdout") or result,
+                    )
+                    message = _(
+                        "Backlash stop requested; waiting for mount-control process stop"
+                    )
+                return _indi_json_response(message=message)
+            except (RuntimeError, ValueError, OSError) as e:
                 return _indi_json_response(ok=False, error=str(e))
 
         @app.route("/logs")

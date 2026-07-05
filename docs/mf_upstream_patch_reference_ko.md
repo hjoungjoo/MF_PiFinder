@@ -278,6 +278,10 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 - INDI profile에서 active driver name을 읽고, OnStepX일 때만 OnStepX 전용 화면/동작을 사용한다.
 - OnStepX 위치/시간 sync는 driver readback 표시와 실제 OnStep 값이 일관되도록 유지한다.
 - OnStep 위치/시간 설정 시 PiFinder 현재 UTC 시간을 사용한다.
+- OnStepX `Backlash`는 OnStep 펌웨어와 맞춘 0..3600 arc-sec 범위를 유지한다.
+- OnStepX `GUIDE_RATE`는 writable이어야 하며 실제 device pulse-guide rate를
+  readback해야 한다. PiFinder Auto Backlash는 이 값을 사용해 펌웨어가
+  Half-Max/96x 요청을 거부했을 때 마운트를 움직이기 전에 실패 처리한다.
 - OnStepX가 아닌 일반 INDI mount에서는 generic INDI path를 유지한다.
 - INDI restart는 server/profile/driver를 모두 정지 후 다시 시작하고, 가능하면 자동 connect한다.
 

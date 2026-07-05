@@ -442,13 +442,15 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - [ ] INDI restart가 server/profile/driver를 모두 정리하고 재시작하는가
 - [ ] Home 상태, Park 상태, 원시 `:GU#` 상태가 분리 표시되는가
 - [ ] 수동 Backlash가 마운트 이동 없이 `Backlash.Backlash RA/DEC`를 읽고 쓰는가
-- [ ] Auto Backlash가 Compass/NDOF 모드에서는 시작하지 않고 IMUPLUS 전환 안내를 표시하는가
-- [ ] Auto Backlash가 측정 전 tracking을 끄고 완료/실패 후 원래 tracking 상태로 복구하는가
-- [ ] Auto Backlash가 Goto 왕복 이동으로 명령 각도와 IMU 실제 이동각 차이를 측정하는가
-- [ ] Auto Backlash 완료/실패 후 원래 Backlash RA/DEC와 slew rate가 복구되는가
-- [ ] Auto Backlash 계산값은 입력창에만 채워지고 `Save Backlash` 전에는 적용되지 않는가
-- [ ] IMU 변화량이 충분하지 않을 때 더 큰 Goto 각도로 재시도하고, 반복 평균값을 제안하는가
-- [ ] Auto Backlash 결과에 각 반복의 시작/외향/복귀 IMU 안정화 노이즈가 기록되는가
+- [ ] Auto Backlash가 Compass/NDOF 모드를 요구하고 MAG calibration 3까지 대기하는가
+- [ ] Auto Backlash가 시작 전 mount 좌표를 IMU Alt/Az 기준으로 sync하고 tracking을 끄는가
+- [ ] Auto Backlash가 시작 전 OnStepX `GUIDE_RATE`를 Half-Max/96x 추정값으로 설정하고 readback을 검증하는가
+- [ ] `GUIDE_RATE` readback이 요청값과 다르면 마운트를 움직이지 않고 실패 처리하는가
+- [ ] Alt/Az mount에서는 `AZ`/`ALT`, EQ mount에서는 `RA`/`DEC`를 한 축씩 timed pulse guide로 반복 이동하는가
+- [ ] Auto Backlash가 각 pulse-guide leg의 시작 mount 좌표, 종료 mount 좌표, 시작/종료 IMU 좌표를 기록하는가
+- [ ] mount delta와 IMU delta 차이가 1도 이상인 leg는 제외하고, 남은 값의 상하 30%를 버린 middle 40% 평균을 표시하는가
+- [ ] Auto Backlash가 Alt/Az에서는 `AZ+/-`, `ALT+/-`, EQ에서는 `RA+/-`, `DEC+/-`처럼 실제 이동 방향별 추천값을 분리 표시하는가
+- [ ] Auto Backlash 결과는 계산값 표시만 하고, 입력칸 변경이나 `Save Backlash` 전 적용을 하지 않는가
 - [ ] driver 통신 불량 시 기본 PiFinder 기능이 멈추지 않는가
 
 테스트 항목:
@@ -462,13 +464,14 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - [ ] Restart INDI
 - [ ] OnStep Web UI, 직접 LX200 `:GU#`, PiFinder INDI Home/Park 상태 비교
 - [ ] 현재 Backlash RA/DEC 읽기
-- [ ] 임시 Backlash RA/DEC 값을 저장한 뒤 원래 값으로 복구
-- [ ] `Compass Off` 재시작 후 `/api/imu`가 `fusion_mode=imuplus`,
-      `uses_magnetometer=false`를 유지하는지 확인
-- [ ] Auto RA/DEC가 tracking을 끈 뒤 IMU 안정화 상태를 확인하고, 완료/실패 시
-      tracking, slew rate, Backlash RA/DEC를 원복하는지 확인
-- [ ] Goto 왕복에서도 충분한 IMU 이동각이 감지되지 않는 자세에서는 값을
-      적용하지 않고 실패 메시지를 표시하는지 확인
+- [ ] UI에서 Backlash RA/DEC를 수동 저장하고 driver 값이 변경되는지 확인
+- [ ] Auto Backlash가 Compass/NDOF 모드를 활성/요구하고 MAG calibration 3까지 대기하는지 확인
+- [ ] Auto Backlash가 motion test 중 tracking을 끄고 완료/실패 후 원래 tracking 상태만 복구하는지 확인
+- [ ] Auto Backlash가 Backlash RA/DEC를 0으로 초기화하거나 적용/원복하지 않고,
+      계산 후보값만 사용자 검토용으로 표시하는지 확인
+- [ ] Auto Backlash가 완료/실패 후 원래 INDI `GUIDE_RATE`를 복구하는지 확인
+- [ ] compass timed pulse loop가 신뢰 가능한 mount/IMU 이동 기록을 만들 수 없는 경우,
+      값을 적용하지 않고 실패 메시지를 표시하는지 확인
 - [ ] INDI server stop 상태에서 PiFinder UI 동작
 - [ ] OnStep device offline 상태에서 PiFinder 동작
 

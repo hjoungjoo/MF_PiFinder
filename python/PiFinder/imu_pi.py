@@ -77,12 +77,18 @@ class Imu:
         # Raw gyro/accel capture is opt-in: two extra I2C transactions per
         # sample on a bus the BNO055 is sensitive about, and only useful
         # for telemetry analysis.
-        self._raw_telemetry = bool(cfg.get_option("telemetry_raw_imu", False))
+        self._raw_telemetry_config = bool(cfg.get_option("telemetry_raw_imu", False))
+        self._raw_capture_runtime = False
+        self._raw_telemetry = self._raw_telemetry_config
         imu_threshold_scale = cfg.get_option("imu_threshold_scale", 1)
         self.__moving_threshold = (
             0.0005 * imu_threshold_scale,
             0.0003 * imu_threshold_scale,
         )
+
+    def set_raw_capture(self, enabled: bool) -> None:
+        self._raw_capture_runtime = bool(enabled)
+        self._raw_telemetry = self._raw_telemetry_config or self._raw_capture_runtime
 
     def _load_saved_calibration(self) -> None:
         try:
@@ -262,6 +268,14 @@ class Imu:
 
 def _handle_imu_command(imu, command, console_queue):
     command_type = command.get("type") if isinstance(command, dict) else command
+    if command_type == "set_raw_capture":
+        enabled = bool(command.get("enabled")) if isinstance(command, dict) else False
+        if hasattr(imu, "set_raw_capture"):
+            imu.set_raw_capture(enabled)
+            console_queue.put("IMU: raw gyro on" if enabled else "IMU: raw gyro off")
+        else:
+            console_queue.put("IMU: raw gyro unsupported")
+        return
     if not hasattr(imu, "save_calibration"):
         console_queue.put("IMU: calibration unsupported")
         return

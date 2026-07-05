@@ -271,6 +271,10 @@ Preserve:
 - Read the active driver name from the INDI profile.
 - Use OnStepX-specific UI/behavior only when the active driver is OnStepX.
 - Location/time sync must use the current PiFinder UTC time.
+- OnStepX `Backlash` supports the 0..3600 arc-sec range used by OnStep firmware.
+- OnStepX `GUIDE_RATE` must remain writable and must read back the actual
+  device pulse-guide rate; PiFinder Auto Backlash depends on this to fail before
+  motion when firmware rejects the requested Half-Max/96x rate.
 - Generic INDI mount paths must remain available for non-OnStepX mounts.
 - INDI restart stops server/profile/driver and starts them again, then connects
   when possible.

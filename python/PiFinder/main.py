@@ -636,15 +636,18 @@ def main(
         )
         posserver_process.start()
 
-        mountcontrol_process = None
-        if cfg.get_option("mount_control", False):
+        mountcontrol_enabled = cfg.get_option("mount_control", False)
+
+        def start_mountcontrol_process():
+            if not mountcontrol_enabled:
+                return None
             console.write("   INDI Mount")
             logger.info("   INDI Mount")
             console.update()
             try:
                 from PiFinder import mountcontrol_indi
 
-                mountcontrol_process = Process(
+                process = Process(
                     name="MountControl",
                     target=mountcontrol_indi.run,
                     args=(
@@ -654,6 +657,7 @@ def main(
                         mountcontrol_logqueue,
                     ),
                     kwargs={
+                        "imu_command_queue": imu_command_queue,
                         "indi_host": cfg.get_option(
                             "mount_control_indi_host", "localhost"
                         ),
@@ -662,10 +666,15 @@ def main(
                         ),
                     },
                 )
-                mountcontrol_process.start()
+                process.start()
+                return process
             except Exception:
                 logger.exception("Could not start INDI mount-control process")
                 console.write("INDI mount failed")
+                return None
+
+        mountcontrol_process = start_mountcontrol_process()
+        next_mountcontrol_health_check = time.monotonic() + 5.0
 
         start_bluetooth_keyboard_autoreconnect()
 
@@ -1052,6 +1061,28 @@ def main(
 
                 menu_manager.update()
                 power_manager.update()
+
+                if (
+                    mountcontrol_enabled
+                    and time.monotonic() >= next_mountcontrol_health_check
+                ):
+                    next_mountcontrol_health_check = time.monotonic() + 5.0
+                    if mountcontrol_process is None:
+                        logger.warning(
+                            "INDI mount-control process is not running; restarting"
+                        )
+                        menu_manager.message(_("INDI Mount\nrestarting"), 3)
+                        mountcontrol_process = start_mountcontrol_process()
+                    elif not mountcontrol_process.is_alive():
+                        exitcode = mountcontrol_process.exitcode
+                        logger.warning(
+                            "INDI mount-control process exited with code %s; "
+                            "restarting",
+                            exitcode,
+                        )
+                        mountcontrol_process.join(timeout=0)
+                        menu_manager.message(_("INDI Mount\nrestarting"), 3)
+                        mountcontrol_process = start_mountcontrol_process()
 
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt received: shutting down.")

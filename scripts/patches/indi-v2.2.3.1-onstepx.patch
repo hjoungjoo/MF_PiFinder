@@ -33,36 +33,12 @@ index 42384f3..900d123 100644
  execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200_OpenAstroTech)\n
  execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200_pegasus_nyx101)\n
  execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_lx200generic \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_lx200_10micron)\n
-diff --git a/drivers/telescope/lx200generic.cpp b/drivers/telescope/lx200generic.cpp
-index 8f12597..0ab5014 100644
---- a/drivers/telescope/lx200generic.cpp
-+++ b/drivers/telescope/lx200generic.cpp
-@@ -32,6 +32,7 @@ Updated driver to use INDI::Telescope (JM)
- #include "lx200_10micron.h"
- #include "lx200_16.h"
- #include "lx200_OnStep.h"
-+#include "lx200_OnStepX.h"
- #include "lx200_OpenAstroTech.h"
- #include "lx200ap_v2.h"
- #include "lx200ap_gtocp2.h"
-@@ -92,6 +93,11 @@ static class Loader
-                 IDLog("initializing from LX200 classic device...\n");
-                 telescope.reset(new LX200Classic());
-             }
-+            else if (strstr(getProgName(), "indi_lx200_OnStepX"))
-+            {
-+                IDLog("initializing from LX200 OnStepX device...\n");
-+                telescope.reset(new LX200_OnStepX());
-+            }
-             else if (strstr(getProgName(), "indi_lx200_OnStep"))
-             {
-                 IDLog("initializing from LX200 OnStep device...\n");
 diff --git a/drivers/telescope/lx200_OnStepX.cpp b/drivers/telescope/lx200_OnStepX.cpp
 new file mode 100644
-index 0000000..c210f94
+index 0000000..15dc4e5
 --- /dev/null
 +++ b/drivers/telescope/lx200_OnStepX.cpp
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,426 @@
 +/*
 +    LX200 OnStepX
 +
@@ -74,13 +50,150 @@ index 0000000..c210f94
 +#include <cmath>
 +#include <ctime>
 +
++namespace
++{
++constexpr int GUIDE_RATE_WE_INDEX = 0;
++constexpr int GUIDE_RATE_NS_INDEX = 1;
++constexpr double GUIDE_RATE_TOLERANCE = 0.05;
++
++bool closeTo(double a, double b)
++{
++    return std::fabs(a - b) < 0.01;
++}
++
++int guideRateSelectForMultiplier(double rate)
++{
++    if (closeTo(rate, 0.25))
++        return 0;
++    if (closeTo(rate, 0.5))
++        return 1;
++    if (closeTo(rate, 1.0))
++        return 2;
++    if (closeTo(rate, 2.0))
++        return 3;
++    if (closeTo(rate, 4.0))
++        return 4;
++    if (closeTo(rate, 8.0))
++        return 5;
++    if (closeTo(rate, 20.0))
++        return 6;
++    if (closeTo(rate, 48.0))
++        return 7;
++    if (rate >= 72.0 && rate < 180.0)
++        return 8;
++    if (rate >= 180.0)
++        return 9;
++    return -1;
++}
++
++}
++
++LX200_OnStepX::LX200_OnStepX()
++{
++    configureGuideRateProperty();
++}
++
++void LX200_OnStepX::configureGuideRateProperty()
++{
++    GuideRateNP[GUIDE_RATE_WE_INDEX].setMinMax(0.25, 240.0);
++    GuideRateNP[GUIDE_RATE_WE_INDEX].setStep(0.25);
++    GuideRateNP[GUIDE_RATE_NS_INDEX].setMinMax(0.25, 240.0);
++    GuideRateNP[GUIDE_RATE_NS_INDEX].setStep(0.25);
++    GuideRateNP.setPermission(IP_RW);
++}
++
 +const char *LX200_OnStepX::getDefaultName()
 +{
 +    return "LX200 OnStepX";
 +}
 +
++bool LX200_OnStepX::initProperties()
++{
++    const bool result = LX200_OnStep::initProperties();
++    configureGuideRateProperty();
++    return result;
++}
++
 +bool LX200_OnStepX::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
 +{
++    if (dev != nullptr && strcmp(dev, getDeviceName()) == 0 && GuideRateNP.isNameMatch(name))
++    {
++        double guide_we = GuideRateNP[GUIDE_RATE_WE_INDEX].getValue();
++        double guide_ns = GuideRateNP[GUIDE_RATE_NS_INDEX].getValue();
++
++        for (int i = 0; i < n; i++)
++        {
++            if (GuideRateNP[GUIDE_RATE_WE_INDEX].isNameMatch(names[i]))
++                guide_we = values[i];
++            else if (GuideRateNP[GUIDE_RATE_NS_INDEX].isNameMatch(names[i]))
++                guide_ns = values[i];
++        }
++
++        if (guide_we <= 0.0 || guide_ns <= 0.0)
++        {
++            GuideRateNP.setState(IPS_ALERT);
++            GuideRateNP.apply();
++            LOG_ERROR("OnStepX guide rate invalid; expected positive sidereal multipliers.");
++            return false;
++        }
++
++        if (!closeTo(guide_we, guide_ns))
++        {
++            GuideRateNP.setState(IPS_ALERT);
++            GuideRateNP.apply();
++            LOG_ERROR("OnStepX pulse guide rate is a shared OnStep setting; W/E and N/S rates must match.");
++            return false;
++        }
++
++        char cmd[CMD_MAX_LEN] = {0};
++        const int rate_select = guideRateSelectForMultiplier(guide_we);
++        if (rate_select < 0)
++        {
++            GuideRateNP.setState(IPS_ALERT);
++            GuideRateNP.apply();
++            LOGF_ERROR("Unsupported OnStepX pulse guide rate %.2fx.", guide_we);
++            return false;
++        }
++
++        snprintf(cmd, sizeof(cmd), ":R%d#", rate_select);
++        if (!sendOnStepCommandBlind(cmd))
++        {
++            GuideRateNP.setState(IPS_ALERT);
++            GuideRateNP.apply();
++            LOGF_ERROR("Error setting OnStepX pulse guide rate selector %d.", rate_select);
++            return false;
++        }
++
++        const struct timespec timeout = {0, 100000000L};
++        nanosleep(&timeout, nullptr);
++
++        double actual_rate = 0.0;
++        char guide_response[RB_MAX_LEN] = {0};
++        if (getCommandDoubleResponse(PortFD, &actual_rate, guide_response, ":GX90#") <= 1)
++        {
++            GuideRateNP.setState(IPS_ALERT);
++            GuideRateNP.apply();
++            LOG_ERROR("Could not read OnStepX pulse guide rate after setting GUIDE_RATE.");
++            return false;
++        }
++
++        GuideRateNP[GUIDE_RATE_WE_INDEX].setValue(actual_rate);
++        GuideRateNP[GUIDE_RATE_NS_INDEX].setValue(actual_rate);
++        if (std::fabs(actual_rate - guide_we) > GUIDE_RATE_TOLERANCE)
++        {
++            GuideRateNP.setState(IPS_ALERT);
++            GuideRateNP.apply();
++            LOGF_ERROR("OnStepX pulse guide rate request %.2fx was not applied; device reports %.2fx.",
++                       guide_we, actual_rate);
++            return false;
++        }
++
++        GuideRateNP.setState(IPS_OK);
++        GuideRateNP.apply();
++        LOGF_INFO("OnStepX pulse guide rate set to selector %d (%.2fx sidereal).", rate_select, actual_rate);
++        return true;
++    }
++
 +    if (dev != nullptr && strcmp(dev, getDeviceName()) == 0 && BacklashNP.isNameMatch(name))
 +    {
 +        int nset = 0;
@@ -354,10 +467,10 @@ index 0000000..c210f94
 +}
 diff --git a/drivers/telescope/lx200_OnStepX.h b/drivers/telescope/lx200_OnStepX.h
 new file mode 100644
-index 0000000..1181a98
+index 0000000..cb10eab
 --- /dev/null
 +++ b/drivers/telescope/lx200_OnStepX.h
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,33 @@
 +/*
 +    LX200 OnStepX
 +
@@ -373,7 +486,9 @@ index 0000000..1181a98
 +class LX200_OnStepX : public LX200_OnStep
 +{
 +    public:
++        LX200_OnStepX();
 +        const char *getDefaultName() override;
++        bool initProperties() override;
 +        bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
 +
 +    protected:
@@ -383,8 +498,33 @@ index 0000000..1181a98
 +        bool sendScopeLocation() override;
 +
 +    private:
++        void configureGuideRateProperty();
 +        int setSiteElevation(int fd, double elevation);
 +        bool getOnStepSiteCoordinate(int fd, const char *cmd, double *value, bool longitude);
 +        bool readOnStepSiteCoordinate(int fd, const char *highPrecisionCmd, const char *fallbackCmd, double *value,
 +                                      bool longitude);
 +};
+diff --git a/drivers/telescope/lx200generic.cpp b/drivers/telescope/lx200generic.cpp
+index 8f12597..0ab5014 100644
+--- a/drivers/telescope/lx200generic.cpp
++++ b/drivers/telescope/lx200generic.cpp
+@@ -32,6 +32,7 @@ Updated driver to use INDI::Telescope (JM)
+ #include "lx200_10micron.h"
+ #include "lx200_16.h"
+ #include "lx200_OnStep.h"
++#include "lx200_OnStepX.h"
+ #include "lx200_OpenAstroTech.h"
+ #include "lx200ap_v2.h"
+ #include "lx200ap_gtocp2.h"
+@@ -92,6 +93,11 @@ static class Loader
+                 IDLog("initializing from LX200 classic device...\n");
+                 telescope.reset(new LX200Classic());
+             }
++            else if (strstr(getProgName(), "indi_lx200_OnStepX"))
++            {
++                IDLog("initializing from LX200 OnStepX device...\n");
++                telescope.reset(new LX200_OnStepX());
++            }
+             else if (strstr(getProgName(), "indi_lx200_OnStep"))
+             {
+                 IDLog("initializing from LX200 OnStep device...\n");
