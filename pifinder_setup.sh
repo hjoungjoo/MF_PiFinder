@@ -51,12 +51,18 @@ cd "${PIFINDER_REPO_DIR}"
 
 find_pifinder_indi_archive() {
     local archives=()
+    local part_archives=()
     shopt -s nullglob
     archives=("${PIFINDER_REPO_DIR}"/dist/mf-pifinder-indi-bookworm-arm64-*.tar.gz)
+    part_archives=("${PIFINDER_REPO_DIR}"/dist/mf-pifinder-indi-bookworm-arm64-*.tar.gz.part-00)
     shopt -u nullglob
 
     if [[ "${#archives[@]}" -gt 0 ]]; then
         printf "%s\n" "${archives[@]}" | sort | tail -n 1
+    elif [[ "${#part_archives[@]}" -gt 0 ]]; then
+        local latest_part
+        latest_part="$(printf "%s\n" "${part_archives[@]}" | sort | tail -n 1)"
+        printf "%s\n" "${latest_part%.part-00}"
     fi
 }
 
@@ -95,7 +101,7 @@ install_optional_indi_archive() {
             ;;
     esac
 
-    if [[ ! -f "${archive}" ]]; then
+    if [[ ! -f "${archive}" && ! -f "${archive}.part-00" ]]; then
         echo "INDI archive not found: ${archive}" >&2
         exit 1
     fi

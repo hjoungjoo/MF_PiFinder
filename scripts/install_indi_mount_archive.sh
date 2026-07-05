@@ -10,6 +10,7 @@ ANYIO_VERSION="${ANYIO_VERSION:-3.7.1}"
 
 usage() {
     echo "Usage: $0 <mf-pifinder-indi-bookworm-arm64.tar.gz>" >&2
+    echo "       If the archive is split, pass the .tar.gz path and keep .tar.gz.part-* next to it." >&2
 }
 
 if [ -z "${ARCHIVE}" ]; then
@@ -17,10 +18,50 @@ if [ -z "${ARCHIVE}" ]; then
     exit 1
 fi
 
-if [ ! -f "${ARCHIVE}" ]; then
-    echo "Archive not found: ${ARCHIVE}" >&2
-    exit 1
-fi
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "${TMPDIR}"' EXIT
+
+prepare_archive() {
+    local requested="$1"
+    local rebuilt
+    local expected
+    local actual
+
+    if [ -f "${requested}" ]; then
+        printf "%s\n" "${requested}"
+        return 0
+    fi
+
+    shopt -s nullglob
+    local parts=("${requested}".part-*)
+    shopt -u nullglob
+
+    if [ "${#parts[@]}" -eq 0 ]; then
+        echo "Archive not found: ${requested}" >&2
+        echo "No split archive parts found at: ${requested}.part-*" >&2
+        exit 1
+    fi
+
+    rebuilt="${TMPDIR}/$(basename "${requested}")"
+    echo "Rebuilding split archive: ${requested}" >&2
+    cat "${parts[@]}" > "${rebuilt}"
+
+    if [ -f "${requested}.sha256" ]; then
+        expected="$(sed -n 's/[[:space:]].*//p' "${requested}.sha256" | head -n 1)"
+        actual="$(sha256sum "${rebuilt}")"
+        actual="${actual%% *}"
+        if [ "${expected}" != "${actual}" ]; then
+            echo "Split archive checksum mismatch." >&2
+            echo "Expected: ${expected}" >&2
+            echo "Actual:   ${actual}" >&2
+            exit 1
+        fi
+    fi
+
+    printf "%s\n" "${rebuilt}"
+}
+
+ARCHIVE="$(prepare_archive "${ARCHIVE}")"
 
 if [ "$(uname -m)" != "aarch64" ]; then
     echo "This archive installer supports only Raspberry Pi OS Bookworm 64-bit/aarch64." >&2
@@ -38,9 +79,6 @@ SERVICE_USER="${SUDO_USER:-$(whoami)}"
 if [ "${SERVICE_USER}" = "root" ] && id pifinder >/dev/null 2>&1; then
     SERVICE_USER="pifinder"
 fi
-
-TMPDIR="$(mktemp -d)"
-trap 'rm -rf "${TMPDIR}"' EXIT
 
 tar -C "${TMPDIR}" -xzf "${ARCHIVE}"
 
