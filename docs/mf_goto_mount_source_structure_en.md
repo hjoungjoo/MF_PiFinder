@@ -136,13 +136,16 @@ Command mapping:
 
 `get_telescope_ra(shared_state, _)`
 
-- Reads `pointing.aligned.estimate`.
-- Treats internal RA/Dec as J2000 degrees, converts to the current epoch, and returns `HH:MM:SS`.
+- Reads the latest `CoordinateState.current` published by
+  `PointingCoordinateService`.
+- The current source can be solve, IMU fallback, synced mount readback, or
+  mount+IMU delta.
+- Formats current RA degrees as `HH:MM:SS`.
 
 `get_telescope_dec(shared_state, _)`
 
-- Reads the same pointing.
-- Converts to the current epoch and returns `+DD*MM'SS`.
+- Reads Dec degrees from the same current coordinate.
+- Formats it as `+DD*MM'SS`.
 
 From SkySafari's point of view, PiFinder reports the current telescope coordinates.
 
@@ -176,10 +179,8 @@ Current PiFinder behavior:
 
 `handle_goto_command(shared_state, ra_parsed, dec_parsed)`
 
-Despite the name, this is not a physical mount GoTo today.
-
 1. Converts RA/Dec to degrees.
-2. Treats SkySafari input as JNOW and converts it to J2000.
+2. Stores the SkySafari target exactly as requested in `last_target_coordinates`.
 3. Builds a `CompositeObject`.
    - `catalog_code`: `PUSH`
    - `description`: `Skysafari object nr <sequence>`
@@ -187,8 +188,11 @@ Despite the name, this is not a physical mount GoTo today.
 5. Sets `shared_state.ui_state().set_new_pushto(True)`.
 6. Sends `ui_queue.put("push_object")`.
 7. Queues an INDI GoTo when mount control and SkySafari INDI GoTo are enabled.
+8. While Multi Align is active, routes the target to
+   `multipoint_align_goto_target` instead of switching to PushTo.
 
-This is why SkySafari GoTo currently means "push this target into PiFinder".
+SkySafari GoTo normally pushes the target into PiFinder's recent target flow; if
+enabled, the same requested target is also forwarded to INDI GoTo.
 
 ### LCD UI Reaction
 
@@ -633,15 +637,21 @@ OnStep TCP/serial ports can become unstable when multiple clients share them.
 - Avoid direct LX200 TCP/serial commands while the INDI LX200 OnStep driver is connected.
 - If direct commands are required, use the exclusive pattern in `sync_onstep_location_time_exclusive(...)`: stop INDI, send direct commands, start INDI again.
 
-### Coordinate Epoch
+### Coordinate Basis
 
-SkySafari input is currently treated as JNOW in `pos_server.py` and converted to J2000.
+`pos_server.py` now uses SkySafari/LX200 target coordinates exactly as
+requested.
 
-- Many PiFinder internal object RA/Dec flows use J2000.
-- Confirm what epoch the INDI driver expects for `EQUATORIAL_EOD_COORD`.
-- Current MountControl GoTo sends the object's RA/Dec degrees directly to INDI.
+- `:Sr/:Sd` target coordinates are stored directly in `last_target_coordinates`.
+- `:MS#`, `:CM#`, and Multi Align confirm use the same target coordinates.
+- `pointing.aligned.estimate` is used by the coordinate service without epoch
+  conversion.
+- Alt/Az conversion is only used for IMU correction, display, or mount-type
+  interpretation.
 
-If GoTo accuracy is off, check JNOW/J2000 conversion first.
+If GoTo/Sync accuracy is off, first check that the requested target is not being
+reinterpreted into another coordinate frame, then check mount readback and IMU
+smoothing status.
 
 ### Longitude Convention
 
@@ -734,7 +744,8 @@ Suggested future tests:
 - Preserve default SkySafari push-to compatibility.
 - When `goto_auto` is enabled, verify that the mount-control queue receives the expected `goto_target` command.
 - When mount control is off, verify SkySafari remains push-to only.
-- Target epoch conversion.
+- Verify that SkySafari target coordinates are stored and forwarded as requested
+  without coordinate-frame conversion.
 - Stop/abort priority while GoTo or manual motion is active.
 
 ## Current Conclusion

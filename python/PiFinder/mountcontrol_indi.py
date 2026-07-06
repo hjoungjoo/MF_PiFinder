@@ -64,7 +64,7 @@ STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
 DEFAULT_STEP_DEGREES = 1.0
 MIN_STEP_DEGREES = 0.05
 MAX_STEP_DEGREES = 10.0
-POSITION_STATUS_MIN_INTERVAL = 2.0
+POSITION_STATUS_MIN_INTERVAL = 0.5
 STATUS_HEARTBEAT_INTERVAL = 5.0
 AUTO_CONNECT_START_DELAY = 5.0
 AUTO_CONNECT_RETRY_INTERVAL = 10.0
@@ -398,12 +398,14 @@ class MountControlIndi:
         self._guide_correction_accuracy_arcmin = DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN
         self._guide_correction_next_at = 0.0
         self._guide_correction_last_solve_time = 0.0
+        self._last_goto_progress_status_at = 0.0
         self.backlash_ra: Optional[int] = None
         self.backlash_de: Optional[int] = None
         self._backlash_auto: Optional[dict[str, Any]] = None
         self._backlash_stop_seen_at: float = 0.0
         self._multipoint_align_controller = MultiPointAlignController()
         self._multipoint_align: Optional[dict[str, Any]] = None
+        self._coordinate_sync: Optional[dict[str, Any]] = None
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -446,6 +448,8 @@ class MountControlIndi:
             payload["backlash_auto"] = self._backlash_auto
         if self._multipoint_align is not None:
             payload["multipoint_align"] = self._multipoint_align
+        if self._coordinate_sync is not None:
+            payload["coordinate_sync"] = self._coordinate_sync
         if self.device is not None:
             try:
                 payload["device"] = self.device.getDeviceName()
@@ -734,10 +738,13 @@ class MountControlIndi:
             device_name=self._indi_device_name(),
         )
 
-    def set_current_position(self, ra_deg: float, dec_deg: float) -> None:
+    def set_current_position(
+        self, ra_deg: float, dec_deg: float, write_status: bool = True
+    ) -> None:
         self.current_ra = ra_deg % 360.0
         self.current_dec = dec_deg
-        self._write_position_status()
+        if write_status:
+            self._write_position_status()
 
     def _write_position_status(self, force: bool = False) -> None:
         now = time.monotonic()
@@ -993,6 +1000,7 @@ class MountControlIndi:
     def mark_disconnected(self, message: str) -> None:
         self.connected = False
         self.device = None
+        self._coordinate_sync = None
         self._write_controller_status("disconnected", message)
 
     def restart_driver(self) -> bool:
@@ -1251,8 +1259,11 @@ class MountControlIndi:
     ) -> Optional[tuple[float, float]]:
         if self.device is None:
             return None
+        get_number = getattr(self.device, "getNumber", None)
+        if get_number is None:
+            return None
 
-        coord_prop = self.device.getNumber(property_name)
+        coord_prop = get_number(property_name)
         if not coord_prop:
             return None
 
@@ -1270,15 +1281,19 @@ class MountControlIndi:
 
         return ra_hours * 15.0, dec_deg
 
-    def _read_cached_current_position(self) -> Optional[tuple[float, float]]:
+    def _read_cached_current_position(
+        self, write_status: bool = True
+    ) -> Optional[tuple[float, float]]:
         position = self._read_cached_number_position("EQUATORIAL_EOD_COORD")
         if position is None:
             return None
 
-        self.set_current_position(position[0], position[1])
+        self.set_current_position(position[0], position[1], write_status=write_status)
         return self.current_ra, self.current_dec
 
-    def _read_current_position(self) -> Optional[tuple[float, float]]:
+    def _read_current_position(
+        self, write_status: bool = True
+    ) -> Optional[tuple[float, float]]:
         if self.client is None or self.device is None:
             return None
 
@@ -1287,7 +1302,7 @@ class MountControlIndi:
         ):
             return None
 
-        return self._read_cached_current_position()
+        return self._read_cached_current_position(write_status=write_status)
 
     def _read_target_position(self) -> Optional[tuple[float, float]]:
         if self.client is None or self.device is None:
@@ -1456,6 +1471,7 @@ class MountControlIndi:
             "indi_seen_busy": False,
             "onstep_seen_goto_active": False,
         }
+        self._last_goto_progress_status_at = 0.0
 
     def _complete_goto_motion(self, message: str = "GoTo complete") -> None:
         if self._goto_motion is None:
@@ -1473,6 +1489,59 @@ class MountControlIndi:
         )
         logger.info("%s: RA %s Dec %s", message, target_ra, target_dec)
 
+    def _read_goto_progress_position(
+        self, cached_only: bool
+    ) -> Optional[tuple[float, float]]:
+        try:
+            if cached_only:
+                return self._read_cached_current_position(write_status=False)
+            return self._read_current_position(write_status=False)
+        except TypeError:
+            # Some tests monkeypatch these methods with no-argument callables.
+            if cached_only:
+                return self._read_cached_current_position()
+            return self._read_current_position()
+
+    def _write_goto_progress_status(
+        self,
+        motion: dict[str, Any],
+        elapsed: float,
+        is_busy: Optional[bool],
+        current_position: Optional[tuple[float, float]],
+    ) -> None:
+        now = time.monotonic()
+        if now - self._last_goto_progress_status_at < POSITION_STATUS_MIN_INTERVAL:
+            return
+        self._last_goto_progress_status_at = now
+
+        target_ra = motion.get("target_ra")
+        target_dec = motion.get("target_dec")
+        extra: dict[str, Any] = {
+            "target_ra": target_ra,
+            "target_dec": target_dec,
+            "goto_wait_seconds": round(elapsed, 1),
+            "indi_busy": is_busy,
+        }
+        if current_position is not None:
+            extra["ra"] = current_position[0] % 360.0
+            extra["dec"] = current_position[1]
+            if target_ra is not None and target_dec is not None:
+                extra["target_error_deg"] = (
+                    radec_separation_arcmin(
+                        current_position[0],
+                        current_position[1],
+                        float(target_ra),
+                        float(target_dec),
+                    )
+                    / 60.0
+                )
+
+        self._write_controller_status(
+            "slewing",
+            "GoTo in progress",
+            **extra,
+        )
+
     def _check_goto_motion(self) -> None:
         if self._goto_motion is None:
             return
@@ -1487,7 +1556,15 @@ class MountControlIndi:
             return
 
         is_busy = self._indi_mount_is_busy()
-        current_position = None if is_busy is True else self._read_current_position()
+        current_position = self._read_goto_progress_position(
+            cached_only=is_busy is True
+        )
+        self._write_goto_progress_status(
+            self._goto_motion,
+            elapsed,
+            is_busy,
+            current_position,
+        )
         if self._goto_completion_ready(
             self._goto_motion,
             is_busy,
@@ -1659,6 +1736,14 @@ class MountControlIndi:
 
         self.client.set_switch(self.device, "ON_COORD_SET", "TRACK")
         self.client.set_switch(self.device, "TELESCOPE_TRACK_STATE", "TRACK_ON")
+        self._coordinate_sync = {
+            "active": True,
+            "synced": True,
+            "ra": ra_deg % 360.0,
+            "dec": dec_deg,
+            "synced_at": time.time(),
+            "source": "sync_mount",
+        }
         self.set_current_position(ra_deg, dec_deg)
         logger.info("Mount synced to RA %.4f Dec %.4f", ra_deg, dec_deg)
         self._console("INDI mount\nsynced")

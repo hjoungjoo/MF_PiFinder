@@ -1062,6 +1062,35 @@ def test_goto_target_uses_slew_mode_for_onstep():
     assert mount.statuses[-1][0] == "slewing"
 
 
+def test_sync_mount_records_coordinate_sync_for_position_service():
+    mount = DummyConnectedMount()
+
+    assert mount.sync_mount(132.0, 49.5)
+
+    assert ("LX200 OnStep", "ON_COORD_SET", "SYNC") in mount.client.switches
+    assert ("LX200 OnStep", "ON_COORD_SET", "TRACK") in mount.client.switches
+    assert (
+        "LX200 OnStep",
+        "TELESCOPE_TRACK_STATE",
+        "TRACK_ON",
+    ) in mount.client.switches
+    assert mount._coordinate_sync is not None
+    assert mount._coordinate_sync["active"] is True
+    assert mount._coordinate_sync["ra"] == 132.0
+    assert mount._coordinate_sync["dec"] == 49.5
+    assert mount._status_fields()["coordinate_sync"]["synced"] is True
+
+
+def test_disconnected_mount_clears_coordinate_sync_anchor():
+    mount = DummyConnectedMount()
+    assert mount.sync_mount(132.0, 49.5)
+
+    mount.mark_disconnected("test disconnect")
+
+    assert mount._coordinate_sync is None
+    assert "coordinate_sync" not in mount._status_fields()
+
+
 def test_goto_target_fails_when_indi_target_is_not_accepted():
     mount = DummyConnectedMount()
     mount.accept_goto_target = False
@@ -1180,6 +1209,39 @@ def test_goto_motion_waits_while_indi_state_is_busy(monkeypatch):
 
     assert mount._goto_motion is not None
     assert mount.statuses[-1][0] == "slewing"
+
+
+def test_goto_motion_publishes_mount_readback_while_busy(monkeypatch):
+    mount = DummyConnectedMount()
+    clock = [100.0]
+    cached_reads = []
+
+    def fake_monotonic():
+        return clock[0]
+
+    def fake_cached_position(write_status=True):
+        cached_reads.append(write_status)
+        mount.current_ra = 101.25
+        mount.current_dec = -12.5
+        return (mount.current_ra, mount.current_dec)
+
+    monkeypatch.setattr(mci.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(mount, "_indi_mount_is_busy", lambda: True)
+    monkeypatch.setattr(mount, "_read_cached_current_position", fake_cached_position)
+
+    assert mount.goto_target(132.0, 49.5)
+    mount._goto_motion["started_at"] = clock[0] - 2.0
+    mount._check_goto_motion()
+
+    assert cached_reads == [False]
+    assert mount._goto_motion is not None
+    assert mount.statuses[-1][0] == "slewing"
+    assert mount.statuses[-1][1] == "GoTo in progress"
+    assert mount.statuses[-1][2]["ra"] == 101.25
+    assert mount.statuses[-1][2]["dec"] == -12.5
+    assert mount.statuses[-1][2]["target_ra"] == 132.0
+    assert mount.statuses[-1][2]["target_dec"] == 49.5
+    assert mount.statuses[-1][2]["target_error_deg"] > 0.0
 
 
 def test_goto_motion_waits_for_onstep_no_goto_after_active(monkeypatch):

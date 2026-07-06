@@ -7,6 +7,7 @@ This module is for IMU related functions
 
 import time
 import queue
+import math
 from PiFinder import config, imu_calibration
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.types.positioning import ImuSample
@@ -49,6 +50,7 @@ class Imu:
         self.calibration_saved_now = False
         self._calibration_saved_this_run = False
         self._last_calibration_status = None
+        self._last_invalid_quat_log = 0.0
         if self.use_magnetometer and self.auto_calibration_store:
             self._load_saved_calibration()
 
@@ -186,6 +188,22 @@ class Imu:
         quat = self.sensor.quaternion
         if quat[0] is None:
             logger.warning("IMU: Failed to get sensor values")
+            return
+        try:
+            quat = tuple(float(value) for value in quat)
+            quat_norm = math.sqrt(sum(value * value for value in quat))
+        except (TypeError, ValueError):
+            logger.warning("IMU: rejected unreadable quaternion %s", quat)
+            return
+        if not math.isfinite(quat_norm) or not 0.8 <= quat_norm <= 1.2:
+            now = time.monotonic()
+            if now - self._last_invalid_quat_log > 5.0:
+                logger.warning(
+                    "IMU: rejected non-unit quaternion norm=%.3f quat=%s",
+                    quat_norm,
+                    quat,
+                )
+                self._last_invalid_quat_log = now
             return
 
         # When enabled, read raw sensor data alongside the quaternion so

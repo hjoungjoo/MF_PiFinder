@@ -80,9 +80,11 @@ class DummyUnlockedLocation:
 @pytest.fixture(autouse=True)
 def reset_imu_alignment_correction():
     pos_server._reset_imu_alignment_correction("test setup")
+    pos_server._coordinate_service.clear_state()
     pos_server._invalidate_pointing_cache()
     yield
     pos_server._reset_imu_alignment_correction("test teardown")
+    pos_server._coordinate_service.clear_state()
     pos_server._invalidate_pointing_cache()
 
 
@@ -96,14 +98,14 @@ def test_imu_altaz_requires_calibrated_sample():
     assert pos_server._imu_altaz_degrees(sample, "right") is None
 
 
-def test_imu_fallback_returns_jnow_radec_for_calibrated_sample():
+def test_imu_fallback_returns_radec_for_calibrated_sample():
     sample = ImuSample(
         quat=quaternion.quaternion(1, 0, 0, 0),
         timestamp=0.0,
         status=3,
     )
 
-    pointing = pos_server._imu_fallback_pointing_jnow(
+    pointing = pos_server._imu_fallback_pointing(
         DummyState(sample), datetime.datetime(2026, 7, 1, 12, tzinfo=pytz.UTC)
     )
 
@@ -139,8 +141,7 @@ def test_observer_location_uses_config_default_when_shared_location_unlocked(
 
 
 def test_get_telescope_ra_returns_lx200_ra_default_without_pointing():
-    pos_server._pointing_cache["time"] = 0.0
-    pos_server._pointing_cache["value"] = None
+    pos_server._coordinate_service.clear_state()
 
     response = pos_server.get_telescope_ra(DummyState(None, dt="none"), ":GR#")
     assert response == "00:00:00"
@@ -489,7 +490,9 @@ def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
     monkeypatch.setattr(pos_server, "align_command_queue", None)
     monkeypatch.setattr(pos_server, "align_response_queue", None)
-    monkeypatch.setattr(pos_server, "last_target_j2000", (12.5, -34.25))
+    monkeypatch.setattr(pos_server, "last_target_coordinates", (12.5, -34.25))
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
     monkeypatch.setattr(
         pos_server,
         "pos_server_config",
@@ -518,7 +521,9 @@ def test_skysafari_sync_queues_indi_sync_when_goto_forwarding_enabled(monkeypatc
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
     monkeypatch.setattr(pos_server, "align_command_queue", None)
     monkeypatch.setattr(pos_server, "align_response_queue", None)
-    monkeypatch.setattr(pos_server, "last_target_j2000", (42.0, 15.5))
+    monkeypatch.setattr(pos_server, "last_target_coordinates", (42.0, 15.5))
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
     monkeypatch.setattr(
         pos_server,
         "pos_server_config",
@@ -548,7 +553,7 @@ def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
     monkeypatch.setattr(pos_server, "align_command_queue", None)
     monkeypatch.setattr(pos_server, "align_response_queue", None)
-    monkeypatch.setattr(pos_server, "last_target_j2000", (12.5, -34.25))
+    monkeypatch.setattr(pos_server, "last_target_coordinates", (12.5, -34.25))
     monkeypatch.setattr(pos_server, "sr_result", None)
     monkeypatch.setattr(pos_server, "sd_result", None)
     monkeypatch.setattr(pos_server, "is_stellarium", True)
@@ -580,16 +585,17 @@ def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
 
 def test_skysafari_sync_sets_imu_alignment_without_plate_solve(monkeypatch):
     dt = datetime.datetime(2026, 7, 1, 12, tzinfo=pytz.UTC)
-    target_j2000 = (100.0, -20.0)
+    target_coordinates = (100.0, -20.0)
     location = DummyLocation()
-    pos_server.sf_utils.set_location(location.lat, location.lon, location.altitude)
-    target_alt, target_az = pos_server.sf_utils.radec_to_altaz(
-        target_j2000[0], target_j2000[1], dt
+    target_alt, target_az = pos_server._requested_coordinates_to_altaz(
+        target_coordinates[0], target_coordinates[1], location, dt
     )
     raw_alt = target_alt - 1.25
     raw_az = (target_az - 12.5) % 360.0
 
-    monkeypatch.setattr(pos_server, "last_target_j2000", target_j2000)
+    monkeypatch.setattr(pos_server, "last_target_coordinates", target_coordinates)
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
     monkeypatch.setattr(
         pos_server, "_imu_altaz_degrees", lambda *_args: (raw_alt, raw_az)
     )
@@ -635,20 +641,37 @@ def test_solved_pointing_resets_imu_alignment_correction(monkeypatch):
             "alt_offset": 1.0,
             "az_offset": 2.0,
             "set_at": 1.0,
-            "target_j2000": (100.0, -20.0),
+            "target_coordinates": (100.0, -20.0),
         }
     )
+    class FakeCoordinateState:
+        solved = type("Solved", (), {"valid": True})()
+
+        def radec(self):
+            return (12.0, 34.0)
+
+    monkeypatch.setattr(pos_server._coordinate_service, "get_state", lambda: None)
     monkeypatch.setattr(
-        pos_server, "_solved_pointing_jnow", lambda *_args: (12.0, 34.0)
+        pos_server._coordinate_service,
+        "update_state",
+        lambda *_args, **_kwargs: FakeCoordinateState(),
     )
 
-    assert pos_server._current_pointing_jnow(DummyState(None)) == (12.0, 34.0)
+    pos_server._update_coordinate_service_state(DummyState(None))
+
+    monkeypatch.setattr(
+        pos_server._coordinate_service,
+        "get_state",
+        lambda: FakeCoordinateState(),
+    )
+
+    assert pos_server._current_pointing(DummyState(None)) == (12.0, 34.0)
 
     assert pos_server._imu_alignment_correction["active"] is False
 
 
 def test_skysafari_sync_returns_no_target_without_coordinates(monkeypatch):
-    monkeypatch.setattr(pos_server, "last_target_j2000", None)
+    monkeypatch.setattr(pos_server, "last_target_coordinates", None)
     monkeypatch.setattr(pos_server, "sr_result", None)
     monkeypatch.setattr(pos_server, "sd_result", None)
     monkeypatch.setattr(
