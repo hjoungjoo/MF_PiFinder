@@ -1216,6 +1216,91 @@ def sync_onstep_location_time_exclusive(
     return result
 
 
+def reset_onstep_alignment_exclusive(
+    connection_type: str,
+    network_host: str = "",
+    network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
+    serial_port: str = "",
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+) -> dict[str, Any]:
+    """
+    Stop INDI, reset OnStep alignment state with LX200, then restart INDI.
+
+    This is used before PiFinder-managed multi-point alignment so a stale
+    OnStep native ``:A<n>#`` session cannot reinterpret normal sync commands as
+    native align-point accepts.
+    """
+    commands = [":A?#", ":SX09,0#", ":A?#"]
+    result: dict[str, Any] = {
+        "ok": False,
+        "commands": commands,
+        "responses": [],
+        "stop_result": None,
+        "start_result": None,
+        "connect_result": None,
+    }
+
+    stop_result = set_indi_web_manager_running("stop")
+    result["stop_result"] = stop_result
+    if not stop_result["ok"]:
+        result["stderr"] = (
+            stop_result.get("stderr") or "Could not stop INDI Web Manager"
+        )
+        return result
+
+    try:
+        time.sleep(1.0)
+        connection_type = connection_type.strip().lower()
+        if connection_type == ONSTEP_CONNECTION_USB:
+            if not serial_port:
+                raise RuntimeError("No OnStep serial port configured")
+            responses = _send_onstep_lx200_serial_commands(serial_port, commands)
+        else:
+            if not network_host:
+                raise RuntimeError("No OnStep network host configured")
+            responses = _send_onstep_lx200_network_commands(
+                network_host,
+                int(network_port),
+                commands,
+            )
+        result["responses"] = responses
+        reset_response = responses[1].get("response", "") if len(responses) > 1 else ""
+        if str(reset_response).strip("#") != "1":
+            raise RuntimeError(
+                "OnStep rejected alignment reset command: "
+                f":SX09,0# -> {reset_response or '<no reply>'}"
+            )
+        result["ok"] = True
+    except Exception as exc:
+        result["stderr"] = str(exc)
+    finally:
+        start_result = set_indi_web_manager_running("start")
+        result["start_result"] = start_result
+        if start_result["ok"]:
+            time.sleep(3.0)
+            result["connect_result"] = connect_indi_onstep_driver(
+                server_host=server_host,
+                server_port=server_port,
+            )
+
+    if not result["ok"]:
+        return result
+    if result["start_result"] and not result["start_result"].get("ok"):
+        result["ok"] = False
+        result["stderr"] = (
+            result["start_result"].get("stderr") or "Could not restart INDI"
+        )
+    elif result["connect_result"] and not result["connect_result"].get("ok"):
+        result["ok"] = False
+        result["stderr"] = (
+            result["connect_result"].get("stderr")
+            or result["connect_result"].get("stdout")
+            or "Could not reconnect INDI OnStep driver"
+        )
+    return result
+
+
 def connect_indi_onstep_driver(
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
@@ -1224,9 +1309,9 @@ def connect_indi_onstep_driver(
 ) -> dict[str, Any]:
     """Wait for the active INDI telescope driver and request CONNECTION.CONNECT."""
     device_name = resolve_indi_device_name(device_name)
-    deadline = time.monotonic() + wait_timeout
+    property_deadline = time.monotonic() + wait_timeout
     properties: dict[str, str] = {}
-    while time.monotonic() < deadline:
+    while time.monotonic() < property_deadline:
         properties = get_indi_onstep_properties(
             server_host=server_host,
             server_port=server_port,
@@ -1254,11 +1339,32 @@ def connect_indi_onstep_driver(
             "properties": [f"{device_name}.CONNECTION.CONNECT=On"],
         }
 
-    return apply_indi_onstep_properties(
+    result = apply_indi_onstep_properties(
         [f"{device_name}.CONNECTION.CONNECT=On"],
         server_host=server_host,
         server_port=server_port,
     )
+    if not result.get("ok"):
+        return result
+
+    connect_deadline = time.monotonic() + wait_timeout
+    while time.monotonic() < connect_deadline:
+        properties = get_indi_onstep_properties(
+            server_host=server_host,
+            server_port=server_port,
+            device_name=device_name,
+        )
+        if properties.get(f"{device_name}.CONNECTION.CONNECT") == "On":
+            result["verified"] = True
+            return result
+        time.sleep(0.5)
+
+    result["ok"] = False
+    result["stderr"] = (
+        result.get("stderr")
+        or f"{device_name} did not enter connected state after CONNECT"
+    )
+    return result
 
 
 class Network:

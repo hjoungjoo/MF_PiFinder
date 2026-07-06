@@ -20,6 +20,7 @@ class DummyMountControl(MountControlIndi):
         self.goto_calls = []
         self.location_sync_calls = []
         self.mount_align_start_calls = []
+        self.mount_align_accept_calls = []
         self.events = []
 
     def _apply_indi_properties(
@@ -61,6 +62,11 @@ class DummyMountControl(MountControlIndi):
     def start_mount_alignment_session(self, points):
         self.events.append(("start_mount_alignment_session", points))
         self.mount_align_start_calls.append(points)
+        return True
+
+    def accept_mount_alignment_point(self):
+        self.events.append(("accept_mount_alignment_point",))
+        self.mount_align_accept_calls.append(True)
         return True
 
     def _radec_to_altaz(self, ra_deg, dec_deg):
@@ -151,6 +157,9 @@ class DummyConnectedMount(MountControlIndi):
 class DummyIndiDevice:
     def getDeviceName(self):
         return "LX200 OnStep"
+
+    def isConnected(self):
+        return True
 
 
 class DummyIndiClient:
@@ -785,8 +794,9 @@ def test_multipoint_align_manual_start_selects_star_without_goto():
     assert mount._multipoint_align["current_star"]["name"] == "Vega"
     assert mount._multipoint_align["state"] == "adjust"
     assert mount.goto_calls == []
-    assert mount.mount_align_start_calls == [2]
-    assert mount._multipoint_align["mount_align_started"] is True
+    assert mount.mount_align_start_calls == []
+    assert mount._multipoint_align["mount_align_started"] is False
+    assert mount._multipoint_align["mount_align_deferred"] is True
 
 
 def test_multipoint_align_explicit_goto_moves_to_selected_star():
@@ -810,7 +820,8 @@ def test_multipoint_align_rejects_stars_above_overhead_limit():
 
     assert mount.goto_calls == []
     assert mount._multipoint_align is not None
-    assert mount._multipoint_align["state"] == "failed"
+    assert mount._multipoint_align["active"]
+    assert mount._multipoint_align["state"] == "waiting"
     assert mount._multipoint_align["current_star"] is None
     assert "above" in mount._multipoint_align["message"]
 
@@ -823,6 +834,7 @@ def test_multipoint_align_goto_failure_clears_current_star():
     assert not mount.select_multipoint_align_star("Vega", goto=True)
 
     assert mount._multipoint_align is not None
+    assert not mount._multipoint_align["active"]
     assert mount._multipoint_align["state"] == "failed"
     assert mount._multipoint_align["current_star"] is None
 
@@ -830,32 +842,37 @@ def test_multipoint_align_goto_failure_clears_current_star():
 def test_multipoint_align_confirm_advances_until_complete():
     mount = DummyMountControl()
 
-    assert mount.start_multipoint_align("manual", 1, "Altair")
+    assert mount.start_multipoint_align("manual", 1)
+    assert mount.select_multipoint_align_star("Altair", goto=True)
     assert mount.confirm_multipoint_align(source="web")
 
     assert mount.sync_calls == [(10.0, 20.0), (297.695827, 8.868322)]
+    assert mount.mount_align_accept_calls == []
     assert mount._multipoint_align is not None
     assert not mount._multipoint_align["active"]
     assert mount._multipoint_align["state"] == "complete"
     assert mount._multipoint_align["completed_points"] == 1
-    assert mount._multipoint_align["completed"][0]["mount_align_started"] is True
+    assert mount._multipoint_align["completed"][0]["mount_align_started"] is False
+    assert mount._multipoint_align["completed"][0]["mount_align_command"] == "sync"
 
 
-def test_multipoint_align_skysafari_confirm_uses_passed_target():
+def test_multipoint_align_skysafari_confirm_requires_prior_goto_target():
     mount = DummyMountControl()
 
     assert mount.start_multipoint_align("manual", 1)
-    assert mount.confirm_multipoint_align(10.0, 20.0, source="skysafari")
+    assert not mount.confirm_multipoint_align(10.0, 20.0, source="skysafari")
 
-    assert mount.sync_calls == [(10.0, 20.0), (10.0, 20.0)]
+    assert mount.sync_calls == [(10.0, 20.0)]
+    assert mount.mount_align_accept_calls == []
     assert mount._multipoint_align is not None
-    assert mount._multipoint_align["completed"][0]["name"] == "SkySafari Target 1"
-    assert mount._multipoint_align["completed"][0]["source"] == "skysafari"
+    assert mount._multipoint_align["state"] == "failed"
+    assert "GoTo" in mount._multipoint_align["message"]
 
 
 def test_multipoint_align_syncs_location_time_and_large_mount_offset_before_start():
     mount = DummyMountControl()
-    mount._read_current_position = lambda: (50.0, -10.0)
+    positions = [(50.0, -10.0), (10.0, 20.0), (10.0, 20.0)]
+    mount._read_current_position = lambda: positions.pop(0) if positions else (10.0, 20.0)
 
     assert mount.start_multipoint_align("manual", 2)
 
@@ -864,10 +881,26 @@ def test_multipoint_align_syncs_location_time_and_large_mount_offset_before_star
     assert mount.events == [
         ("sync_location_time", True, True),
         ("sync_mount", 10.0, 20.0),
-        ("start_mount_alignment_session", 2),
     ]
     assert mount._multipoint_align is not None
     assert mount._multipoint_align["pifinder_mount_synced"] is True
+    assert mount._multipoint_align["pifinder_mount_verified"] is True
+    assert mount._multipoint_align["mount_align_started"] is False
+    assert mount._multipoint_align["mount_align_deferred"] is True
+
+
+def test_multipoint_align_defers_native_start_to_preserve_pifinder_sync():
+    mount = DummyMountControl()
+
+    assert mount.start_multipoint_align("manual", 2)
+
+    assert mount.sync_calls == [(10.0, 20.0)]
+    assert mount.mount_align_start_calls == []
+    assert mount._multipoint_align is not None
+    assert mount._multipoint_align["active"]
+    assert mount._multipoint_align["mount_align_started"] is False
+    assert mount._multipoint_align["mount_align_deferred"] is True
+    assert "deferred" in mount._multipoint_align["mount_align_message"]
 
 
 def test_multipoint_align_syncs_mount_to_pifinder_before_native_align_start():
@@ -882,8 +915,29 @@ def test_multipoint_align_syncs_mount_to_pifinder_before_native_align_start():
     assert mount.events == [
         ("sync_location_time", True, True),
         ("sync_mount", 10.0, 20.0),
-        ("start_mount_alignment_session", 2),
     ]
+
+
+def test_multipoint_align_resets_stale_onstep_native_alignment(monkeypatch):
+    mount = DummyMountControl()
+    reset_calls = []
+
+    monkeypatch.setattr(mount, "_onstep_native_alignment_active", lambda: True)
+    monkeypatch.setattr(mount, "disconnect", lambda: reset_calls.append("disconnect"))
+    monkeypatch.setattr(mount, "connect", lambda: reset_calls.append("connect") or True)
+    monkeypatch.setattr(
+        sys_utils,
+        "reset_onstep_alignment_exclusive",
+        lambda **kwargs: reset_calls.append(kwargs) or {"ok": True},
+    )
+
+    assert mount.start_multipoint_align("manual", 2)
+
+    assert reset_calls[0]["connection_type"] == "network"
+    assert reset_calls[1:] == ["disconnect", "connect"]
+    assert mount._multipoint_align is not None
+    assert mount._multipoint_align["onstep_native_align_reset"] is True
+    assert mount.sync_calls == [(10.0, 20.0)]
 
 
 def test_multipoint_align_confirm_keeps_latest_selected_goto_target():
@@ -894,6 +948,7 @@ def test_multipoint_align_confirm_keeps_latest_selected_goto_target():
     assert mount.confirm_multipoint_align(10.0, 20.0, source="skysafari")
 
     assert mount.sync_calls == [(10.0, 20.0), (279.234735, 38.783689)]
+    assert mount.mount_align_accept_calls == []
     assert mount._multipoint_align is not None
     assert mount._multipoint_align["completed"][0]["name"] == "Vega"
 
@@ -908,6 +963,7 @@ def test_multipoint_align_skysafari_goto_target_becomes_confirm_target():
     assert mount.goto_calls[-1][0] == 10.0
     assert mount.goto_calls[-1][1] == 20.0
     assert mount.sync_calls == [(10.0, 20.0), (10.0, 20.0)]
+    assert mount.mount_align_accept_calls == []
     assert mount._multipoint_align is not None
     assert mount._multipoint_align["completed"][0]["name"] == "SkySafari Target"
 
@@ -1037,6 +1093,16 @@ def test_start_mount_alignment_session_uses_onstep_align_properties():
     assert mount.client.switches == [
         ("LX200 OnStep", "AlignStars", "3"),
         ("LX200 OnStep", "NewAlignStar", "0"),
+    ]
+
+
+def test_accept_mount_alignment_point_uses_onstep_align_add_property():
+    mount = DummyConnectedMount()
+
+    assert mount.accept_mount_alignment_point()
+
+    assert mount.client.switches == [
+        ("LX200 OnStep", "NewAlignStar", "1"),
     ]
 
 

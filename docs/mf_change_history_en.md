@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-07-03
+Last updated: 2026-07-06
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -37,6 +37,7 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Korean UI localization | Draft PR exists | [#500](https://github.com/brickbots/PiFinder/pull/500), `pr/korean-localization` | `python/locale/ko`, `ko` language menu entry, CJK font/restart handling |
 | Bluetooth/USB HID keyboard support | Draft PR exists | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput key mapping, text-entry keycodes, Bluetooth keyboard scan/pair/connect UI, reconnect |
 | INDI mount control | Draft PR exists | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, LX200 OnStepX custom-driver patch, install script, INDI docs |
+| INDI Multi Align shared flow | No Draft PR yet | local `mf_pifinder` worktree | shared `MultiPointAlignController`, Web/LCD/SkySafari session unification, deferred OnStepX native align start, stale native align `:SX09,0#` reset, PiFinder coordinate sync verification, real OnStepX hardware testing |
 | Integrated GPS/NTP/RTC/software PPS time sync | Draft PR exists | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source selection, helper service, dry-run/real clock sync, status UI, time-sync docs |
 | Wi-Fi AP+STA simultaneous mode and AP settings | No Draft PR yet | local `mf_pifinder` worktree | `wlan0` STA + `uap0` AP, STA channel tracking, STA band preference, configurable AP IP, AP WPA2 password setting, AP+STA internet sharing option, OS Wi-Fi profile import, scanned SSID selection, shared Pi 4/5 Wi-Fi mode |
 | Locations catalog | No Draft PR yet | local `mf_pifinder` worktree | GeoNames-based offline location catalog, country/region/district/city selection, coordinate/altitude/source prefill, North Korea excluded |
@@ -57,6 +58,7 @@ to follow. The following grouping is easier to maintain.
 | Camera usability | focus preview, camera gain, camera LCD preview | Keep #501 or expand it with camera-specific docs |
 | Input devices | Bluetooth keyboard, USB HID key mapping, keyboard mapping docs | Use #506 as the base |
 | Optional INDI mount integration | INDI mount process, install script, object sync, INDI keyboard mapping notes | Keep #503 |
+| INDI Multi Align refinement | shared Multi Align session controller, OnStepX stale align reset, Web/LCD/SkySafari flow docs | Include in the INDI PR or split into an OnStepX advanced-functions PR |
 | Integrated time sync | GPS/NTP/RTC/software PPS, helper service, status UI | Keep #504 |
 | Network connectivity | AP/Client/AP+STA Wi-Fi modes, virtual AP services, STA band preference, configurable AP IP, AP security/password, optional AP+STA internet sharing, OS Wi-Fi profile import, scanned SSID selection, web/device network UI | New Draft PR needed |
 | Locations catalog | GeoNames-based offline location catalog, country/region/district/city selector, coordinate prefill | New Draft PR needed |
@@ -83,6 +85,7 @@ python/PiFinder/gps_ubx.py
 python/PiFinder/gps_ubx_parser.py
 python/PiFinder/gps_time_sync.py
 python/PiFinder/gps_time_sync_helper.py
+python/PiFinder/indi_multipoint_align.py
 python/PiFinder/mountcontrol_indi.py
 python/PiFinder/server.py
 python/PiFinder/sys_utils.py
@@ -152,6 +155,8 @@ docs/mf_change_history_ko.md
 docs/mf_change_history_en.md
 docs/mf_indi_mount_install_ko.md
 docs/mf_indi_mount_install_en.md
+docs/mf_multipoint_align_flow_ko.md
+docs/mf_multipoint_align_flow_en.md
 docs/mf_wifi_apsta_ko.md
 docs/mf_wifi_apsta_en.md
 docs/mf_keyboard_mapping_ko.md

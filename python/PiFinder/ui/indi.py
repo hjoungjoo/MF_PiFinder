@@ -596,6 +596,7 @@ class UIIndiMultiPointAlign(UIIndiGuide):
     __title__ = "MULTI ALIGN"
     _STAGE_POINTS = "points"
     _STAGE_MODE = "mode"
+    _STAGE_PREPARING = "preparing"
     _STAGE_STAR = "star"
     _STAGE_ADJUST = "adjust"
 
@@ -626,7 +627,7 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             return align_status
         updated = float(align_status.get("updated") or 0.0)
         if (
-            self._stage in {self._STAGE_ADJUST, self._STAGE_STAR}
+            self._stage in {self._STAGE_ADJUST, self._STAGE_STAR, self._STAGE_PREPARING}
             and self._align_start_requested_at > 0.0
             and updated >= self._align_start_requested_at
         ):
@@ -743,6 +744,9 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             self._stage = self._STAGE_ADJUST
             return
         if align_status.get("active"):
+            if not align_status.get("pifinder_mount_synced") or state == "preparing":
+                self._stage = self._STAGE_PREPARING
+                return
             if state == "failed":
                 self._stage = (
                     self._STAGE_STAR
@@ -754,9 +758,11 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             return
         if (
             align_status.get("state") == "complete"
-            and self._stage in {self._STAGE_ADJUST, self._STAGE_STAR}
+            and self._stage in {self._STAGE_ADJUST, self._STAGE_STAR, self._STAGE_PREPARING}
         ):
             self._complete_or_cancel_to_settings(_("Align Complete"))
+        if align_status.get("state") == "failed" and self._stage == self._STAGE_PREPARING:
+            self._stage = self._STAGE_MODE
 
     def _draw_rows(self, rows, hints):
         self.clear_screen()
@@ -793,6 +799,21 @@ class UIIndiMultiPointAlign(UIIndiGuide):
                     _("+/- or 1-9 select"),
                     _("Right/Square next"),
                     _("Left back"),
+                ],
+            )
+            return
+
+        if self._stage == self._STAGE_PREPARING:
+            self._draw_rows(
+                [
+                    _("Preparing Align"),
+                    _("Points: {points}").format(points=self.align_points),
+                    str(message),
+                ],
+                [
+                    _("Syncing PiFinder"),
+                    _("Wait for mount"),
+                    _("Left cancel"),
                 ],
             )
             return
@@ -982,6 +1003,12 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             self._stage = self._STAGE_MODE
             self.update()
             return False
+        if self._stage == self._STAGE_PREPARING:
+            if self._send_mount({"type": "multipoint_align_cancel"}):
+                self.message(_("Align Cancelled"), 1)
+            self._stage = self._STAGE_MODE
+            self.update()
+            return False
         if self._stage == self._STAGE_MODE:
             self._stage = self._STAGE_POINTS
             self.update()
@@ -1013,7 +1040,7 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             }
         ):
             self._align_start_requested_at = time.time()
-            self._stage = self._STAGE_STAR
+            self._stage = self._STAGE_PREPARING
             self.message(_("Manual Align"), 1)
 
     def _start_auto(self):
@@ -1036,6 +1063,7 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             }
         ):
             self._align_start_requested_at = time.time()
+            self._stage = self._STAGE_PREPARING
             self.message(_("Auto Align"), 1)
 
     def _select_star_and_goto(self):

@@ -166,6 +166,13 @@ This web control page sends commands directly to the INDI driver. It can be used
 
 The `Settings` area on the INDI page includes OnStepX maintenance controls.
 
+- `Multi Align` is driven by one shared session controller used by the Web UI,
+  LCD UI, and SkySafari bridge. At start, PiFinder sends its location/time to
+  the mount, syncs the mount to PiFinder's current pointing, and verifies the
+  readback. Native OnStepX `:A<n>#` start is deferred because it resets the
+  mount home/frame, and stale native align state is cleared with direct
+  `:SX09,0#` before the PiFinder-managed flow continues. See
+  `docs/mf_multipoint_align_flow_en.md` for the detailed flow.
 - `Backlash` reads and writes the INDI driver properties
   `Backlash.Backlash RA` and `Backlash.Backlash DEC`, which map to OnStep
   RA/Azm and Dec/Alt backlash in arc-seconds.

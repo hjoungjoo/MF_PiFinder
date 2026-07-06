@@ -166,6 +166,13 @@ PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 
 
 INDI 페이지의 `Settings` 영역에는 OnStepX 유지보수 제어가 포함됩니다.
 
+- `Multi Align`은 Web/LCD/SkySafari가 같은 공통 session controller를
+  사용합니다. 시작 시 PiFinder 위치/시간을 mount에 전송하고, PiFinder가
+  현재 보고 있다고 판단하는 좌표로 mount를 sync한 뒤 readback을 검증합니다.
+  OnStepX native `:A<n>#` 시작은 home/frame reset 부작용 때문에 즉시 호출하지
+  않고 지연하며, stale native align 상태가 남아 있으면 `:SX09,0#` 직접 명령으로
+  정리한 뒤 진행합니다. 자세한 흐름은
+  `docs/mf_multipoint_align_flow_ko.md`를 참고하세요.
 - `Backlash`는 INDI driver의 `Backlash.Backlash RA`,
   `Backlash.Backlash DEC` 속성을 읽고 씁니다. 이 값은 OnStep의 RA/Azm,
   Dec/Alt 백래시 arc-second 값에 대응합니다.
