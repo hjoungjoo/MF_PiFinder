@@ -413,6 +413,7 @@ def main(
     alignment_response_queue: Queue = Queue()
     ui_queue: Queue = Queue()
     mountcontrol_queue: Queue = Queue()
+    goto_guide_queue: Queue = Queue()
 
     # init queues for logging
     keyboard_logqueue: Queue = log_helper.get_queue()
@@ -424,6 +425,7 @@ def main(
     integrator_logqueque: Queue = log_helper.get_queue()
     imu_logqueue: Queue = log_helper.get_queue()
     mountcontrol_logqueue: Queue = log_helper.get_queue()
+    goto_guide_logqueue: Queue = log_helper.get_queue()
 
     # Refuse to start if another instance is already running. A second copy
     # would otherwise boot and let its subsystems (web/pos-server ports, cedar
@@ -457,6 +459,7 @@ def main(
         "imu": imu_command_queue,
         "integrator": integrator_command_queue,
         "mountcontrol": mountcontrol_queue,
+        "goto_guide": goto_guide_queue,
     }
     cfg = config.Config()
     gps_time_monitor = gps_time_sync.GpsTimeSyncMonitor.from_config(cfg)
@@ -673,8 +676,36 @@ def main(
                 console.write("INDI mount failed")
                 return None
 
+        def start_goto_guide_process():
+            if not mountcontrol_enabled:
+                return None
+            console.write("   INDI GoTo/Guide")
+            logger.info("   INDI GoTo/Guide")
+            console.update()
+            try:
+                from PiFinder import indi_goto_guide_service
+
+                process = Process(
+                    name="IndiGotoGuide",
+                    target=indi_goto_guide_service.run,
+                    args=(
+                        goto_guide_queue,
+                        mountcontrol_queue,
+                        shared_state,
+                        goto_guide_logqueue,
+                    ),
+                )
+                process.start()
+                return process
+            except Exception:
+                logger.exception("Could not start INDI GoTo/Guide service")
+                console.write("INDI GoTo/Guide failed")
+                return None
+
         mountcontrol_process = start_mountcontrol_process()
+        goto_guide_process = start_goto_guide_process()
         next_mountcontrol_health_check = time.monotonic() + 5.0
+        next_goto_guide_health_check = time.monotonic() + 5.0
 
         start_bluetooth_keyboard_autoreconnect()
 
@@ -1084,6 +1115,27 @@ def main(
                         menu_manager.message(_("INDI Mount\nrestarting"), 3)
                         mountcontrol_process = start_mountcontrol_process()
 
+                if (
+                    mountcontrol_enabled
+                    and time.monotonic() >= next_goto_guide_health_check
+                ):
+                    next_goto_guide_health_check = time.monotonic() + 5.0
+                    if goto_guide_process is None:
+                        logger.warning(
+                            "INDI GoTo/Guide service is not running; restarting"
+                        )
+                        menu_manager.message(_("INDI GoTo/Guide\nrestarting"), 3)
+                        goto_guide_process = start_goto_guide_process()
+                    elif not goto_guide_process.is_alive():
+                        exitcode = goto_guide_process.exitcode
+                        logger.warning(
+                            "INDI GoTo/Guide service exited with code %s; restarting",
+                            exitcode,
+                        )
+                        goto_guide_process.join(timeout=0)
+                        menu_manager.message(_("INDI GoTo/Guide\nrestarting"), 3)
+                        goto_guide_process = start_goto_guide_process()
+
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt received: shutting down.")
             logger.info("SHUTDOWN")
@@ -1106,6 +1158,14 @@ def main(
 
             logger.info("\tPos Server...")
             posserver_process.join()
+
+            if goto_guide_process is not None:
+                logger.info("\tINDI GoTo/Guide...")
+                goto_guide_queue.put({"type": "shutdown"})
+                goto_guide_process.join(timeout=3)
+                if goto_guide_process.is_alive():
+                    goto_guide_process.terminate()
+                    goto_guide_process.join()
 
             if mountcontrol_process is not None:
                 logger.info("\tINDI Mount...")
