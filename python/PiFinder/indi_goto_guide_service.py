@@ -39,6 +39,9 @@ PIFINDER_MANUAL_LEASE_SECONDS = 0.8
 PIFINDER_MANUAL_TICK_SECONDS = 0.7
 PIFINDER_MANUAL_STALL_SECONDS = 5.0
 PIFINDER_MANUAL_MIN_COORDINATE_DELTA_DEGREES = 0.01
+PIFINDER_FINAL_GOTO_SETTLE_SECONDS = 2.0
+PIFINDER_MAX_CORRECTION_GOTOS = 2
+PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
 
 
 class IndiGotoGuideService:
@@ -73,6 +76,13 @@ class IndiGotoGuideService:
         self.last_coordinate_change_at = 0.0
         self.last_coordinate_ra: Optional[float] = None
         self.last_coordinate_dec: Optional[float] = None
+        self.final_goto_sent_at = 0.0
+        self.final_goto_idle_since = 0.0
+        self.correction_count = 0
+        self.previous_goto_error_arcmin: Optional[float] = None
+        self.final_sync_sent = False
+        self.tracking_target_ra: Optional[float] = None
+        self.tracking_target_dec: Optional[float] = None
         self.last_action = "startup"
         self.pointing_status: dict[str, Any] = {"available": False}
 
@@ -133,6 +143,11 @@ class IndiGotoGuideService:
             self.manual_direction = None
             self.manual_slew_rate = None
             self.last_manual_command_at = 0.0
+            self.final_goto_sent_at = 0.0
+            self.final_goto_idle_since = 0.0
+            self.correction_count = 0
+            self.previous_goto_error_arcmin = None
+            self.final_sync_sent = False
             self.service_state = "idle"
             self.phase = "idle"
             self.wait_reason = ""
@@ -257,8 +272,14 @@ class IndiGotoGuideService:
         return True
 
     def _tick_state_machine(self) -> None:
-        if self.phase != "manual_approach":
+        if self.phase == "manual_approach":
+            self._tick_manual_approach()
             return
+        if self.phase in {"final_indi_goto", "corrective_indi_goto"}:
+            self._tick_final_goto()
+            return
+
+    def _tick_manual_approach(self) -> None:
         if self.active_target_ra is None or self.active_target_dec is None:
             self._stop_with_error("manual approach target unavailable")
             return
@@ -389,8 +410,13 @@ class IndiGotoGuideService:
                     "sync_dec": self.current_dec,
                     "final_goto_ra": self.active_target_ra,
                     "final_goto_dec": self.active_target_dec,
+                    "correction_count": self.correction_count,
+                    "final_sync_sent": self.final_sync_sent,
                 }
             )
+        self.final_goto_sent_at = time.monotonic()
+        self.final_goto_idle_since = 0.0
+        self.previous_goto_error_arcmin = self.last_error_arcmin
         logger.info(
             "PiFinder manual approach reached %.2f arcmin; sync RA %.4f Dec %.4f "
             "then final GoTo RA %.4f Dec %.4f",
@@ -399,6 +425,134 @@ class IndiGotoGuideService:
             self.current_dec,
             self.active_target_ra,
             self.active_target_dec,
+        )
+
+    def _tick_final_goto(self) -> None:
+        if self.active_target_ra is None or self.active_target_dec is None:
+            self._stop_with_error("final GoTo target unavailable")
+            return
+
+        mount_status = self._mount_status_summary()
+        if not mount_status.get("available"):
+            self._stop_with_error("mount status unavailable during final GoTo")
+            return
+        if self._mount_summary_reports_parked(mount_status):
+            self._stop_with_error("mount parked during final GoTo")
+            return
+
+        now = time.monotonic()
+        if now - self.final_goto_sent_at < PIFINDER_FINAL_GOTO_SETTLE_SECONDS:
+            return
+
+        if self._mount_summary_reports_motion(mount_status):
+            self.final_goto_idle_since = 0.0
+            self.last_action = "waiting for final INDI GoTo"
+            return
+        if self.final_goto_idle_since == 0.0:
+            self.final_goto_idle_since = now
+            return
+        if now - self.final_goto_idle_since < PIFINDER_FINAL_GOTO_SETTLE_SECONDS:
+            return
+
+        pointing = self._refresh_pointing_status()
+        if not pointing.get("usable_for_goto"):
+            self._stop_with_error(
+                str(pointing.get("reason") or "pointing unavailable after final GoTo")
+            )
+            return
+
+        current = pointing.get("current") or {}
+        self.current_ra = self._finite_float(current.get("ra"))
+        self.current_dec = self._finite_float(current.get("dec"))
+        self.last_error_arcmin = self._angular_error_arcmin(
+            self.current_ra,
+            self.current_dec,
+            self.active_target_ra,
+            self.active_target_dec,
+        )
+        if self.last_error_arcmin is None:
+            self._stop_with_error("final GoTo error unavailable")
+            return
+
+        near_threshold_arcmin = (
+            float(self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0))
+            * 60.0
+        )
+        self._update_goto_plan()
+        if self.last_error_arcmin <= near_threshold_arcmin:
+            self._send_final_sync_once()
+            return
+
+        if self.correction_count >= PIFINDER_MAX_CORRECTION_GOTOS:
+            self._stop_with_error("final GoTo correction limit reached")
+            return
+        if (
+            self.previous_goto_error_arcmin is not None
+            and self.correction_count > 0
+            and self.last_error_arcmin
+            >= self.previous_goto_error_arcmin - PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN
+        ):
+            self._stop_with_error("final GoTo error did not improve")
+            return
+
+        self.previous_goto_error_arcmin = self.last_error_arcmin
+        self.correction_count += 1
+        self._forward_to_mountcontrol(
+            {
+                "type": "goto_target",
+                "ra": self.active_target_ra,
+                "dec": self.active_target_dec,
+                "refine_after_goto": False,
+            }
+        )
+        self.phase = "corrective_indi_goto"
+        self.service_state = "running"
+        self.final_goto_sent_at = now
+        self.final_goto_idle_since = 0.0
+        self.last_action = "pifinder corrective indi goto sent"
+        self._update_goto_plan()
+        logger.info(
+            "PiFinder corrective GoTo %s/%s sent; error %.2f arcmin",
+            self.correction_count,
+            PIFINDER_MAX_CORRECTION_GOTOS,
+            self.last_error_arcmin,
+        )
+
+    def _send_final_sync_once(self) -> None:
+        if self.final_sync_sent:
+            return
+        self._forward_to_mountcontrol(
+            {
+                "type": "sync",
+                "ra": self.active_target_ra,
+                "dec": self.active_target_dec,
+            }
+        )
+        self.final_sync_sent = True
+        self.tracking_target_ra = self.active_target_ra
+        self.tracking_target_dec = self.active_target_dec
+        self.service_state = "idle"
+        self.phase = "complete"
+        self.wait_reason = ""
+        self.last_action = "pifinder final sync complete"
+        self._update_goto_plan()
+        if self.goto_plan is not None:
+            self.goto_plan.update(
+                {
+                    "stage": "complete",
+                    "final_sync_ra": self.active_target_ra,
+                    "final_sync_dec": self.active_target_dec,
+                    "final_sync_sent": True,
+                    "tracking_target_ra": self.tracking_target_ra,
+                    "tracking_target_dec": self.tracking_target_dec,
+                }
+            )
+        logger.info(
+            "PiFinder GoTo complete; final sync target RA %.4f Dec %.4f "
+            "error %.2f arcmin",
+            self.active_target_ra,
+            self.active_target_dec,
+            self.last_error_arcmin if self.last_error_arcmin is not None else -1.0,
         )
 
     def _reset_coordinate_progress_tracking(self) -> None:
@@ -620,6 +774,16 @@ class IndiGotoGuideService:
         raw_mount_status = str(status.get("raw_mount_status", ""))
         return raw_mount_status.startswith("P")
 
+    def _mount_summary_reports_motion(self, status: dict[str, Any]) -> bool:
+        if bool(status.get("mount_motion_active")):
+            return True
+        if bool(status.get("goto_motion_active")):
+            return True
+        if status.get("manual_motion_direction"):
+            return True
+        state = str(status.get("state", "")).strip().lower()
+        return any(token in state for token in ("slew", "goto", "moving", "motion"))
+
     def _angular_error_arcmin(
         self,
         current_ra: Optional[float],
@@ -711,6 +875,10 @@ class IndiGotoGuideService:
             "current_dec": self.current_dec,
             "manual_direction": self.manual_direction,
             "manual_slew_rate": self.manual_slew_rate,
+            "correction_count": self.correction_count,
+            "final_sync_sent": self.final_sync_sent,
+            "tracking_target_ra": self.tracking_target_ra,
+            "tracking_target_dec": self.tracking_target_dec,
             "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
             "tracking_guide_enabled": self.config_values.get(
                 "indi_tracking_guide_enabled", False
