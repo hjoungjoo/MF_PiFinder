@@ -761,7 +761,11 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             and self._stage in {self._STAGE_ADJUST, self._STAGE_STAR, self._STAGE_PREPARING}
         ):
             self._complete_or_cancel_to_settings(_("Align Complete"))
-        if align_status.get("state") == "failed" and self._stage == self._STAGE_PREPARING:
+        if align_status.get("state") in {"failed", "cancelled"} and self._stage in {
+            self._STAGE_ADJUST,
+            self._STAGE_STAR,
+            self._STAGE_PREPARING,
+        }:
             self._stage = self._STAGE_MODE
 
     def _draw_rows(self, rows, hints):
@@ -813,7 +817,7 @@ class UIIndiMultiPointAlign(UIIndiGuide):
                 [
                     _("Syncing PiFinder"),
                     _("Wait for mount"),
-                    _("Left cancel"),
+                    _("Left mode/cancel"),
                 ],
             )
             return
@@ -854,7 +858,7 @@ class UIIndiMultiPointAlign(UIIndiGuide):
                 _("Up/Down star"),
                 _("Right/Square GoTo"),
                 _("SkySafari GoTo/Align OK"),
-                _("Left cancel"),
+                _("Left mode/cancel"),
             ],
         )
 
@@ -886,7 +890,12 @@ class UIIndiMultiPointAlign(UIIndiGuide):
 
         bottom_y = self.display_class.resY - (small_h * 3) - 2
         overlay_text(4, bottom_y, _("789 / 4 6 / 123 move"), use_font=small_font)
-        overlay_text(4, bottom_y + small_h, _("Release: stop"), use_font=small_font)
+        overlay_text(
+            4,
+            bottom_y + small_h,
+            _("Release stop  Left back"),
+            use_font=small_font,
+        )
         overlay_text(
             4, bottom_y + small_h * 2, _("Square : Confirm"), use_font=small_font
         )
@@ -992,9 +1001,13 @@ class UIIndiMultiPointAlign(UIIndiGuide):
     def key_left(self):
         if self._stage == self._STAGE_ADJUST:
             self._move("stop")
-            if self._send_mount({"type": "multipoint_align_cancel"}):
-                self.message(_("Align Cancelled"), 1)
-            self._stage = self._STAGE_STAR if self.align_mode == "manual" else self._STAGE_MODE
+            if self.align_mode == "manual":
+                self._send_mount({"type": "multipoint_align_clear_target"})
+                self._stage = self._STAGE_STAR
+            else:
+                if self._send_mount({"type": "multipoint_align_cancel"}):
+                    self.message(_("Align Cancelled"), 1)
+                self._stage = self._STAGE_MODE
             self.update()
             return False
         if self._stage == self._STAGE_STAR:

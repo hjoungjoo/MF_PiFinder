@@ -47,6 +47,9 @@ _POINTING_UPDATE_SECONDS = 0.2
 _CONFIG_RELOAD_SECONDS = 1.0
 _ALIGN_TIMEOUT_SECONDS = 2.0
 _GUIDE_LEASE_SECONDS = 1.2
+_GUIDE_KEEPALIVE_SECONDS = 0.4
+_GUIDE_RESTART_SECONDS = 8.0
+_GUIDE_MAX_HOLD_SECONDS = 60.0
 _MOUNT_STATUS_CACHE_SECONDS = 0.2
 _SKYSAFARI_SLEW_GRACE_SECONDS = 2.0
 _SKYSAFARI_SLEW_STATES = {"slewing", "refine_wait", "refine_sent"}
@@ -76,6 +79,14 @@ _GUIDE_DIRECTIONS = {
     "Ms": "south",
     "Me": "east",
     "Mw": "west",
+}
+_guide_motion_lock = threading.Lock()
+_guide_motion_state = {
+    "direction": None,
+    "timer": None,
+    "token": 0,
+    "started_at": 0.0,
+    "next_restart_at": 0.0,
 }
 _coordinate_service = PointingCoordinateService()
 _POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
@@ -764,14 +775,113 @@ def _target_from_parsed_coordinates() -> Optional[Tuple[float, float]]:
     return ra % 360.0, dec
 
 
+def _queue_mountcontrol_command(command: dict) -> bool:
+    if mountcontrol_queue is None:
+        return False
+    mountcontrol_queue.put(command)
+    return True
+
+
+def _schedule_skysafari_guide_keepalive_locked(token: int) -> None:
+    timer = threading.Timer(
+        _GUIDE_KEEPALIVE_SECONDS,
+        _skysafari_guide_keepalive_if_current,
+        args=(token,),
+    )
+    timer.daemon = True
+    _guide_motion_state["timer"] = timer
+    timer.start()
+
+
+def _skysafari_guide_keepalive_if_current(token: int) -> None:
+    command_type = "manual_movement_keepalive"
+    with _guide_motion_lock:
+        if token != _guide_motion_state["token"]:
+            return
+        direction = _guide_motion_state["direction"]
+        if not direction:
+            return
+
+        now = time.monotonic()
+        started_at = float(_guide_motion_state.get("started_at") or now)
+        if now - started_at >= _GUIDE_MAX_HOLD_SECONDS:
+            _guide_motion_state["token"] = int(_guide_motion_state["token"]) + 1
+            _guide_motion_state["direction"] = None
+            _guide_motion_state["timer"] = None
+            _guide_motion_state["started_at"] = 0.0
+            _guide_motion_state["next_restart_at"] = 0.0
+            direction = None
+        else:
+            next_restart_at = float(_guide_motion_state.get("next_restart_at") or 0.0)
+            if next_restart_at and now >= next_restart_at:
+                command_type = "manual_movement"
+                _guide_motion_state["next_restart_at"] = now + _GUIDE_RESTART_SECONDS
+            _schedule_skysafari_guide_keepalive_locked(token)
+
+    if direction is None:
+        _queue_mountcontrol_command({"type": "stop_movement"})
+        logger.warning("SkySafari guide maximum hold time exceeded; stop queued")
+        return
+
+    if token != _guide_motion_state["token"]:
+        return
+    if not direction:
+        return
+
+    _queue_mountcontrol_command(
+        {
+            "type": command_type,
+            "direction": direction,
+            "lease_seconds": _GUIDE_LEASE_SECONDS,
+        }
+    )
+    logger.debug("SkySafari guide %s queued: %s", command_type, direction)
+
+
+def _start_skysafari_guide_keepalive(direction: str) -> Optional[str]:
+    with _guide_motion_lock:
+        previous_direction = _guide_motion_state["direction"]
+        timer = _guide_motion_state.get("timer")
+        if timer is not None:
+            timer.cancel()
+
+        _guide_motion_state["token"] = int(_guide_motion_state["token"]) + 1
+        token = int(_guide_motion_state["token"])
+        _guide_motion_state["direction"] = direction
+        _guide_motion_state["started_at"] = time.monotonic()
+        _guide_motion_state["next_restart_at"] = (
+            _guide_motion_state["started_at"] + _GUIDE_RESTART_SECONDS
+        )
+        _schedule_skysafari_guide_keepalive_locked(token)
+        return previous_direction if isinstance(previous_direction, str) else None
+
+
+def _stop_skysafari_guide_keepalive() -> bool:
+    with _guide_motion_lock:
+        had_direction = _guide_motion_state["direction"] is not None
+        timer = _guide_motion_state.get("timer")
+        _guide_motion_state["token"] = int(_guide_motion_state["token"]) + 1
+        _guide_motion_state["direction"] = None
+        _guide_motion_state["timer"] = None
+        _guide_motion_state["started_at"] = 0.0
+        _guide_motion_state["next_restart_at"] = 0.0
+
+    if timer is not None:
+        timer.cancel()
+    return had_direction
+
+
 def handle_guide_move(_shared_state, input_str: str):
     command = extract_command(input_str)
     direction = _GUIDE_DIRECTIONS.get(command)
     if not direction:
         return None
 
-    if _mount_control_enabled():
-        mountcontrol_queue.put(
+    if _mount_control_enabled() and mountcontrol_queue is not None:
+        previous_direction = _start_skysafari_guide_keepalive(direction)
+        if previous_direction and previous_direction != direction:
+            _queue_mountcontrol_command({"type": "stop_movement"})
+        _queue_mountcontrol_command(
             {
                 "type": "manual_movement",
                 "direction": direction,
@@ -785,8 +895,11 @@ def handle_guide_move(_shared_state, input_str: str):
 
 
 def handle_guide_stop(_shared_state, _input_str: str):
-    if _mount_control_enabled():
-        mountcontrol_queue.put({"type": "stop_movement"})
+    had_active_motion = _stop_skysafari_guide_keepalive()
+    if (
+        _mount_control_enabled() or had_active_motion
+    ) and mountcontrol_queue is not None:
+        _queue_mountcontrol_command({"type": "stop_movement"})
         logger.debug("SkySafari guide stop queued")
     else:
         logger.debug("SkySafari guide stop ignored; INDI mount control is disabled")

@@ -74,11 +74,16 @@ Once connected, SkySafari and the PiFinder work together in two main ways:
 
 A few things are worth knowing about the connection today:
 
-* SkySafari does **not** command the PiFinder to slew or auto-center a GoTo mount.  The
-  connection reads out position and sends targets; GoTo control is in development.
+* By default, SkySafari reads PiFinder position and sends targets into the PiFinder
+  observing flow.
+* On MF PiFinder builds with INDI mount control configured, SkySafari GoTo, Sync/Align,
+  and guide button commands can optionally be forwarded to the INDI mount.  Enable that
+  only after the INDI mount setup works from the PiFinder INDI page.
 * Only **one** device can connect to the PiFinder at a time.  To connect a different phone
   or tablet, disconnect the first one.
-* The PiFinder cannot talk to SkySafari and a GoTo mount at the same time — choose one.
+* When guide forwarding is enabled, SkySafari direction buttons move while held and stop
+  when SkySafari sends the release/stop command.  A safety timeout stops motion if a stop
+  command is lost.
 * SkySafari 5 Plus, 6, and 7 all work; version 7 is the most reliable.
 
 .. note::

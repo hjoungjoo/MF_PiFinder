@@ -333,6 +333,75 @@ def test_synced_mount_motion_uses_mount_readback_until_stationary():
     assert "mount motion/settle active" in health.warnings[0]
 
 
+def test_synced_manual_motion_uses_mount_readback_until_stationary():
+    service = PointingCoordinateService()
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    manual_mount = CoordinateSample(
+        ra_deg=20.0,
+        dec_deg=30.0,
+        source=SOURCE_MOUNT,
+        valid=True,
+        aligned=True,
+        timestamp=100.0,
+        metadata={
+            "state": "manual_motion",
+            "manual_motion_direction": "east",
+            "coordinate_sync": {"synced_at": 1.0},
+        },
+    )
+    imu_moved = CoordinateSample(
+        ra_deg=120.0,
+        dec_deg=40.0,
+        source=SOURCE_IMU,
+        valid=True,
+        timestamp=100.0,
+    )
+    health = CoordinateHealth()
+
+    current = service._select_current(solved, imu_moved, manual_mount, health)
+
+    assert current.source == SOURCE_MOUNT
+    assert current.radec() == pytest.approx((20.0, 30.0))
+    assert current.metadata["motion_active"] is True
+    assert "mount motion/settle active" in health.warnings[0]
+
+
+def test_common_readback_priority_overrides_legacy_motion_state():
+    service = PointingCoordinateService()
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    mount = CoordinateSample(
+        ra_deg=20.0,
+        dec_deg=30.0,
+        source=SOURCE_MOUNT,
+        valid=True,
+        aligned=True,
+        timestamp=100.0,
+        metadata={
+            "state": "connected",
+            "mount_motion_active": False,
+            "mount_motion_type": "goto_refine_settle",
+            "mount_readback_priority": True,
+            "coordinate_sync": {"synced_at": 1.0},
+        },
+    )
+    imu_moved = CoordinateSample(
+        ra_deg=120.0,
+        dec_deg=40.0,
+        source=SOURCE_IMU,
+        valid=True,
+        timestamp=100.0,
+    )
+    health = CoordinateHealth()
+
+    current = service._select_current(solved, imu_moved, mount, health)
+
+    assert current.source == SOURCE_MOUNT
+    assert current.radec() == pytest.approx((20.0, 30.0))
+    assert current.metadata["motion_active"] is False
+    assert current.metadata["readback_priority"] is True
+    assert "mount motion/settle active" in health.warnings[0]
+
+
 def test_synced_mount_reanchors_imu_delta_after_motion_stops():
     service = PointingCoordinateService()
     solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")

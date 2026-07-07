@@ -518,6 +518,9 @@ class PointingCoordinateService:
                 "park_state": status.get("park_state"),
                 "driver_mount_status": status.get("driver_mount_status"),
                 "raw_mount_status": status.get("raw_mount_status"),
+                "mount_motion_active": status.get("mount_motion_active"),
+                "mount_motion_type": status.get("mount_motion_type"),
+                "mount_readback_priority": status.get("mount_readback_priority"),
                 "goto_motion_active": status.get("goto_motion_active"),
                 "goto_refine_pending": status.get("goto_refine_pending"),
                 "manual_motion_direction": status.get("manual_motion_direction"),
@@ -666,6 +669,7 @@ class PointingCoordinateService:
     def _mount_readback_sample(self, mount: CoordinateSample) -> CoordinateSample:
         metadata = dict(mount.metadata)
         metadata["motion_active"] = self.mount_sample_is_motion_active(mount)
+        metadata["readback_priority"] = self.mount_sample_prefers_readback(mount)
         return CoordinateSample(
             ra_deg=mount.ra_deg,
             dec_deg=mount.dec_deg,
@@ -910,10 +914,13 @@ class PointingCoordinateService:
     def mount_sample_is_motion_active(self, mount: CoordinateSample) -> bool:
         return self.mount_status_motion_active(mount.metadata)
 
+    def mount_sample_prefers_readback(self, mount: CoordinateSample) -> bool:
+        return self.mount_status_prefers_readback(mount.metadata)
+
     def mount_sample_allows_imu_delta(self, mount: CoordinateSample) -> bool:
         now = time.monotonic()
         mount_radec = mount.radec()
-        motion_active = self.mount_sample_is_motion_active(mount)
+        readback_priority = self.mount_sample_prefers_readback(mount)
         readback_moving = False
 
         if mount_radec is not None and self._last_mount_motion_radec is not None:
@@ -928,7 +935,7 @@ class PointingCoordinateService:
         if mount_radec is not None:
             self._last_mount_motion_radec = mount_radec
 
-        if motion_active or readback_moving:
+        if readback_priority or readback_moving:
             self._mount_motion_hold_until = max(
                 self._mount_motion_hold_until,
                 now + MOUNT_IMU_DELTA_HOLD_SECONDS,
@@ -941,6 +948,21 @@ class PointingCoordinateService:
         if not isinstance(status, dict):
             return False
 
+        if "mount_motion_active" in status:
+            return bool(status.get("mount_motion_active"))
+
+        return self._legacy_mount_status_motion_active(status)
+
+    def mount_status_prefers_readback(self, status: dict[str, Any]) -> bool:
+        if not isinstance(status, dict):
+            return False
+
+        if "mount_readback_priority" in status:
+            return bool(status.get("mount_readback_priority"))
+
+        return self._legacy_mount_status_motion_active(status)
+
+    def _legacy_mount_status_motion_active(self, status: dict[str, Any]) -> bool:
         if status.get("goto_motion_active") or status.get("goto_refine_pending"):
             return True
         if status.get("manual_motion_direction"):

@@ -399,6 +399,7 @@ class MountControlIndi:
         self._guide_correction_next_at = 0.0
         self._guide_correction_last_solve_time = 0.0
         self._last_goto_progress_status_at = 0.0
+        self._last_manual_motion_status_at = 0.0
         self.backlash_ra: Optional[int] = None
         self.backlash_de: Optional[int] = None
         self._backlash_auto: Optional[dict[str, Any]] = None
@@ -410,7 +411,84 @@ class MountControlIndi:
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
 
-    def _status_fields(self, **extra: Any) -> dict[str, Any]:
+    def _mount_common_status_fields(
+        self, state: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        state_lower = state.strip().lower()
+        motion_type: Optional[str] = None
+        motion_active = False
+        readback_priority = False
+
+        if self._manual_motion_direction is not None or payload.get(
+            "manual_motion_direction"
+        ):
+            motion_type = "manual"
+            motion_active = True
+            readback_priority = True
+        elif self._goto_motion is not None or payload.get("goto_motion_active"):
+            motion_type = "goto"
+            motion_active = True
+            readback_priority = True
+        elif self._pending_goto_refine is not None or payload.get(
+            "goto_refine_pending"
+        ):
+            motion_type = "goto_refine_settle"
+            readback_priority = True
+
+        if state_lower in {"slewing", "align_goto"}:
+            motion_type = motion_type or "goto"
+            motion_active = True
+            readback_priority = True
+        elif state_lower == "manual_motion":
+            motion_type = motion_type or "manual"
+            motion_active = True
+            readback_priority = True
+        elif state_lower in {"refine_wait", "refine_sent"}:
+            motion_type = motion_type or "goto_refine_settle"
+            readback_priority = True
+        elif state_lower == "guide_correction":
+            motion_type = motion_type or "guide_correction"
+            readback_priority = True
+        elif state_lower.startswith("backlash_auto_") and state_lower not in {
+            "backlash_auto_complete",
+            "backlash_auto_failed",
+            "backlash_auto_stopped",
+        }:
+            motion_type = motion_type or "backlash_auto"
+            motion_active = True
+            readback_priority = True
+        elif "slew" in state_lower or "goto" in state_lower:
+            motion_type = motion_type or "goto"
+            motion_active = True
+            readback_priority = True
+        elif "moving" in state_lower or "motion" in state_lower:
+            motion_type = motion_type or "manual"
+            motion_active = True
+            readback_priority = True
+
+        multipoint = payload.get("multipoint_align")
+        if isinstance(multipoint, dict):
+            align_state = str(multipoint.get("state", "")).strip().lower()
+            if "goto" in align_state or "slew" in align_state:
+                motion_type = motion_type or "align_goto"
+                motion_active = True
+                readback_priority = True
+
+        backlash = payload.get("backlash_auto")
+        if isinstance(backlash, dict):
+            backlash_state = str(backlash.get("state", "")).strip().lower()
+            if backlash_state in {"starting", "running"}:
+                motion_type = motion_type or "backlash_auto"
+                motion_active = True
+                readback_priority = True
+
+        return {
+            "mount_motion_active": motion_active,
+            "mount_motion_type": motion_type,
+            "mount_readback_priority": readback_priority,
+        }
+
+    def _status_fields(self, state: str = "", **extra: Any) -> dict[str, Any]:
         payload = {
             "step_degrees": self.step_degrees,
             "slew_rate": self.slew_rate,
@@ -456,6 +534,7 @@ class MountControlIndi:
             except Exception:
                 pass
         payload.update(extra)
+        payload.update(self._mount_common_status_fields(state, payload))
         return payload
 
     def _device_switch_on(
@@ -518,7 +597,7 @@ class MountControlIndi:
     def _write_controller_status(
         self, state: str, message: str = "", **extra: Any
     ) -> None:
-        _write_status(state, message, **self._status_fields(**extra))
+        _write_status(state, message, **self._status_fields(state, **extra))
 
     def _indi_device_name(self) -> str:
         if self.device is not None:
@@ -783,6 +862,7 @@ class MountControlIndi:
         self._manual_motion_deadline = now + self._manual_motion_lease(lease_seconds)
         self._manual_motion_started_at = now
         self._manual_motion_stop_retry_at = 0.0
+        self._last_manual_motion_status_at = 0.0
 
     def manual_motion_keepalive(
         self, direction: str, lease_seconds: Any = None
@@ -830,6 +910,55 @@ class MountControlIndi:
             return
 
         self._manual_motion_stop_retry_at = now + MANUAL_MOTION_STOP_RETRY_SECONDS
+
+    def _read_manual_motion_progress_position(
+        self,
+    ) -> Optional[tuple[float, float]]:
+        try:
+            return self._read_cached_current_position(write_status=False)
+        except TypeError:
+            # Some tests monkeypatch this method with a no-argument callable.
+            return self._read_cached_current_position()
+
+    def _write_manual_motion_progress_status(
+        self,
+        current_position: Optional[tuple[float, float]],
+        force: bool = False,
+    ) -> None:
+        if self._manual_motion_direction is None:
+            return
+
+        now = time.monotonic()
+        if (
+            not force
+            and now - self._last_manual_motion_status_at
+            < POSITION_STATUS_MIN_INTERVAL
+        ):
+            return
+        self._last_manual_motion_status_at = now
+
+        extra: dict[str, Any] = {
+            "manual_motion_direction": self._manual_motion_direction,
+        }
+        if self._manual_motion_started_at is not None:
+            extra["manual_motion_elapsed"] = round(
+                now - self._manual_motion_started_at, 1
+            )
+        if current_position is not None:
+            extra["ra"] = current_position[0] % 360.0
+            extra["dec"] = current_position[1]
+
+        self._write_controller_status(
+            "manual_motion",
+            f"Manual {self._manual_motion_direction} motion in progress",
+            **extra,
+        )
+
+    def _publish_manual_motion_progress(self, force: bool = False) -> None:
+        if self._manual_motion_direction is None:
+            return
+        current_position = self._read_manual_motion_progress_position()
+        self._write_manual_motion_progress_status(current_position, force=force)
 
     def _wait_for_device(
         self, timeout: float = AUTO_CONNECT_DEVICE_WAIT_SECONDS
@@ -1866,6 +1995,7 @@ class MountControlIndi:
             return False
 
         self._arm_manual_motion_deadline(direction, lease_seconds)
+        self._publish_manual_motion_progress(force=True)
         logger.info("Manual %s motion sent", direction)
         self._console(f"INDI move\n{direction}")
         return True
@@ -4751,13 +4881,15 @@ class MountControlIndi:
                 float(current_star["dec"]),
             )
             self._multipoint_align_controller.clear_current_target()
-            self._multipoint_align_controller.fail(
-                f"Could not GoTo {current_star['name']}"
+            self._align_session_status(
+                STATE_WAITING,
+                f"Could not GoTo {current_star['name']}; select another star",
             )
-            self._multipoint_align = self._multipoint_align_controller.status()
             self._write_controller_status(
-                "align_failed", f"Could not GoTo {current_star['name']}"
+                "align_goto_failed",
+                f"Could not GoTo {current_star['name']}; select another star",
             )
+            self._console("Align GoTo\nfailed")
             return False
 
         self._multipoint_align_controller.mark_current_target_sent()
@@ -5021,6 +5153,15 @@ class MountControlIndi:
         self._console("Multi align\ncancelled")
         return True
 
+    def clear_multipoint_align_target(self) -> bool:
+        session = self._multipoint_align_controller.active_session()
+        if not session:
+            return False
+        self._multipoint_align_controller.clear_current_target()
+        self._align_session_status(STATE_WAITING, "Select an alignment star")
+        self._write_controller_status("align_target_cleared", "Select another star")
+        return True
+
     def change_slew_rate(self, delta: int) -> None:
         self.refresh_slew_rate()
         self.set_slew_rate(self.slew_rate + delta)
@@ -5119,6 +5260,8 @@ class MountControlIndi:
             )
         elif command_type == "multipoint_align_cancel":
             self.cancel_multipoint_align()
+        elif command_type == "multipoint_align_clear_target":
+            self.clear_multipoint_align_target()
         elif command_type == "sync_location_time":
             self.sync_location_time(
                 include_default_location=bool(
@@ -5141,6 +5284,7 @@ class MountControlIndi:
         next_auto_connect_at = time.monotonic() + AUTO_CONNECT_START_DELAY
         while running:
             self._check_manual_motion_deadline()
+            self._publish_manual_motion_progress()
             self._check_goto_motion()
             self._check_pending_goto_refine()
             self._check_guide_correction()
@@ -5151,6 +5295,7 @@ class MountControlIndi:
                 running = self.handle_command(command)
             except queue.Empty:
                 self._check_manual_motion_deadline()
+                self._publish_manual_motion_progress()
                 self._check_goto_motion()
                 self._check_pending_goto_refine()
                 self._check_guide_correction()

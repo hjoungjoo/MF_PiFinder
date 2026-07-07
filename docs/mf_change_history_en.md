@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -37,16 +37,16 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Korean UI localization | Draft PR exists | [#500](https://github.com/brickbots/PiFinder/pull/500), `pr/korean-localization` | `python/locale/ko`, `ko` language menu entry, CJK font/restart handling |
 | Bluetooth/USB HID keyboard support | Draft PR exists | [#506](https://github.com/brickbots/PiFinder/pull/506), `pr/bluetooth-keyboard-support` | libinput key mapping, text-entry keycodes, Bluetooth keyboard scan/pair/connect UI, reconnect |
 | INDI mount control | Draft PR exists | [#503](https://github.com/brickbots/PiFinder/pull/503), `pr/indi-mount-control` | optional INDI mount process, object details sync, LX200 OnStepX custom-driver patch, install script, INDI docs |
-| INDI Multi Align shared flow | No Draft PR yet | local `mf_pifinder` worktree | shared `MultiPointAlignController`, Web/LCD/SkySafari session unification, deferred OnStepX native align start, stale native align `:SX09,0#` reset, PiFinder coordinate sync verification, real OnStepX hardware testing |
+| INDI Multi Align shared flow | No Draft PR yet | local `mf_pifinder` worktree | shared `MultiPointAlignController`, Web/LCD/SkySafari session unification, deferred OnStepX native align start, stale native align `:SX09,0#` reset, PiFinder coordinate sync verification, recoverable GoTo failure/target clear, real OnStepX hardware testing |
 | Integrated GPS/NTP/RTC/software PPS time sync | Draft PR exists | [#504](https://github.com/brickbots/PiFinder/pull/504), `pr/time-sync-sources` | GPS/NTP best-source selection, helper service, dry-run/real clock sync, status UI, time-sync docs |
 | Wi-Fi AP+STA simultaneous mode and AP settings | No Draft PR yet | local `mf_pifinder` worktree | `wlan0` STA + `uap0` AP, STA channel tracking, STA band preference, configurable AP IP, AP WPA2 password setting, AP+STA internet sharing option, OS Wi-Fi profile import, scanned SSID selection, shared Pi 4/5 Wi-Fi mode |
 | Locations catalog | No Draft PR yet | local `mf_pifinder` worktree | GeoNames-based offline location catalog, country/region/district/city selection, coordinate/altitude/source prefill, North Korea excluded |
 | Web UI red night theme and PWA fullscreen app mode | No Draft PR yet | local `mf_pifinder` worktree | red night theme, per-browser theme storage, PWA manifest, service worker, PWA icons |
 | Optional IMU compass heading | No Draft PR yet | local `mf_pifinder` worktree | optional BNO055 NDOF magnetometer fusion mode, IMU calibration status, automatic calibration save/load, manual calibration menu |
-| SkySafari/INDI mount-mode compatibility | No Draft PR yet | local `mf_pifinder` worktree | Alt/Az/EQ SkySafari LX200 status, no-solve IMU alignment correction, mount-mode compatibility checklist |
-| Pointing Coordinate Service | No Draft PR yet | local `mf_pifinder` worktree | shared coordinate service for SkySafari/Web/LCD/INDI Multi Align, requested target coordinates used as-is, IMU smoothing, mount readback priority during GoTo |
+| SkySafari/INDI mount-mode compatibility | No Draft PR yet | local `mf_pifinder` worktree | Alt/Az/EQ SkySafari LX200 status, optional GoTo/Sync forwarding, SkySafari guide keepalive bridge, no-solve IMU alignment correction, mount-mode compatibility checklist |
+| Pointing Coordinate Service | No Draft PR yet | local `mf_pifinder` worktree | shared coordinate service for SkySafari/Web/LCD/INDI Multi Align, requested target coordinates used as-is, IMU smoothing, mount readback priority during GoTo/manual motion |
 | Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |
-| Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted Web UI/PWA changes | integration branch used for install and hardware testing across the features above |
+| Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted changes | integration branch used for install and hardware testing across the features above |
 
 ## Suggested PR Regrouping
 
@@ -65,8 +65,8 @@ to follow. The following grouping is easier to maintain.
 | Locations catalog | GeoNames-based offline location catalog, country/region/district/city selector, coordinate prefill | New Draft PR needed |
 | Web observing UI | red night theme, PWA/fullscreen app mode | New Draft PR needed |
 | Optional IMU compass heading | BNO055 NDOF option, automatic/manual calibration, status UI | New Draft PR needed |
-| SkySafari/INDI mount-mode compatibility | Alt/Az/EQ SkySafari LX200 status, no-solve IMU correction, INDI mount-mode verification docs | New Draft PR needed |
-| Pointing Coordinate Service | always-running coordinate service combining `pointing.aligned.estimate`, IMU fallback, and INDI mount readback; SkySafari coordinate response; mount progress readback during GoTo | Include in SkySafari/INDI mount-mode PR or split as a coordinate-service PR |
+| SkySafari/INDI mount-mode compatibility | Alt/Az/EQ SkySafari LX200 status, SkySafari GoTo/Sync forwarding, guide keepalive bridge, no-solve IMU correction, INDI mount-mode verification docs | New Draft PR needed |
+| Pointing Coordinate Service | always-running coordinate service combining `pointing.aligned.estimate`, IMU fallback, and INDI mount readback; SkySafari coordinate response; mount progress readback during GoTo/manual motion | Include in SkySafari/INDI mount-mode PR or split as a coordinate-service PR |
 | Korean localization | Korean locale and CJK language handling | Keep #500 separate because the locale file is large |
 
 Documentation should travel with the feature PR that needs it. For example, INDI

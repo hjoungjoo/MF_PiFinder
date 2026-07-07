@@ -1,6 +1,6 @@
 # MF PiFinder INDI Multi Align Source Flow
 
-Baseline: `mf_pifinder` branch, 2026-07-06.
+Baseline: `mf_pifinder` branch, 2026-07-08.
 
 This document describes the current source-level INDI Multi Align flow used by
 the Web UI, LCD UI, and SkySafari bridge. The shared state machine lives in
@@ -223,10 +223,11 @@ GoTo:
 4. Otherwise call goto_target(ra, dec, refine_after_goto=False).
 5. Verify INDI GoTo target accept/readback.
 6. On success, set target_sent=true and state=adjust.
-7. On failure, set state=failed and active=false.
+7. On GoTo reject/failure, clear current_star and return to state=waiting.
 ```
 
-Altitude-limit rejection is recoverable; the user can select another star.
+Altitude-limit rejection and GoTo rejection/failure are recoverable. The session
+stays active so the user can select another star from LCD/Web or SkySafari.
 
 ## Confirm Flow
 
@@ -299,7 +300,11 @@ LCD controls:
 - Manual Star: right/square selects the star and sends GoTo
 - Guide: `789 / 4 6 / 123` moves while held; release stops
 - Guide: square confirms
-- Left: previous stage or cancel
+- Left:
+  - In Guide with Manual mode, send `multipoint_align_clear_target`, clear only
+    the current target, and return to Manual Star. The session stays active.
+  - From Manual Star/Preparing to the Manual/Auto mode screen, cancel the session.
+  - From Manual/Auto mode to Points, there should be no active session.
 
 Auto mode prefers solved pointing. IMU fallback exists, but solve-based Auto mode
 is safer during real observing.
@@ -323,7 +328,7 @@ point.
 
 ## Hardware Verification
 
-Verified on 2026-07-06 with OnStepX hardware:
+Verified on 2026-07-08 with OnStepX hardware and unit tests:
 
 - A stale native OnStep align state was reset with direct `:SX09,0#`, then
   `:A?# -> 900#`.
@@ -334,6 +339,11 @@ Verified on 2026-07-06 with OnStepX hardware:
 - Vega confirm recorded `completed_points=1` and `mount_align_command=sync`.
 - Altair below the 20-degree limit returned to `waiting` instead of failing the
   session.
+- GoTo rejection/failure or an altitude-limited target clears `current_star`,
+  returns to `waiting`, and keeps the session active.
+- On the LCD Guide stage, the left key clears only the manual target and returns
+  to star selection. Cancellation happens only when returning to the Manual/Auto
+  selection stage.
 - Cancel closed the session with `active=false`, `state=cancelled`.
 
 ## Tests
@@ -342,17 +352,21 @@ Relevant tests:
 
 ```text
 python/tests/test_mountcontrol_indi.py
-python/tests/test_sys_utils_fake.py
+python/tests/test_pos_server.py
+python/tests/test_pointing_coordinate_service.py
 ```
 
 Command:
 
 ```bash
-python -m pytest python/tests/test_mountcontrol_indi.py python/tests/test_sys_utils_fake.py
+python -m pytest \
+  python/tests/test_pos_server.py \
+  python/tests/test_mountcontrol_indi.py \
+  python/tests/test_pointing_coordinate_service.py
 ```
 
-Result on 2026-07-06:
+Result on 2026-07-08:
 
 ```text
-60 passed
+110 passed
 ```

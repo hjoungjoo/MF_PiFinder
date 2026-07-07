@@ -148,7 +148,7 @@ class DummyConnectedMount(MountControlIndi):
         self.accept_goto_target = True
 
     def _write_controller_status(self, state, message="", **extra):
-        self.statuses.append((state, message, extra))
+        self.statuses.append((state, message, self._status_fields(state, **extra)))
 
     def _goto_target_accepted(self, ra_deg, dec_deg):
         return self.accept_goto_target
@@ -229,6 +229,52 @@ def test_manual_motion_east_west_are_reversed_for_onstep_guide_axis():
         "TELESCOPE_MOTION_WE.MOTION_EAST=On" in prop
         for prop in mount.applied_properties[-1]
     )
+
+
+def test_manual_motion_publishes_mount_readback_while_active(monkeypatch):
+    mount = DummyConnectedMount()
+    clock = [100.0]
+    positions = [(101.25, -12.5), (101.5, -12.4)]
+    cached_reads = []
+
+    def fake_monotonic():
+        return clock[0]
+
+    def fake_apply(properties, success_state, success_message, failure_state):
+        return True
+
+    def fake_cached_position(write_status=True):
+        cached_reads.append(write_status)
+        position = positions[min(len(cached_reads) - 1, len(positions) - 1)]
+        mount.current_ra, mount.current_dec = position
+        return position
+
+    monkeypatch.setattr(mci.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(mount, "_apply_indi_properties", fake_apply)
+    monkeypatch.setattr(mount, "_read_cached_current_position", fake_cached_position)
+
+    assert mount.manual_move("north", lease_seconds=1.2)
+
+    assert cached_reads == [False]
+    assert mount.statuses[-1][0] == "manual_motion"
+    assert mount.statuses[-1][1] == "Manual north motion in progress"
+    assert mount.statuses[-1][2]["manual_motion_direction"] == "north"
+    assert mount.statuses[-1][2]["mount_motion_active"] is True
+    assert mount.statuses[-1][2]["mount_motion_type"] == "manual"
+    assert mount.statuses[-1][2]["mount_readback_priority"] is True
+    assert mount.statuses[-1][2]["ra"] == 101.25
+    assert mount.statuses[-1][2]["dec"] == -12.5
+
+    clock[0] += mci.POSITION_STATUS_MIN_INTERVAL + 0.1
+    mount._publish_manual_motion_progress()
+
+    assert cached_reads == [False, False]
+    assert mount.statuses[-1][0] == "manual_motion"
+    assert mount.statuses[-1][2]["ra"] == 101.5
+    assert mount.statuses[-1][2]["dec"] == -12.4
+    assert mount.statuses[-1][2]["mount_motion_active"] is True
+    assert mount.statuses[-1][2]["mount_motion_type"] == "manual"
+    assert mount.statuses[-1][2]["mount_readback_priority"] is True
 
 
 def test_set_backlash_sends_indi_backlash_properties():
@@ -834,8 +880,22 @@ def test_multipoint_align_goto_failure_clears_current_star():
     assert not mount.select_multipoint_align_star("Vega", goto=True)
 
     assert mount._multipoint_align is not None
-    assert not mount._multipoint_align["active"]
-    assert mount._multipoint_align["state"] == "failed"
+    assert mount._multipoint_align["active"]
+    assert mount._multipoint_align["state"] == "waiting"
+    assert mount._multipoint_align["current_star"] is None
+    assert "select another star" in mount._multipoint_align["message"]
+
+
+def test_multipoint_align_clear_target_keeps_session_active():
+    mount = DummyMountControl()
+
+    assert mount.start_multipoint_align("manual", 2)
+    assert mount.select_multipoint_align_star("Vega", goto=True)
+    assert mount.clear_multipoint_align_target()
+
+    assert mount._multipoint_align is not None
+    assert mount._multipoint_align["active"]
+    assert mount._multipoint_align["state"] == "waiting"
     assert mount._multipoint_align["current_star"] is None
 
 
@@ -1242,6 +1302,9 @@ def test_goto_motion_publishes_mount_readback_while_busy(monkeypatch):
     assert mount.statuses[-1][2]["target_ra"] == 132.0
     assert mount.statuses[-1][2]["target_dec"] == 49.5
     assert mount.statuses[-1][2]["target_error_deg"] > 0.0
+    assert mount.statuses[-1][2]["mount_motion_active"] is True
+    assert mount.statuses[-1][2]["mount_motion_type"] == "goto"
+    assert mount.statuses[-1][2]["mount_readback_priority"] is True
 
 
 def test_goto_motion_waits_for_onstep_no_goto_after_active(monkeypatch):

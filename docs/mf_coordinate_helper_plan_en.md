@@ -1,6 +1,6 @@
 # MF PiFinder Pointing Coordinate Service
 
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 This document describes the current `mf_pifinder` implementation of the
 always-running pointing coordinate service shared by SkySafari, Web UI, LCD UI,
@@ -162,6 +162,9 @@ driver_mount_status
 raw_mount_status
 coordinate_sync
 multipoint_align
+mount_motion_active
+mount_motion_type
+mount_readback_priority
 goto_motion_active
 goto_refine_pending
 manual_motion_direction
@@ -229,7 +232,26 @@ OnStepX can perform a large GoTo movement, appear briefly idle, then perform a
 final precision movement. During this interval, IMU delta must not be applied to
 the target coordinate.
 
-`MountControlIndi` publishes mount readback during GoTo:
+`MountControlIndi` publishes mount readback during GoTo and manual motion.
+The coordinate service primarily consumes these common telemetry fields:
+
+```text
+mount_motion_active
+  True when the mount is actually or command-wise moving.
+
+mount_motion_type
+  Diagnostic category such as manual / goto / goto_refine_settle /
+  guide_correction / align_goto / backlash_auto.
+
+mount_readback_priority
+  True when mount readback should be preferred over IMU delta for the current
+  coordinate. This includes settle/refine windows where the mount may not be
+  continuously moving but readback still needs to be authoritative.
+```
+
+Legacy detail fields (`goto_motion_active`, `manual_motion_direction`,
+`goto_refine_pending`, `state`) remain for debugging and backwards-compatible
+status parsing.
 
 ```text
 MountControlIndi._check_goto_motion()
@@ -237,18 +259,27 @@ MountControlIndi._check_goto_motion()
   -> _write_goto_progress_status()
   -> state = slewing
   -> writes ra / dec / target_ra / target_dec / target_error_deg
+
+MountControlIndi.manual_move()
+  -> _arm_manual_motion_deadline()
+  -> _publish_manual_motion_progress(force=True)
+
+MountControlIndi.run()
+  -> _publish_manual_motion_progress()
+  -> state = manual_motion
+  -> writes ra / dec / manual_motion_direction
 ```
 
 The coordinate service holds IMU delta and uses mount readback while:
 
 ```text
-goto_motion_active == true
-goto_refine_pending == true
-manual_motion_direction exists
-state in slewing/refine_wait/refine_sent/guide_correction/align_goto/manual_motion
-backlash_auto running/starting
+mount_readback_priority == true
 mount readback is still changing between ticks
 ```
+
+If `mount_readback_priority` is absent in an older status file, the service
+falls back to interpreting `goto_motion_active`, `goto_refine_pending`,
+`manual_motion_direction`, `state`, `multipoint_align`, and `backlash_auto`.
 
 Even after status changes back to `connected`, changing mount readback extends a
 short hold window. The current hold time is 1.5 seconds.
@@ -276,6 +307,11 @@ Rules:
 - In Multi Align, GoTo is routed to `multipoint_align_goto_target`.
 - `:CM#` Sync/Align uses the latest requested target coordinates.
 - In Multi Align, `:CM#` is routed to `multipoint_align_confirm`.
+- SkySafari guide input (`:Mn#`, `:Ms#`, `:Me#`, `:Mw#`) is not target
+  coordinate input. `pos_server.py` owns the guide keepalive timer and queues
+  `manual_movement` / `manual_movement_keepalive` to mount-control.
+- SkySafari release/stop input (`:Q#`, `:Qn#`, `:Qs#`, `:Qe#`, `:Qw#`) queues
+  `stop_movement`. A TCP command connection closing is not treated as stop.
 
 The align coordinate is the requested target coordinate, not the IMU coordinate
 at confirm time.
@@ -325,10 +361,10 @@ python -m pytest \
   python/tests/test_pointing_coordinate_service.py
 ```
 
-2026-07-07 result:
+2026-07-08 result:
 
 ```text
-104 passed
+110 passed
 ```
 
 Test coverage includes:
@@ -340,3 +376,5 @@ Test coverage includes:
 - GoTo progress readback is published.
 - IMU smoothing is applied to small jitter.
 - SkySafari target/sync coordinates are used as requested.
+- SkySafari guide movement persists while keepalive is active and stops on stop
+  commands.

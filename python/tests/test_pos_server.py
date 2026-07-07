@@ -1,5 +1,6 @@
 import datetime
 import queue
+import time
 
 import pytest
 import pytz
@@ -79,10 +80,12 @@ class DummyUnlockedLocation:
 
 @pytest.fixture(autouse=True)
 def reset_imu_alignment_correction():
+    pos_server._stop_skysafari_guide_keepalive()
     pos_server._reset_imu_alignment_correction("test setup")
     pos_server._coordinate_service.clear_state()
     pos_server._invalidate_pointing_cache()
     yield
+    pos_server._stop_skysafari_guide_keepalive()
     pos_server._reset_imu_alignment_correction("test teardown")
     pos_server._coordinate_service.clear_state()
     pos_server._invalidate_pointing_cache()
@@ -196,6 +199,126 @@ def test_skysafari_guide_move_queues_indi_manual_motion(monkeypatch):
         "direction": "north",
         "lease_seconds": pos_server._GUIDE_LEASE_SECONDS,
     }
+
+
+def test_skysafari_guide_move_sends_keepalive_until_stop(monkeypatch):
+    class FakeTimer:
+        timers = []
+
+        def __init__(self, interval, function, args=()):
+            self.interval = interval
+            self.function = function
+            self.args = args
+            self.cancelled = False
+            self.started = False
+            self.daemon = False
+
+        def start(self):
+            self.started = True
+            FakeTimer.timers.append(self)
+
+        def cancel(self):
+            self.cancelled = True
+
+        def fire(self):
+            if not self.cancelled:
+                self.function(*self.args)
+
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server.threading, "Timer", FakeTimer)
+    monkeypatch.setattr(
+        pos_server, "pos_server_config", DummyConfig({"mount_control": True})
+    )
+
+    assert pos_server.handle_guide_move(None, ":Mn#") is None
+
+    assert commands.get_nowait() == {
+        "type": "manual_movement",
+        "direction": "north",
+        "lease_seconds": pos_server._GUIDE_LEASE_SECONDS,
+    }
+    assert len(FakeTimer.timers) == 1
+    assert FakeTimer.timers[-1].interval == pos_server._GUIDE_KEEPALIVE_SECONDS
+
+    FakeTimer.timers[-1].fire()
+    assert commands.get_nowait() == {
+        "type": "manual_movement_keepalive",
+        "direction": "north",
+        "lease_seconds": pos_server._GUIDE_LEASE_SECONDS,
+    }
+
+    with pos_server._guide_motion_lock:
+        pos_server._guide_motion_state["next_restart_at"] = time.monotonic() - 1.0
+    FakeTimer.timers[-1].fire()
+    assert commands.get_nowait() == {
+        "type": "manual_movement",
+        "direction": "north",
+        "lease_seconds": pos_server._GUIDE_LEASE_SECONDS,
+    }
+
+    assert pos_server.handle_guide_stop(None, ":Qn#") is None
+    assert commands.get_nowait() == {"type": "stop_movement"}
+    assert FakeTimer.timers[-1].cancelled
+
+
+def test_skysafari_guide_move_survives_short_command_connection(monkeypatch):
+    class FakeTimer:
+        timers = []
+
+        def __init__(self, interval, function, args=()):
+            self.interval = interval
+            self.function = function
+            self.args = args
+            self.cancelled = False
+            self.daemon = False
+
+        def start(self):
+            FakeTimer.timers.append(self)
+
+        def cancel(self):
+            self.cancelled = True
+
+    class FakeSocket:
+        def __init__(self):
+            self.reads = [b":Mn#", b""]
+            self.closed = False
+
+        def settimeout(self, _timeout):
+            return None
+
+        def setsockopt(self, *_args):
+            return None
+
+        def recv(self, _size):
+            return self.reads.pop(0)
+
+        def send(self, _data):
+            return None
+
+        def close(self):
+            self.closed = True
+
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server.threading, "Timer", FakeTimer)
+    monkeypatch.setattr(
+        pos_server, "pos_server_config", DummyConfig({"mount_control": True})
+    )
+
+    fake_socket = FakeSocket()
+    pos_server.handle_client(fake_socket, DummyState(None))
+
+    assert fake_socket.closed
+    assert commands.get_nowait() == {
+        "type": "manual_movement",
+        "direction": "north",
+        "lease_seconds": pos_server._GUIDE_LEASE_SECONDS,
+    }
+    with pytest.raises(queue.Empty):
+        commands.get_nowait()
+    assert pos_server._guide_motion_state["direction"] == "north"
+    assert len(FakeTimer.timers) == 1
 
 
 @pytest.mark.parametrize(

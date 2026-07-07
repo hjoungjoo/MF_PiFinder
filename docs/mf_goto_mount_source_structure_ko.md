@@ -1,17 +1,30 @@
 # MF PiFinder GoTo / Mount Control 소스 구조
 
-작성 기준: `mf_pifinder` 브랜치, 2026-07-01.
+작성 기준: `mf_pifinder` 브랜치, 2026-07-08.
 
-이 문서는 SkySafari push-to 사용 흐름과 INDI/OnStep mount control 흐름을 소스 기준으로 정리한다. 앞으로 SkySafari에서 선택한 대상을 INDI GoTo로 연결하거나, PiFinder 내부 target 선택과 GoTo 편의 기능을 개선할 때 이 문서를 기준 구조로 사용한다.
+이 문서는 SkySafari LX200 흐름과 INDI/OnStep mount control 흐름을 소스 기준으로
+정리한다. SkySafari 위치 응답, push-to target, 선택적 INDI GoTo/Sync forwarding,
+Multi Align routing, guide/manual motion을 분석하거나 개선할 때 이 문서를 기준
+구조로 사용한다.
 
 ## 목적
 
-현재 PiFinder에는 서로 다른 두 흐름이 공존한다.
+현재 PiFinder에는 서로 다른 입력 흐름이 하나의 mount-control/좌표 서비스 구조로
+연결되어 있다.
 
-1. SkySafari가 PiFinder에 LX200 프로토콜로 접속해 현재 PiFinder가 보고 있는 하늘 위치를 읽고, 사용자가 선택한 대상 좌표를 PiFinder의 recent target으로 밀어 넣는 push-to 흐름.
+1. SkySafari가 PiFinder에 LX200 프로토콜로 접속해 현재 PiFinder가 보고 있는 하늘
+   위치를 읽고, 사용자가 선택한 대상 좌표를 PiFinder의 recent target으로 넣는
+   기본 push-to 흐름.
 2. INDI LX200 OnStepX 드라이버를 통해 위치/시간, park/unpark, slew rate, 수동 이동, sync, GoTo를 수행하는 mount-control 흐름.
+3. 설정이 켜진 경우 SkySafari `:MS#` GoTo와 `:CM#` Sync/Align을 mount-control
+   queue로 전달하는 INDI forwarding 흐름.
+4. Multi Align이 active일 때 SkySafari GoTo/Align을 일반 PushTo 화면이 아니라
+   Multi Align target/confirm으로 라우팅하는 흐름.
+5. SkySafari guide 버튼을 `manual_movement`/`stop_movement`로 변환하는 수동 이동
+   bridge.
 
-현재 SkySafari의 `GoTo` 명령은 실제 마운트 GoTo가 아니라 PiFinder UI에 대상 좌표를 전달하는 push-to 이벤트로 동작한다. 앞으로 이 지점에 실제 INDI GoTo를 연결할 수 있다.
+기본 호환 동작은 push-to이다. INDI mount forwarding은 `mount_control`과
+SkySafari INDI 관련 설정이 켜진 경우에만 동작한다.
 
 ## 실행 프로세스 구조
 
@@ -352,6 +365,12 @@ MountControl은 상태를 파일로 기록한다.
 {"type": "refresh_slew_rate"}
 {"type": "sync_location_time"}
 {"type": "park_action", "action": "park|unpark|set_home|return_home|set_park"}
+{"type": "multipoint_align_start", "mode": "manual|auto", "points": 1..9}
+{"type": "multipoint_align_select_star", "star_name": "...", "goto": true|false}
+{"type": "multipoint_align_goto_target", "ra": <deg>, "dec": <deg>, "name": "..."}
+{"type": "multipoint_align_confirm", "source": "ui|skysafari|web"}
+{"type": "multipoint_align_clear_target"}
+{"type": "multipoint_align_cancel"}
 ```
 
 ### PyIndi client
@@ -400,6 +419,11 @@ RA 입력은 degrees이고 INDI에는 hours로 보낸다.
 - 현재 OnStep INDI motion property를 직접 켠다.
 - 방향 mapping은 OnStep에서 관측자가 보는 화면 방향에 맞추기 위해 일부 East/West가 내부적으로 반전되어 있다.
 - lease가 만료되면 `stop_mount()`가 자동 호출된다.
+- SkySafari guide command는 `pos_server.py`에서 별도 keepalive timer로 관리된다.
+  0.4초 간격으로 `manual_movement_keepalive`를 보내고, 8초마다 새
+  `manual_movement`를 보내 mount-control의 10초 연속 이동 제한을 넘지 않게 한다.
+- SkySafari TCP command connection이 닫힌 것만으로는 stop하지 않는다.
+  실제 정지는 `:Q#`, `:Qn#`, `:Qs#`, `:Qe#`, `:Qw#` 또는 60초 안전 제한으로 처리한다.
 
 ## LCD INDI UI 구조
 
@@ -507,9 +531,9 @@ mountcontrol_queue.put({
 
 따라서 PiFinder 내부 catalog object, observing list object, SkySafari에서 PUSH된 object는 모두 Object Details에 올라온 뒤 `5`를 누르면 같은 GoTo 경로를 사용할 수 있다.
 
-## 현재 SkySafari push-to와 INDI GoTo의 차이
+## 현재 SkySafari Push-To / INDI Forwarding / Multi Align routing
 
-### 현재 SkySafari path
+### 기본 SkySafari Push-To path
 
 ```text
 SkySafari target selected
@@ -522,7 +546,58 @@ SkySafari target selected
   -> push-to 안내 표시
 ```
 
-### 현재 INDI GoTo path
+이 path는 `mount_control`이 꺼져 있거나 SkySafari INDI GoTo forwarding이 꺼져
+있을 때의 기본 호환 동작이다.
+
+### SkySafari INDI GoTo forwarding path
+
+```text
+SkySafari target selected
+  -> LX200 :Sr / :Sd / :MS
+  -> pos_server.handle_goto_command()
+  -> 기본 Push-To target 저장
+  -> mountcontrol_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
+  -> MountControlIndi.goto_target()
+  -> INDI EQUATORIAL_EOD_COORD
+  -> active INDI telescope driver
+  -> mount GoTo
+```
+
+조건:
+
+- `mount_control`이 켜져 있어야 한다.
+- SkySafari INDI GoTo forwarding 설정이 켜져 있어야 한다.
+- target 좌표는 SkySafari에서 받은 RA/Dec를 그대로 사용한다.
+
+### SkySafari Sync/Align forwarding path
+
+```text
+SkySafari :CM#
+  -> pos_server.handle_sync_command()
+  -> 최신 :Sr/:Sd 또는 last target 좌표 선택
+  -> PiFinder solved/IMU align 처리
+  -> 설정이 켜져 있으면 mountcontrol_queue {"type": "sync", ...}
+```
+
+Multi Align이 active가 아닐 때는 일반 Sync/Align 흐름이다. Multi Align active 중에는
+아래 Multi Align routing이 우선한다.
+
+### Multi Align active path
+
+```text
+SkySafari :Sr / :Sd / :MS
+  -> multipoint_align_goto_target
+  -> 선택 target으로 GoTo
+
+SkySafari :CM#
+  -> multipoint_align_confirm
+  -> 가장 최근 GoTo target 좌표로 align point 확정
+```
+
+이 path에서는 SkySafari target이 Object Details push 화면으로 새지 않는다.
+세션은 `mount_control_status.json`의 `multipoint_align.active`를 기준으로 감지한다.
+
+### PiFinder 내부 INDI GoTo path
 
 ```text
 PiFinder Object Details target
@@ -534,51 +609,12 @@ PiFinder Object Details target
   -> OnStep mount GoTo
 ```
 
-두 path는 현재 Object Details 화면에서 만난다. SkySafari가 target을 밀어 넣으면 그 target이 Object Details에 표시되고, 사용자가 `5`를 누르면 INDI GoTo가 가능하다.
+Object Details의 `5` GoTo는 SkySafari forwarding과 별개로 동작하는 PiFinder 내부
+target-to-mount 경로이다.
 
 ## 앞으로 GoTo 편의 기능을 붙일 수 있는 지점
 
-### 1. SkySafari GoTo를 자동 INDI GoTo로 연결
-
-수정 후보:
-
-- `python/PiFinder/pos_server.py`
-  - `handle_goto_command(...)`
-
-가능한 변경:
-
-- 현재처럼 recent target에 추가한다.
-- 추가로 mountcontrol queue에 `goto_target`을 보낸다.
-
-필요한 구조 변경:
-
-- 현재 `pos_server.run_server(shared_state, p_ui_queue, log_queue)`는 `mountcontrol_queue`를 받지 않는다.
-- 자동 GoTo를 하려면 `main.py`에서 SkySafariServer process args에 `mountcontrol_queue`를 추가하거나, 다른 broker/API를 만들어야 한다.
-- 설정 option이 필요하다.
-  - 예: `skysafari_goto_mode = "push_to" | "goto_confirm" | "goto_auto"`
-
-권장:
-
-- 기본값은 기존 호환을 위해 `push_to`.
-- `goto_confirm`: SkySafari target을 Object Details로 띄우고 LCD/Web에 GoTo confirm을 제공.
-- `goto_auto`: SkySafari `:MS#` 또는 target 수신 시 즉시 mountcontrol `goto_target`.
-
-### 2. `:MS#` 처리 시점으로 의미 정리
-
-현재 `:Sd`에서 target push가 실행되고 `:MS#`는 `respond_zero()`이다.
-
-실제 telescope protocol 의미에 더 맞추려면:
-
-- `:Sr`은 RA 저장.
-- `:Sd`는 Dec 저장만.
-- `:MS`에서 push-to 또는 GoTo 실행.
-
-주의:
-
-- 기존 SkySafari 동작과 호환성 확인 필요.
-- Stellarium 특수 처리는 현재 ACK command로 `is_stellarium`을 판단한다.
-
-### 3. Web INDI 페이지에 target GoTo 추가
+### 1. Web INDI 페이지에 target GoTo 추가
 
 수정 후보:
 
@@ -603,7 +639,7 @@ PiFinder Object Details target
 - 장기적으로 GoTo/Sync/Stop은 mountcontrol queue로 통일한다.
 - 웹의 direct `indi_setprop` 경로는 driver setup, status, fallback, 간단한 수동 제어에 남긴다.
 
-### 4. LCD Object Details GoTo confirm 개선
+### 2. LCD Object Details GoTo confirm 개선
 
 수정 후보:
 
@@ -617,7 +653,7 @@ PiFinder Object Details target
 - slew 중 stop/abort overlay.
 - GoTo 후 현재 mount RA/Dec와 target 차이 표시.
 
-### 5. 상태 모델 통합
+### 3. 상태 모델 통합
 
 현재 상태는 두 갈래다.
 
@@ -751,21 +787,25 @@ GoTo 편의 기능을 추가할 때 필요한 테스트 후보:
 
 - `pos_server.py`의 `:Sr`, `:Sd`, `:MS` 순서 처리 테스트.
 - SkySafari push-to 기본 호환 유지 테스트.
-- `goto_auto` option이 켜졌을 때 mountcontrol queue에 정확한 `goto_target` command가 들어가는 테스트.
+- SkySafari INDI GoTo forwarding이 켜졌을 때 mountcontrol queue에 정확한
+  `goto_target` command가 들어가는 테스트.
 - mount_control off 상태에서 SkySafari 동작이 기존 push-to로 유지되는 테스트.
 - SkySafari target 좌표가 변환 없이 그대로 저장/전달되는지 테스트.
 - GoTo 중 stop/abort command 우선순위 테스트.
 
 ## 현재 결론
 
-현재 구조에서 가장 자연스러운 다음 단계는 SkySafari target 수신과 mountcontrol GoTo를 직접 연결하기 전에, 동작 모드를 명확히 나누는 것이다.
-
-권장 모드:
+현재 구조는 다음 모드를 지원한다.
 
 ```text
-push_to       기존 동작. SkySafari target을 PiFinder Object Details로만 보냄.
-goto_confirm target을 띄운 뒤 사용자가 PiFinder에서 GoTo 확인.
-goto_auto    SkySafari target 수신 후 INDI GoTo까지 자동 실행.
+push_to       기본 동작. SkySafari target을 PiFinder recent/Object Details로 보냄.
+goto_forward  설정이 켜진 경우 SkySafari :MS#를 INDI GoTo로도 전달.
+sync_forward  설정이 켜진 경우 SkySafari :CM#를 INDI Sync/Align으로 전달.
+multi_align   Multi Align active 중에는 SkySafari GoTo/Align을 align session에 라우팅.
+guide_bridge  SkySafari guide 버튼을 INDI manual motion으로 전달.
 ```
 
-구현상 첫 번째 연결 지점은 `pos_server.handle_goto_command(...)`이지만, 안전한 설계를 위해 `mountcontrol_queue` 전달 방식과 사용자 설정 option을 먼저 추가하는 것이 좋다.
+새 기능을 붙일 때는 `pos_server.py`가 target/guide 명령을 해석하고,
+`mountcontrol_indi.py`가 실제 driver I/O와 상태 publish를 맡는 경계를 유지하는
+것이 좋다. SkySafari 좌표 응답은 동작별로 직접 계산하지 않고
+`PointingCoordinateService`의 최신 `CoordinateState.current`를 읽는 구조를 유지한다.

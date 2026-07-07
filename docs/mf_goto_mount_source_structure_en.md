@@ -1,17 +1,29 @@
 # MF PiFinder GoTo / Mount Control Source Structure
 
-Baseline: `mf_pifinder` branch, 2026-07-01.
+Baseline: `mf_pifinder` branch, 2026-07-08.
 
-This document maps the current SkySafari push-to flow and the INDI/OnStep mount-control flow from the source code. Use it as the baseline when adding SkySafari-to-GoTo behavior or improving PiFinder target/mount convenience features.
+This document maps the current SkySafari LX200 flow and the INDI/OnStep
+mount-control flow from the source code. Use it as the baseline when debugging
+or improving SkySafari position readout, push-to targets, optional INDI
+GoTo/Sync forwarding, Multi Align routing, and guide/manual motion.
 
 ## Purpose
 
-PiFinder currently has two related but separate flows.
+PiFinder currently connects several input flows through the shared mount-control
+and coordinate-service stack.
 
-1. SkySafari connects to PiFinder over a small LX200-compatible server. It can read PiFinder's current pointing and push a selected target into PiFinder's recent target list.
+1. SkySafari connects to PiFinder over a small LX200-compatible server. The
+   default behavior reads PiFinder's current pointing and pushes a selected
+   target into PiFinder's recent target list.
 2. INDI LX200 OnStepX support can set location/time, park/unpark, slew rate, manual motion, sync, and GoTo through the optional mount-control stack.
+3. When enabled, SkySafari `:MS#` GoTo and `:CM#` Sync/Align can be forwarded
+   to the mount-control queue.
+4. When Multi Align is active, SkySafari GoTo/Align are routed into the active
+   alignment session instead of the normal PushTo screen.
+5. SkySafari guide buttons are bridged to mount-control manual motion.
 
-Today, a SkySafari `GoTo` command is not a motor GoTo. It is treated as a push-to target event inside PiFinder. That is the main junction where future real INDI GoTo behavior can be connected.
+The compatibility default is push-to only. INDI mount forwarding runs only when
+`mount_control` and the SkySafari INDI options are enabled.
 
 ## Runtime Process Structure
 
@@ -348,6 +360,12 @@ Handled by `MountControlIndi.handle_command(...)`:
 {"type": "refresh_slew_rate"}
 {"type": "sync_location_time"}
 {"type": "park_action", "action": "park|unpark|set_home|return_home|set_park"}
+{"type": "multipoint_align_start", "mode": "manual|auto", "points": 1..9}
+{"type": "multipoint_align_select_star", "star_name": "...", "goto": true|false}
+{"type": "multipoint_align_goto_target", "ra": <deg>, "dec": <deg>, "name": "..."}
+{"type": "multipoint_align_confirm", "source": "ui|skysafari|web"}
+{"type": "multipoint_align_clear_target"}
+{"type": "multipoint_align_cancel"}
 ```
 
 ### PyIndi Client
@@ -393,6 +411,12 @@ RA input is degrees and is sent to INDI as hours.
 - Sends OnStep INDI motion properties directly.
 - Some East/West mapping is intentionally reversed internally to match the visual direction used by the UI.
 - If the lease expires, `stop_mount()` is called automatically.
+- SkySafari guide commands are managed by an additional keepalive timer in
+  `pos_server.py`. It queues `manual_movement_keepalive` every 0.4 seconds and
+  a fresh `manual_movement` every 8 seconds so the mount-control 10-second
+  continuous-motion guard does not stop a held SkySafari button.
+- A SkySafari TCP command connection closing is not treated as a stop. Motion
+  stops on `:Q#`, `:Qn#`, `:Qs#`, `:Qe#`, `:Qw#`, or the 60-second safety limit.
 
 ## LCD INDI UI
 
@@ -500,9 +524,9 @@ mountcontrol_queue.put({
 
 Therefore catalog objects, observing-list objects, and SkySafari `PUSH` objects can all use the same GoTo path once they are shown in Object Details.
 
-## Current SkySafari Push-To vs INDI GoTo
+## Current SkySafari Push-To / INDI Forwarding / Multi Align Routing
 
-### SkySafari Path Today
+### Default SkySafari Push-To Path
 
 ```text
 SkySafari target selected
@@ -515,7 +539,59 @@ SkySafari target selected
   -> push-to guidance
 ```
 
-### INDI GoTo Path Today
+This remains the compatibility path when `mount_control` is off or SkySafari
+INDI GoTo forwarding is disabled.
+
+### SkySafari INDI GoTo Forwarding Path
+
+```text
+SkySafari target selected
+  -> LX200 :Sr / :Sd / :MS
+  -> pos_server.handle_goto_command()
+  -> normal Push-To target storage
+  -> mountcontrol_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
+  -> MountControlIndi.goto_target()
+  -> INDI EQUATORIAL_EOD_COORD
+  -> active INDI telescope driver
+  -> mount GoTo
+```
+
+Requirements:
+
+- `mount_control` must be enabled.
+- SkySafari INDI GoTo forwarding must be enabled.
+- The target coordinate is used exactly as received from SkySafari.
+
+### SkySafari Sync/Align Forwarding Path
+
+```text
+SkySafari :CM#
+  -> pos_server.handle_sync_command()
+  -> choose current :Sr/:Sd or last target coordinate
+  -> PiFinder solved/IMU alignment handling
+  -> if enabled, mountcontrol_queue {"type": "sync", ...}
+```
+
+This is the normal Sync/Align flow when Multi Align is inactive. When Multi
+Align is active, Multi Align routing has priority.
+
+### Multi Align Active Path
+
+```text
+SkySafari :Sr / :Sd / :MS
+  -> multipoint_align_goto_target
+  -> GoTo the selected alignment target
+
+SkySafari :CM#
+  -> multipoint_align_confirm
+  -> confirm the latest GoTo target as an alignment point
+```
+
+In this path the SkySafari target does not jump to the normal Object Details
+PushTo screen. The active session is detected from
+`mount_control_status.json.multipoint_align.active`.
+
+### PiFinder Internal INDI GoTo Path
 
 ```text
 PiFinder Object Details target
@@ -527,51 +603,12 @@ PiFinder Object Details target
   -> OnStep mount GoTo
 ```
 
-The two flows currently meet at Object Details. A SkySafari target is pushed into Object Details; pressing `5` sends that target to INDI GoTo.
+Object Details key `5` remains the PiFinder internal target-to-mount path and is
+separate from SkySafari forwarding.
 
 ## Future Extension Points
 
-### 1. Connect SkySafari GoTo to INDI GoTo
-
-Primary candidate:
-
-- `python/PiFinder/pos_server.py`
-  - `handle_goto_command(...)`
-
-Possible behavior:
-
-- Keep adding the target to recent objects.
-- Additionally send `goto_target` to the mount-control queue.
-
-Required structure change:
-
-- `pos_server.run_server(shared_state, p_ui_queue, log_queue)` does not currently receive `mountcontrol_queue`.
-- Automatic GoTo would need `main.py` to pass `mountcontrol_queue` into the SkySafari server process, or a broker/API needs to be introduced.
-- A user option is needed, for example:
-  - `skysafari_goto_mode = "push_to" | "goto_confirm" | "goto_auto"`
-
-Recommended defaults:
-
-- `push_to`: current compatibility behavior.
-- `goto_confirm`: show the target in Object Details and ask for confirmation.
-- `goto_auto`: run INDI GoTo after receiving the SkySafari target.
-
-### 2. Move Action Semantics to `:MS#`
-
-Currently `:Sd` executes the target push and `:MS#` returns `0`.
-
-Protocol-clean behavior would be:
-
-- `:Sr` stores RA.
-- `:Sd` stores Dec.
-- `:MS` executes push-to or GoTo.
-
-Risks:
-
-- Must verify SkySafari compatibility.
-- Stellarium handling currently uses the ACK command to set `is_stellarium`.
-
-### 3. Add Target GoTo to the Web INDI Page
+### 1. Add Target GoTo to the Web INDI Page
 
 Candidates:
 
@@ -595,7 +632,7 @@ Recommendation:
 - Long term, GoTo/Sync/Stop should share the mount-control queue.
 - Keep direct `indi_setprop` for driver setup, status, fallback, and simple manual controls.
 
-### 4. Improve Object Details GoTo Confirmation
+### 2. Improve Object Details GoTo Confirmation
 
 Candidate:
 
@@ -609,7 +646,7 @@ Potential safety features:
 - Slewing overlay with stop/abort.
 - Show current mount RA/Dec vs target delta after GoTo.
 
-### 5. Unify Status Model
+### 3. Unify Status Model
 
 Currently there are two important positions:
 
@@ -742,7 +779,8 @@ Suggested future tests:
 
 - `pos_server.py` `:Sr`, `:Sd`, `:MS` ordering.
 - Preserve default SkySafari push-to compatibility.
-- When `goto_auto` is enabled, verify that the mount-control queue receives the expected `goto_target` command.
+- When SkySafari INDI GoTo forwarding is enabled, verify that the mount-control
+  queue receives the expected `goto_target` command.
 - When mount control is off, verify SkySafari remains push-to only.
 - Verify that SkySafari target coordinates are stored and forwarded as requested
   without coordinate-frame conversion.
@@ -750,14 +788,18 @@ Suggested future tests:
 
 ## Current Conclusion
 
-The safest next design step is to introduce explicit SkySafari GoTo modes before wiring SkySafari target reception directly to INDI GoTo.
-
-Recommended modes:
+The current structure supports these modes:
 
 ```text
-push_to       Current behavior. Push target into PiFinder Object Details only.
-goto_confirm Show target, then require PiFinder-side confirmation.
-goto_auto    Automatically run INDI GoTo after receiving the SkySafari target.
+push_to       Default behavior. Push target into PiFinder recent/Object Details.
+goto_forward  When enabled, forward SkySafari :MS# to INDI GoTo as well.
+sync_forward  When enabled, forward SkySafari :CM# to INDI Sync/Align.
+multi_align   While Multi Align is active, route SkySafari GoTo/Align into the session.
+guide_bridge  Bridge SkySafari guide buttons to INDI manual motion.
 ```
 
-The first code junction is `pos_server.handle_goto_command(...)`, but safe implementation should first add a user setting and a way for `pos_server` to reach `mountcontrol_queue`.
+Future features should preserve the boundary where `pos_server.py` interprets
+target/guide commands and `mountcontrol_indi.py` owns driver I/O and status
+publication. SkySafari coordinate replies should continue to read the latest
+`PointingCoordinateService` `CoordinateState.current` rather than recalculating
+operation-specific coordinates in the POS server.
