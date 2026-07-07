@@ -298,14 +298,7 @@ class IndiGotoGuideService:
         if self.last_error_arcmin <= near_threshold_arcmin:
             self._forward_to_mountcontrol({"type": "stop_movement"})
             self.manual_direction = None
-            self.service_state = "idle"
-            self.phase = "near_target"
-            self.wait_reason = ""
-            self.last_action = "pifinder manual approach complete"
-            logger.info(
-                "PiFinder manual approach reached near target: %.2f arcmin",
-                self.last_error_arcmin,
-            )
+            self._begin_final_indi_goto()
             return
 
         if now - self.last_manual_command_at < PIFINDER_MANUAL_TICK_SECONDS:
@@ -361,6 +354,52 @@ class IndiGotoGuideService:
         self.last_action = "pifinder manual approach stopped"
         self._update_goto_plan()
         logger.warning("PiFinder manual approach stopped: %s", reason)
+
+    def _begin_final_indi_goto(self) -> None:
+        if (
+            self.current_ra is None
+            or self.current_dec is None
+            or self.active_target_ra is None
+            or self.active_target_dec is None
+        ):
+            self._stop_with_error("final INDI GoTo coordinates unavailable")
+            return
+
+        self._forward_to_mountcontrol(
+            {"type": "sync", "ra": self.current_ra, "dec": self.current_dec}
+        )
+        self._forward_to_mountcontrol(
+            {
+                "type": "goto_target",
+                "ra": self.active_target_ra,
+                "dec": self.active_target_dec,
+                "refine_after_goto": False,
+            }
+        )
+        self.service_state = "running"
+        self.phase = "final_indi_goto"
+        self.wait_reason = ""
+        self.last_action = "pifinder final indi goto sent"
+        self._update_goto_plan()
+        if self.goto_plan is not None:
+            self.goto_plan.update(
+                {
+                    "stage": "final_indi_goto",
+                    "sync_ra": self.current_ra,
+                    "sync_dec": self.current_dec,
+                    "final_goto_ra": self.active_target_ra,
+                    "final_goto_dec": self.active_target_dec,
+                }
+            )
+        logger.info(
+            "PiFinder manual approach reached %.2f arcmin; sync RA %.4f Dec %.4f "
+            "then final GoTo RA %.4f Dec %.4f",
+            self.last_error_arcmin if self.last_error_arcmin is not None else -1.0,
+            self.current_ra,
+            self.current_dec,
+            self.active_target_ra,
+            self.active_target_dec,
+        )
 
     def _reset_coordinate_progress_tracking(self) -> None:
         self.last_coordinate_ra = self.current_ra
