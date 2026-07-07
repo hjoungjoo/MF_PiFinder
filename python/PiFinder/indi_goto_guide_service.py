@@ -35,6 +35,10 @@ POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
 HEARTBEAT_SECONDS = 1.0
 CONFIG_RELOAD_SECONDS = 5.0
 POINTING_STATUS_MAX_AGE_SECONDS = 5.0
+PIFINDER_MANUAL_LEASE_SECONDS = 0.8
+PIFINDER_MANUAL_TICK_SECONDS = 0.7
+PIFINDER_MANUAL_STALL_SECONDS = 5.0
+PIFINDER_MANUAL_MIN_COORDINATE_DELTA_DEGREES = 0.01
 
 
 class IndiGotoGuideService:
@@ -63,6 +67,12 @@ class IndiGotoGuideService:
         self.current_dec: Optional[float] = None
         self.last_error_arcmin: Optional[float] = None
         self.goto_plan: Optional[dict[str, Any]] = None
+        self.manual_direction: Optional[str] = None
+        self.manual_slew_rate: Optional[int] = None
+        self.last_manual_command_at = 0.0
+        self.last_coordinate_change_at = 0.0
+        self.last_coordinate_ra: Optional[float] = None
+        self.last_coordinate_dec: Optional[float] = None
         self.last_action = "startup"
         self.pointing_status: dict[str, Any] = {"available": False}
 
@@ -72,6 +82,7 @@ class IndiGotoGuideService:
         running = True
         while running:
             self._reload_config_if_needed()
+            self._tick_state_machine()
             self._write_status()
             try:
                 command = self.service_queue.get(timeout=HEARTBEAT_SECONDS)
@@ -119,6 +130,9 @@ class IndiGotoGuideService:
             self.current_dec = None
             self.last_error_arcmin = None
             self.goto_plan = None
+            self.manual_direction = None
+            self.manual_slew_rate = None
+            self.last_manual_command_at = 0.0
             self.service_state = "idle"
             self.phase = "idle"
             self.wait_reason = ""
@@ -208,16 +222,20 @@ class IndiGotoGuideService:
             "near_threshold_degrees": self.config_values.get(
                 "indi_pifinder_goto_near_threshold_deg", 1.0
             ),
-            "movement_enabled": False,
-            "stage": "planning_only",
+            "movement_enabled": True,
+            "stage": "manual_approach",
+            "manual_direction": None,
+            "manual_slew_rate": None,
+            "lease_seconds": PIFINDER_MANUAL_LEASE_SECONDS,
         }
 
         self.service_state = "running"
-        self.phase = "planning"
+        self.phase = "manual_approach"
         self.wait_reason = ""
-        self.last_action = "pifinder goto planned"
+        self.last_action = "pifinder manual approach planned"
+        self._reset_coordinate_progress_tracking()
         logger.info(
-            "PiFinder GoTo planned: target RA %.4f Dec %.4f current RA %s "
+            "PiFinder manual approach planned: target RA %.4f Dec %.4f current RA %s "
             "Dec %s error %.2f arcmin",
             target_ra,
             target_dec,
@@ -237,6 +255,203 @@ class IndiGotoGuideService:
 
         self.mountcontrol_queue.put(command)
         return True
+
+    def _tick_state_machine(self) -> None:
+        if self.phase != "manual_approach":
+            return
+        if self.active_target_ra is None or self.active_target_dec is None:
+            self._stop_with_error("manual approach target unavailable")
+            return
+
+        block_reason = self._pifinder_goto_block_reason()
+        if block_reason:
+            self._stop_with_error(block_reason)
+            return
+
+        current = self.pointing_status.get("current") or {}
+        self.current_ra = self._finite_float(current.get("ra"))
+        self.current_dec = self._finite_float(current.get("dec"))
+        self.last_error_arcmin = self._angular_error_arcmin(
+            self.current_ra,
+            self.current_dec,
+            self.active_target_ra,
+            self.active_target_dec,
+        )
+        if self.last_error_arcmin is None:
+            self._stop_with_error("manual approach error unavailable")
+            return
+
+        self._update_coordinate_progress_tracking()
+        now = time.monotonic()
+        if (
+            self.last_coordinate_change_at > 0.0
+            and now - self.last_coordinate_change_at > PIFINDER_MANUAL_STALL_SECONDS
+        ):
+            self._stop_with_error("pointing coordinate stopped updating")
+            return
+
+        near_threshold_arcmin = (
+            float(self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0))
+            * 60.0
+        )
+        self._update_goto_plan()
+        if self.last_error_arcmin <= near_threshold_arcmin:
+            self._forward_to_mountcontrol({"type": "stop_movement"})
+            self.manual_direction = None
+            self.service_state = "idle"
+            self.phase = "near_target"
+            self.wait_reason = ""
+            self.last_action = "pifinder manual approach complete"
+            logger.info(
+                "PiFinder manual approach reached near target: %.2f arcmin",
+                self.last_error_arcmin,
+            )
+            return
+
+        if now - self.last_manual_command_at < PIFINDER_MANUAL_TICK_SECONDS:
+            return
+
+        direction = self._manual_direction_to_target(
+            self.current_ra,
+            self.current_dec,
+            self.active_target_ra,
+            self.active_target_dec,
+        )
+        if not direction:
+            self._stop_with_error("manual approach direction unavailable")
+            return
+        slew_rate = self._manual_slew_rate_for_error(self.last_error_arcmin)
+
+        if self.manual_slew_rate != slew_rate:
+            self._forward_to_mountcontrol({"type": "set_slew_rate", "rate": slew_rate})
+            self.manual_slew_rate = slew_rate
+
+        if self.manual_direction and self.manual_direction != direction:
+            self._forward_to_mountcontrol({"type": "stop_movement"})
+
+        command_type = (
+            "manual_movement_keepalive"
+            if self.manual_direction == direction
+            else "manual_movement"
+        )
+        self._forward_to_mountcontrol(
+            {
+                "type": command_type,
+                "direction": direction,
+                "lease_seconds": PIFINDER_MANUAL_LEASE_SECONDS,
+            }
+        )
+        self.manual_direction = direction
+        self.last_manual_command_at = now
+        self.last_action = f"pifinder manual approach {direction}"
+        self._update_goto_plan()
+        logger.debug(
+            "PiFinder manual approach %s rate=%s error=%.2f arcmin",
+            direction,
+            slew_rate,
+            self.last_error_arcmin,
+        )
+
+    def _stop_with_error(self, reason: str) -> None:
+        self._forward_to_mountcontrol({"type": "stop_movement"})
+        self.manual_direction = None
+        self.service_state = "error"
+        self.phase = "error"
+        self.wait_reason = reason
+        self.last_action = "pifinder manual approach stopped"
+        self._update_goto_plan()
+        logger.warning("PiFinder manual approach stopped: %s", reason)
+
+    def _reset_coordinate_progress_tracking(self) -> None:
+        self.last_coordinate_ra = self.current_ra
+        self.last_coordinate_dec = self.current_dec
+        self.last_coordinate_change_at = time.monotonic()
+
+    def _update_coordinate_progress_tracking(self) -> None:
+        if self.current_ra is None or self.current_dec is None:
+            return
+        if self.last_coordinate_ra is None or self.last_coordinate_dec is None:
+            self._reset_coordinate_progress_tracking()
+            return
+        delta = self._angular_error_arcmin(
+            self.last_coordinate_ra,
+            self.last_coordinate_dec,
+            self.current_ra,
+            self.current_dec,
+        )
+        if (
+            delta is not None
+            and delta / 60.0 >= PIFINDER_MANUAL_MIN_COORDINATE_DELTA_DEGREES
+        ):
+            self.last_coordinate_ra = self.current_ra
+            self.last_coordinate_dec = self.current_dec
+            self.last_coordinate_change_at = time.monotonic()
+
+    def _update_goto_plan(self) -> None:
+        if self.goto_plan is None:
+            return
+        self.goto_plan.update(
+            {
+                "current_ra": self.current_ra,
+                "current_dec": self.current_dec,
+                "error_arcmin": self.last_error_arcmin,
+                "manual_direction": self.manual_direction,
+                "manual_slew_rate": self.manual_slew_rate,
+                "phase": self.phase,
+                "last_coordinate_change_age_seconds": (
+                    time.monotonic() - self.last_coordinate_change_at
+                    if self.last_coordinate_change_at
+                    else None
+                ),
+            }
+        )
+
+    def _manual_direction_to_target(
+        self,
+        current_ra: Optional[float],
+        current_dec: Optional[float],
+        target_ra: Optional[float],
+        target_dec: Optional[float],
+    ) -> Optional[str]:
+        if (
+            current_ra is None
+            or current_dec is None
+            or target_ra is None
+            or target_dec is None
+        ):
+            return None
+
+        ra_delta = self._wrap_angle_delta_degrees(target_ra - current_ra)
+        east_west_error = ra_delta * math.cos(math.radians(current_dec))
+        north_south_error = target_dec - current_dec
+        component_threshold = 0.15
+
+        ns = ""
+        ew = ""
+        if north_south_error > component_threshold:
+            ns = "north"
+        elif north_south_error < -component_threshold:
+            ns = "south"
+        if east_west_error > component_threshold:
+            ew = "east"
+        elif east_west_error < -component_threshold:
+            ew = "west"
+
+        if ns and ew:
+            return ns + ew
+        return ns or ew or None
+
+    def _manual_slew_rate_for_error(self, error_arcmin: float) -> int:
+        error_degrees = error_arcmin / 60.0
+        if error_degrees >= 15.0:
+            return 9
+        if error_degrees >= 5.0:
+            return 8
+        if error_degrees >= 2.0:
+            return 7
+        if error_degrees >= 1.0:
+            return 6
+        return 4
 
     def _refresh_pointing_status(self) -> dict[str, Any]:
         self.pointing_status = self._load_pointing_status()
@@ -355,6 +570,9 @@ class IndiGotoGuideService:
         raw_mount_status = str(metadata.get("raw_mount_status", ""))
         return raw_mount_status.startswith("P")
 
+    def _wrap_angle_delta_degrees(self, delta: float) -> float:
+        return ((delta + 180.0) % 360.0) - 180.0
+
     def _mount_summary_reports_parked(self, status: dict[str, Any]) -> bool:
         for key in ("park_state", "driver_mount_status"):
             raw = str(status.get(key, "")).strip().lower()
@@ -452,6 +670,8 @@ class IndiGotoGuideService:
             "active_target_dec": self.active_target_dec,
             "current_ra": self.current_ra,
             "current_dec": self.current_dec,
+            "manual_direction": self.manual_direction,
+            "manual_slew_rate": self.manual_slew_rate,
             "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
             "tracking_guide_enabled": self.config_values.get(
                 "indi_tracking_guide_enabled", False
