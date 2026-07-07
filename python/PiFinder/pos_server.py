@@ -37,6 +37,7 @@ last_target_coordinates: Optional[Tuple[float, float]] = None
 sequence = 0
 ui_queue: Queue
 mountcontrol_queue: Optional[Queue] = None
+goto_guide_queue: Optional[Queue] = None
 align_command_queue: Optional[Queue] = None
 align_response_queue: Optional[Queue] = None
 console_queue: Optional[Queue] = None
@@ -554,6 +555,18 @@ def _mount_control_enabled() -> bool:
     return bool(enabled and has_queue)
 
 
+def _goto_guide_enabled() -> bool:
+    enabled = bool(_get_config_option("mount_control", False))
+    has_queue = goto_guide_queue is not None
+    if not enabled or not has_queue:
+        logger.info(
+            "SkySafari GoTo/Guide service unavailable: mount_control=%s queue=%s",
+            enabled,
+            has_queue,
+        )
+    return bool(enabled and has_queue)
+
+
 def _has_solved_pointing(shared_state) -> bool:
     try:
         solution = shared_state.solution()
@@ -564,9 +577,13 @@ def _has_solved_pointing(shared_state) -> bool:
 
 
 def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> bool:
-    if not _mount_control_enabled():
-        return False
     multipoint_active = _multipoint_align_active()
+    if multipoint_active:
+        if not _mount_control_enabled():
+            return False
+    elif not _goto_guide_enabled():
+        return False
+
     if not _get_config_option("skysafari_indi_goto", False) and not multipoint_active:
         logger.info("SkySafari INDI GoTo skipped; skysafari_indi_goto is off")
         return False
@@ -586,6 +603,12 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
             "dec": dec_deg,
             "name": "SkySafari Target",
         }
+        mountcontrol_queue.put(command)
+        logger.info(
+            "SkySafari multi-point align GoTo queued: RA %.4f Dec %.4f",
+            ra_deg,
+            dec_deg,
+        )
     else:
         command = {
             "type": "goto_target",
@@ -596,8 +619,12 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
                 _get_config_option("indi_goto_refine_accuracy_arcmin", 10.0)
             ),
         }
-    mountcontrol_queue.put(command)
-    logger.info("SkySafari INDI GoTo queued: RA %.4f Dec %.4f", ra_deg, dec_deg)
+        goto_guide_queue.put(command)
+        logger.info(
+            "SkySafari INDI GoTo routed to GoTo/Guide service: RA %.4f Dec %.4f",
+            ra_deg,
+            dec_deg,
+        )
     return True
 
 
@@ -896,6 +923,8 @@ def handle_guide_move(_shared_state, input_str: str):
 
 def handle_guide_stop(_shared_state, _input_str: str):
     had_active_motion = _stop_skysafari_guide_keepalive()
+    if goto_guide_queue is not None:
+        goto_guide_queue.put({"type": "stop_movement"})
     if (
         _mount_control_enabled() or had_active_motion
     ) and mountcontrol_queue is not None:
@@ -1155,15 +1184,18 @@ def run_server(
     p_ui_queue,
     log_queue,
     p_mountcontrol_queue=None,
+    p_goto_guide_queue=None,
     p_align_command_queue=None,
     p_align_response_queue=None,
     p_console_queue=None,
 ):
     MultiprocLogging.configurer(log_queue)
-    global ui_queue, mountcontrol_queue, pos_server_config, _config_last_loaded
+    global ui_queue, mountcontrol_queue, goto_guide_queue, pos_server_config
+    global _config_last_loaded
     global align_command_queue, align_response_queue, console_queue
     ui_queue = p_ui_queue
     mountcontrol_queue = p_mountcontrol_queue
+    goto_guide_queue = p_goto_guide_queue
     align_command_queue = p_align_command_queue
     align_response_queue = p_align_response_queue
     console_queue = p_console_queue

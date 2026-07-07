@@ -6,8 +6,9 @@ This service is intentionally separate from ``mountcontrol_indi``.  The mount
 control process remains the low-level INDI command executor, while this process
 will grow into the higher-level GoTo/Guide policy and state machine.
 
-Stage 1 only publishes a heartbeat status and accepts shutdown/ping commands.
-It must not send mount movement commands yet.
+Stage 3 routes accepted GoTo/abort requests to the existing mount-control
+executor when the selected method is ``indi_mount``.  PiFinder-driven GoTo is
+left as an explicit later-stage state.
 """
 
 from __future__ import annotations
@@ -53,6 +54,9 @@ class IndiGotoGuideService:
         self.service_state = "starting"
         self.phase = "idle"
         self.wait_reason = ""
+        self.active_target_ra: Optional[float] = None
+        self.active_target_dec: Optional[float] = None
+        self.last_action = "startup"
 
     def run(self) -> None:
         logger.info("INDI GoTo/Guide service started")
@@ -93,10 +97,21 @@ class IndiGotoGuideService:
             self.service_state = "idle"
             self.phase = "idle"
             self.wait_reason = ""
+            self.last_action = "ping"
+            return True
+        if command_type == "goto_target":
+            self._handle_goto_target(command)
+            return True
+        if command_type == "stop_movement":
+            self._forward_to_mountcontrol({"type": "stop_movement"})
+            self.active_target_ra = None
+            self.active_target_dec = None
+            self.service_state = "idle"
+            self.phase = "idle"
+            self.wait_reason = ""
+            self.last_action = "stop_movement"
             return True
 
-        # Stage 1 skeleton deliberately does not forward or execute runtime
-        # mount commands.  Later stages will add explicit routing here.
         logger.info(
             "Queued INDI GoTo/Guide command is not implemented yet: %s",
             command_type,
@@ -104,6 +119,72 @@ class IndiGotoGuideService:
         self.service_state = "idle"
         self.phase = "idle"
         self.wait_reason = f"command not implemented: {command_type or 'unknown'}"
+        return True
+
+    def _handle_goto_target(self, command: dict[str, Any]) -> None:
+        try:
+            target_ra = float(command["ra"])
+            target_dec = float(command["dec"])
+        except (KeyError, TypeError, ValueError):
+            logger.warning("Invalid INDI GoTo target command: %r", command)
+            self.service_state = "error"
+            self.phase = "error"
+            self.wait_reason = "invalid goto target"
+            self.last_action = "goto rejected"
+            return
+
+        self.active_target_ra = target_ra
+        self.active_target_dec = target_dec
+        goto_method = self.config_values.get("indi_goto_method", "indi_mount")
+
+        if goto_method == "indi_mount":
+            forwarded = self._forward_to_mountcontrol(
+                {
+                    "type": "goto_target",
+                    "ra": target_ra,
+                    "dec": target_dec,
+                    "refine_after_goto": bool(
+                        command.get("refine_after_goto", False)
+                    ),
+                    "refine_accuracy_arcmin": command.get(
+                        "refine_accuracy_arcmin"
+                    ),
+                }
+            )
+            if not forwarded:
+                return
+
+            self.service_state = "running"
+            self.phase = "indi_mount_goto"
+            self.wait_reason = ""
+            self.last_action = "forwarded goto_target"
+            logger.info(
+                "Forwarded INDI Mount GoTo target: RA %.4f Dec %.4f",
+                target_ra,
+                target_dec,
+            )
+            return
+
+        self.service_state = "idle"
+        self.phase = "pifinder_goto_pending"
+        self.wait_reason = "PiFinder GoTo is not implemented yet"
+        self.last_action = "pifinder goto deferred"
+        logger.info(
+            "PiFinder GoTo target deferred until later stage: RA %.4f Dec %.4f",
+            target_ra,
+            target_dec,
+        )
+
+    def _forward_to_mountcontrol(self, command: dict[str, Any]) -> bool:
+        if self.mountcontrol_queue is None:
+            logger.warning("Cannot forward INDI GoTo/Guide command; queue unavailable")
+            self.service_state = "error"
+            self.phase = "error"
+            self.wait_reason = "mountcontrol queue unavailable"
+            self.last_action = "forward failed"
+            return False
+
+        self.mountcontrol_queue.put(command)
         return True
 
     def _reload_config_if_needed(self) -> None:
@@ -155,14 +236,14 @@ class IndiGotoGuideService:
             "phase": self.phase,
             "wait_reason": self.wait_reason,
             "last_command": self.last_command,
-            "active_target_ra": None,
-            "active_target_dec": None,
+            "active_target_ra": self.active_target_ra,
+            "active_target_dec": self.active_target_dec,
             "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
             "tracking_guide_enabled": self.config_values.get(
                 "indi_tracking_guide_enabled", False
             ),
             "last_error_arcmin": None,
-            "last_action": "heartbeat",
+            "last_action": self.last_action,
             "mountcontrol_queue_available": self.mountcontrol_queue is not None,
             "mount_status": self._mount_status_summary(),
             "config": self.config_values,

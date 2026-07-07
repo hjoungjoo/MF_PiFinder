@@ -632,6 +632,7 @@ def main(
                 ui_queue,
                 posserver_logqueue,
                 mountcontrol_queue,
+                goto_guide_queue,
                 alignment_command_queue,
                 alignment_response_queue,
                 console_queue,
