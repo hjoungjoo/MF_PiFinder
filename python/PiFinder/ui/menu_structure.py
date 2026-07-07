@@ -141,6 +141,47 @@ pifinder_menu = {
                                     "name": _("Backlash"),
                                     "class": UIIndiBacklash,
                                 },
+                                {
+                                    "name": _("Goto/Guide"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "items": [
+                                        {
+                                            "name": _("GoTo Method"),
+                                            "class": UITextMenu,
+                                            "select": "single",
+                                            "config_option": "indi_goto_method",
+                                            "post_callback": callbacks.reload_config,
+                                            "items": [
+                                                {
+                                                    "name": _("INDI Mount"),
+                                                    "value": "indi_mount",
+                                                },
+                                                {
+                                                    "name": _("PiFinder"),
+                                                    "value": "pifinder",
+                                                },
+                                            ],
+                                        },
+                                        {
+                                            "name": _("Tracking Guide"),
+                                            "class": UITextMenu,
+                                            "select": "single",
+                                            "config_option": "indi_tracking_guide_enabled",
+                                            "post_callback": callbacks.reload_config,
+                                            "items": [
+                                                {
+                                                    "name": _("Off"),
+                                                    "value": False,
+                                                },
+                                                {
+                                                    "name": _("On"),
+                                                    "value": True,
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
                             ],
                         },
                     ],

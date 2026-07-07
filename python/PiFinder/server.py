@@ -1057,6 +1057,12 @@ class Server:
                 "indi_goto_refine_accuracy_arcmin": float(
                     cfg.get_option("indi_goto_refine_accuracy_arcmin", 10.0)
                 ),
+                "indi_goto_method": cfg.get_option(
+                    "indi_goto_method", "indi_mount"
+                ),
+                "indi_tracking_guide_enabled": bool(
+                    cfg.get_option("indi_tracking_guide_enabled", False)
+                ),
             }
 
         def _onstep_property_name(property_name, indi_cfg=None):
@@ -1521,6 +1527,25 @@ class Server:
             except ValueError as e:
                 logger.warning("Could not apply SkySafari mount settings: %s", e)
                 return _render_indi_page(error_message=str(e))
+
+        @app.route("/indi/goto_guide", methods=["POST"])
+        @auth_required
+        def indi_goto_guide_update():
+            goto_method = (request.form.get("indi_goto_method") or "").strip()
+            if goto_method not in ("indi_mount", "pifinder"):
+                return _render_indi_page(
+                    error_message=_("Invalid INDI GoTo method")
+                )
+
+            cfg = config.Config()
+            cfg.load_config()
+            cfg.set_option("indi_goto_method", goto_method)
+            cfg.set_option(
+                "indi_tracking_guide_enabled",
+                request.form.get("indi_tracking_guide_enabled") == "on",
+            )
+            self.ui_queue.put("reload_config")
+            return _render_indi_page(_("INDI GoTo / Guide settings applied"))
 
         @app.route("/indi/driver", methods=["POST"])
         @auth_required
