@@ -123,6 +123,7 @@ _SWEEP_SKIP: dict[str, str] = {
 # Keeps the completeness guard (test_all_ui_modules_covered) honest.
 _COVERAGE_SKIP: dict[str, str] = {
     # (UISQMCorrection is covered via the dynamic fixtures)
+    "UIIndiBase": "abstract helper base for INDI LCD screens",
     "UIReleaseNotes": "fetches markdown via HTTP in active(); needs a network mock",
 }
 
@@ -185,6 +186,7 @@ _DYNAMIC_IDS = [
     "UISQMCalibration",
     "UISQMSweep",
     "UISQMCorrection",
+    "UIIndiInit",
     "UIMigrationConfirm",
     "UIMigrationProgress",
 ]
@@ -230,6 +232,12 @@ def _build_dynamic_item_definition(spec_id: str, sample_object) -> dict:
             "class": UISQMCorrection,
             "label": "sqm_correction",
         }
+    if spec_id == "UIIndiInit":
+        # The INIT screen is launched by INDI menu callbacks rather than a
+        # direct static class node, so cover the class as a dynamic screen.
+        from PiFinder.ui.indi import UIIndiInit
+
+        return {"name": "INDI Init", "class": UIIndiInit, "label": "indi_init"}
     if spec_id == "UIMigrationConfirm":
         # Pushed by UISoftware.key_square() after a 7x-square unlock.
         return {

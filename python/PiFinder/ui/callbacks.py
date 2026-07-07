@@ -438,7 +438,10 @@ def switch_language(ui_module: UIModule) -> None:
     msg = str(f"Language: {iso2_code}")
     ui_module.message(_(msg))
     lang = gettext.translation(
-        "messages", "locale", languages=[iso2_code], fallback=(iso2_code == "en")
+        "messages",
+        str(utils.pifinder_dir / "python" / "locale"),
+        languages=[iso2_code],
+        fallback=(iso2_code == "en"),
     )
     lang.install()
     logger.info("Switch Language: %s", iso2_code)

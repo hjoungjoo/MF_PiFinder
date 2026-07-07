@@ -36,7 +36,6 @@
   <link href="/css/style.css" type="text/css" rel="stylesheet" media="screen,projection"/>
 </head>
 <body class="grey darken-3">
-  {% set selected_web_language = current_web_language() %}
   <nav class="grey darken-1 pf-main-nav" role="navigation">
     <div class="container pf-nav-shell">
       <div class="pf-nav-top-row">
@@ -46,16 +45,6 @@
             <button type="button" class="pf-nav-icon-button pf-fullscreen-button" title="{{ _('Fullscreen') }}" aria-label="{{ _('Fullscreen') }}">
               <i class="material-icons">fullscreen</i>
             </button>
-          </div>
-          <div class="pf-language-menu">
-            <form action="/language" method="post" class="pf-language-form">
-              <input type="hidden" name="next" value="{{ web_language_next() }}">
-              <select name="language" class="browser-default pf-language-select" aria-label="{{ _('Language') }}">
-                {% for code, label in web_language_options %}
-                <option value="{{ code }}" {% if code == selected_web_language %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              </select>
-            </form>
           </div>
           <div class="pf-theme-menu">
             <select class="browser-default pf-theme-select" aria-label="{{ _('Web theme') }}">
@@ -93,17 +82,6 @@
           <button type="button" class="pf-sidenav-button pf-fullscreen-button">
             <i class="material-icons left">fullscreen</i>{{ _('Fullscreen') }}
           </button>
-        </li>
-        <li class="pf-sidenav-language">
-          <span>{{ _('Language') }}</span>
-          <form action="/language" method="post" class="pf-language-form">
-            <input type="hidden" name="next" value="{{ web_language_next() }}">
-            <select name="language" class="browser-default pf-language-select" aria-label="{{ _('Language') }}">
-              {% for code, label in web_language_options %}
-              <option value="{{ code }}" {% if code == selected_web_language %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </form>
         </li>
         <li class="pf-sidenav-theme">
           <span>{{ _('Theme') }}</span>

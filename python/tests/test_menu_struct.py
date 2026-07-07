@@ -130,5 +130,5 @@ def test_indi_settings_menu_entries_exist():
     )
 
     setting_names = [item["name"] for item in setting_menu["items"]]
-    assert "Multi-Point Align" in setting_names
+    assert "Multi Align" in setting_names
     assert "Backlash" in setting_names

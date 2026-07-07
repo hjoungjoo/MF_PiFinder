@@ -21,28 +21,26 @@ def test_base_template_exposes_theme_selector():
     assert 'value="red"' in base_html
 
 
-def test_base_template_exposes_language_selector():
+def test_base_template_does_not_expose_language_selector():
     base_html = (VIEWS_DIR / "base.html").read_text()
     init_js = (VIEWS_DIR / "js" / "init.js").read_text()
     server_py = SERVER_PATH.read_text()
 
-    assert 'action="/language"' in base_html
-    assert "pf-language-select" in base_html
-    assert "current_web_language" in base_html
-    assert "web_language_options" in base_html
-    assert 'value="{{ code }}"' in base_html
-    assert 'name="next"' in base_html
+    assert 'action="/language"' not in base_html
+    assert "pf-language-select" not in base_html
+    assert "current_web_language" not in base_html
+    assert "web_language_options" not in base_html
 
-    assert "pf-language-select" in init_js
-    assert "this.form.submit()" in init_js
+    assert "pf-language-select" not in init_js
+    assert "this.form.submit()" not in init_js
 
-    assert "WEB_LANGUAGE_COOKIE" in server_py
-    assert "SUPPORTED_WEB_LANGUAGES" in server_py
+    assert "WEB_LANGUAGE_COOKIE" not in server_py
+    assert "SUPPORTED_WEB_LANGUAGES" not in server_py
     assert "BABEL_TRANSLATION_DIRECTORIES" in server_py
-    assert '@app.route("/language", methods=["POST"])' in server_py
+    assert '@app.route("/language", methods=["POST"])' not in server_py
 
 
-def test_korean_web_translations_cover_recent_pages():
+def test_korean_lcd_translations_cover_recent_pages():
     ko_po = (
         Path(__file__).resolve().parents[1]
         / "locale"
@@ -50,23 +48,18 @@ def test_korean_web_translations_cover_recent_pages():
         / "LC_MESSAGES"
         / "messages.po"
     ).read_text()
-    remote_html = (VIEWS_DIR / "remote.html").read_text()
-    location_form_html = (VIEWS_DIR / "location_form.html").read_text()
-
-    assert "{{ _('Long') }}" in remote_html
-    assert "{{ _('Manual Entry') }}" in location_form_html
 
     expected_pairs = {
-        "PiFinder Logs": "PiFinder 로그",
-        "Download All Logs": "모든 로그 다운로드",
-        "Current INDI Driver State": "현재 INDI 드라이버 상태",
-        "Send Location and Time": "위치와 시간 전송",
-        "Location Management": "위치 관리",
-        "Network Settings": "네트워크 설정",
-        "AP Connected Devices": "AP 접속 장치",
-        "User Data and Settings": "사용자 데이터와 설정",
-        "Long": "길게",
-        "Manual Entry": "수동 입력",
+        "INDI": "INDI",
+        "Backlash": "백래시",
+        "Multi Align": "멀티 정렬",
+        "Set Location": "위치 설정",
+        "Restart INDI": "INDI 재시작",
+        "Align Complete": "정렬 완료",
+        "Square : Confirm": "네모 : 확정",
+        "Point Confirmed": "정렬점 확정",
+        "Mount Control Off": "마운트 제어 꺼짐",
+        "Guide Correction": "가이드 보정",
     }
     for msgid, msgstr in expected_pairs.items():
         assert f'msgid "{msgid}"' in ko_po
@@ -87,7 +80,7 @@ def test_desktop_nav_controls_share_one_alignment_context():
     assert "display: flex" in style_css
     assert "align-items: center" in style_css
     assert ".pf-nav-icon-button .material-icons" in style_css
-    assert ".pf-language-form" in style_css
+    assert ".pf-language-form" not in style_css
     assert "height: 2.5rem" in style_css
     assert "line-height: 1" in style_css
 

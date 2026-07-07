@@ -30,9 +30,8 @@ from flask import (
     redirect,
     session,
     make_response,
-    has_request_context,
 )
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 from flask_babel import Babel, gettext  # type: ignore[import-untyped]
 from werkzeug.routing import IntegerConverter
 from waitress import serve as waitress_serve
@@ -62,33 +61,7 @@ WEB_BACKLASH_DEFAULT_REPEATS = 10
 WEB_BACKLASH_MIN_REPEATS = 1
 WEB_BACKLASH_MAX_REPEATS = 50
 WEB_BACKLASH_STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
-WEB_LANGUAGE_COOKIE = "pifinder_web_language"
 DEFAULT_WEB_LANGUAGE = "en"
-SUPPORTED_WEB_LANGUAGES = ("en", "de", "es", "fr", "ko", "zh")
-WEB_LANGUAGE_OPTIONS = (
-    ("en", "English"),
-    ("ko", "한국어"),
-    ("de", "Deutsch"),
-    ("fr", "Français"),
-    ("es", "Español"),
-    ("zh", "中文"),
-)
-
-
-def normalize_web_language(language):
-    if not language:
-        return ""
-    normalized = str(language).replace("_", "-").split("-", 1)[0].lower()
-    return normalized if normalized in SUPPORTED_WEB_LANGUAGES else ""
-
-
-def safe_redirect_target(target):
-    if not target:
-        return "/"
-    parsed = urlparse(target)
-    if parsed.scheme or parsed.netloc or not target.startswith("/"):
-        return "/"
-    return target
 
 
 def auth_required(func):
@@ -129,28 +102,7 @@ class MockSharedState:
 
 
 def server_locale():
-    if not has_request_context():
-        return DEFAULT_WEB_LANGUAGE
-
-    selected_language = normalize_web_language(session.get("web_language"))
-    if selected_language:
-        return selected_language
-
-    selected_language = normalize_web_language(request.cookies.get(WEB_LANGUAGE_COOKIE))
-    if selected_language:
-        session["web_language"] = selected_language
-        return selected_language
-
-    return (
-        request.accept_languages.best_match(SUPPORTED_WEB_LANGUAGES)
-        or DEFAULT_WEB_LANGUAGE
-    )
-
-
-def web_language_next_path():
-    if not has_request_context():
-        return "/"
-    return request.full_path if request.query_string else request.path
+    return DEFAULT_WEB_LANGUAGE
 
 
 class Server:
@@ -225,9 +177,6 @@ class Server:
         app.jinja_env.add_extension("jinja2.ext.i18n")
 
         app.jinja_env.globals["_"] = gettext
-        app.jinja_env.globals["current_web_language"] = server_locale
-        app.jinja_env.globals["web_language_options"] = WEB_LANGUAGE_OPTIONS
-        app.jinja_env.globals["web_language_next"] = web_language_next_path
 
         # # Create a simple gettext function for templates that works without translation files
         # def simple_gettext(text):
@@ -278,22 +227,6 @@ class Server:
                 mimetype="text/javascript",
             )
             response.headers["Service-Worker-Allowed"] = "/"
-            return response
-
-        @app.route("/language", methods=["POST"])
-        def language_update():
-            selected_language = normalize_web_language(request.form.get("language"))
-            if not selected_language:
-                selected_language = DEFAULT_WEB_LANGUAGE
-
-            session["web_language"] = selected_language
-            response = redirect(safe_redirect_target(request.form.get("next")))
-            response.set_cookie(
-                WEB_LANGUAGE_COOKIE,
-                selected_language,
-                max_age=365 * 24 * 60 * 60,
-                samesite="Lax",
-            )
             return response
 
         @app.route("/")
