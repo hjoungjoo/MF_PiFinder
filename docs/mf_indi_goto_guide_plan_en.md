@@ -1,0 +1,624 @@
+# MF PiFinder INDI GoTo / Guide Settings Draft
+
+Baseline: `mf_pifinder` branch, 2026-07-08.
+
+This document is a design draft for adding INDI mount `GoTo/Guide` settings
+before implementation.
+
+## Purpose
+
+Let the user choose how INDI mount GoTo is performed and whether tracking guide
+correction is enabled.
+
+New settings UI:
+
+- LCD: `Start > INDI > Setting > Goto/Guide`
+- Web: bottom of the `/indi` tab/page
+
+First-pass settings:
+
+```text
+GoTo Method
+  - INDI Mount
+  - PiFinder
+
+Tracking Guide
+  - On
+  - Off
+```
+
+GoTo target input paths:
+
+```text
+LCD UI target selection
+SkySafari target / GoTo
+Web UI target setting
+```
+
+All three input paths should converge on the same mount-control target handling
+and run either the `INDI Mount` or `PiFinder` procedure depending on the selected
+`GoTo Method`.
+
+## Current Related Implementation
+
+Existing source pieces:
+
+```text
+python/PiFinder/mountcontrol_indi.py
+  goto_target()
+  toggle_guide_correction()
+  _check_guide_correction()
+  manual_move()
+  stop_mount()
+
+python/PiFinder/ui/indi.py
+  UIIndiGuide
+  number 5: toggles indi_goto_refine_once
+  number 0: toggle_guide_correction
+
+python/PiFinder/server.py
+python/views/indi_mount.html
+  SkySafari Mount Mode settings
+  skysafari_indi_goto
+  skysafari_indi_sync
+  indi_goto_refine_once
+  indi_goto_refine_accuracy_arcmin
+
+python/PiFinder/pointing_coordinate_service.py
+  current coordinate state for SkySafari/Web/LCD consumers
+```
+
+`goto_target()` currently uses INDI `ON_COORD_SET=SLEW` and
+`EQUATORIAL_EOD_COORD` to send GoTo to the active mount driver.
+
+`toggle_guide_correction()` currently compares solve-based target error and
+sends short manual correction pulses.
+
+## Implementation Architecture
+
+To avoid destabilizing the existing system, the new feature should be
+implemented as a separate service and separate source module.
+
+Candidate new source file:
+
+```text
+python/PiFinder/indi_goto_guide_service.py
+```
+
+Responsibility split:
+
+```text
+pos_server.py
+  Receives SkySafari LX200 commands
+  Routes GoTo/Sync/Guide requests to the new service queue
+  Keeps existing push-to UI behavior
+
+server.py / views/indi_mount.html
+  Web settings UI
+  Routes Web target/stop requests to the new service queue
+
+ui/indi.py, ui/object_details.py
+  LCD settings UI
+  Routes LCD target/stop requests to the new service queue
+
+indi_goto_guide_service.py
+  Selects the GoTo Method policy
+  Runs the PiFinder GoTo state machine
+  Runs the Tracking Guide state machine
+  Reads PointingCoordinateService coordinates
+  Sends only small primitive commands to the existing mountcontrol_queue
+
+mountcontrol_indi.py
+  Remains the existing INDI command executor
+  Provides existing primitives such as connect, sync, goto_target,
+  manual_move, and stop_mount
+```
+
+The new service does not replace mountcontrol. `MountControlIndi` stays as the
+execution layer that talks to the INDI driver, while the new service becomes the
+orchestration layer that sequences multiple primitive commands safely.
+
+Draft process/queue structure:
+
+```text
+main.py
+  mountcontrol_queue = Queue()
+  goto_guide_queue = Queue()
+
+  MountControl process
+    input: mountcontrol_queue
+
+  INDI GoTo/Guide process
+    input: goto_guide_queue
+    output: mountcontrol_queue
+    reads: shared_state, mount_control_status.json
+    writes: indi_goto_guide_status.json
+
+  POS Server process
+    SkySafari GoTo/Sync/Guide -> goto_guide_queue
+
+  Web/LCD
+    settings/config -> config.json
+    target/stop/runtime commands -> goto_guide_queue
+```
+
+Candidate status file:
+
+```text
+data/indi_goto_guide_status.json
+```
+
+Minimum status fields:
+
+```text
+service_state
+active_target_ra
+active_target_dec
+goto_method
+tracking_guide_enabled
+phase
+last_error_arcmin
+last_action
+wait_reason
+updated
+```
+
+## Implementation Rules and Risks
+
+- The new service must be a short-tick state machine, not a long blocking loop.
+- Stop/Abort commands must take priority in every phase.
+- The existing `goto_target()` path must remain unchanged for
+  `Goto Method = INDI Mount`.
+- `skysafari_indi_goto` controls whether SkySafari GoTo is forwarded to mount
+  features, while `indi_goto_method` controls how a forwarded GoTo is executed.
+- `PointingCoordinateService` is the single coordinate-selection source.
+- PiFinder GoTo must not start while the mount is parked or location/time is
+  invalid.
+- Manual approach must use leased manual movement with explicit keepalive or
+  stop behavior.
+- Tracking Guide must not intervene during user manual movement, GoTo, backlash
+  test, or multi-point alignment.
+- If pulse guide is unreliable for a driver, short manual movement fallback may
+  be used, but the fallback must be shown clearly in status.
+- OnStepX-specific behavior must be gated by driver name/capability detection;
+  generic INDI mounts should use only standard INDI primitives.
+
+## Proposed Config Keys
+
+The settings should persist across service restarts.
+
+```text
+indi_goto_method = "indi_mount" | "pifinder"
+  default: "indi_mount"
+
+indi_tracking_guide_enabled = false | true
+  default: false
+
+indi_goto_refine_accuracy_arcmin
+  existing setting.
+  Candidate shared accuracy setting for PiFinder GoTo and tracking guide.
+
+indi_pifinder_goto_near_threshold_deg = 1.0
+  Default "near target" threshold for PiFinder GoTo.
+
+indi_tracking_guide_threshold_arcmin
+  Error threshold where Tracking Guide starts pulse-guide correction.
+  The default should be decided through hardware testing.
+```
+
+The exact key names may change during implementation, but this document uses
+the names above.
+
+## UI Design
+
+### LCD
+
+Menu location:
+
+```text
+Start
+  INDI
+    Setting
+      Goto/Guide
+```
+
+Draft screen:
+
+```text
+Goto/Guide
+  Goto Method
+    INDI Mount
+    PiFinder
+
+  Tracking Guide
+    Off
+    On
+```
+
+Rules:
+
+- Use left/right/square controls for selection and value changes.
+- Save changes to config and send `reload_config`.
+- Settings should be editable even when the INDI mount is disconnected.
+- If tracking guide is running and the user switches it Off, send
+  `toggle_guide_correction(false)` or equivalent stop behavior immediately.
+
+### Web
+
+Location:
+
+```text
+/indi
+  ...
+  [bottom] GoTo / Guide Settings
+```
+
+Fields:
+
+```text
+Goto Method
+  radio or select:
+    INDI Mount
+    PiFinder
+
+Tracking Guide
+  checkbox or switch:
+    On / Off
+
+Apply button
+```
+
+This card should remain separate from the existing `SkySafari Mount Mode` card.
+SkySafari settings control protocol forwarding, while `GoTo/Guide` controls the
+INDI mount GoTo and correction policy.
+
+## GoTo Method: INDI Mount
+
+This preserves the current behavior.
+
+```mermaid
+flowchart TD
+    A[Object/SkySafari/Web/LCD target] --> B[mountcontrol_queue goto_target]
+    B --> C[MountControlIndi.goto_target]
+    C --> D[INDI ON_COORD_SET=SLEW]
+    D --> E[INDI EQUATORIAL_EOD_COORD target]
+    E --> F[Mount driver GoTo]
+    F --> G[GoTo completion monitor]
+    G --> H[connected / GoTo complete]
+```
+
+Behavior:
+
+- The mount driver slews to the target coordinate.
+- PiFinder publishes mount readback to the coordinate service during motion.
+- If `indi_goto_refine_once` is enabled, a one-shot solve-based refine can run
+  after GoTo completes.
+- If Tracking Guide is On, periodic guide correction can run against the target
+  after GoTo.
+
+## GoTo Method: PiFinder
+
+In this mode, PiFinder uses `PointingCoordinateService` coordinates to approach
+near the target with manual movement commands, then combines mount
+sync/alignment with INDI GoTo for the final target.
+
+```mermaid
+flowchart TD
+    A[target selected] --> B[Read PointingCoordinateService current coordinate]
+    B --> C[Calculate target error]
+    C --> D{Within 1 degree near threshold?}
+    D -->|no| E[Choose manual speed from distance]
+    E --> F[Approach with manual movement command]
+    F --> G[Wait for coordinate update]
+    G --> B
+    D -->|yes| H[Stop movement]
+    H --> I[Sync/alignment mount to current PiFinder coordinate]
+    I --> J[Run INDI GoTo to final target]
+    J --> K[Wait for GoTo completion]
+    K --> L[Check position with PointingCoordinateService]
+    L --> M{Outside tolerance?}
+    M -->|yes| N[Correct with another GoTo command]
+    N --> K
+    M -->|no| O[Sync/alignment mount to final target coordinate]
+    O --> P[GoTo complete]
+```
+
+Detailed procedure:
+
+- Current coordinates needed for movement calculation come from
+  `PointingCoordinateService.CoordinateState.current`.
+- Calculate distance and direction to the target, then choose manual movement
+  direction and speed.
+- Use higher speed when far from the target and lower speed as the target gets
+  closer.
+- The default near-target threshold is 1 degree.
+- When inside the near threshold, stop manual movement.
+- Sync/alignment the mount to the current coordinate PiFinder is reporting.
+  This is the coarse sync step that aligns the mount coordinate system with
+  PiFinder.
+- Then run a normal INDI GoTo to the final target coordinate.
+- After GoTo completion, use `PointingCoordinateService` to check target error.
+- If the error is still outside tolerance, repeat corrective GoTo commands.
+- When inside the target range, sync/alignment the mount to the final target
+  coordinate. This final sync improves tracking precision after acquisition.
+
+Draft speed policy:
+
+```text
+large error       -> fast/slew-style manual movement
+medium error      -> find/center-style manual movement
+near threshold    -> guide/slow-style manual movement
+```
+
+Exact speed levels and distance bands should be tuned with hardware testing.
+
+Safety notes:
+
+- This mode depends heavily on `PointingCoordinateService` coordinate quality.
+- Plate-solved coordinates are the most reliable.
+- Without solving, IMU/mount fused coordinates can be used for coarse approach,
+  but error may be larger.
+- Do not start when the mount is parked or location/time is invalid.
+- Stop/Abort must take priority during manual approach, final GoTo, and
+  corrective GoTo.
+
+## Tracking Guide
+
+Tracking Guide is an On/Off correction feature independent of the selected GoTo
+method.
+
+Goal:
+
+- While tracking a target, continuously check the current coordinate from
+  `PointingCoordinateService`.
+- When target-vs-current error exceeds a threshold, send an additional
+  pulse-guide correction.
+- The feature is controlled by the Tracking Guide On/Off setting.
+
+Basic flow:
+
+```mermaid
+flowchart TD
+    A[Tracking Guide On] --> B[Have target coordinate]
+    B --> C[Read PointingCoordinateService current coordinate]
+    C --> D[Calculate target-vs-current error]
+    D --> E{Error > threshold?}
+    E -->|no| H[Wait]
+    E -->|yes| I[pulse-guide correction]
+    I --> C
+    H --> C
+```
+
+Coordinate priority:
+
+```text
+1. plate-solve-based PointingCoordinateService coordinate
+2. mount + IMU delta coordinate after mount sync
+3. IMU fallback coordinate before solve/initial state
+```
+
+Correction method:
+
+```text
+calculate error direction
+  -> choose correction direction in RA/Dec or Alt/Az frame
+  -> calculate pulse guide duration
+  -> send INDI pulse guide or short manual motion command
+  -> verify effect on next coordinate update
+```
+
+If a driver does not support pulse guide reliably, short manual movement leases
+can be used as a fallback.
+
+Off conditions:
+
+- User switches Tracking Guide Off.
+- Mount disconnect/error.
+- Mount parked.
+- User Stop/Abort.
+- No active target.
+- `PointingCoordinateService` coordinate unavailable.
+
+Candidate status fields:
+
+```text
+guide_correction_enabled
+guide_correction_target_ra
+guide_correction_target_dec
+guide_correction_error_arcmin
+guide_correction_last_action
+guide_correction_wait_reason
+guide_correction_pulse_ms
+guide_correction_threshold_arcmin
+```
+
+## Relationship to Existing Settings
+
+These existing settings overlap with the new UI:
+
+```text
+indi_goto_refine_once
+indi_goto_refine_accuracy_arcmin
+```
+
+Cleanup direction:
+
+- `indi_goto_refine_accuracy_arcmin` can move into the `GoTo/Guide` card as the
+  shared accuracy setting.
+- `indi_goto_refine_once` can remain as an `INDI Mount` detail option, or be
+  reinterpreted as `PiFinder final refine` after PiFinder GoTo is implemented.
+- SkySafari forwarding settings (`skysafari_indi_goto`, `skysafari_indi_sync`)
+  remain separate because they define SkySafari protocol behavior.
+
+## Staged Implementation Plan and Checklists
+
+Each stage should be small enough to commit. When practical, push after each
+stage so hardware debugging has clear restore points.
+
+### Stage 0: Documentation and Baseline
+
+Goal:
+
+- Finalize this document.
+- Record a baseline without changing existing behavior.
+
+Checklist:
+
+- `git status` clearly shows the intended files.
+- Existing `mountcontrol_indi.goto_target()` path is unchanged.
+- Existing SkySafari GoTo forwarding semantics are unchanged.
+- Documentation is committed/pushed separately from source changes.
+
+### Stage 1: Separate Service Skeleton
+
+Goal:
+
+- Add `indi_goto_guide_service.py`.
+- Add a separate process and `goto_guide_queue` in `main.py`.
+- The service should not move the mount yet; it only writes a heartbeat status.
+
+Checklist:
+
+- If `mount_control = false`, the new service does not start.
+- If `mount_control = true`, both MountControl and the new service start.
+- `indi_goto_guide_status.json` updates periodically.
+- Existing `mount_control_status.json` format is unchanged.
+- Existing SkySafari coordinate polling still works.
+
+### Stage 2: Settings UI and Config
+
+Goal:
+
+- Add `GoTo / Guide Settings` at the bottom of Web `/indi`.
+- Add LCD `Start > INDI > Setting > Goto/Guide`.
+- Settings are saved, but behavior still follows the existing path.
+
+Checklist:
+
+- `indi_goto_method` defaults to `indi_mount`.
+- `indi_tracking_guide_enabled` defaults to `false`.
+- Web settings persist after page reload.
+- LCD settings persist after service restart.
+- Red Night theme does not introduce white controls.
+
+### Stage 3: Request Routing
+
+Goal:
+
+- Route SkySafari/Web/LCD target requests to the new service queue.
+- If `Goto Method = INDI Mount`, the new service forwards the existing
+  mountcontrol `goto_target` command unchanged.
+
+Checklist:
+
+- If `skysafari_indi_goto = false`, SkySafari GoTo is not forwarded to the mount.
+- If `skysafari_indi_goto = true` and `indi_goto_method = indi_mount`, GoTo
+  behaves the same as before.
+- Existing Object Details / LCD / Web GoTo behavior is not broken.
+- Stop/Abort still reaches mountcontrol immediately through the new route.
+
+### Stage 4: PointingCoordinateService Input
+
+Goal:
+
+- The new service reads current coordinates from `PointingCoordinateService`.
+- If coordinates are unavailable, it waits or fails safely.
+
+Checklist:
+
+- Solve coordinate source/quality/status appears in the status file.
+- IMU fallback coordinates appear when solve is unavailable.
+- Parked mount coordinates are not used as PiFinder GoTo input.
+- No mount command is sent when coordinates are unavailable.
+
+### Stage 5: PiFinder GoTo State Machine, First Pass
+
+Goal:
+
+- Add the PiFinder GoTo state machine.
+- The first pass validates target/current/error calculation and Stop handling
+  before doing automatic approach motion.
+
+Checklist:
+
+- Receiving a target sets `phase = planning`.
+- Current-vs-target error is calculated.
+- Park/location/time invalid conditions prevent start.
+- Stop/Abort changes any phase to `idle/stopped`.
+- No unintended manual movement is sent yet.
+
+### Stage 6: PiFinder Manual Approach
+
+Goal:
+
+- Select manual movement direction and speed by target distance.
+- Manage lease/keepalive/stop explicitly.
+
+Checklist:
+
+- Far targets use faster movement and near targets use slower movement.
+- No single lease runs too long.
+- If coordinates stop updating, motion stops and the service enters error state.
+- Motion stops inside the 1-degree near threshold.
+- User Stop immediately forwards `stop_movement` to mountcontrol.
+
+### Stage 7: Coarse Sync and Final INDI GoTo
+
+Goal:
+
+- After near-target arrival, sync/alignment the mount to the current PiFinder
+  coordinate.
+- Run existing INDI GoTo to the final target.
+
+Checklist:
+
+- Mount coordinate sync state is recorded before and after sync.
+- Final GoTo uses the existing `goto_target()` primitive.
+- Completion detection includes settle time for OnStepX fine adjustment.
+- Tracking Guide does not intervene during GoTo.
+
+### Stage 8: Corrective GoTo and Final Sync
+
+Goal:
+
+- Check target error after final GoTo.
+- Repeat corrective GoTo with a bounded retry count when needed.
+- Final sync/alignment to the target once inside tolerance.
+
+Checklist:
+
+- Correction retry count has a hard limit.
+- If error does not improve, the service stops in failed state.
+- Final sync runs only once after entering target range.
+- Tracking guide target is updated to the latest target after final sync.
+
+### Stage 9: Tracking Guide
+
+Goal:
+
+- If `indi_tracking_guide_enabled` is On, correct target tracking.
+- Use `PointingCoordinateService` current coordinate versus the target coordinate
+  and send pulse guide or manual fallback.
+
+Checklist:
+
+- If there is no target, guide waits and sends no correction.
+- Guide does not run during user manual movement.
+- Guide does not run during GoTo/backlash/multi-align.
+- Pulse-guide failure/fallback is visible in status.
+- Switching Off stops active correction.
+
+### Stage 10: Integration Test
+
+Goal:
+
+- Compare existing and new behavior.
+- Verify safety conditions before deeper hardware testing.
+
+Checklist:
+
+- With `indi_goto_method = indi_mount`, existing SkySafari GoTo behaves the same.
+- With `indi_goto_method = pifinder`, target/current/error/status are stable.
+- Stop/Abort has priority in every stage.
+- Service restart does not leave stale active state.
+- INDI mount disconnect/reconnect leaves the new service safely waiting.
