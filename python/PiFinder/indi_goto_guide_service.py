@@ -29,9 +29,11 @@ logger = logging.getLogger("IndiGotoGuideService")
 
 STATUS_FILE = utils.data_dir / "indi_goto_guide_status.json"
 MOUNT_STATUS_FILE = utils.data_dir / "mount_control_status.json"
+POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
 
 HEARTBEAT_SECONDS = 1.0
 CONFIG_RELOAD_SECONDS = 5.0
+POINTING_STATUS_MAX_AGE_SECONDS = 5.0
 
 
 class IndiGotoGuideService:
@@ -57,6 +59,7 @@ class IndiGotoGuideService:
         self.active_target_ra: Optional[float] = None
         self.active_target_dec: Optional[float] = None
         self.last_action = "startup"
+        self.pointing_status: dict[str, Any] = {"available": False}
 
     def run(self) -> None:
         logger.info("INDI GoTo/Guide service started")
@@ -71,6 +74,7 @@ class IndiGotoGuideService:
                 continue
 
             try:
+                self._refresh_pointing_status()
                 running = self.handle_command(command)
             except Exception:
                 logger.exception("INDI GoTo/Guide command failed: %r", command)
@@ -165,6 +169,20 @@ class IndiGotoGuideService:
             )
             return
 
+        pointing = self._refresh_pointing_status()
+        if not pointing.get("usable_for_goto"):
+            self.service_state = "waiting"
+            self.phase = "pifinder_goto_waiting_for_coordinate"
+            self.wait_reason = str(
+                pointing.get("reason") or "pointing coordinate unavailable"
+            )
+            self.last_action = "pifinder goto waiting for coordinate"
+            logger.info(
+                "PiFinder GoTo deferred; coordinate unavailable: %s",
+                self.wait_reason,
+            )
+            return
+
         self.service_state = "idle"
         self.phase = "pifinder_goto_pending"
         self.wait_reason = "PiFinder GoTo is not implemented yet"
@@ -186,6 +204,111 @@ class IndiGotoGuideService:
 
         self.mountcontrol_queue.put(command)
         return True
+
+    def _refresh_pointing_status(self) -> dict[str, Any]:
+        self.pointing_status = self._load_pointing_status()
+        return self.pointing_status
+
+    def _load_pointing_status(self) -> dict[str, Any]:
+        try:
+            with open(POINTING_STATUS_FILE, encoding="utf-8") as status_in:
+                raw_status = json.load(status_in)
+        except FileNotFoundError:
+            return {
+                "available": False,
+                "fresh": False,
+                "usable_for_goto": False,
+                "reason": "pointing coordinate status file not found",
+            }
+        except (json.JSONDecodeError, OSError):
+            logger.debug("Could not read pointing coordinate status", exc_info=True)
+            return {
+                "available": False,
+                "fresh": False,
+                "usable_for_goto": False,
+                "reason": "pointing coordinate status unreadable",
+            }
+
+        updated = self._finite_float(raw_status.get("updated"))
+        age_seconds = time.time() - updated if updated is not None else None
+        fresh = (
+            age_seconds is not None
+            and age_seconds >= 0.0
+            and age_seconds <= POINTING_STATUS_MAX_AGE_SECONDS
+        )
+
+        current = self._coordinate_sample_summary(raw_status.get("current"))
+        solved = self._coordinate_sample_summary(raw_status.get("solved"))
+        imu = self._coordinate_sample_summary(raw_status.get("imu"))
+        mount = self._coordinate_sample_summary(raw_status.get("mount"))
+        usable_for_goto = bool(
+            fresh
+            and current.get("valid")
+            and current.get("ra") is not None
+            and current.get("dec") is not None
+            and not self._sample_reports_parked(current)
+        )
+
+        reason = ""
+        if not fresh:
+            reason = "pointing coordinate status is stale"
+        elif not current.get("valid"):
+            reason = str(current.get("reason") or "current coordinate invalid")
+        elif self._sample_reports_parked(current):
+            reason = "current coordinate comes from parked mount"
+
+        return {
+            "available": True,
+            "fresh": fresh,
+            "age_seconds": age_seconds,
+            "usable_for_goto": usable_for_goto,
+            "reason": reason,
+            "selected_source": raw_status.get("selected_source"),
+            "mode": raw_status.get("mode"),
+            "weights": raw_status.get("weights") or {},
+            "current": current,
+            "solved": solved,
+            "imu": imu,
+            "mount": mount,
+            "health": raw_status.get("health") or {},
+            "updated": updated,
+        }
+
+    def _coordinate_sample_summary(self, sample: Any) -> dict[str, Any]:
+        if not isinstance(sample, dict):
+            return {"valid": False, "reason": "sample unavailable"}
+
+        return {
+            "valid": bool(sample.get("valid")),
+            "source": sample.get("source"),
+            "quality": sample.get("quality"),
+            "ra": self._finite_float(sample.get("ra")),
+            "dec": self._finite_float(sample.get("dec")),
+            "alt": self._finite_float(sample.get("alt")),
+            "az": self._finite_float(sample.get("az")),
+            "reason": sample.get("reason") or "",
+            "aligned": bool(sample.get("aligned")),
+            "timestamp": self._finite_float(sample.get("timestamp")),
+            "metadata": sample.get("metadata") or {},
+        }
+
+    def _sample_reports_parked(self, sample: dict[str, Any]) -> bool:
+        metadata = sample.get("metadata")
+        if not isinstance(metadata, dict):
+            return False
+        for key in ("park_state", "driver_mount_status"):
+            raw = str(metadata.get(key, "")).strip().lower()
+            if raw and "park" in raw and "unpark" not in raw:
+                return True
+        raw_mount_status = str(metadata.get("raw_mount_status", ""))
+        return raw_mount_status.startswith("P")
+
+    def _finite_float(self, value: Any) -> Optional[float]:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number == number and abs(number) != float("inf") else None
 
     def _reload_config_if_needed(self) -> None:
         now = time.monotonic()
@@ -245,6 +368,7 @@ class IndiGotoGuideService:
             "last_error_arcmin": None,
             "last_action": self.last_action,
             "mountcontrol_queue_available": self.mountcontrol_queue is not None,
+            "pointing": self._refresh_pointing_status(),
             "mount_status": self._mount_status_summary(),
             "config": self.config_values,
             "started": self.started_at,
