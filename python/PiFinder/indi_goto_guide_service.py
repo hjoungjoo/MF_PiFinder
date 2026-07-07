@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import queue
 import time
@@ -58,6 +59,10 @@ class IndiGotoGuideService:
         self.wait_reason = ""
         self.active_target_ra: Optional[float] = None
         self.active_target_dec: Optional[float] = None
+        self.current_ra: Optional[float] = None
+        self.current_dec: Optional[float] = None
+        self.last_error_arcmin: Optional[float] = None
+        self.goto_plan: Optional[dict[str, Any]] = None
         self.last_action = "startup"
         self.pointing_status: dict[str, Any] = {"available": False}
 
@@ -110,6 +115,10 @@ class IndiGotoGuideService:
             self._forward_to_mountcontrol({"type": "stop_movement"})
             self.active_target_ra = None
             self.active_target_dec = None
+            self.current_ra = None
+            self.current_dec = None
+            self.last_error_arcmin = None
+            self.goto_plan = None
             self.service_state = "idle"
             self.phase = "idle"
             self.wait_reason = ""
@@ -169,28 +178,52 @@ class IndiGotoGuideService:
             )
             return
 
-        pointing = self._refresh_pointing_status()
-        if not pointing.get("usable_for_goto"):
+        block_reason = self._pifinder_goto_block_reason()
+        if block_reason:
             self.service_state = "waiting"
-            self.phase = "pifinder_goto_waiting_for_coordinate"
-            self.wait_reason = str(
-                pointing.get("reason") or "pointing coordinate unavailable"
-            )
-            self.last_action = "pifinder goto waiting for coordinate"
-            logger.info(
-                "PiFinder GoTo deferred; coordinate unavailable: %s",
-                self.wait_reason,
-            )
+            self.phase = "pifinder_goto_blocked"
+            self.wait_reason = block_reason
+            self.last_action = "pifinder goto blocked"
+            logger.info("PiFinder GoTo blocked: %s", self.wait_reason)
             return
 
-        self.service_state = "idle"
-        self.phase = "pifinder_goto_pending"
-        self.wait_reason = "PiFinder GoTo is not implemented yet"
-        self.last_action = "pifinder goto deferred"
-        logger.info(
-            "PiFinder GoTo target deferred until later stage: RA %.4f Dec %.4f",
+        current = self.pointing_status.get("current") or {}
+        self.current_ra = self._finite_float(current.get("ra"))
+        self.current_dec = self._finite_float(current.get("dec"))
+        self.last_error_arcmin = self._angular_error_arcmin(
+            self.current_ra,
+            self.current_dec,
             target_ra,
             target_dec,
+        )
+        self.goto_plan = {
+            "method": "pifinder",
+            "target_ra": target_ra,
+            "target_dec": target_dec,
+            "current_ra": self.current_ra,
+            "current_dec": self.current_dec,
+            "error_arcmin": self.last_error_arcmin,
+            "current_source": current.get("source"),
+            "current_quality": current.get("quality"),
+            "near_threshold_degrees": self.config_values.get(
+                "indi_pifinder_goto_near_threshold_deg", 1.0
+            ),
+            "movement_enabled": False,
+            "stage": "planning_only",
+        }
+
+        self.service_state = "running"
+        self.phase = "planning"
+        self.wait_reason = ""
+        self.last_action = "pifinder goto planned"
+        logger.info(
+            "PiFinder GoTo planned: target RA %.4f Dec %.4f current RA %s "
+            "Dec %s error %.2f arcmin",
+            target_ra,
+            target_dec,
+            f"{self.current_ra:.4f}" if self.current_ra is not None else "-",
+            f"{self.current_dec:.4f}" if self.current_dec is not None else "-",
+            self.last_error_arcmin if self.last_error_arcmin is not None else -1.0,
         )
 
     def _forward_to_mountcontrol(self, command: dict[str, Any]) -> bool:
@@ -208,6 +241,25 @@ class IndiGotoGuideService:
     def _refresh_pointing_status(self) -> dict[str, Any]:
         self.pointing_status = self._load_pointing_status()
         return self.pointing_status
+
+    def _pifinder_goto_block_reason(self) -> str:
+        pointing = self._refresh_pointing_status()
+        if not pointing.get("usable_for_goto"):
+            return str(pointing.get("reason") or "pointing coordinate unavailable")
+
+        mount_status = self._mount_status_summary()
+        if not mount_status.get("available"):
+            return "mount status unavailable"
+        if self._mount_summary_reports_parked(mount_status):
+            return "mount is parked"
+
+        current = pointing.get("current") or {}
+        if self._finite_float(current.get("ra")) is None:
+            return "current RA unavailable"
+        if self._finite_float(current.get("dec")) is None:
+            return "current Dec unavailable"
+
+        return ""
 
     def _load_pointing_status(self) -> dict[str, Any]:
         try:
@@ -303,12 +355,45 @@ class IndiGotoGuideService:
         raw_mount_status = str(metadata.get("raw_mount_status", ""))
         return raw_mount_status.startswith("P")
 
+    def _mount_summary_reports_parked(self, status: dict[str, Any]) -> bool:
+        for key in ("park_state", "driver_mount_status"):
+            raw = str(status.get(key, "")).strip().lower()
+            if raw and "park" in raw and "unpark" not in raw:
+                return True
+        raw_mount_status = str(status.get("raw_mount_status", ""))
+        return raw_mount_status.startswith("P")
+
+    def _angular_error_arcmin(
+        self,
+        current_ra: Optional[float],
+        current_dec: Optional[float],
+        target_ra: Optional[float],
+        target_dec: Optional[float],
+    ) -> Optional[float]:
+        if (
+            current_ra is None
+            or current_dec is None
+            or target_ra is None
+            or target_dec is None
+        ):
+            return None
+
+        ra_a = math.radians(current_ra)
+        dec_a = math.radians(current_dec)
+        ra_b = math.radians(target_ra)
+        dec_b = math.radians(target_dec)
+        cos_sep = math.sin(dec_a) * math.sin(dec_b) + math.cos(dec_a) * math.cos(
+            dec_b
+        ) * math.cos(ra_a - ra_b)
+        sep_deg = math.degrees(math.acos(max(-1.0, min(1.0, cos_sep))))
+        return sep_deg * 60.0
+
     def _finite_float(self, value: Any) -> Optional[float]:
         try:
             number = float(value)
         except (TypeError, ValueError):
             return None
-        return number if number == number and abs(number) != float("inf") else None
+        return number if math.isfinite(number) else None
 
     def _reload_config_if_needed(self) -> None:
         now = time.monotonic()
@@ -346,6 +431,10 @@ class IndiGotoGuideService:
             "state": status.get("state"),
             "message": status.get("message"),
             "updated": status.get("updated"),
+            "device": status.get("device"),
+            "park_state": status.get("park_state"),
+            "driver_mount_status": status.get("driver_mount_status"),
+            "raw_mount_status": status.get("raw_mount_status"),
             "mount_motion_active": status.get("mount_motion_active"),
             "goto_motion_active": status.get("goto_motion_active"),
             "manual_motion_direction": status.get("manual_motion_direction"),
@@ -361,11 +450,14 @@ class IndiGotoGuideService:
             "last_command": self.last_command,
             "active_target_ra": self.active_target_ra,
             "active_target_dec": self.active_target_dec,
+            "current_ra": self.current_ra,
+            "current_dec": self.current_dec,
             "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
             "tracking_guide_enabled": self.config_values.get(
                 "indi_tracking_guide_enabled", False
             ),
-            "last_error_arcmin": None,
+            "last_error_arcmin": self.last_error_arcmin,
+            "goto_plan": self.goto_plan,
             "last_action": self.last_action,
             "mountcontrol_queue_available": self.mountcontrol_queue is not None,
             "pointing": self._refresh_pointing_status(),
