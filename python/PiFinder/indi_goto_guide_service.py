@@ -83,6 +83,11 @@ class IndiGotoGuideService:
         self.final_sync_sent = False
         self.tracking_target_ra: Optional[float] = None
         self.tracking_target_dec: Optional[float] = None
+        self.tracking_guide_active_sent = False
+        self.tracking_guide_state = "off"
+        self.tracking_guide_last_action = ""
+        self.tracking_guide_error_arcmin: Optional[float] = None
+        self.tracking_guide_accuracy_arcmin: Optional[float] = None
         self.last_action = "startup"
         self.pointing_status: dict[str, Any] = {"available": False}
 
@@ -93,6 +98,7 @@ class IndiGotoGuideService:
         while running:
             self._reload_config_if_needed()
             self._tick_state_machine()
+            self._tick_tracking_guide()
             self._write_status()
             try:
                 command = self.service_queue.get(timeout=HEARTBEAT_SECONDS)
@@ -148,6 +154,7 @@ class IndiGotoGuideService:
             self.correction_count = 0
             self.previous_goto_error_arcmin = None
             self.final_sync_sent = False
+            self._disable_tracking_guide("stop command")
             self.service_state = "idle"
             self.phase = "idle"
             self.wait_reason = ""
@@ -196,6 +203,8 @@ class IndiGotoGuideService:
             if not forwarded:
                 return
 
+            self.tracking_target_ra = target_ra
+            self.tracking_target_dec = target_dec
             self.service_state = "running"
             self.phase = "indi_mount_goto"
             self.wait_reason = ""
@@ -555,6 +564,96 @@ class IndiGotoGuideService:
             self.last_error_arcmin if self.last_error_arcmin is not None else -1.0,
         )
 
+    def _tick_tracking_guide(self) -> None:
+        enabled = bool(self.config_values.get("indi_tracking_guide_enabled", False))
+        if not enabled:
+            self._disable_tracking_guide("disabled in config")
+            self.tracking_guide_state = "off"
+            return
+
+        if self.tracking_target_ra is None or self.tracking_target_dec is None:
+            self.tracking_guide_state = "waiting_target"
+            self.tracking_guide_last_action = "waiting for tracking target"
+            return
+
+        if self.phase in {
+            "manual_approach",
+            "final_indi_goto",
+            "corrective_indi_goto",
+        }:
+            self.tracking_guide_state = "paused"
+            self.tracking_guide_last_action = f"paused during {self.phase}"
+            return
+
+        mount_status = self._mount_status_summary()
+        if not mount_status.get("available"):
+            self.tracking_guide_state = "waiting_mount"
+            self.tracking_guide_last_action = "mount status unavailable"
+            return
+        if self._mount_summary_reports_parked(mount_status):
+            self._disable_tracking_guide("mount parked")
+            self.tracking_guide_state = "paused"
+            self.tracking_guide_last_action = "paused because mount is parked"
+            return
+        if self._mount_summary_reports_motion(mount_status):
+            self.tracking_guide_state = "paused"
+            self.tracking_guide_last_action = "paused during mount motion"
+            return
+
+        pointing = self._refresh_pointing_status()
+        current = pointing.get("current") or {}
+        current_ra = self._finite_float(current.get("ra"))
+        current_dec = self._finite_float(current.get("dec"))
+        self.tracking_guide_error_arcmin = self._angular_error_arcmin(
+            current_ra,
+            current_dec,
+            self.tracking_target_ra,
+            self.tracking_target_dec,
+        )
+        if not pointing.get("usable_for_goto") or self.tracking_guide_error_arcmin is None:
+            self.tracking_guide_state = "waiting_coordinate"
+            self.tracking_guide_last_action = str(
+                pointing.get("reason") or "pointing coordinate unavailable"
+            )
+            return
+
+        accuracy = float(
+            self.config_values.get("indi_tracking_guide_threshold_arcmin", 10.0)
+        )
+        target_changed = not self.tracking_guide_active_sent
+        accuracy_changed = self.tracking_guide_accuracy_arcmin != accuracy
+        if target_changed or accuracy_changed:
+            self._forward_to_mountcontrol(
+                {
+                    "type": "toggle_guide_correction",
+                    "enabled": True,
+                    "target_ra": self.tracking_target_ra,
+                    "target_dec": self.tracking_target_dec,
+                    "accuracy_arcmin": accuracy,
+                }
+            )
+            self.tracking_guide_active_sent = True
+            self.tracking_guide_accuracy_arcmin = accuracy
+            self.tracking_guide_last_action = "guide correction enabled"
+
+        mount_state = str(mount_status.get("state", "")).strip().lower()
+        if mount_state == "guide_correction_failed":
+            self.tracking_guide_state = "failed"
+            self.tracking_guide_last_action = str(
+                mount_status.get("message") or "guide correction failed"
+            )
+        else:
+            self.tracking_guide_state = "enabled"
+
+    def _disable_tracking_guide(self, reason: str) -> None:
+        if self.tracking_guide_active_sent:
+            self._forward_to_mountcontrol(
+                {"type": "toggle_guide_correction", "enabled": False}
+            )
+        self.tracking_guide_active_sent = False
+        self.tracking_guide_accuracy_arcmin = None
+        self.tracking_guide_last_action = reason
+
     def _reset_coordinate_progress_tracking(self) -> None:
         self.last_coordinate_ra = self.current_ra
         self.last_coordinate_dec = self.current_dec
@@ -879,6 +978,11 @@ class IndiGotoGuideService:
             "final_sync_sent": self.final_sync_sent,
             "tracking_target_ra": self.tracking_target_ra,
             "tracking_target_dec": self.tracking_target_dec,
+            "tracking_guide_state": self.tracking_guide_state,
+            "tracking_guide_active_sent": self.tracking_guide_active_sent,
+            "tracking_guide_last_action": self.tracking_guide_last_action,
+            "tracking_guide_error_arcmin": self.tracking_guide_error_arcmin,
+            "tracking_guide_accuracy_arcmin": self.tracking_guide_accuracy_arcmin,
             "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
             "tracking_guide_enabled": self.config_values.get(
                 "indi_tracking_guide_enabled", False
