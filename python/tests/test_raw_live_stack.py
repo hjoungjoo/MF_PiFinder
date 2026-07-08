@@ -14,6 +14,7 @@ from PiFinder.raw_live_stack import (
     publish_selected_frame,
 )
 from PiFinder.livecam_config import processing_enabled
+from PiFinder.livecam_config import DEFAULT_SETTINGS, default_settings_for_config
 from PiFinder.sqm.camera_profiles import CameraProfile
 
 
@@ -28,6 +29,14 @@ class DummySharedState:
     def set_raw_live_frame(self, value):
         self.set_calls += 1
         self._frame = value
+
+
+class DummyConfig:
+    def __init__(self, options=None):
+        self.options = options or {}
+
+    def get_option(self, key, default=None):
+        return self.options.get(key, default)
 
 
 def _profile(rotation_90=0):
@@ -73,6 +82,14 @@ def test_publish_disabled_does_not_touch_shared_frame():
 def test_processing_enabled_coerces_string_values():
     assert processing_enabled({"processing_enabled": "true"})
     assert not processing_enabled({"processing_enabled": "false"})
+
+
+def test_default_settings_for_config_restores_livecam_defaults():
+    defaults = default_settings_for_config(DummyConfig({"camera_rotation": 90}))
+
+    for key, value in DEFAULT_SETTINGS.items():
+        assert defaults[key] == value
+    assert defaults["display_rotation_degrees"] == 270
 
 
 def test_publish_original_rotates_without_crop():

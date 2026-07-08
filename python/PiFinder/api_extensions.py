@@ -25,6 +25,7 @@ from PIL import Image
 from PiFinder import utils
 from PiFinder import config
 from PiFinder.livecam_config import (
+    default_settings_for_config,
     disabled_status,
     normalize_settings,
     save_settings_to_config,
@@ -851,13 +852,27 @@ def register_api_routes(app, server_instance, require_auth=False):
             payload = request.get_json(silent=True) or {}
             current = _raw_stack_settings()
             processor = _raw_stack_processor(create=False)
+            if payload.get("reset_defaults"):
+                if processor is not None:
+                    processor.reset()
+                settings = save_settings_to_config(
+                    config.Config(), default_settings_for_config(config.Config())
+                )
+                if hasattr(server_instance.shared_state, "set_livecam_settings"):
+                    server_instance.shared_state.set_livecam_settings(settings)
+                if hasattr(server_instance.shared_state, "set_raw_live_frame"):
+                    server_instance.shared_state.set_raw_live_frame(None)
+                data = disabled_status(settings)
+                data["message"] = "LiveCam settings reset to defaults"
+                return _json_response(data)
+
             if payload.get("reset_stack") and processor is not None:
                 processor.reset()
 
             updates = {
                 key: value
                 for key, value in payload.items()
-                if key in current and key != "reset_stack"
+                if key in current and key not in {"reset_stack", "reset_defaults"}
             }
             settings = normalize_settings({**current, **updates})
             settings = save_settings_to_config(config.Config(), settings)

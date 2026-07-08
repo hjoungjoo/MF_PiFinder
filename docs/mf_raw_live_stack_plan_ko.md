@@ -565,6 +565,7 @@ UI 구성:
 - Input frame source: original RAW / cropped RAW
 - Output source: latest selected RAW preview / stacked preview
 - Stack On / Off / Reset
+- Reset Defaults
 - Stack mode select
 - Stack Frames (Max 60)
 - Preview header controls: Color mode, Image format, Download
@@ -582,6 +583,7 @@ Web 전달 형식:
 - `/api/camera/raw-stack/download`: 현재 stack/latest 선택 결과를 다운로드한다. 다운로드는
   Web preview가 `color_mode=theme`이어도 항상 `color_mode=color`로 변환한다. WebP 미리보기
   상태에서는 호환성과 보존성을 위해 PNG로 변환해서 내려준다.
+- `/api/camera/raw-stack/control`: 설정 저장, stack reset, 기본값 복원을 처리한다.
 - 표시용 이미지는 서버에서 `display_size`로 축소한 뒤 전송한다.
 - `processing_enabled=false`이면 image endpoint는 heavy processing을 하지 않고
   no-content/placeholder 정책을 따른다.
@@ -717,6 +719,7 @@ class StackState:
 - [x] theme tint는 stack 누적 뒤 최종 display conversion에서만 적용된다.
 - [x] 다운로드는 Web preview가 `color_mode=theme`이어도 `color_mode=color`로 출력된다.
 - [x] WebP 미리보기 상태의 다운로드 포맷은 PNG로 변환된다.
+- [x] `Reset Defaults`는 LiveCam 설정을 기본값으로 저장하고 stack/shared RAW frame을 비운다.
 - [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py` 통과.
 - [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` 통과.
 - [x] `git diff --check` 통과.

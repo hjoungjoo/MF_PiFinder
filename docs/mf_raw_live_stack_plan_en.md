@@ -584,6 +584,7 @@ UI layout:
 - Input frame source: original RAW / cropped RAW
 - Output source: latest selected RAW preview / stacked preview
 - Stack On / Off / Reset
+- Reset Defaults
 - Stack mode select
 - Stack Frames (Max 60)
 - Preview header controls: Color mode, Image format, Download
@@ -602,6 +603,8 @@ Web transfer format:
   result. Downloads always force `color_mode=color`, even when the Web preview is
   using `color_mode=theme`. If the preview format is WebP, the downloaded file is
   converted to PNG for compatibility and preservation.
+- `/api/camera/raw-stack/control`: saves settings, resets the stack, and restores
+  defaults.
 - Display images are resized on the server before transfer.
 - If `processing_enabled=false`, the image endpoint follows the no-content or
   placeholder policy without heavy processing.
@@ -749,6 +752,8 @@ Verified by automated tests/source checks:
 - [x] Download rendering forces `color_mode=color` even when the Web preview uses
       `color_mode=theme`.
 - [x] Download format becomes PNG when the preview format is WebP.
+- [x] `Reset Defaults` saves LiveCam defaults and clears stack/shared RAW frame
+      state.
 - [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py` passes.
 - [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` passes.
 - [x] `git diff --check` passes.

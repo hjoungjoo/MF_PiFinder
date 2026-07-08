@@ -170,6 +170,9 @@
       <button type="button" class="btn" id="resetStack">
         <i class="material-icons">restart_alt</i>{{ _('Reset Stack') }}
       </button>
+      <button type="button" class="btn" id="resetDefaults">
+        <i class="material-icons">settings_backup_restore</i>{{ _('Reset Defaults') }}
+      </button>
       <span class="grey-text" id="livecamMessage"></span>
     </div>
   </div>
@@ -367,6 +370,14 @@ document.getElementById('applySettings').addEventListener('click', async () => {
 document.getElementById('resetStack').addEventListener('click', async () => {
   try {
     await postControl({...collectSettings(), reset_stack: true});
+  } catch (error) {
+    message.textContent = error.toString();
+  }
+});
+
+document.getElementById('resetDefaults').addEventListener('click', async () => {
+  try {
+    await postControl({reset_defaults: true});
   } catch (error) {
     message.textContent = error.toString();
   }

@@ -84,6 +84,12 @@ def settings_from_config(cfg) -> dict[str, Any]:
     return normalize_settings(values)
 
 
+def default_settings_for_config(cfg) -> dict[str, Any]:
+    values = dict(DEFAULT_SETTINGS)
+    values["display_rotation_degrees"] = display_rotation_degrees(cfg)
+    return normalize_settings(values)
+
+
 def save_settings_to_config(cfg, settings: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_settings(settings)
     for key in DEFAULT_SETTINGS:
