@@ -177,11 +177,26 @@
         </select>
         <label class="active" for="previewMode">{{ _('Preview Mode') }}</label>
       </div>
+      <div class="input-field col s12 m2">
+        <select class="browser-default" id="colorMode">
+          <option value="theme">{{ _('Theme') }}</option>
+          <option value="color">{{ _('Color') }}</option>
+        </select>
+        <label class="active" for="colorMode">{{ _('Color Mode') }}</label>
+      </div>
+      <div class="input-field col s12 m3">
+        <select class="browser-default" id="imageFormat">
+          <option value="jpeg">JPEG</option>
+          <option value="png">PNG</option>
+          <option value="webp">WebP</option>
+        </select>
+        <label class="active" for="imageFormat">{{ _('Image Format') }}</label>
+      </div>
     </div>
     <div class="row livecam-options-row">
       <div class="col s12 m3 livecam-number-field">
-        <label for="stackFrameLimit">{{ _('Stack Frames (Max 60)') }}</label>
-        <input type="number" id="stackFrameLimit" min="1" max="60" step="1" />
+        <label for="stackFrameLimit">{{ _('Stack Frames (Max 500)') }}</label>
+        <input type="number" id="stackFrameLimit" min="1" max="500" step="1" />
       </div>
       <div class="col s12 m3 livecam-number-field">
         <label for="lowPercentile">{{ _('Low Percentile') }}</label>
@@ -227,21 +242,6 @@
           <button type="button" class="btn" id="zoomReset" title="{{ _('Actual size') }}" aria-label="{{ _('Actual size') }}">
             <i class="material-icons">center_focus_strong</i>
           </button>
-        </div>
-        <div class="input-field">
-          <select class="browser-default" id="colorMode">
-            <option value="theme">{{ _('Theme') }}</option>
-            <option value="color">{{ _('Color') }}</option>
-          </select>
-          <label class="active" for="colorMode">{{ _('Color Mode') }}</label>
-        </div>
-        <div class="input-field">
-          <select class="browser-default" id="imageFormat">
-            <option value="jpeg">JPEG</option>
-            <option value="png">PNG</option>
-            <option value="webp">WebP</option>
-          </select>
-          <label class="active" for="imageFormat">{{ _('Image Format') }}</label>
         </div>
         <button type="button" class="btn" id="downloadImage">
           <i class="material-icons">download</i>{{ _('Download') }}
@@ -325,11 +325,19 @@ function setText(id, value) {
   document.getElementById(id).textContent = value === undefined || value === null || value === '' ? '-' : value;
 }
 
+function syncStackFromOutput() {
+  controls.stack_enabled.checked = controls.output_source.value === 'stack';
+}
+
+function syncOutputFromStack() {
+  controls.output_source.value = controls.stack_enabled.checked ? 'stack' : 'latest_selected_raw';
+}
+
 function applySettingsToControls(settings) {
   controls.processing_enabled.checked = !!settings.processing_enabled;
   controls.input_frame_source.value = settings.input_frame_source || 'original_raw';
   controls.output_source.value = settings.output_source || 'latest_selected_raw';
-  controls.stack_enabled.checked = !!settings.stack_enabled;
+  syncStackFromOutput();
   controls.stack_mode.value = settings.stack_mode || 'mean';
   controls.stack_frame_limit.value = settings.stack_frame_limit ?? 10;
   controls.preview_mode.value = settings.preview_mode || 'raw_display';
@@ -341,11 +349,12 @@ function applySettingsToControls(settings) {
 }
 
 function collectSettings() {
+  syncStackFromOutput();
   return {
     processing_enabled: controls.processing_enabled.checked,
     input_frame_source: controls.input_frame_source.value,
     output_source: controls.output_source.value,
-    stack_enabled: controls.stack_enabled.checked,
+    stack_enabled: controls.output_source.value === 'stack',
     stack_mode: controls.stack_mode.value,
     stack_frame_limit: parseInt(controls.stack_frame_limit.value, 10),
     preview_mode: controls.preview_mode.value,
@@ -451,6 +460,10 @@ document.getElementById('resetDefaults').addEventListener('click', async () => {
     message.textContent = error.toString();
   }
 });
+
+controls.output_source.addEventListener('change', syncStackFromOutput);
+
+controls.stack_enabled.addEventListener('change', syncOutputFromStack);
 
 document.getElementById('zoomOut').addEventListener('click', () => {
   setImageZoom(imageZoom - 0.25);

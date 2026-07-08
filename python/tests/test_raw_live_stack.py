@@ -191,6 +191,21 @@ def test_display_size_zero_keeps_original_display_dimensions():
     assert image.size == (10, 5)
 
 
+def test_stack_frame_limit_allows_large_livecam_windows():
+    assert normalize_settings({"stack_frame_limit": 999})["stack_frame_limit"] == 500
+    assert normalize_settings({"stack_frame_limit": 0})["stack_frame_limit"] == 1
+
+
+def test_stack_enabled_follows_output_source():
+    latest = normalize_settings(
+        {"output_source": "latest_selected_raw", "stack_enabled": True}
+    )
+    stacked = normalize_settings({"output_source": "stack", "stack_enabled": False})
+
+    assert latest["stack_enabled"] is False
+    assert stacked["stack_enabled"] is True
+
+
 def test_processor_keeps_rolling_stack_frame_limit():
     shared = DummySharedState()
     processor = RawLiveStackProcessor()

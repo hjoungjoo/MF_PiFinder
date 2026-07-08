@@ -299,8 +299,8 @@ flowchart TD
 | --- | --- | --- |
 | `processing_enabled` | `false` | 선택 RAW 공유 단계부터 RAW preview/stack 처리를 완전히 끔 |
 | `input_frame_source` | `original_raw` | Processor 입력을 full-frame RAW 또는 cropped RAW 중 선택 |
-| `output_source` | `latest_selected_raw` | 최신 단일 선택 RAW 프레임에서 표시용 preview 생성 |
-| `stack_enabled` | `false` | live stack 누적 비활성 |
+| `output_source` | `latest_selected_raw` | 최신 단일 선택 RAW preview 또는 live stack 출력 선택 |
+| `stack_enabled` | `false` | `output_source=stack`이면 true로 정규화되는 파생 상태 |
 | `stack_mode` | `mean` | stack을 켰을 때 사용할 기본 누적 방식 |
 | `stack_frame_limit` | `10` | 최근 N장만 유지하는 rolling stack 장수 제한 |
 | `preview_mode` | `raw_display` | 카메라별 RAW를 표시 가능한 단일 preview로 변환 |
@@ -439,7 +439,7 @@ selected raw uint16
 
 - 움직임이 작거나 고정된 상황에서 여러 RAW frame을 누적해 별을 더 잘 보이게 한다.
 - alignment 없이 mean/sum/max stack을 먼저 제공한다.
-- Web UI에서 `processing_enabled`와 `stack_enabled`를 모두 켰을 때만 stack을 누적하고
+- Web UI에서 `processing_enabled=true`이고 `output_source=stack`일 때만 stack을 누적하고
   stack 결과를 출력한다.
 
 상태:
@@ -466,8 +466,8 @@ stack mode:
 
 제어:
 
-- Stack On
-- Stack Off
+- Output source를 `Live Stack`으로 선택하면 Stack On
+- Output source를 `Latest RAW Preview`로 선택하면 Stack Off
 - Reset
 - Download current preview/stack display image
 - Save current stack raw/float data는 후순위이며 Web preview 응답과 분리한다.
@@ -564,10 +564,10 @@ UI 구성:
 - Processing On / Off
 - Input frame source: original RAW / cropped RAW
 - Output source: latest selected RAW preview / stacked preview
-- Stack On / Off / Reset
+- Stack On / Off follows Output source, Reset
 - Reset Defaults
 - Stack mode select
-- Stack Frames (Max 60)
+- Stack Frames (Max 500)
 - Preview header controls: Color mode, Image format, Download
 - Preview zoom controls: Zoom out / 100% / Zoom in / Actual size
 - Frame count / accepted / rejected
@@ -729,19 +729,20 @@ class StackState:
 - [x] WebP 미리보기 상태의 다운로드 포맷은 PNG로 변환된다.
 - [x] `Reset Defaults`는 LiveCam 설정을 기본값으로 저장하고 stack/shared RAW frame을 비운다.
 - [x] `display_size=0`은 서버 display frame을 축소하지 않고 원본 generated display size를 유지한다.
+- [x] `Output=Live Stack`이면 Stack On, `Output=Latest RAW Preview`이면 Stack Off로 정규화된다.
 - [x] Preview image는 natural image size 기준으로 표시되고, 브라우저에서 25%~400% zoom과 actual-size reset을 지원한다.
 - [x] LiveCam page는 wide container를 사용해 큰 브라우저 폭에서도 설정/preview 영역이 확장된다.
 - [x] Status panel은 RAW shape와 별도로 서버에서 생성된 display shape를 표시한다.
 - [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py` 통과.
-- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` 통과. 최신 확인 결과: 18 passed.
+- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` 통과. 최신 확인 결과: 20 passed.
 - [x] `git diff --check` 통과.
 - [x] `pifinder` service restart 후 `active` 상태 확인.
 
 구현은 되었지만 실사용 확인이 남은 항목:
 
 - [x] LiveCam Web UI에서 `Color Mode`, `Image Format`, `Download`가 Preview 오른쪽 상단에 정상 배치되는지 브라우저로 확인.
-- [x] LiveCam Web UI에서 `Stack Frames (Max 60)` 입력과 저장이 정상 동작하는지 확인.
-- [x] `Stack On/Off/Reset`이 실제 Web UI 상태와 preview에 기대대로 반영되는지 확인.
+- [x] LiveCam Web UI에서 `Stack Frames (Max 500)` 입력과 저장이 정상 동작하는지 확인.
+- [x] `Output` 선택에 따른 `Stack On/Off`와 `Reset Stack`이 실제 Web UI 상태와 preview에 기대대로 반영되는지 확인.
 - [x] `input_frame_source=original_raw`에서 IMX462 raw shape가 1920x1080으로 Web UI에 표시되는지 확인.
 - [x] `input_frame_source=cropped_raw`에서 IMX462 raw shape가 cropped frame으로 표시되는지 확인.
 - [x] `color_mode=theme`에서 Red Night preview가 적색 계열로 표시되는지 실제 브라우저에서 확인.
@@ -766,7 +767,7 @@ class StackState:
 6. 기본 출력용 단일 RAW preview API를 추가하되, 응답은 서버에서 변환한 표시용 이미지로 한다.
 7. Web UI에 output source와 stack option 상태를 표시한다.
 8. mean stack accumulator를 추가한다.
-9. Stack On/Off/Reset 제어와 현재 preview/download 제어를 추가한다.
+9. Output 기반 Stack On/Off 동기화, Reset Stack, 현재 preview/download 제어를 추가한다.
 10. reject reason과 debug metadata를 추가한다.
 11. alignment 후보를 실험하되, 먼저 confidence 표시만 한다.
 12. alignment 적용은 confidence와 성능이 확인된 뒤 켠다.

@@ -12,6 +12,7 @@ from typing import Any
 
 
 CONFIG_PREFIX = "livecam_"
+STACK_FRAME_LIMIT_MAX = 500
 SOURCE_ORIGINAL = "original_raw"
 SOURCE_CROPPED = "cropped_raw"
 OUTPUT_LATEST = "latest_selected_raw"
@@ -48,12 +49,12 @@ def normalize_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]
         merged.update(settings)
 
     merged["processing_enabled"] = _coerce_bool(merged.get("processing_enabled"))
-    merged["stack_enabled"] = _coerce_bool(merged.get("stack_enabled"))
 
     if merged.get("input_frame_source") not in VALID_SOURCES:
         merged["input_frame_source"] = SOURCE_ORIGINAL
     if merged.get("output_source") not in VALID_OUTPUTS:
         merged["output_source"] = OUTPUT_LATEST
+    merged["stack_enabled"] = merged["output_source"] == OUTPUT_STACK
     if merged.get("stack_mode") not in VALID_STACK_MODES:
         merged["stack_mode"] = "mean"
     if merged.get("preview_mode") not in VALID_PREVIEW_MODES:
@@ -68,7 +69,7 @@ def normalize_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]
     merged["low_percentile"] = _coerce_float(merged.get("low_percentile"), 1.0)
     merged["high_percentile"] = _coerce_float(merged.get("high_percentile"), 99.5)
     merged["stack_frame_limit"] = max(
-        1, min(60, _coerce_int(merged.get("stack_frame_limit"), 10))
+        1, min(STACK_FRAME_LIMIT_MAX, _coerce_int(merged.get("stack_frame_limit"), 10))
     )
     merged["display_size"] = max(
         0, min(4096, _coerce_int(merged.get("display_size"), 0))

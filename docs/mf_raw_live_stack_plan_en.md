@@ -318,8 +318,8 @@ Initial defaults:
 | --- | --- | --- |
 | `processing_enabled` | `false` | Fully disables RAW preview/stack processing starting at selected RAW sharing |
 | `input_frame_source` | `original_raw` | Choose full-frame RAW or cropped RAW as Processor input |
-| `output_source` | `latest_selected_raw` | Build a display preview from the latest selected RAW frame |
-| `stack_enabled` | `false` | Live accumulation disabled |
+| `output_source` | `latest_selected_raw` | Choose latest selected RAW preview or live stack output |
+| `stack_enabled` | `false` | Derived state normalized to true when `output_source=stack` |
 | `stack_mode` | `mean` | Default accumulation method once stacking is enabled |
 | `stack_frame_limit` | `10` | Rolling stack limit; only the latest N accepted frames are kept |
 | `preview_mode` | `raw_display` | Convert camera RAW into one displayable preview |
@@ -468,8 +468,8 @@ Goal:
 
 - Stack multiple RAW frames to make stars more visible when movement is small.
 - Start with mean/sum/max stacking and no alignment.
-- Accumulate and output the stacked result only when both `processing_enabled`
-  and `stack_enabled` are enabled in Web UI.
+- Accumulate and output the stacked result only when `processing_enabled=true`
+  and `output_source=stack` in Web UI.
 
 State:
 
@@ -496,8 +496,8 @@ Stack modes:
 
 Controls:
 
-- Stack On
-- Stack Off
+- Selecting `Live Stack` as the output turns Stack On
+- Selecting `Latest RAW Preview` as the output turns Stack Off
 - Reset
 - Save current stack PNG
 - Save current raw/float stack data later, separate from the preview response
@@ -583,10 +583,10 @@ UI layout:
 - Processing On / Off
 - Input frame source: original RAW / cropped RAW
 - Output source: latest selected RAW preview / stacked preview
-- Stack On / Off / Reset
+- Stack On / Off follows Output source, Reset
 - Reset Defaults
 - Stack mode select
-- Stack Frames (Max 60)
+- Stack Frames (Max 500)
 - Preview header controls: Color mode, Image format, Download
 - Preview zoom controls: Zoom out / 100% / Zoom in / Actual size
 - Frame count / accepted / rejected
@@ -764,13 +764,15 @@ Verified by automated tests/source checks:
       state.
 - [x] `display_size=0` keeps the generated display frame at its original size
       without server-side downscaling.
+- [x] `Output=Live Stack` normalizes Stack On, and `Output=Latest RAW Preview`
+      normalizes Stack Off.
 - [x] The preview image is rendered from natural image size and supports
       25% to 400% browser zoom plus actual-size reset.
 - [x] The LiveCam page uses a wide container so settings and preview panels can
       expand on large browser windows.
 - [x] The status panel reports display shape separately from RAW shape.
 - [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py` passes.
-- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` passes. Latest run: 18 passed.
+- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` passes. Latest run: 20 passed.
 - [x] `git diff --check` passes.
 - [x] The `pifinder` service was restarted and confirmed `active`.
 
@@ -778,10 +780,10 @@ Implemented but still needs field/browser verification:
 
 - [x] In the LiveCam Web UI, confirm that `Color Mode`, `Image Format`, and
       `Download` are placed correctly at the top right of the Preview panel.
-- [x] Confirm that `Stack Frames (Max 60)` input and save behavior work from the
+- [x] Confirm that `Stack Frames (Max 500)` input and save behavior work from the
       Web UI.
-- [x] Confirm that `Stack On/Off/Reset` updates the real Web UI state and preview
-      as expected.
+- [x] Confirm that Output-driven `Stack On/Off` and `Reset Stack` update the
+      real Web UI state and preview as expected.
 - [x] With `input_frame_source=original_raw`, confirm that IMX462 raw shape is
       shown as 1920x1080 in the Web UI.
 - [x] With `input_frame_source=cropped_raw`, confirm that IMX462 raw shape is
@@ -814,7 +816,7 @@ Not implemented/follow-up:
    server-converted display image.
 7. Add output source and stack option status to Web UI.
 8. Add mean stack accumulator.
-9. Add Stack On/Off/Reset controls and current preview/download controls.
+9. Add Output-driven Stack On/Off sync, Reset Stack, and current preview/download controls.
 10. Add reject reasons and debug metadata.
 11. Experiment with alignment confidence display only.
 12. Enable alignment only after confidence and performance are verified.
