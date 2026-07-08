@@ -377,16 +377,12 @@
           </td>
         </tr>
         <tr>
-          <td>{{ _('IMU Calibration') }}</td>
-          <td id="imu_calibration_status">-</td>
-        </tr>
-        <tr>
           <td>{{ _('Calculated Backlash') }}</td>
           <td id="backlash_calculated_value">-</td>
         </tr>
         <tr>
           <td>{{ _('Auto Method') }}</td>
-          <td>{{ _('Compass GoTo round-trip test; repeated return/offset GoTo moves are recorded and filtered by direction before recommending candidate backlash values.') }}</td>
+          <td>{{ _('Solved-coordinate GoTo round-trip test; repeated return/offset GoTo moves are recorded and filtered by direction before recommending candidate backlash values.') }}</td>
         </tr>
         <tr>
           <td>{{ _('Motion Command') }}</td>
@@ -512,7 +508,6 @@ document.addEventListener('DOMContentLoaded', function() {
   var motionKeepaliveTimer = null;
   var onstepDeviceName = {{ onstep_device_name|default('', true)|tojson }};
   var pifinderMountType = {{ mount_type|default('', true)|tojson }};
-  var initialImuStatus = {{ imu_status|default({}, true)|tojson }};
   var initialBacklashAuto = {{ mount_control_status.get('backlash_auto', {})|default({}, true)|tojson }};
   var backlashLabelText = {{ _('Backlash')|tojson }};
   var backlashStartLabel = {{ _('Start Motion Test')|tojson }};
@@ -862,34 +857,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  function formatImuCalibrationStatus(imuStatus) {
-    if (!imuStatus || !imuStatus.available) {
-      return '{{ _("Unavailable") }}';
-    }
-    var calibration = imuStatus.calibration_status || [];
-    var calibrationText = calibration.length >= 4
-      ? 'SYS ' + calibration[0] +
-        ' / GYRO ' + calibration[1] +
-        ' / ACCEL ' + calibration[2] +
-        ' / MAG ' + calibration[3]
-      : 'Status ' + textOrDash(imuStatus.status);
-    var modeText = String(imuStatus.fusion_mode || 'unknown').toUpperCase();
-    var readyText = imuStatus.uses_magnetometer
-      ? (imuStatus.heading_ready ? '{{ _("Heading ready") }}' : '{{ _("Heading waiting") }}')
-      : '{{ _("Compass off") }}';
-    var fullText = imuStatus.fully_calibrated ? '{{ _("Full") }}' : '{{ _("Partial") }}';
-    var movingText = imuStatus.moving ? '{{ _("moving") }}' : '{{ _("stable") }}';
-    var ageText = imuStatus.age_seconds !== undefined && imuStatus.age_seconds !== null
-      ? ', ' + textOrDash(imuStatus.age_seconds) + 's'
-      : '';
-    return modeText + ', ' + calibrationText + ', ' + readyText +
-      ', ' + fullText + ', ' + movingText + ageText;
-  }
-
-  function updateImuCalibrationStatus(imuStatus) {
-    setText('imu_calibration_status', formatImuCalibrationStatus(imuStatus));
-  }
-
   function pad2(value) {
     return String(value).padStart(2, '0');
   }
@@ -965,7 +932,6 @@ document.addEventListener('DOMContentLoaded', function() {
     );
     setText('onstep_utc_time_value', textOrDash(onstep[onstepKey('TIME_UTC.UTC')]));
     updateBacklashValues(payload.backlash_values || {}, payload.mount_control_status || {});
-    updateImuCalibrationStatus(payload.imu_status || {});
     updateMultipointAlign(payload.multipoint_align || {});
     setText('onstep_connection_value', textOrDash(onstep[onstepKey('CONNECTION.CONNECT')]));
     setText('onstep_serial_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_SERIAL')]));
@@ -1127,7 +1093,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  updateImuCalibrationStatus(initialImuStatus);
   updateBacklashButtons(initialBacklashAuto);
 
   if (utcTimeInput) {

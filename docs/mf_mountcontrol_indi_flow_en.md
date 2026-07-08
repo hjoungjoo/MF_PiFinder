@@ -9,6 +9,7 @@ Related documents:
 
 - `docs/mf_coordinate_helper_plan_en.md`
 - `docs/mf_multipoint_align_flow_en.md`
+- `docs/mf_backlash_measurement_flow_en.md`
 - `docs/mf_goto_mount_source_structure_en.md`
 
 ## Role
@@ -39,6 +40,7 @@ python/PiFinder/pos_server.py
 python/PiFinder/server.py
 python/PiFinder/pointing_coordinate_service.py
 python/PiFinder/indi_multipoint_align.py
+python/PiFinder/indi_backlash_calibration.py
 ```
 
 Runtime status files:
@@ -231,6 +233,22 @@ updates. Manual motion therefore also has explicit polling publication.
 | `multipoint_align_confirm` | `confirm_multipoint_align()` | Confirm align point |
 | `multipoint_align_clear_target` | `clear_multipoint_align_target()` | Clear only the current target and keep the session active |
 | `multipoint_align_cancel` | `cancel_multipoint_align()` | Cancel Multi Align |
+
+Backlash ownership:
+
+- Manual Backlash save, automatic measurement state machine, GoTo measurement
+  loop, solved-coordinate record capture, filtering, and recommendation
+  generation live in `python/PiFinder/indi_backlash_calibration.py` as
+  `BacklashCalibrationMixin`.
+- `MountControlIndi` inherits that mixin and supplies shared mount operations:
+  INDI connect, GoTo, Sync, Tracking, coordinate readback, and status
+  publication.
+- Automatic Backlash calculation reads PiFinder reference coordinates from
+  `PointingCoordinateService.solved` and runs only when plate-solved pointing is
+  valid. `PointingCoordinateService.current` is not used because it may contain
+  fallback data.
+- See `docs/mf_backlash_measurement_flow_en.md` for the detailed Backlash
+  flowchart and formulas.
 
 ## Manual Motion
 

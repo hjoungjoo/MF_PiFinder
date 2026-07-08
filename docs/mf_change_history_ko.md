@@ -1024,23 +1024,24 @@ INDI 마운트 제어는 선택 기능이다. 기본 PiFinder 설치만으로는
   `Backlash.Backlash DEC` 속성을 사용하는 수동 Backlash 읽기/쓰기 제어를
   추가했다. 수동 저장은 마운트 이동 없이 설정값만 쓴다. Alt/Az 모드에서는
   같은 driver property를 `AZ`/`ALT`로, EQ 모드에서는 `RA`/`DEC`로 표시한다.
-- 실제 백래시 테스트 중 tracking과 NDOF/Compass 지자계 보정이 IMU 변화에
-  섞일 수 있음을 확인했다. 자동 Backlash는 시작 전 tracking을 끄고 정상 완료
-  후에만 원래 tracking 상태를 복구하도록 보강했다.
+- 실제 백래시 테스트 중 tracking이 측정값에 섞일 수 있음을 확인했다. 자동
+  Backlash는 시작 전 tracking을 끄고 정상 완료 후에만 원래 tracking 상태를
+  복구하도록 보강했다.
 - Auto Backlash는 호환성을 위해 내부 이름 `compass_goto_loop`를 유지하지만,
   현재 측정 이동은 다시 INDI GoTo를 사용한다. PiFinder는 테스트 시작 전과
   각 GoTo leg 이후 tracking을 다시 끄므로, OnStep이 GoTo 뒤 자동으로 tracking을
-  켜더라도 IMU delta에 섞이지 않도록 한다. Alt/Az에서는 `AZ`와 `ALT`,
+  켜더라도 측정 좌표 delta에 섞이지 않도록 한다. Alt/Az에서는 `AZ`와 `ALT`,
   EQ에서는 `RA`와 `DEC`를 한 축씩 분리 측정한다.
 - GoTo 완료 처리는 stable idle window와, OnStep status를 읽을 수 있는 경우
-  `:GU#`의 `N`(`No goto`) 상태를 기다린 뒤 Backlash IMU 샘플을 기록하도록
-  보강했다. OnStepX가 근처 목표점에서 settle wait 후 최종 미세 접근을 다시
-  수행하는 동안 측정하는 문제를 막기 위한 처리다.
-- Auto Backlash는 IMU Compass/NDOF 모드와 MAG calibration 3을 요구하고,
-  GoTo loop 전에 현재 IMU 방향으로 mount 좌표를 sync한다. 각 GoTo leg의
-  mount 시작/종료 좌표와 IMU 시작/종료 좌표를 기록하고, mount-IMU 이동 차이가
-  1도 이상인 leg를 제외한 뒤 하위/상위 30%를 버리고 가운데 40% 평균을 이동
-  방향별 추천값으로 표시한다.
+  `:GU#`의 `N`(`No goto`) 상태를 기다린 뒤 Backlash mount/solved 샘플을
+  기록하도록 보강했다. OnStepX가 근처 목표점에서 settle wait 후 최종 미세
+  접근을 다시 수행하는 동안 측정하는 문제를 막기 위한 처리다.
+- Auto Backlash는 더 이상 IMU Compass/NDOF 모드나 MAG calibration을 요구하지
+  않는다. 대신 fresh plate-solved `PointingCoordinateService.solved` 좌표를
+  요구하고, GoTo loop 전에 solved RA/Dec로 mount 좌표를 sync한다. 각 GoTo
+  leg의 mount 시작/종료 좌표와 PiFinder solved 시작/종료 좌표를 기록하고,
+  mount-solved 이동 차이가 1도 이상인 leg를 제외한 뒤 하위/상위 30%를 버리고
+  가운데 40% 평균을 이동 방향별 추천값으로 표시한다.
 - Auto Backlash는 더 이상 Backlash를 0으로 초기화하지 않고, 계산값을 자동
   적용하지 않으며, 주기적 UI 갱신 중 입력칸을 바꾸지 않는다. 사용자가 추천값을
   확인한 뒤 `Save Backlash`로 저장한다.

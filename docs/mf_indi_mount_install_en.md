@@ -190,13 +190,14 @@ The `Settings` area on the INDI page includes OnStepX maintenance controls.
   `TELESCOPE_TRACK_STATE.TRACK_OFF` before measurement and restore the original
   tracking state afterward. With tracking enabled, sidereal motion can appear as
   IMU movement and be misread as backlash.
-- The automatic Backlash test requires IMU Compass/NDOF mode and MAG calibration
-  level 3. The user moves/rotates the device until calibration is ready, then
-  presses `Continue` to start the actual motion test.
+- The automatic Backlash test no longer checks the IMU magnetometer. It requires
+  a valid plate-solved `PointingCoordinateService.solved` coordinate instead.
+  If no fresh solved coordinate is available, the test waits/fails before
+  sending mount motion commands.
 - If a measurement reaches the `3600 arc-sec` limit, the UI reports low
   confidence. Do not save that value blindly; it may mean the mechanical
-  backlash exceeds the configured range or that IMU pose/axis sensitivity is
-  contaminating the measurement.
+  backlash exceeds the configured range or that the solved coordinate sample
+  was stale or captured at the wrong time.
 - Automatic measurement does not reset Backlash to zero and does not apply the
   calculated value automatically. Results are shown as recommendations only; the
   user reviews the input values and presses `Save Backlash` to write them. On

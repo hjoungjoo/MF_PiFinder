@@ -292,42 +292,25 @@ def test_set_backlash_sends_indi_backlash_properties():
     assert mount.backlash_de == 34
 
 
-def test_auto_backlash_enables_compass_when_needed(monkeypatch):
-    options = {}
-
-    class FakeConfig:
-        def get_option(self, name, default=None):
-            return options.get(name, default)
-
-        def set_option(self, name, value):
-            options[name] = value
-
-    monkeypatch.setattr(mci.config, "Config", FakeConfig)
+def test_auto_backlash_requires_solved_pointing():
     mount = DummyMountControl(shared_state=object())
+    mount._current_solved_pointing = lambda **kwargs: None
 
     assert not mount.auto_calculate_backlash()
 
-    assert options["imu_use_magnetometer"] is True
     assert mount._backlash_auto is not None
     assert mount._backlash_auto["auto_mode"] == mci.BACKLASH_AUTO_MODE_COMPASS_GOTO
-    assert mount._backlash_auto["state"] == "restart_required"
+    assert mount._backlash_auto["state"] == "waiting_for_solved"
 
 
-def test_auto_backlash_uses_compass_goto_loop(monkeypatch):
-    class FakeConfig:
-        def get_option(self, name, default=None):
-            return True if name == "imu_use_magnetometer" else default
-
-        def set_option(self, name, value):
-            raise AssertionError("Compass setting should already be enabled")
-
-    monkeypatch.setattr(mci.config, "Config", FakeConfig)
+def test_auto_backlash_uses_solved_goto_loop():
     mount = DummyMountControl(shared_state=object())
-    mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=True,
-        fusion_mode="ndof",
-        calibration_status=(3, 3, 1, 3),
-    )
+    mount._current_solved_pointing = lambda **kwargs: {
+        "ra": 10.0,
+        "dec": 20.0,
+        "timestamp": time.time(),
+        "source": "solve",
+    }
     tracking_writes = []
     mount.connect = lambda: True
     mount.stop_mount = lambda: True
@@ -339,9 +322,9 @@ def test_auto_backlash_uses_compass_goto_loop(monkeypatch):
     assert mount._backlash_auto is not None
     assert mount._backlash_auto["axis"] == "Mount frame"
     assert mount._backlash_auto["auto_mode"] == mci.BACKLASH_AUTO_MODE_COMPASS_GOTO
-    assert mount._backlash_auto["state"] == "waiting_for_calibration"
+    assert mount._backlash_auto["state"] == "ready"
     assert mount._backlash_auto["repeats"] == mci.BACKLASH_COMPASS_GOTO_REPEATS
-    assert mount._backlash_auto["imu_status"]["heading_ready"] is True
+    assert mount._backlash_auto["solved_status"]["valid"] is True
     assert mount._backlash_auto["original_tracking"] is True
     assert tracking_writes == [False]
 
@@ -446,14 +429,15 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
     goto_calls = []
 
     mount.connect = lambda: True
-    mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=True,
-        fusion_mode="ndof",
-        calibration_status=(3, 3, 1, 3),
-        is_calibrated=lambda: True,
+    mount._current_solved_pointing = lambda **kwargs: {
+        "ra": current_position[0],
+        "dec": current_position[1],
+        "timestamp": time.time(),
+        "source": "solve",
+    }
+    mount._wait_for_solved_pointing = (
+        lambda label, min_timestamp=None, timeout=mci.BACKLASH_SOLVED_WAIT_SECONDS: mount._current_solved_pointing()
     )
-    mount._current_imu_altaz = lambda: (current_position[1], current_position[0])
-    mount._imu_altaz_to_radec = lambda alt, az: (az, alt)
     mount._home_park_status_fields = lambda: {"park_state": "Unparked"}
     mount._read_tracking_enabled = lambda: False
     mount._read_current_position = lambda: (current_position[0], current_position[1])
@@ -513,8 +497,8 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
     assert records[-1]["mount_ra"] == 10.0
     assert records[-1]["mount_dec"] == 20.0
     assert mount.applied_properties == []
-    assert records[0]["imu_status"]["heading_ready"] is True
-    assert records[0]["imu_status"]["fully_calibrated"] is False
+    assert records[0]["pifinder_solved_valid"] is True
+    assert records[0]["pifinder_solved_source"] == "solve"
     analysis = mount._backlash_auto["directional_analysis"]
     assert len(analysis["legs"]) == 10
     assert analysis["direction_stats"]["offset"]["sample_count"] == 4
@@ -603,7 +587,6 @@ def test_compass_goto_loop_plan_uses_altaz_offset_for_altaz_mount():
 
 def test_compass_goto_loop_analysis_uses_actual_pre_goto_mount_start():
     mount = DummyMountControl(shared_state=object())
-    ready_imu = {"heading_ready": True}
     records = [
         {
             "sequence": 1,
@@ -612,11 +595,11 @@ def test_compass_goto_loop_analysis_uses_actual_pre_goto_mount_start():
             "mount_dec": 10.0,
             "mount_altitude": 10.1,
             "mount_azimuth": 20.2,
-            "imu_ra": 101.0,
-            "imu_dec": 11.0,
-            "imu_altitude": 11.0,
-            "imu_azimuth": 21.0,
-            "imu_status": ready_imu,
+            "pifinder_solved_ra": 101.0,
+            "pifinder_solved_dec": 11.0,
+            "pifinder_solved_altitude": 11.0,
+            "pifinder_solved_azimuth": 21.0,
+            "pifinder_solved_valid": True,
         },
         {
             "sequence": 2,
@@ -625,10 +608,11 @@ def test_compass_goto_loop_analysis_uses_actual_pre_goto_mount_start():
             "mount_dec": 12.9,
             "mount_altitude": 12.9,
             "mount_azimuth": 23.1,
-            "imu_ra": 103.1,
-            "imu_dec": 13.1,
-            "imu_altitude": 13.1,
-            "imu_azimuth": 24.9,
+            "pifinder_solved_ra": 103.1,
+            "pifinder_solved_dec": 13.1,
+            "pifinder_solved_altitude": 13.1,
+            "pifinder_solved_azimuth": 24.9,
+            "pifinder_solved_valid": True,
             "command_start_ra": 100.0,
             "command_start_dec": 10.0,
             "command_start_altitude": 10.0,
@@ -638,7 +622,6 @@ def test_compass_goto_loop_analysis_uses_actual_pre_goto_mount_start():
             "target_altitude": 13.0,
             "target_azimuth": 23.0,
             "movement_frame": "altaz",
-            "imu_status": ready_imu,
         },
     ]
 
@@ -651,8 +634,8 @@ def test_compass_goto_loop_analysis_uses_actual_pre_goto_mount_start():
     assert round(leg["mount_start_azimuth"], 1) == 20.2
     assert round(leg["mount_delta_altitude"], 1) == 2.8
     assert round(leg["mount_delta_azimuth"], 1) == 2.9
-    assert round(leg["imu_delta_alt"], 1) == 2.1
-    assert round(leg["imu_delta_az"], 1) == 3.9
+    assert round(leg["pifinder_solved_delta_alt"], 1) == 2.1
+    assert round(leg["pifinder_solved_delta_az"], 1) == 3.9
     assert leg["motion_difference_alt_arcsec"] == 2520
     assert leg["motion_difference_az_arcsec"] == -3600
     assert leg["motion_backlash_alt_arcsec"] == 2520
@@ -661,7 +644,6 @@ def test_compass_goto_loop_analysis_uses_actual_pre_goto_mount_start():
 
 def test_compass_goto_loop_analysis_groups_altaz_values_by_axis_direction():
     mount = DummyMountControl(shared_state=object())
-    ready_imu = {"heading_ready": True}
     records = [
         {
             "sequence": 1,
@@ -670,11 +652,11 @@ def test_compass_goto_loop_analysis_groups_altaz_values_by_axis_direction():
             "mount_dec": 10.0,
             "mount_altitude": 10.0,
             "mount_azimuth": 20.0,
-            "imu_ra": 100.0,
-            "imu_dec": 10.0,
-            "imu_altitude": 10.0,
-            "imu_azimuth": 20.0,
-            "imu_status": ready_imu,
+            "pifinder_solved_ra": 100.0,
+            "pifinder_solved_dec": 10.0,
+            "pifinder_solved_altitude": 10.0,
+            "pifinder_solved_azimuth": 20.0,
+            "pifinder_solved_valid": True,
         },
         {
             "sequence": 2,
@@ -683,14 +665,14 @@ def test_compass_goto_loop_analysis_groups_altaz_values_by_axis_direction():
             "mount_dec": 13.0,
             "mount_altitude": 13.0,
             "mount_azimuth": 23.0,
-            "imu_ra": 102.9,
-            "imu_dec": 12.9,
-            "imu_altitude": 12.9,
-            "imu_azimuth": 22.8,
+            "pifinder_solved_ra": 102.9,
+            "pifinder_solved_dec": 12.9,
+            "pifinder_solved_altitude": 12.9,
+            "pifinder_solved_azimuth": 22.8,
+            "pifinder_solved_valid": True,
             "target_altitude": 13.0,
             "target_azimuth": 23.0,
             "movement_frame": "altaz",
-            "imu_status": ready_imu,
         },
         {
             "sequence": 3,
@@ -699,14 +681,14 @@ def test_compass_goto_loop_analysis_groups_altaz_values_by_axis_direction():
             "mount_dec": 10.0,
             "mount_altitude": 10.0,
             "mount_azimuth": 20.0,
-            "imu_ra": 100.2,
-            "imu_dec": 10.2,
-            "imu_altitude": 10.2,
-            "imu_azimuth": 20.4,
+            "pifinder_solved_ra": 100.2,
+            "pifinder_solved_dec": 10.2,
+            "pifinder_solved_altitude": 10.2,
+            "pifinder_solved_azimuth": 20.4,
+            "pifinder_solved_valid": True,
             "target_altitude": 10.0,
             "target_azimuth": 20.0,
             "movement_frame": "altaz",
-            "imu_status": ready_imu,
         },
     ]
 
@@ -748,15 +730,16 @@ def test_compass_goto_loop_restores_tracking_after_test():
     tracking_writes = []
     goto_calls = []
 
-    mount._current_imu_sample = lambda: SimpleNamespace(
-        uses_magnetometer=True,
-        fusion_mode="ndof",
-        calibration_status=(3, 3, 1, 3),
-        is_calibrated=lambda: True,
-    )
     mount.connect = lambda: True
-    mount._current_imu_altaz = lambda: (current_position[1], current_position[0])
-    mount._imu_altaz_to_radec = lambda alt, az: (az, alt)
+    mount._current_solved_pointing = lambda **kwargs: {
+        "ra": current_position[0],
+        "dec": current_position[1],
+        "timestamp": time.time(),
+        "source": "solve",
+    }
+    mount._wait_for_solved_pointing = (
+        lambda label, min_timestamp=None, timeout=mci.BACKLASH_SOLVED_WAIT_SECONDS: mount._current_solved_pointing()
+    )
     mount._home_park_status_fields = lambda: {"park_state": "Unparked"}
     mount._read_tracking_enabled = lambda: True
     mount.set_tracking = lambda enabled: tracking_writes.append(enabled) or True

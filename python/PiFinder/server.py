@@ -1246,66 +1246,6 @@ class Server:
                 os.fsync(stop_out.fileno())
             tmp_path.replace(WEB_BACKLASH_STOP_REQUEST_FILE)
 
-        def _imu_status_values():
-            imu = None
-            try:
-                imu = self.shared_state.imu()
-            except Exception:
-                logger.debug("Could not read shared IMU state", exc_info=True)
-            if imu is None:
-                return {
-                    "available": False,
-                    "status": None,
-                    "moving": False,
-                    "calibration_status": None,
-                    "fusion_mode": "unknown",
-                    "uses_magnetometer": False,
-                    "heading_ready": False,
-                    "fully_calibrated": False,
-                    "age_seconds": None,
-                }
-
-            calibration_status = getattr(imu, "calibration_status", None)
-            status = getattr(imu, "status", None)
-            uses_magnetometer = bool(getattr(imu, "uses_magnetometer", False))
-            heading_ready = False
-            fully_calibrated = False
-            if calibration_status is not None and len(calibration_status) >= 4:
-                try:
-                    calibration_values = [int(value) for value in calibration_status]
-                    mag_level = calibration_values[3]
-                    gyro_level = calibration_values[1]
-                    heading_ready = uses_magnetometer and mag_level >= 3 and gyro_level > 0
-                    fully_calibrated = min(calibration_values) >= 3
-                except (TypeError, ValueError):
-                    calibration_values = None
-            else:
-                calibration_values = None
-                try:
-                    fully_calibrated = int(status) >= 3
-                except (TypeError, ValueError):
-                    fully_calibrated = False
-
-            timestamp = getattr(imu, "timestamp", None)
-            age_seconds = None
-            if timestamp:
-                try:
-                    age_seconds = max(0.0, round(time.time() - float(timestamp), 1))
-                except (TypeError, ValueError):
-                    age_seconds = None
-
-            return {
-                "available": True,
-                "status": status,
-                "moving": bool(getattr(imu, "moving", False)),
-                "calibration_status": calibration_values,
-                "fusion_mode": getattr(imu, "fusion_mode", "unknown"),
-                "uses_magnetometer": uses_magnetometer,
-                "heading_ready": heading_ready,
-                "fully_calibrated": fully_calibrated,
-                "age_seconds": age_seconds,
-            }
-
         def _parse_backlash_value(value):
             try:
                 if value in (None, ""):
@@ -1420,7 +1360,6 @@ class Server:
                 onstep_mount_state=_onstep_mount_state(onstep_props, indi_cfg),
                 pifinder_location_time=_pifinder_location_time_values(),
                 backlash_values=backlash_values,
-                imu_status=_imu_status_values(),
                 align_stars=BRIGHT_ALIGN_STARS,
                 multipoint_align=_multipoint_align_status(),
                 mount_control_status=_mount_control_status(),
@@ -1473,7 +1412,6 @@ class Server:
                     ),
                     "onstep_mount_state": _onstep_mount_state(onstep_props, indi_cfg),
                     "backlash_values": _onstep_backlash_values(onstep_props, indi_cfg),
-                    "imu_status": _imu_status_values(),
                     "align_stars": BRIGHT_ALIGN_STARS,
                     "multipoint_align": _multipoint_align_status(),
                     "mount_control_status": _mount_control_status(),
@@ -1978,7 +1916,7 @@ class Server:
                     {"type": "auto_backlash", "mode": mode, "repeats": repeats}
                 )
                 return _indi_json_response(
-                    message=_("Compass GoTo motion test started")
+                    message=_("Solved GoTo motion test started")
                 )
             except (RuntimeError, ValueError) as e:
                 return _indi_json_response(ok=False, error=str(e))
@@ -1993,7 +1931,7 @@ class Server:
                     raise RuntimeError(_("Mount-control process is not available"))
                 self.mountcontrol_queue.put({"type": "backlash_compass_continue"})
                 return _indi_json_response(
-                    message=_("Compass GoTo loop continue requested")
+                    message=_("Solved GoTo loop continue requested")
                 )
             except (RuntimeError, ValueError) as e:
                 return _indi_json_response(ok=False, error=str(e))

@@ -1141,26 +1141,27 @@ Added `python/views/indi_mount.html` and the `/indi` route in
   the driver's `Backlash.Backlash RA` and `Backlash.Backlash DEC` properties.
   Manual writes do not move the mount. The UI labels those same driver
   properties as `AZ`/`ALT` in Alt/Az mode and `RA`/`DEC` in EQ mode.
-- Hardware testing showed that tracking and NDOF/Compass magnetometer
-  corrections can mix into the IMU delta used for Backlash detection. Automatic
-  Backlash therefore disables tracking before measurement and restores the
-  original tracking state only after successful completion.
+- Hardware testing showed that tracking can contaminate Backlash measurement.
+  Automatic Backlash therefore disables tracking before measurement and restores
+  the original tracking state only after successful completion.
 - Auto Backlash uses the historical internal name `compass_goto_loop` for
   compatibility, but the current measurement movement is INDI GoTo again.
   PiFinder disables tracking before the test and again after every GoTo leg so
-  OnStep's automatic post-GoTo tracking does not contaminate the IMU delta.
+  OnStep's automatic post-GoTo tracking does not contaminate the measured
+  coordinate delta.
   Alt/Az tests `AZ` and `ALT`; EQ tests `RA` and `DEC`, one active axis at a
   time.
 - GoTo completion handling now waits for a stable idle window and, when
   OnStep status is available, the `:GU#` `N` (`No goto`) state before recording
-  Backlash IMU samples. This avoids sampling during OnStepX's near-destination
-  settle wait before the final fine approach.
-- Auto Backlash requires IMU Compass/NDOF mode and MAG calibration level 3, then
-  syncs the mount coordinates to the current IMU direction before the GoTo
-  loop. It records each GoTo leg's mount start/end coordinates and IMU
-  start/end coordinates, filters out legs where mount-vs-IMU travel differs by
-  at least 1 degree, trims the lowest/highest 30%, and reports the middle 40%
-  mean by movement direction.
+  Backlash mount/solved samples. This avoids sampling during OnStepX's
+  near-destination settle wait before the final fine approach.
+- Auto Backlash no longer requires IMU Compass/NDOF mode or MAG calibration.
+  It requires a fresh plate-solved `PointingCoordinateService.solved`
+  coordinate, syncs the mount coordinates to solved RA/Dec before the GoTo
+  loop, records each GoTo leg's mount start/end coordinates and PiFinder solved
+  start/end coordinates, filters out legs where mount-vs-solved travel differs
+  by at least 1 degree, trims the lowest/highest 30%, and reports the middle
+  40% mean by movement direction.
 - Auto Backlash no longer resets Backlash to zero, does not apply calculated
   values automatically, and does not change the input fields during periodic UI
   refresh. The user reviews the recommendation and writes values with

@@ -442,14 +442,14 @@ Review points:
 - [ ] INDI restart stops/starts server/profile/driver
 - [ ] Home state, Park state, and raw `:GU#` status are displayed separately
 - [ ] Manual Backlash reads/writes `Backlash.Backlash RA/DEC` without mount motion
-- [ ] Auto Backlash requires Compass/NDOF mode and waits for MAG calibration 3
-- [ ] Auto Backlash syncs mount coordinates to IMU Alt/Az and disables tracking before the loop
+- [ ] Auto Backlash requires a fresh plate-solved `PointingCoordinateService.solved` coordinate and does not check IMU Compass/MAG calibration
+- [ ] Auto Backlash syncs mount coordinates to solved RA/Dec and disables tracking before the loop
 - [ ] Auto Backlash uses INDI GoTo, not timed pulse guide, for measurement motion
-- [ ] Auto Backlash waits for stable INDI idle and OnStep `:GU#` `N` (`No goto`) before recording post-GoTo IMU samples
+- [ ] Auto Backlash waits for stable INDI idle and OnStep `:GU#` `N` (`No goto`) before recording post-GoTo mount/solved samples
 - [ ] Auto Backlash turns tracking Off again after every GoTo leg
 - [ ] Alt/Az mounts move `AZ`/`ALT`, while EQ mounts move `RA`/`DEC`, one axis at a time with fixed GoTo start/offset points
-- [ ] Auto Backlash records each GoTo leg's start mount coordinates, end mount coordinates, and start/end IMU coordinates
-- [ ] Legs where mount delta and IMU delta differ by 1 degree or more are excluded, and the displayed estimate uses the middle 40% mean after trimming the lowest/highest 30%
+- [ ] Auto Backlash records each GoTo leg's start mount coordinates, end mount coordinates, and start/end PiFinder solved coordinates
+- [ ] Legs where mount delta and solved-coordinate delta differ by 1 degree or more are excluded, and the displayed estimate uses the middle 40% mean after trimming the lowest/highest 30%
 - [ ] Auto Backlash displays separate recommendations by actual movement direction, such as `AZ+/-`, `ALT+/-` in Alt/Az mode or `RA+/-`, `DEC+/-` in EQ mode
 - [ ] Auto Backlash only displays the calculated value and does not change input fields or apply anything before `Save Backlash`
 - [ ] PiFinder core features survive bad mount communications
@@ -466,12 +466,12 @@ Test items:
 - [ ] Compare OnStep Web UI, direct LX200 `:GU#`, and PiFinder INDI Home/Park states
 - [ ] Read current Backlash RA/DEC
 - [ ] Save Backlash RA/DEC manually from the UI and confirm the driver value changes
-- [ ] Auto Backlash enables/requires Compass/NDOF mode and waits for MAG calibration 3
+- [ ] Auto Backlash requires a fresh plate-solved coordinate and does not require Compass/NDOF or MAG calibration
 - [ ] Auto Backlash disables tracking for the motion test and restores the
       original tracking state only after successful completion
 - [ ] Auto Backlash does not reset, apply, or restore Backlash RA/DEC; it only
       displays calculated candidate values for the user to review
-- [ ] If the compass GoTo loop cannot capture reliable mount/IMU motion records,
+- [ ] If the solved GoTo loop cannot capture reliable mount/solved motion records,
       Auto Backlash fails without applying a value
 - [ ] PiFinder UI while INDI server is stopped
 - [ ] PiFinder while OnStep device is offline
