@@ -16,6 +16,7 @@ from PiFinder.sqm import get_camera_profile, detect_camera_type
 from typing import Tuple
 import logging
 from PiFinder.multiproclogging import MultiprocLogging
+from PiFinder.livecam_config import processing_enabled
 import numpy as np
 
 logger = logging.getLogger("Camera.Pi")
@@ -92,12 +93,38 @@ class CameraPI(CameraInterface):
 
         _request.release()
 
+        livecam_settings = {}
+        livecam_active = False
+        if hasattr(self, "shared_state") and hasattr(
+            self.shared_state, "livecam_settings"
+        ):
+            livecam_settings = self.shared_state.livecam_settings()
+            livecam_active = processing_enabled(livecam_settings)
+
+        original_raw = raw_capture if livecam_active else None
+
         # Apply camera-specific crop and rotation
         raw_capture = self.profile.crop_and_rotate(raw_capture)
 
         # Store raw in shared state (before processing) for calibration and analysis
         if hasattr(self, "shared_state"):
             self.shared_state.set_cam_raw(raw_capture.copy())
+            if livecam_active and original_raw is not None:
+                try:
+                    from PiFinder.raw_live_stack import publish_selected_frame
+
+                    publish_selected_frame(
+                        self.shared_state,
+                        livecam_settings,
+                        self.profile,
+                        self.camera_type,
+                        original_raw,
+                        raw_capture,
+                        metadata,
+                    )
+                except Exception as exc:
+                    logger.warning("LiveCam RAW publish failed: %s", exc)
+        del original_raw
 
         # covert to 32 bit int to avoid overflow
         raw_capture = raw_capture.astype(np.float32)

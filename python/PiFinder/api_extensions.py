@@ -18,10 +18,18 @@ Dependencies: No additional dependencies. Reuses PiFinder's existing Flask / PIL
 import io
 import json
 import logging
+import time
 
 from flask import request, session, Response
 from PIL import Image
 from PiFinder import utils
+from PiFinder import config
+from PiFinder.livecam_config import (
+    disabled_status,
+    normalize_settings,
+    save_settings_to_config,
+    settings_from_config,
+)
 
 logger = logging.getLogger("PiFinderAPI")
 
@@ -145,6 +153,21 @@ def register_api_routes(app, server_instance, require_auth=False):
             return func(*args, **kwargs)
 
         return wrapper
+
+    def _raw_stack_processor(create: bool = True):
+        processor = getattr(server_instance, "raw_live_stack_processor", None)
+        if processor is None and create:
+            from PiFinder.raw_live_stack import RawLiveStackProcessor
+
+            processor = RawLiveStackProcessor()
+            server_instance.raw_live_stack_processor = processor
+        return processor
+
+    def _raw_stack_settings() -> dict:
+        settings = settings_from_config(config.Config())
+        if hasattr(server_instance.shared_state, "set_livecam_settings"):
+            server_instance.shared_state.set_livecam_settings(settings)
+        return settings
 
     # ───────────────────────────────────────────────
     # 1. Aggregated status endpoint (fetch everything at once)
@@ -745,6 +768,126 @@ def register_api_routes(app, server_instance, require_auth=False):
                 return Response(f.read(), content_type="image/png")
         except Exception as e:
             logger.error("api/camera/debug error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    @app.route("/api/camera/raw-stack/status")
+    def api_camera_raw_stack_status():
+        try:
+            settings = _raw_stack_settings()
+            processor = _raw_stack_processor(create=False)
+            if not settings["processing_enabled"] and processor is None:
+                return _json_response(disabled_status(settings))
+            data = (processor or _raw_stack_processor()).status(
+                server_instance.shared_state, settings
+            )
+            return _json_response(data)
+        except Exception as e:
+            logger.error("api/camera/raw-stack/status error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    @app.route("/api/camera/raw-stack/image")
+    def api_camera_raw_stack_image():
+        try:
+            settings = _raw_stack_settings()
+            if not settings["processing_enabled"]:
+                return Response(status=204)
+            rendered = _raw_stack_processor().render_image(
+                server_instance.shared_state,
+                settings,
+                web_theme=request.args.get("theme", "grey"),
+            )
+            if rendered is None:
+                return Response(status=204)
+            image_bytes, mimetype = rendered
+            return Response(image_bytes, content_type=mimetype)
+        except Exception as e:
+            logger.error("api/camera/raw-stack/image error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    @app.route("/api/camera/raw-stack/download")
+    def api_camera_raw_stack_download():
+        try:
+            settings = _raw_stack_settings()
+            if not settings["processing_enabled"]:
+                return Response(status=204)
+            from PiFinder.raw_live_stack import download_color_mode, download_image_format
+
+            image_format = download_image_format(settings)
+            rendered = _raw_stack_processor().render_image(
+                server_instance.shared_state,
+                settings,
+                image_format=image_format,
+                color_mode=download_color_mode(),
+                web_theme=request.args.get("theme", "grey"),
+                accept_new_frame=False,
+            )
+            if rendered is None:
+                return Response(status=204)
+            image_bytes, mimetype = rendered
+            filename = f"pifinder_livecam_{time.strftime('%Y%m%d_%H%M%S')}.{image_format}"
+            return Response(
+                image_bytes,
+                content_type=mimetype,
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        except Exception as e:
+            logger.error("api/camera/raw-stack/download error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    @app.route("/api/camera/raw-stack/control", methods=["GET", "POST"])
+    def api_camera_raw_stack_control():
+        try:
+            if request.method == "GET":
+                settings = _raw_stack_settings()
+                processor = _raw_stack_processor(create=False)
+                if not settings["processing_enabled"] and processor is None:
+                    data = disabled_status(settings)
+                else:
+                    data = (processor or _raw_stack_processor()).status(
+                        server_instance.shared_state, settings
+                    )
+                return _json_response(data)
+
+            payload = request.get_json(silent=True) or {}
+            current = _raw_stack_settings()
+            processor = _raw_stack_processor(create=False)
+            if payload.get("reset_stack") and processor is not None:
+                processor.reset()
+
+            updates = {
+                key: value
+                for key, value in payload.items()
+                if key in current and key != "reset_stack"
+            }
+            settings = normalize_settings({**current, **updates})
+            settings = save_settings_to_config(config.Config(), settings)
+            if hasattr(server_instance.shared_state, "set_livecam_settings"):
+                server_instance.shared_state.set_livecam_settings(settings)
+            if not settings["processing_enabled"] and hasattr(
+                server_instance.shared_state, "set_raw_live_frame"
+            ):
+                server_instance.shared_state.set_raw_live_frame(None)
+            if (
+                not settings["processing_enabled"] or not settings["stack_enabled"]
+            ) and processor is not None:
+                processor.reset()
+            if (
+                settings["input_frame_source"] != current.get("input_frame_source")
+                or settings["stack_mode"] != current.get("stack_mode")
+                or settings["stack_frame_limit"] != current.get("stack_frame_limit")
+            ) and processor is not None:
+                processor.reset()
+
+            if not settings["processing_enabled"]:
+                data = disabled_status(settings)
+            else:
+                data = _raw_stack_processor().status(
+                    server_instance.shared_state, settings
+                )
+            data["message"] = "LiveCam settings updated"
+            return _json_response(data)
+        except Exception as e:
+            logger.error("api/camera/raw-stack/control error: %s", e)
             return _json_response({"error": str(e)}, 500)
 
     # ───────────────────────────────────────────────

@@ -26,6 +26,7 @@ from PiFinder.auto_exposure import (
     generate_exposure_sweep,
 )
 from PiFinder.sqm.camera_profiles import detect_camera_type
+from PiFinder.livecam_config import settings_from_config
 
 logger = logging.getLogger("Camera.Interface")
 
@@ -166,6 +167,8 @@ class CameraInterface:
         try:
             # Store shared_state for access by capture() methods
             self.shared_state = shared_state
+            if hasattr(shared_state, "set_livecam_settings"):
+                shared_state.set_livecam_settings(settings_from_config(cfg))
 
             # Store camera type in shared state for SQM calibration
             camera_type_str = self.get_cam_type()  # e.g., "PI imx296", "PI hq"

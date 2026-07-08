@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .livecam-preview-shell {
+    background: #000;
+    border: 1px solid var(--pf-border);
+    min-height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .livecam-preview-shell img {
+    max-width: 100%;
+    max-height: 72vh;
+    object-fit: contain;
+    image-rendering: auto;
+  }
+  .livecam-preview-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .livecam-preview-tools {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .livecam-preview-tools .input-field {
+    min-width: 150px;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  .livecam-preview-tools .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 3rem;
+    margin-bottom: 0.4rem;
+  }
+  .livecam-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+  }
+  .livecam-status-item {
+    border: 1px solid var(--pf-border);
+    background: var(--pf-input-bg);
+    padding: 0.75rem;
+  }
+  .livecam-status-label {
+    color: var(--pf-text-muted);
+    font-size: 0.85rem;
+  }
+  .livecam-status-value {
+    color: var(--pf-text);
+    font-size: 1.1rem;
+    word-break: break-word;
+  }
+  .livecam-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+  .livecam-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .livecam-options-row {
+    margin-bottom: 0;
+  }
+  .livecam-number-field label {
+    display: block;
+    color: var(--pf-text);
+    font-size: 0.85rem;
+    margin-bottom: 0.25rem;
+  }
+  .livecam-number-field input {
+    margin-bottom: 0;
+  }
+</style>
+
+<div class="row valign-wrapper" style="margin: 0px;">
+  <div class="col s12">
+    <h3 class="grey-text">{{ _('LiveCam') }}</h3>
+  </div>
+</div>
+
+<div class="card grey darken-2">
+  <div class="card-content">
+    <div class="row livecam-options-row">
+      <div class="col s12 m4">
+        <p>
+          <label>
+            <input type="checkbox" id="processingEnabled" />
+            <span>{{ _('Processing On') }}</span>
+          </label>
+        </p>
+      </div>
+      <div class="input-field col s12 m4">
+        <select class="browser-default" id="inputFrameSource">
+          <option value="original_raw">{{ _('Original RAW') }}</option>
+          <option value="cropped_raw">{{ _('Cropped RAW') }}</option>
+        </select>
+        <label class="active" for="inputFrameSource">{{ _('Input Frame') }}</label>
+      </div>
+      <div class="input-field col s12 m4">
+        <select class="browser-default" id="outputSource">
+          <option value="latest_selected_raw">{{ _('Latest RAW Preview') }}</option>
+          <option value="stack">{{ _('Live Stack') }}</option>
+        </select>
+        <label class="active" for="outputSource">{{ _('Output') }}</label>
+      </div>
+    </div>
+    <div class="row livecam-options-row">
+      <div class="col s12 m2">
+        <p>
+          <label>
+            <input type="checkbox" id="stackEnabled" />
+            <span>{{ _('Stack On') }}</span>
+          </label>
+        </p>
+      </div>
+      <div class="input-field col s12 m2">
+        <select class="browser-default" id="stackMode">
+          <option value="mean">{{ _('Mean') }}</option>
+          <option value="sum">{{ _('Sum') }}</option>
+          <option value="max">{{ _('Max') }}</option>
+        </select>
+        <label class="active" for="stackMode">{{ _('Stack Mode') }}</label>
+      </div>
+      <div class="input-field col s12 m3">
+        <select class="browser-default" id="previewMode">
+          <option value="raw_display">{{ _('Raw Display') }}</option>
+          <option value="stretched">{{ _('Stretched') }}</option>
+          <option value="bayer_2x2_average">{{ _('Bayer 2x2 Avg') }}</option>
+        </select>
+        <label class="active" for="previewMode">{{ _('Preview Mode') }}</label>
+      </div>
+    </div>
+    <div class="row livecam-options-row">
+      <div class="col s12 m3 livecam-number-field">
+        <label for="stackFrameLimit">{{ _('Stack Frames (Max 60)') }}</label>
+        <input type="number" id="stackFrameLimit" min="1" max="60" step="1" />
+      </div>
+      <div class="col s12 m3 livecam-number-field">
+        <label for="lowPercentile">{{ _('Low Percentile') }}</label>
+        <input type="number" id="lowPercentile" min="0" max="99" step="0.1" />
+      </div>
+      <div class="col s12 m3 livecam-number-field">
+        <label for="highPercentile">{{ _('High Percentile') }}</label>
+        <input type="number" id="highPercentile" min="1" max="100" step="0.1" />
+      </div>
+      <div class="col s12 m3 livecam-number-field">
+        <label for="displaySize">{{ _('Display Size') }}</label>
+        <input type="number" id="displaySize" min="128" max="2048" step="64" />
+      </div>
+    </div>
+    <div class="livecam-actions">
+      <button type="button" class="btn" id="applySettings">
+        <i class="material-icons">save</i>{{ _('Apply') }}
+      </button>
+      <button type="button" class="btn" id="resetStack">
+        <i class="material-icons">restart_alt</i>{{ _('Reset Stack') }}
+      </button>
+      <span class="grey-text" id="livecamMessage"></span>
+    </div>
+  </div>
+</div>
+
+<div class="card grey darken-2">
+  <div class="card-content">
+    <div class="livecam-preview-header">
+      <h5 class="grey-text">{{ _('Preview') }}</h5>
+      <div class="livecam-preview-tools">
+        <div class="input-field">
+          <select class="browser-default" id="colorMode">
+            <option value="theme">{{ _('Theme') }}</option>
+            <option value="color">{{ _('Color') }}</option>
+          </select>
+          <label class="active" for="colorMode">{{ _('Color Mode') }}</label>
+        </div>
+        <div class="input-field">
+          <select class="browser-default" id="imageFormat">
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+            <option value="webp">WebP</option>
+          </select>
+          <label class="active" for="imageFormat">{{ _('Image Format') }}</label>
+        </div>
+        <button type="button" class="btn" id="downloadImage">
+          <i class="material-icons">download</i>{{ _('Download') }}
+        </button>
+      </div>
+    </div>
+    <div class="livecam-preview-shell">
+      <img id="livecamImage" alt="{{ _('LiveCam preview') }}" hidden />
+      <span id="livecamPlaceholder" class="grey-text">{{ _('Processing is off or no RAW frame is available.') }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="card grey darken-2">
+  <div class="card-content">
+    <h5 class="grey-text">{{ _('Status') }}</h5>
+    <div class="livecam-status-grid">
+      <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('Frame Source') }}</div>
+        <div class="livecam-status-value" id="statusSource">-</div>
+      </div>
+      <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('RAW Shape') }}</div>
+        <div class="livecam-status-value" id="statusShape">-</div>
+      </div>
+      <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('RAW Type') }}</div>
+        <div class="livecam-status-value" id="statusDtype">-</div>
+      </div>
+      <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('Frame Count') }}</div>
+        <div class="livecam-status-value" id="statusFrameCount">0</div>
+      </div>
+      <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('Accepted / Rejected') }}</div>
+        <div class="livecam-status-value" id="statusAcceptedRejected">0 / 0</div>
+      </div>
+      <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('Last Error') }}</div>
+        <div class="livecam-status-value" id="statusError">-</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const controls = {
+  processing_enabled: document.getElementById('processingEnabled'),
+  input_frame_source: document.getElementById('inputFrameSource'),
+  output_source: document.getElementById('outputSource'),
+  stack_enabled: document.getElementById('stackEnabled'),
+  stack_mode: document.getElementById('stackMode'),
+  stack_frame_limit: document.getElementById('stackFrameLimit'),
+  preview_mode: document.getElementById('previewMode'),
+  color_mode: document.getElementById('colorMode'),
+  web_image_format: document.getElementById('imageFormat'),
+  low_percentile: document.getElementById('lowPercentile'),
+  high_percentile: document.getElementById('highPercentile'),
+  display_size: document.getElementById('displaySize')
+};
+const image = document.getElementById('livecamImage');
+const placeholder = document.getElementById('livecamPlaceholder');
+const message = document.getElementById('livecamMessage');
+let pollTimer = null;
+let controlsHydrated = false;
+
+function currentTheme() {
+  const theme = document.documentElement.getAttribute('data-theme') || 'grey';
+  return ['grey', 'red'].indexOf(theme) === -1 ? 'grey' : theme;
+}
+
+function setText(id, value) {
+  document.getElementById(id).textContent = value === undefined || value === null || value === '' ? '-' : value;
+}
+
+function applySettingsToControls(settings) {
+  controls.processing_enabled.checked = !!settings.processing_enabled;
+  controls.input_frame_source.value = settings.input_frame_source || 'original_raw';
+  controls.output_source.value = settings.output_source || 'latest_selected_raw';
+  controls.stack_enabled.checked = !!settings.stack_enabled;
+  controls.stack_mode.value = settings.stack_mode || 'mean';
+  controls.stack_frame_limit.value = settings.stack_frame_limit ?? 10;
+  controls.preview_mode.value = settings.preview_mode || 'raw_display';
+  controls.color_mode.value = settings.color_mode || 'theme';
+  controls.web_image_format.value = settings.web_image_format || 'jpeg';
+  controls.low_percentile.value = settings.low_percentile ?? 1.0;
+  controls.high_percentile.value = settings.high_percentile ?? 99.5;
+  controls.display_size.value = settings.display_size ?? 768;
+}
+
+function collectSettings() {
+  return {
+    processing_enabled: controls.processing_enabled.checked,
+    input_frame_source: controls.input_frame_source.value,
+    output_source: controls.output_source.value,
+    stack_enabled: controls.stack_enabled.checked,
+    stack_mode: controls.stack_mode.value,
+    stack_frame_limit: parseInt(controls.stack_frame_limit.value, 10),
+    preview_mode: controls.preview_mode.value,
+    color_mode: controls.color_mode.value,
+    web_image_format: controls.web_image_format.value,
+    low_percentile: parseFloat(controls.low_percentile.value),
+    high_percentile: parseFloat(controls.high_percentile.value),
+    display_size: parseInt(controls.display_size.value, 10)
+  };
+}
+
+function renderStatus(data, syncControls = false) {
+  const settings = data.settings || {};
+  const frame = data.frame || {};
+  const stack = data.stack || {};
+  if (syncControls || !controlsHydrated) {
+    applySettingsToControls(settings);
+    controlsHydrated = true;
+  }
+  setText('statusSource', frame.source || settings.input_frame_source);
+  setText('statusShape', frame.shape ? frame.shape.join(' x ') : null);
+  setText('statusDtype', frame.dtype);
+  setText('statusFrameCount', `${stack.frame_count || 0} / ${stack.frame_limit || settings.stack_frame_limit || 0}`);
+  setText('statusAcceptedRejected', `${stack.accepted_count || 0} / ${stack.rejected_count || 0}`);
+  setText('statusError', stack.last_error || stack.last_reject_reason || '-');
+  if (data.enabled && data.has_frame) {
+    image.hidden = false;
+    placeholder.hidden = true;
+    image.src = `/api/camera/raw-stack/image?t=${Date.now()}&theme=${encodeURIComponent(currentTheme())}`;
+  } else {
+    image.hidden = true;
+    placeholder.hidden = false;
+  }
+}
+
+async function fetchStatus() {
+  try {
+    const response = await fetch('/api/camera/raw-stack/status');
+    const data = await response.json();
+    renderStatus(data);
+    message.textContent = '';
+  } catch (error) {
+    message.textContent = error.toString();
+  } finally {
+    pollTimer = setTimeout(fetchStatus, 1500);
+  }
+}
+
+async function postControl(payload) {
+  clearTimeout(pollTimer);
+  const response = await fetch('/api/camera/raw-stack/control', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) {
+    throw new Error(data.error || 'LiveCam update failed');
+  }
+  renderStatus(data, true);
+  message.textContent = data.message || '';
+  pollTimer = setTimeout(fetchStatus, 1000);
+}
+
+document.getElementById('applySettings').addEventListener('click', async () => {
+  try {
+    await postControl(collectSettings());
+  } catch (error) {
+    message.textContent = error.toString();
+  }
+});
+
+document.getElementById('resetStack').addEventListener('click', async () => {
+  try {
+    await postControl({...collectSettings(), reset_stack: true});
+  } catch (error) {
+    message.textContent = error.toString();
+  }
+});
+
+document.getElementById('downloadImage').addEventListener('click', () => {
+  window.location.href = `/api/camera/raw-stack/download?theme=${encodeURIComponent(currentTheme())}`;
+});
+
+document.addEventListener('DOMContentLoaded', fetchStatus);
+</script>
+{% endblock %}

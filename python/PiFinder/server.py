@@ -21,6 +21,7 @@ from PiFinder.equipment import Telescope, Eyepiece
 from PiFinder.indi_align import BRIGHT_ALIGN_STARS, clamp_align_points, get_align_star
 from PiFinder.keyboard_interface import KeyboardInterface
 from PiFinder.multiproclogging import MultiprocLogging
+from PiFinder.livecam_config import settings_from_config
 
 from flask import (
     Flask,
@@ -87,6 +88,8 @@ class MockSharedState:
         self._screen_img = None
         self._solve_state = False
         self._solution = None
+        self._raw_live_frame = None
+        self._livecam_settings = {}
 
     def location(self):
         return self._location
@@ -99,6 +102,18 @@ class MockSharedState:
 
     def solution(self):
         return self._solution
+
+    def raw_live_frame(self):
+        return self._raw_live_frame
+
+    def set_raw_live_frame(self, value):
+        self._raw_live_frame = value
+
+    def livecam_settings(self):
+        return dict(self._livecam_settings)
+
+    def set_livecam_settings(self, value):
+        self._livecam_settings = dict(value or {})
 
 
 def server_locale():
@@ -121,6 +136,10 @@ class Server:
         self.gps_queue = gps_queue or multiprocessing.Queue()
         self.mountcontrol_queue = mountcontrol_queue
         self.shared_state = shared_state or MockSharedState()
+        if hasattr(self.shared_state, "set_livecam_settings"):
+            self.shared_state.set_livecam_settings(
+                settings_from_config(config.Config())
+            )
         self.ki = KeyboardInterface()
         # gps info
         self.lat = None
@@ -1017,6 +1036,15 @@ class Server:
         @auth_required
         def tools():
             return app.jinja_env.get_template("tools.html").render(title=_("Tools"))
+
+        @app.route("/livecam")
+        @auth_required
+        def livecam():
+            if hasattr(self.shared_state, "set_livecam_settings"):
+                self.shared_state.set_livecam_settings(
+                    settings_from_config(config.Config())
+                )
+            return app.jinja_env.get_template("livecam.html").render(title=_("LiveCam"))
 
         def _indi_json_response(ok=True, message="", error=""):
             status = 200 if ok else 400
