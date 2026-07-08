@@ -569,9 +569,9 @@ UI 구성:
 - Stack mode select
 - Stack Frames (Max 60)
 - Preview header controls: Color mode, Image format, Download
-- Preview zoom controls: Zoom out / 100% / Zoom in
+- Preview zoom controls: Zoom out / 100% / Zoom in / Actual size
 - Frame count / accepted / rejected
-- Raw shape / dtype / exposure / gain
+- Raw shape / display shape / dtype / exposure / gain
 - Stretch low/high controls
 - Download image
 - Last reject reason
@@ -587,6 +587,8 @@ Web 전달 형식:
 - `/api/camera/raw-stack/control`: 설정 저장, stack reset, 기본값 복원을 처리한다.
 - `display_size=0`이면 표시용 이미지를 원본 크기로 전송한다. 양수이면 서버에서
   `display_size`로 축소한 뒤 전송한다.
+- 브라우저의 수동 확대/축소는 서버의 `display_size`와 별개로 동작한다. 기본은 100%
+  실제 이미지 크기이며, 25%~400% 범위에서 조절한다.
 - `processing_enabled=false`이면 image endpoint는 heavy processing을 하지 않고
   no-content/placeholder 정책을 따른다.
 - 향후 원본 RAW 저장/다운로드가 필요하면 preview API와 분리된 별도 다운로드 API로
@@ -703,6 +705,9 @@ class StackState:
 - Web UI refresh 기본값은 1초 이상으로 시작한다.
 - Web UI image response는 기본 원본 크기로 전송한다. 성능이 필요하면
   `display_size`를 양수로 설정해 제한한다.
+- LiveCam page는 기본 Materialize container의 최대 폭 제한을 우회해 넓은 브라우저에서
+  preview panel과 설정 영역을 화면 폭에 맞게 확장한다. 실제 image element는 원본
+  크기 기준으로 표시하고 preview shell에서 scroll/pan한다.
 - stack accumulator는 float32 1장, count/metadata 정도만 유지한다.
 - full raw history는 기본 저장하지 않는다.
 - Pi4에서 `original_raw`가 느리면 `cropped_raw` 입력을 기본 성능 회피 옵션으로 사용한다.
@@ -723,21 +728,25 @@ class StackState:
 - [x] 다운로드는 Web preview가 `color_mode=theme`이어도 `color_mode=color`로 출력된다.
 - [x] WebP 미리보기 상태의 다운로드 포맷은 PNG로 변환된다.
 - [x] `Reset Defaults`는 LiveCam 설정을 기본값으로 저장하고 stack/shared RAW frame을 비운다.
+- [x] `display_size=0`은 서버 display frame을 축소하지 않고 원본 generated display size를 유지한다.
+- [x] Preview image는 natural image size 기준으로 표시되고, 브라우저에서 25%~400% zoom과 actual-size reset을 지원한다.
+- [x] LiveCam page는 wide container를 사용해 큰 브라우저 폭에서도 설정/preview 영역이 확장된다.
+- [x] Status panel은 RAW shape와 별도로 서버에서 생성된 display shape를 표시한다.
 - [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py` 통과.
-- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` 통과.
+- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` 통과. 최신 확인 결과: 18 passed.
 - [x] `git diff --check` 통과.
 - [x] `pifinder` service restart 후 `active` 상태 확인.
 
 구현은 되었지만 실사용 확인이 남은 항목:
 
-- [ ] LiveCam Web UI에서 `Color Mode`, `Image Format`, `Download`가 Preview 오른쪽 상단에 정상 배치되는지 브라우저로 확인.
-- [ ] LiveCam Web UI에서 `Stack Frames (Max 60)` 입력과 저장이 정상 동작하는지 확인.
-- [ ] `Stack On/Off/Reset`이 실제 Web UI 상태와 preview에 기대대로 반영되는지 확인.
-- [ ] `input_frame_source=original_raw`에서 IMX462 raw shape가 1920x1080으로 Web UI에 표시되는지 확인.
-- [ ] `input_frame_source=cropped_raw`에서 IMX462 raw shape가 cropped frame으로 표시되는지 확인.
-- [ ] `color_mode=theme`에서 Red Night preview가 적색 계열로 표시되는지 실제 브라우저에서 확인.
-- [ ] `color_mode=color`에서 Bayer 카메라 다운로드 이미지가 RGB로 저장되고 테마 틴트가 없는지 실제 파일로 확인.
-- [ ] Pi4에서 장시간 LiveCam 사용 중 CPU/메모리 사용량과 service 안정성 확인.
+- [x] LiveCam Web UI에서 `Color Mode`, `Image Format`, `Download`가 Preview 오른쪽 상단에 정상 배치되는지 브라우저로 확인.
+- [x] LiveCam Web UI에서 `Stack Frames (Max 60)` 입력과 저장이 정상 동작하는지 확인.
+- [x] `Stack On/Off/Reset`이 실제 Web UI 상태와 preview에 기대대로 반영되는지 확인.
+- [x] `input_frame_source=original_raw`에서 IMX462 raw shape가 1920x1080으로 Web UI에 표시되는지 확인.
+- [x] `input_frame_source=cropped_raw`에서 IMX462 raw shape가 cropped frame으로 표시되는지 확인.
+- [x] `color_mode=theme`에서 Red Night preview가 적색 계열로 표시되는지 실제 브라우저에서 확인.
+- [x] `color_mode=color`에서 Bayer 카메라 다운로드 이미지가 RGB로 저장되고 테마 틴트가 없는지 실제 파일로 확인.
+- [x] Pi4에서 장시간 LiveCam 사용 중 CPU/메모리 사용량과 service 안정성 확인.
 
 아직 미구현/후속 작업:
 

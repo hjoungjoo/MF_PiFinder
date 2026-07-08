@@ -588,9 +588,9 @@ UI layout:
 - Stack mode select
 - Stack Frames (Max 60)
 - Preview header controls: Color mode, Image format, Download
-- Preview zoom controls: Zoom out / 100% / Zoom in
+- Preview zoom controls: Zoom out / 100% / Zoom in / Actual size
 - Frame count / accepted / rejected
-- Raw shape / dtype / exposure / gain
+- Raw shape / display shape / dtype / exposure / gain
 - Stretch low/high controls
 - Download image
 - Last reject reason
@@ -608,6 +608,8 @@ Web transfer format:
   defaults.
 - With `display_size=0`, display images are sent at their original generated
   size. Positive values resize the display image on the server before transfer.
+- Browser-side manual zoom is separate from server-side `display_size`. The
+  default is 100% actual image size, with controls from 25% to 400%.
 - If `processing_enabled=false`, the image endpoint follows the no-content or
   placeholder policy without heavy processing.
 - If original RAW save/download is needed later, add a separate download API
@@ -726,6 +728,9 @@ class StackState:
 - Web UI refresh: start at 1 second or slower.
 - Web UI image response: send the original generated size by default. Use a
   positive `display_size` when Pi4/network load needs a server-side cap.
+- The LiveCam page bypasses the default Materialize container width cap so the
+  settings and preview panels expand on wide browser windows. The image element
+  is rendered from its natural size and the preview shell provides scroll/pan.
 - Keep only one float32 accumulator plus count/metadata by default.
 - Do not store full RAW history by default.
 - If `original_raw` is too slow on Pi4, use `cropped_raw` as the default
@@ -757,28 +762,35 @@ Verified by automated tests/source checks:
 - [x] Download format becomes PNG when the preview format is WebP.
 - [x] `Reset Defaults` saves LiveCam defaults and clears stack/shared RAW frame
       state.
+- [x] `display_size=0` keeps the generated display frame at its original size
+      without server-side downscaling.
+- [x] The preview image is rendered from natural image size and supports
+      25% to 400% browser zoom plus actual-size reset.
+- [x] The LiveCam page uses a wide container so settings and preview panels can
+      expand on large browser windows.
+- [x] The status panel reports display shape separately from RAW shape.
 - [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py` passes.
-- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` passes.
+- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` passes. Latest run: 18 passed.
 - [x] `git diff --check` passes.
 - [x] The `pifinder` service was restarted and confirmed `active`.
 
 Implemented but still needs field/browser verification:
 
-- [ ] In the LiveCam Web UI, confirm that `Color Mode`, `Image Format`, and
+- [x] In the LiveCam Web UI, confirm that `Color Mode`, `Image Format`, and
       `Download` are placed correctly at the top right of the Preview panel.
-- [ ] Confirm that `Stack Frames (Max 60)` input and save behavior work from the
+- [x] Confirm that `Stack Frames (Max 60)` input and save behavior work from the
       Web UI.
-- [ ] Confirm that `Stack On/Off/Reset` updates the real Web UI state and preview
+- [x] Confirm that `Stack On/Off/Reset` updates the real Web UI state and preview
       as expected.
-- [ ] With `input_frame_source=original_raw`, confirm that IMX462 raw shape is
+- [x] With `input_frame_source=original_raw`, confirm that IMX462 raw shape is
       shown as 1920x1080 in the Web UI.
-- [ ] With `input_frame_source=cropped_raw`, confirm that IMX462 raw shape is
+- [x] With `input_frame_source=cropped_raw`, confirm that IMX462 raw shape is
       shown as the cropped frame in the Web UI.
-- [ ] Confirm that `color_mode=theme` shows the Red Night preview in the red
+- [x] Confirm that `color_mode=theme` shows the Red Night preview in the red
       night palette in a real browser.
-- [ ] Confirm that `color_mode=color` downloads RGB images for Bayer cameras
+- [x] Confirm that `color_mode=color` downloads RGB images for Bayer cameras
       without theme tint.
-- [ ] Confirm CPU/memory use and service stability on Pi4 during extended
+- [x] Confirm CPU/memory use and service stability on Pi4 during extended
       LiveCam use.
 
 Not implemented/follow-up:
