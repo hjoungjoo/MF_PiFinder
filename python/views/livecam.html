@@ -1,19 +1,35 @@
 {% extends "base.html" %}
 
+{% block content_container_class %}container pf-livecam-container{% endblock %}
+
 {% block content %}
 <style>
+  .pf-livecam-container {
+    max-width: none;
+    width: calc(100% - 4rem);
+  }
+  @media only screen and (max-width: 600px) {
+    .pf-livecam-container {
+      width: 96%;
+    }
+  }
   .livecam-preview-shell {
     background: #000;
     border: 1px solid var(--pf-border);
     min-height: 320px;
+    max-height: 82vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
+    overflow: auto;
   }
   .livecam-preview-shell img {
-    max-width: 100%;
-    max-height: 72vh;
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    flex: 0 0 auto;
     object-fit: contain;
     image-rendering: auto;
   }
@@ -42,6 +58,23 @@
     gap: 0.4rem;
     height: 3rem;
     margin-bottom: 0.4rem;
+  }
+  .livecam-zoom-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.4rem;
+  }
+  .livecam-zoom-tools .btn {
+    width: 3rem;
+    justify-content: center;
+    padding: 0;
+    margin-bottom: 0;
+  }
+  .livecam-zoom-value {
+    min-width: 4rem;
+    text-align: center;
+    color: var(--pf-text);
   }
   .livecam-status-grid {
     display: grid;
@@ -159,8 +192,8 @@
         <input type="number" id="highPercentile" min="1" max="100" step="0.1" />
       </div>
       <div class="col s12 m3 livecam-number-field">
-        <label for="displaySize">{{ _('Display Size') }}</label>
-        <input type="number" id="displaySize" min="128" max="2048" step="64" />
+        <label for="displaySize">{{ _('Display Size (0 = Original)') }}</label>
+        <input type="number" id="displaySize" min="0" max="4096" step="64" />
       </div>
     </div>
     <div class="livecam-actions">
@@ -183,6 +216,18 @@
     <div class="livecam-preview-header">
       <h5 class="grey-text">{{ _('Preview') }}</h5>
       <div class="livecam-preview-tools">
+        <div class="livecam-zoom-tools" aria-label="{{ _('Image zoom') }}">
+          <button type="button" class="btn" id="zoomOut" title="{{ _('Zoom out') }}" aria-label="{{ _('Zoom out') }}">
+            <i class="material-icons">remove</i>
+          </button>
+          <span class="livecam-zoom-value" id="zoomValue">100%</span>
+          <button type="button" class="btn" id="zoomIn" title="{{ _('Zoom in') }}" aria-label="{{ _('Zoom in') }}">
+            <i class="material-icons">add</i>
+          </button>
+          <button type="button" class="btn" id="zoomReset" title="{{ _('Actual size') }}" aria-label="{{ _('Actual size') }}">
+            <i class="material-icons">center_focus_strong</i>
+          </button>
+        </div>
         <div class="input-field">
           <select class="browser-default" id="colorMode">
             <option value="theme">{{ _('Theme') }}</option>
@@ -221,6 +266,10 @@
       <div class="livecam-status-item">
         <div class="livecam-status-label">{{ _('RAW Shape') }}</div>
         <div class="livecam-status-value" id="statusShape">-</div>
+      </div>
+      <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('Display Shape') }}</div>
+        <div class="livecam-status-value" id="statusDisplayShape">-</div>
       </div>
       <div class="livecam-status-item">
         <div class="livecam-status-label">{{ _('RAW Type') }}</div>
@@ -262,8 +311,10 @@ const controls = {
 const image = document.getElementById('livecamImage');
 const placeholder = document.getElementById('livecamPlaceholder');
 const message = document.getElementById('livecamMessage');
+const zoomValue = document.getElementById('zoomValue');
 let pollTimer = null;
 let controlsHydrated = false;
+let imageZoom = 1.0;
 
 function currentTheme() {
   const theme = document.documentElement.getAttribute('data-theme') || 'grey';
@@ -286,7 +337,7 @@ function applySettingsToControls(settings) {
   controls.web_image_format.value = settings.web_image_format || 'jpeg';
   controls.low_percentile.value = settings.low_percentile ?? 1.0;
   controls.high_percentile.value = settings.high_percentile ?? 99.5;
-  controls.display_size.value = settings.display_size ?? 768;
+  controls.display_size.value = settings.display_size ?? 0;
 }
 
 function collectSettings() {
@@ -316,6 +367,7 @@ function renderStatus(data, syncControls = false) {
   }
   setText('statusSource', frame.source || settings.input_frame_source);
   setText('statusShape', frame.shape ? frame.shape.join(' x ') : null);
+  setText('statusDisplayShape', stack.display_shape ? stack.display_shape.join(' x ') : null);
   setText('statusDtype', frame.dtype);
   setText('statusFrameCount', `${stack.frame_count || 0} / ${stack.frame_limit || settings.stack_frame_limit || 0}`);
   setText('statusAcceptedRejected', `${stack.accepted_count || 0} / ${stack.rejected_count || 0}`);
@@ -328,6 +380,23 @@ function renderStatus(data, syncControls = false) {
     image.hidden = true;
     placeholder.hidden = false;
   }
+}
+
+function applyImageZoom() {
+  const naturalWidth = image.naturalWidth || 0;
+  const naturalHeight = image.naturalHeight || 0;
+  if (!naturalWidth || !naturalHeight) {
+    zoomValue.textContent = `${Math.round(imageZoom * 100)}%`;
+    return;
+  }
+  image.style.width = `${Math.round(naturalWidth * imageZoom)}px`;
+  image.style.height = `${Math.round(naturalHeight * imageZoom)}px`;
+  zoomValue.textContent = `${Math.round(imageZoom * 100)}%`;
+}
+
+function setImageZoom(nextZoom) {
+  imageZoom = Math.max(0.25, Math.min(4.0, nextZoom));
+  applyImageZoom();
 }
 
 async function fetchStatus() {
@@ -382,6 +451,20 @@ document.getElementById('resetDefaults').addEventListener('click', async () => {
     message.textContent = error.toString();
   }
 });
+
+document.getElementById('zoomOut').addEventListener('click', () => {
+  setImageZoom(imageZoom - 0.25);
+});
+
+document.getElementById('zoomIn').addEventListener('click', () => {
+  setImageZoom(imageZoom + 0.25);
+});
+
+document.getElementById('zoomReset').addEventListener('click', () => {
+  setImageZoom(1.0);
+});
+
+image.addEventListener('load', applyImageZoom);
 
 document.getElementById('downloadImage').addEventListener('click', () => {
   window.location.href = `/api/camera/raw-stack/download?theme=${encodeURIComponent(currentTheme())}`;

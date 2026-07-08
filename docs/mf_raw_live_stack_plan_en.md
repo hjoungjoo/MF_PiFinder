@@ -264,7 +264,7 @@ latest selected RAW preview and stacked preview.
 selected display source
   -> tone mapping / percentile stretch
   -> optional Bayer 2x2 average or mono conversion
-  -> resize to display_size
+  -> optional resize when display_size > 0
   -> uint8 conversion
   -> PNG/JPEG/WebP encoding
   -> /api/camera/raw-stack/image response
@@ -325,7 +325,7 @@ Initial defaults:
 | `preview_mode` | `raw_display` | Convert camera RAW into one displayable preview |
 | `color_mode` | `theme` | `theme` tints the final luminance image to the current Web theme; `color` keeps the final RGB preview for Bayer RAW cameras |
 | `web_image_format` | `jpeg` | Display image format sent to the browser |
-| `display_size` | `768` | Server-side display size before transfer |
+| `display_size` | `0` | `0` sends the original display size; positive values limit server-side display size before transfer |
 
 `alignment_enabled` and `quality_filter_enabled` are candidate options for
 Stage 3/4. The first implementation keeps them as follow-up work rather than
@@ -447,7 +447,7 @@ Candidate settings:
 - `preview_mode`: raw_display, stretched, bayer_2x2_average
 - `low_percentile`: default 1.0
 - `high_percentile`: default 99.5
-- `display_size`: default 768
+- `display_size`: default 0, original-size transfer
 - `color_mode`: default Theme; use Color to keep the RGB preview for Bayer cameras
 - `web_image_format`: default JPEG; use PNG when lossless debugging is needed
 
@@ -588,6 +588,7 @@ UI layout:
 - Stack mode select
 - Stack Frames (Max 60)
 - Preview header controls: Color mode, Image format, Download
+- Preview zoom controls: Zoom out / 100% / Zoom in
 - Frame count / accepted / rejected
 - Raw shape / dtype / exposure / gain
 - Stretch low/high controls
@@ -605,7 +606,8 @@ Web transfer format:
   converted to PNG for compatibility and preservation.
 - `/api/camera/raw-stack/control`: saves settings, resets the stack, and restores
   defaults.
-- Display images are resized on the server before transfer.
+- With `display_size=0`, display images are sent at their original generated
+  size. Positive values resize the display image on the server before transfer.
 - If `processing_enabled=false`, the image endpoint follows the no-content or
   placeholder policy without heavy processing.
 - If original RAW save/download is needed later, add a separate download API
@@ -722,7 +724,8 @@ class StackState:
 - Stage 1 RAW preview generation: under 1 second on Pi4.
 - Stage 2 mean stack update: target under 300 ms per accepted frame.
 - Web UI refresh: start at 1 second or slower.
-- Web UI image response: keep to a 768 px display frame by default.
+- Web UI image response: send the original generated size by default. Use a
+  positive `display_size` when Pi4/network load needs a server-side cap.
 - Keep only one float32 accumulator plus count/metadata by default.
 - Do not store full RAW history by default.
 - If `original_raw` is too slow on Pi4, use `cropped_raw` as the default

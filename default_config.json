@@ -13,7 +13,7 @@
     "livecam_color_mode": "theme",
     "livecam_low_percentile": 1.0,
     "livecam_high_percentile": 99.5,
-    "livecam_display_size": 768,
+    "livecam_display_size": 0,
     "livecam_web_image_format": "jpeg",
     "menu_anim_speed": 0.1,
     "text_scroll_speed": "Med",

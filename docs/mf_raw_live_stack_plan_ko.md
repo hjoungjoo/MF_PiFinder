@@ -245,7 +245,7 @@ latest raw_live_frame()
 selected display source
   -> tone mapping / percentile stretch
   -> optional Bayer 2x2 average or mono conversion
-  -> resize to display_size
+  -> optional resize when display_size > 0
   -> uint8 conversion
   -> PNG/JPEG/WebP encoding
   -> /api/camera/raw-stack/image response
@@ -306,7 +306,7 @@ flowchart TD
 | `preview_mode` | `raw_display` | 카메라별 RAW를 표시 가능한 단일 preview로 변환 |
 | `color_mode` | `theme` | `theme`은 최종 밝기 이미지를 현재 Web theme 색으로 틴트하고, `color`는 Bayer RAW 카메라의 경우 최종 단계에서 RGB로 복원해 표시 |
 | `web_image_format` | `jpeg` | Web으로 전송할 표시용 이미지 포맷 |
-| `display_size` | `768` | Web 전송 전 서버에서 축소할 표시 크기 |
+| `display_size` | `0` | `0`이면 원본 크기 전송, 양수이면 Web 전송 전 서버에서 축소할 최대 표시 크기 |
 
 `alignment_enabled`와 `quality_filter_enabled`는 Stage 3/4에서 추가할 후보 옵션이다.
 1차 구현에서는 설정값으로 저장하지 않고, 문서상 후속 작업 항목으로만 둔다.
@@ -420,7 +420,7 @@ selected raw uint16
 - `preview_mode`: raw_display, stretched, bayer_2x2_average
 - `low_percentile`: 기본 1.0
 - `high_percentile`: 기본 99.5
-- `display_size`: 기본 768
+- `display_size`: 기본 0, 원본 크기 전송
 - `color_mode`: 기본 theme, 필요하면 color로 Bayer 카메라의 RGB preview 유지
 - `web_image_format`: 기본 JPEG, 무손실 디버그가 필요하면 PNG
 
@@ -569,6 +569,7 @@ UI 구성:
 - Stack mode select
 - Stack Frames (Max 60)
 - Preview header controls: Color mode, Image format, Download
+- Preview zoom controls: Zoom out / 100% / Zoom in
 - Frame count / accepted / rejected
 - Raw shape / dtype / exposure / gain
 - Stretch low/high controls
@@ -584,7 +585,8 @@ Web 전달 형식:
   Web preview가 `color_mode=theme`이어도 항상 `color_mode=color`로 변환한다. WebP 미리보기
   상태에서는 호환성과 보존성을 위해 PNG로 변환해서 내려준다.
 - `/api/camera/raw-stack/control`: 설정 저장, stack reset, 기본값 복원을 처리한다.
-- 표시용 이미지는 서버에서 `display_size`로 축소한 뒤 전송한다.
+- `display_size=0`이면 표시용 이미지를 원본 크기로 전송한다. 양수이면 서버에서
+  `display_size`로 축소한 뒤 전송한다.
 - `processing_enabled=false`이면 image endpoint는 heavy processing을 하지 않고
   no-content/placeholder 정책을 따른다.
 - 향후 원본 RAW 저장/다운로드가 필요하면 preview API와 분리된 별도 다운로드 API로
@@ -699,7 +701,8 @@ class StackState:
 - Stage 1 RAW preview 생성은 Pi4에서 1초 이내.
 - Stage 2 mean stack update는 frame당 300ms 이내를 1차 목표로 한다.
 - Web UI refresh 기본값은 1초 이상으로 시작한다.
-- Web UI image response는 기본 768px display frame으로 제한한다.
+- Web UI image response는 기본 원본 크기로 전송한다. 성능이 필요하면
+  `display_size`를 양수로 설정해 제한한다.
 - stack accumulator는 float32 1장, count/metadata 정도만 유지한다.
 - full raw history는 기본 저장하지 않는다.
 - Pi4에서 `original_raw`가 느리면 `cropped_raw` 입력을 기본 성능 회피 옵션으로 사용한다.

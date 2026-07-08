@@ -183,6 +183,14 @@ def test_processor_renders_selected_raw_image():
     assert image_bytes.startswith(b"\x89PNG")
 
 
+def test_display_size_zero_keeps_original_display_dimensions():
+    builder = DisplayFrameBuilder(display_size=0)
+
+    image = builder.build(np.arange(50, dtype=np.uint16).reshape(5, 10))
+
+    assert image.size == (10, 5)
+
+
 def test_processor_keeps_rolling_stack_frame_limit():
     shared = DummySharedState()
     processor = RawLiveStackProcessor()

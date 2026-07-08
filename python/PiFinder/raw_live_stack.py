@@ -166,7 +166,7 @@ class DisplayFrameBuilder:
         self,
         low_percentile: float = 1.0,
         high_percentile: float = 99.5,
-        display_size: int = 768,
+        display_size: int = 0,
         preview_mode: str = "raw_display",
         color_mode: str = COLOR_MODE_THEME,
         web_theme: str = "grey",
@@ -194,7 +194,8 @@ class DisplayFrameBuilder:
             image = Image.fromarray(scaled, mode="RGB")
         else:
             image = Image.fromarray(scaled, mode="L")
-        image.thumbnail((self.display_size, self.display_size), RESAMPLE_BILINEAR)
+        if self.display_size > 0:
+            image.thumbnail((self.display_size, self.display_size), RESAMPLE_BILINEAR)
         return image
 
 

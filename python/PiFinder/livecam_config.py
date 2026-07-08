@@ -37,7 +37,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "color_mode": COLOR_MODE_THEME,
     "low_percentile": 1.0,
     "high_percentile": 99.5,
-    "display_size": 768,
+    "display_size": 0,
     "web_image_format": "jpeg",
 }
 
@@ -71,7 +71,7 @@ def normalize_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]
         1, min(60, _coerce_int(merged.get("stack_frame_limit"), 10))
     )
     merged["display_size"] = max(
-        128, min(2048, _coerce_int(merged.get("display_size"), 768))
+        0, min(4096, _coerce_int(merged.get("display_size"), 0))
     )
     return merged
 
