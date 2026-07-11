@@ -475,6 +475,17 @@
         <button type="submit" class="btn">{{ _('Apply GoTo / Guide Settings') }}</button>
       </div>
     </form>
+    <h6 class="grey-text">{{ _('GoTo / Guide Status') }}</h6>
+    <p>{{ _('Service') }}:
+      <strong id="goto_guide_service_value">{{ goto_guide_status.get('service_state') or '-' }}{% if goto_guide_status.get('phase') %} / {{ goto_guide_status.get('phase') }}{% endif %}</strong></p>
+    <p>{{ _('Guide State') }}:
+      <strong id="tracking_guide_state_value">{{ goto_guide_status.get('tracking_guide_state') or '-' }}</strong></p>
+    <p>{{ _('Guide Error') }}:
+      <strong id="tracking_guide_error_value">-</strong> arcmin</p>
+    <p>{{ _('Recovery') }}:
+      <strong id="tracking_guide_recovery_value">{{ goto_guide_status.get('tracking_guide_recovery_mode') or '-' }}</strong></p>
+    <p>{{ _('Last Action') }}:
+      <strong id="goto_guide_last_action_value">{{ goto_guide_status.get('last_action') or '-' }}</strong></p>
   </div>
 </div>
 {% endblock %}
@@ -941,6 +952,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setText('onstep_utc_time_value', textOrDash(onstep[onstepKey('TIME_UTC.UTC')]));
     updateBacklashValues(payload.backlash_values || {}, payload.mount_control_status || {});
     updateMultipointAlign(payload.multipoint_align || {});
+    updateGotoGuideStatus(payload.goto_guide_status || {});
     setText('onstep_connection_value', textOrDash(onstep[onstepKey('CONNECTION.CONNECT')]));
     setText('onstep_serial_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_SERIAL')]));
     setText('onstep_tcp_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_TCP')]));
@@ -1048,6 +1060,25 @@ document.addEventListener('DOMContentLoaded', function() {
     setText('multipoint_align_progress', completed + ' / ' + total);
     setText('multipoint_align_star', currentStar.name || '-');
     updateMultipointAlignButtons(!!alignStatus.active);
+  }
+
+  function updateGotoGuideStatus(status) {
+    var service = status.service_state || '-';
+    if (status.phase) {
+      service += ' / ' + status.phase;
+    }
+    setText('goto_guide_service_value', service);
+    setText('tracking_guide_state_value', status.tracking_guide_state || '-');
+    var err = status.tracking_guide_error_arcmin;
+    setText('tracking_guide_error_value',
+      (typeof err === 'number') ? err.toFixed(1) : '-');
+    var mode = status.tracking_guide_recovery_mode || '-';
+    var count = status.tracking_guide_recovery_count;
+    if (mode === 'goto' && typeof count === 'number') {
+      mode += ' (' + count + ')';
+    }
+    setText('tracking_guide_recovery_value', mode);
+    setText('goto_guide_last_action_value', status.last_action || '-');
   }
 
   function updateMultipointAlignButtons(active) {

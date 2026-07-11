@@ -180,6 +180,23 @@ pifinder_menu = {
                                                 },
                                             ],
                                         },
+                                        {
+                                            "name": _("GoTo Recovery"),
+                                            "class": UITextMenu,
+                                            "select": "single",
+                                            "config_option": "indi_tracking_guide_goto_recovery_enabled",
+                                            "post_callback": callbacks.reload_config,
+                                            "items": [
+                                                {
+                                                    "name": _("Off"),
+                                                    "value": False,
+                                                },
+                                                {
+                                                    "name": _("On"),
+                                                    "value": True,
+                                                },
+                                            ],
+                                        },
                                     ],
                                 },
                             ],

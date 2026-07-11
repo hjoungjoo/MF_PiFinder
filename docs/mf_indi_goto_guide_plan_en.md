@@ -583,23 +583,28 @@ tracking_guide_error_arcmin       (existing) current-vs-target error
 tracking_guide_last_action        (existing) human-readable last step
 ```
 
-### Files to change (implementation, after review)
+### Files changed (implemented 2026-07-11)
 
 ```text
-python/PiFinder/indi_goto_guide_service.py
-  Expand _tick_tracking_guide into the settle-detect + banded recovery state
-  machine; add disturbance/settle tracking fields; reuse sync + goto_target +
-  settle logic from the final-GoTo path for recovery_goto; add the new status
-  fields to _status_payload; load the new config keys in _reload_config_if_needed.
+python/PiFinder/indi_goto_guide_service.py   [done]
+  _tick_tracking_guide is the settle-detect + banded recovery state machine;
+  disturbance/settle tracking fields added; recovery_goto reuses the sync +
+  goto_target + settle logic from the final-GoTo path; new status fields
+  (tracking_guide_recovery_mode/count/settle_remaining) in _status_payload; new
+  config keys loaded in _reload_config_if_needed; module docstring refreshed.
 
-default_config.json
-  Add the new indi_tracking_guide_* keys with defaults above.
+default_config.json   [done]
+  indi_tracking_guide_* keys added with the defaults above.
 
-python/PiFinder/server.py + python/views/indi_mount.html
-  Surface goto-recovery On/Off (and any tunables) on the GoTo/Guide web card.
+python/PiFinder/server.py + python/views/indi_mount.html   [done]
+  GoTo Recovery On/Off checkbox on the GoTo/Guide web card, plus a read-only
+  "GoTo / Guide Status" panel (service/phase, guide state, error arcmin,
+  recovery mode+count, last action) fed by indi_goto_guide_status.json through
+  the /indi/current_values poll (new _goto_guide_status reader).
 
-python/PiFinder/ui/indi.py
-  Optional: expose goto-recovery On/Off on the LCD Goto/Guide screen.
+python/PiFinder/ui/menu_structure.py   [done]
+  LCD Start > INDI > Setting > Goto/Guide gains a "GoTo Recovery" Off/On item
+  bound to indi_tracking_guide_goto_recovery_enabled.
 ```
 
 ### Checklist

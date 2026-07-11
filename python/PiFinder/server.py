@@ -1265,6 +1265,16 @@ class Server:
             except (FileNotFoundError, json.JSONDecodeError, OSError):
                 return {}
 
+        def _goto_guide_status():
+            try:
+                with open(
+                    utils.data_dir / "indi_goto_guide_status.json",
+                    encoding="utf-8",
+                ) as status_in:
+                    return json.load(status_in)
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                return {}
+
         def _write_backlash_stop_request():
             utils.create_path(utils.data_dir)
             payload = {"requested_at": time.time(), "source": "web"}
@@ -1394,6 +1404,7 @@ class Server:
                 align_stars=BRIGHT_ALIGN_STARS,
                 multipoint_align=_multipoint_align_status(),
                 mount_control_status=_mount_control_status(),
+                goto_guide_status=_goto_guide_status(),
                 web_motion_keepalive_ms=int(WEB_MOTION_KEEPALIVE_INTERVAL * 1000),
                 slew_rate_labels=[
                     "Off",
@@ -1446,6 +1457,7 @@ class Server:
                     "align_stars": BRIGHT_ALIGN_STARS,
                     "multipoint_align": _multipoint_align_status(),
                     "mount_control_status": _mount_control_status(),
+                    "goto_guide_status": _goto_guide_status(),
                 }
             )
 

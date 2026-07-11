@@ -558,23 +558,28 @@ tracking_guide_error_arcmin       (기존) current-vs-target 오차
 tracking_guide_last_action        (기존) 사람이 읽는 마지막 단계
 ```
 
-### 변경할 파일 (검토 후 구현)
+### 변경한 파일 (2026-07-11 구현 완료)
 
 ```text
-python/PiFinder/indi_goto_guide_service.py
-  _tick_tracking_guide를 정착 감지 + 밴드 복구 상태머신으로 확장;
-  외란/정착 추적 필드 추가; recovery_goto용으로 최종 GoTo 경로의 sync +
-  goto_target + 정착 로직 재사용; _status_payload에 신규 필드 추가;
-  _reload_config_if_needed에서 신규 config 키 로드.
+python/PiFinder/indi_goto_guide_service.py   [완료]
+  _tick_tracking_guide가 정착 감지 + 밴드 복구 상태머신; 외란/정착 추적 필드
+  추가; recovery_goto는 최종 GoTo 경로의 sync + goto_target + 정착 로직 재사용;
+  _status_payload에 신규 필드(tracking_guide_recovery_mode/count/settle_
+  remaining) 추가; _reload_config_if_needed에서 신규 config 키 로드; 모듈
+  docstring 갱신.
 
-default_config.json
+default_config.json   [완료]
   위 기본값으로 indi_tracking_guide_* 키 추가.
 
-python/PiFinder/server.py + python/views/indi_mount.html
-  GoTo/Guide 웹 카드에 goto 복구 On/Off(및 튜너블) 노출.
+python/PiFinder/server.py + python/views/indi_mount.html   [완료]
+  GoTo/Guide 웹 카드에 GoTo Recovery On/Off 체크박스, 그리고 읽기전용
+  "GoTo / Guide Status" 패널(service/phase, guide state, error arcmin, recovery
+  mode+count, last action)을 indi_goto_guide_status.json → /indi/current_values
+  폴링(신규 _goto_guide_status 리더)으로 표시.
 
-python/PiFinder/ui/indi.py
-  (선택) LCD Goto/Guide 화면에 goto 복구 On/Off 노출.
+python/PiFinder/ui/menu_structure.py   [완료]
+  LCD Start > INDI > Setting > Goto/Guide에 indi_tracking_guide_goto_recovery_
+  enabled에 연결된 "GoTo Recovery" Off/On 항목 추가.
 ```
 
 ### 체크리스트

@@ -4,11 +4,22 @@
 
 This service is intentionally separate from ``mountcontrol_indi``.  The mount
 control process remains the low-level INDI command executor, while this process
-will grow into the higher-level GoTo/Guide policy and state machine.
+owns the higher-level GoTo/Guide policy and state machine.
 
-Stage 3 routes accepted GoTo/abort requests to the existing mount-control
-executor when the selected method is ``indi_mount``.  PiFinder-driven GoTo is
-left as an explicit later-stage state.
+Responsibilities:
+
+- ``indi_goto_method = indi_mount``: forward accepted GoTo/abort requests
+  straight to the mount-control executor.
+- ``indi_goto_method = pifinder``: run the manual-approach loop against
+  ``PointingCoordinateService`` coordinates, then sync + final INDI GoTo with a
+  bounded correction pass.
+- Tracking Guide: when enabled, hold a target with pulse-guide correction, and
+  recover from an external disturbance by settling first, then either
+  pulse-guiding (small error) or sync + GoTo re-acquisition (large error, gated
+  by ``indi_tracking_guide_goto_recovery_enabled``).
+
+All mount motion is issued as small primitive commands on the mount-control
+queue; Stop/Abort takes priority in every phase.
 """
 
 from __future__ import annotations
