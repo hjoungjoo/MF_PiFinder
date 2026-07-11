@@ -67,27 +67,28 @@ Settings > Experimental > Mount Control > On
 ```
 
 Mount Control이 켜져 있으면 숫자 키는 Object Details 화면, 일반 메뉴, 상태
-화면에서 아래 마운트 제어 명령을 보낸다(하나의 통일 명령 맵 —
-`docs/mf_input_keymap_ko.md` 참고). USB/Bluetooth 키보드의 숫자 키와 keypad
-숫자 키, GPIO 숫자 키가 같은 방식으로 동작한다. 연속 방향 조그는 키보드 문자로
-하고, 전용 INDI Guide 화면은 자체 조그 방식을 유지한다. 객체 리스트에서는 숫자
-키가 대신 카탈로그 시퀀스 점프를 입력하고, 문자는 Name Search를 연다.
+화면에서 아래 마운트 동작을 보낸다(하나의 공통 맵 — `docs/mf_input_keymap_ko.md`
+참고). USB/Bluetooth 키보드의 숫자 키와 keypad 숫자 키, GPIO 숫자 키가 같은 방식으로
+동작한다. 연속 방향 조그는 키보드 문자에도 있고, 전용 INDI Guide 화면은 자체 조그
+방식을 유지한다. 객체 리스트에서는 숫자 키가 대신 카탈로그 시퀀스 점프를 입력하고,
+문자는 Name Search를 연다.
 
 | 키 | INDI 마운트 동작 |
 | --- | --- |
 | `0` | 마운트 정지 |
-| `1` | INDI 연결 초기화, PiFinder solve가 있으면 Sync |
-| `2` | 현재 step 크기만큼 South 이동 |
-| `3` | step 크기 줄이기 |
-| `4` | 현재 step 크기만큼 West 이동 |
-| `5` | 현재 Object Details 대상 GoTo |
-| `6` | 현재 step 크기만큼 East 이동 |
+| `2` | South 이동 — 키를 누르는 동안 |
+| `4` | West 이동 — 키를 누르는 동안 |
+| `5` | GoTo — Object Details(선택 객체)에서만 |
+| `6` | East 이동 — 키를 누르는 동안 |
 | `7` | 현재 PiFinder solve 위치로 마운트 Sync |
-| `8` | 현재 step 크기만큼 North 이동 |
-| `9` | step 크기 키우기 |
+| `8` | North 이동 — 키를 누르는 동안 |
+| `1`, `3`, `9` | 미사용 |
 
-수동 이동은 현재 마운트 RA/Dec 좌표에서 작은 GoTo 오프셋을 보내는 방식이다.
-기본 step은 1도이며 `3`은 절반으로 줄이고 `9`는 두 배로 키운다.
+기본 방향 키는 누르는 동안 마운트를 이동한다(누르면 시작, 떼면 정지). 누른 만큼
+이동한다. `5`(GoTo)는 객체가 선택된 Object Details 화면에서만 동작하며, 일반 메뉴·
+상태 화면엔 타겟이 없어 아무 동작도 하지 않는다. step 크기 설정은 없으며, `1`은 더
+이상 init/sync하지 않는다 — 기동 시 자동으로 init·sync된다. 이동 속도는 슬루
+속도(`+`/`-`)로 정한다.
 
 INDI 서버나 마운트 연결에 문제가 있어도 PiFinder 기본 기능은 계속 동작한다.
 마운트 연결 상태는 다음 파일에서 확인할 수 있다.
