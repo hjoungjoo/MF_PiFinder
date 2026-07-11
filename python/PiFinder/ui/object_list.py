@@ -809,6 +809,15 @@ class UIObjectList(UITextMenu):
 
         self.update()
 
+    def key_number_press(self, number=None):
+        # Numbers jump to a catalog sequence here, never jog the mount.
+        if number is None:
+            return
+        self.key_number(number)
+
+    def key_number_release(self, number=None):
+        pass
+
     def _open_name_search(self, char: str = ""):
         """A letter on the object list opens the catalog Name Search, seeded
         with the typed character (English find). Overrides the mount-jog that

@@ -59,11 +59,16 @@ class GuideKeyMixin:
     """
 
     def key_number(self, number=None):
-        # Number keys drive the mount via the unified command map (not an 8-way
-        # jog). key_number_press/release fall back to key_number via UIModule,
-        # so a subclass that owns key_number (e.g. object-list catalog jump) keeps
-        # its behavior on the physical keypad.
-        self._mount_command(number)
+        # Cardinal keys nudge/jog the mount; 0/5/7 are discrete commands.
+        # A subclass that owns key_number (e.g. object-list catalog jump) must
+        # also override key_number_press/release to keep its behavior.
+        self._mount_key(number)
+
+    def key_number_press(self, number=None):
+        self._mount_key_press(number)
+
+    def key_number_release(self, number=None):
+        self._mount_key_release(number)
 
     def key_text(self, char: str = ""):
         self._guide_key_text(char)
@@ -714,15 +719,27 @@ class UIModule:
     def _guide_key_minus(self) -> bool:
         return self._guide_send_mount({"type": "reduce_slew_rate"})
 
-    # --- Unified mount command map for number keys -----------------------------
+    # --- Mount number keys -----------------------------------------------------
     # Wherever a number key drives the INDI mount (Object Details, mount-on menus,
-    # status screens) it uses this single discrete mapping instead of an 8-way
-    # directional jog. Continuous jog stays on the keyboard letters and +/- stays
-    # on slew rate. See docs/mf_input_keymap_*.md.
-    _MOUNT_STEP_DIRECTIONS = {2: "south", 4: "west", 6: "east", 8: "north"}
+    # status screens), the cardinal keys (2/4/6/8) move the mount for as long as
+    # they are held (press starts motion, release stops it), and a few discrete
+    # commands sit on 0/5/7. Continuous jog is also on the keyboard letters and
+    # +/- stays on slew rate. See docs/mf_input_keymap_*.md.
+    _MOUNT_JOG_DIRECTIONS = {2: "south", 4: "west", 6: "east", 8: "north"}
 
     def _mount_control_queue(self):
         return self._guide_mount_queue()
+
+    def _goto_guide_queue(self):
+        """Queue for the INDI GoTo/Guide service (tracking-guide auto-correction).
+
+        Used alongside the mount-control queue so a Stop also halts the
+        auto-correction and a GoTo re-arms its tracking target.
+        """
+        try:
+            return self.command_queues.get("goto_guide")
+        except Exception:
+            return None
 
     def _mount_pointing_radec(self):
         solution = self.shared_state.solution()
@@ -733,27 +750,14 @@ class UIModule:
             return None
         return aligned.RA, aligned.Dec
 
-    def _mount_recent_target_radec(self):
-        try:
-            recent = self.shared_state.ui_state().recent_list()
-        except Exception:
-            return None
-        if not recent:
-            return None
-        obj = recent[-1]
-        ra = getattr(obj, "ra", None)
-        dec = getattr(obj, "dec", None)
-        if ra is None or dec is None:
-            return None
-        return ra, dec
-
     def _mount_command(self, number, target=None) -> bool:
-        """Run the unified mount command for a number key.
+        """Run a discrete mount command for a number key: 0=Stop 5=GoTo 7=Sync.
 
-        0=Stop 1=Init+Sync 2=Step S 3=Step- 4=Step W 5=GoTo
-        6=Step E 7=Sync 8=Step N 9=Step+
-        ``target`` is the (ra, dec) used for GoTo (5); when None the most-recent
-        object is used. Returns True if the mount was addressed (mount on).
+        Directional keys (2/4/6/8) are handled as hold-to-move by _mount_key_*,
+        not here. GoTo (5) needs an explicit ``target`` (ra, dec) — the screen
+        that owns a selected object (Object Details) passes it. On plain menus /
+        status screens there is no selected object, so 5 does nothing. Returns
+        True if the mount was addressed.
         """
         if number is None:
             return False
@@ -761,36 +765,24 @@ class UIModule:
         if queue is None:
             return False
 
+        guide_queue = self._goto_guide_queue()
         if number == 0:
             queue.put({"type": "stop_movement"})
+            # Also stop the GoTo/Guide auto-correction (and clear its tracking
+            # target) so it does not immediately re-correct.
+            if guide_queue is not None:
+                guide_queue.put({"type": "stop_movement"})
             self.message(_("Mount Stop"), 1)
-        elif number == 1:
-            queue.put({"type": "init"})
-            pointing = self._mount_pointing_radec()
-            if pointing is not None:
-                queue.put({"type": "sync", "ra": pointing[0], "dec": pointing[1]})
-            self.message(_("Mount Init"), 1)
-        elif number in self._MOUNT_STEP_DIRECTIONS:
-            queue.put(
-                {
-                    "type": "manual_movement",
-                    "direction": self._MOUNT_STEP_DIRECTIONS[number],
-                }
-            )
-        elif number == 3:
-            queue.put({"type": "reduce_step_size"})
-        elif number == 9:
-            queue.put({"type": "increase_step_size"})
         elif number == 5:
-            tgt = target or self._mount_recent_target_radec()
-            if tgt is None:
-                self.message(_("No target"), 1)
-                return True
+            # GoTo is only available where an object is selected. Without a
+            # target (plain menus / status) the key is unused.
+            if target is None:
+                return False
             queue.put(
                 {
                     "type": "goto_target",
-                    "ra": tgt[0],
-                    "dec": tgt[1],
+                    "ra": target[0],
+                    "dec": target[1],
                     "refine_after_goto": self.config_object.get_option(
                         "indi_goto_refine_once", False
                     ),
@@ -799,6 +791,16 @@ class UIModule:
                     ),
                 }
             )
+            # Re-arm the tracking-guide target so auto-correction can resume for
+            # this GoTo (if the tracking guide is enabled).
+            if guide_queue is not None:
+                guide_queue.put(
+                    {
+                        "type": "set_tracking_target",
+                        "ra": target[0],
+                        "dec": target[1],
+                    }
+                )
             self.message(_("Mount GoTo"), 1)
         elif number == 7:
             pointing = self._mount_pointing_radec()
@@ -810,6 +812,31 @@ class UIModule:
         else:
             return False
         return True
+
+    def _mount_key(self, number, target=None) -> None:
+        """Single-tap number key: cardinal = one nudge, else discrete command."""
+        if number is None:
+            return
+        direction = self._MOUNT_JOG_DIRECTIONS.get(number)
+        if direction is not None:
+            self._guide_move(direction)
+            return
+        self._mount_command(number, target=target)
+
+    def _mount_key_press(self, number, target=None) -> None:
+        """Press a number key: cardinal starts hold-to-move, else discrete."""
+        if number is None:
+            return
+        direction = self._MOUNT_JOG_DIRECTIONS.get(number)
+        if direction is not None:
+            self._guide_move(direction, keepalive=True)
+            return
+        self._mount_command(number, target=target)
+
+    def _mount_key_release(self, number) -> None:
+        """Release a cardinal number key: stop the hold-to-move motion."""
+        if number in self._MOUNT_JOG_DIRECTIONS:
+            self._guide_move("stop")
 
     def key_number(self, number):
         pass

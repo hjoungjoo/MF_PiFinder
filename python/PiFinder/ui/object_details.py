@@ -704,18 +704,15 @@ class UIObjectDetails(UIModule):
         return aligned.RA, aligned.Dec
 
     def key_number(self, number):
-        """Number keys run the unified INDI mount command map (GoTo uses this
-        object). Continuous directional jog stays on the keyboard letters."""
-        self._mount_command(number, target=(self.object.ra, self.object.dec))
+        """Cardinal keys nudge the mount, 0/5/7 are discrete commands (GoTo uses
+        this object). Held cardinal keys move for as long as they are held."""
+        self._mount_key(number, target=(self.object.ra, self.object.dec))
 
     def key_number_press(self, number=None):
-        # Discrete command on press (tap); no hold-to-move on the number keys.
-        if number is None:
-            return
-        self.key_number(number)
+        self._mount_key_press(number, target=(self.object.ra, self.object.dec))
 
     def key_number_release(self, number=None):
-        pass
+        self._mount_key_release(number)
 
     def key_text(self, char: str = ""):
         self._guide_key_text(char)

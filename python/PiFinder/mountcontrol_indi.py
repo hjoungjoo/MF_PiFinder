@@ -67,9 +67,6 @@ clientlogger = logging.getLogger("MountControl.Indi.Client")
 
 STATUS_FILE = utils.data_dir / "mount_control_status.json"
 STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
-DEFAULT_STEP_DEGREES = 1.0
-MIN_STEP_DEGREES = 0.05
-MAX_STEP_DEGREES = 10.0
 POSITION_STATUS_MIN_INTERVAL = 0.5
 STATUS_HEARTBEAT_INTERVAL = 5.0
 AUTO_CONNECT_START_DELAY = 5.0
@@ -364,7 +361,6 @@ class MountControlIndi(BacklashCalibrationMixin):
         self.indi_port = indi_port
         self.client: Optional[PiFinderIndiClient] = None
         self.device = None
-        self.step_degrees = DEFAULT_STEP_DEGREES
         self.slew_rate = 5
         self.current_ra: Optional[float] = None
         self.current_dec: Optional[float] = None
@@ -475,7 +471,6 @@ class MountControlIndi(BacklashCalibrationMixin):
 
     def _status_fields(self, state: str = "", **extra: Any) -> dict[str, Any]:
         payload = {
-            "step_degrees": self.step_degrees,
             "slew_rate": self.slew_rate,
             "ra": self.current_ra,
             "dec": self.current_dec,
@@ -2010,17 +2005,6 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._console("INDI\n" + message)
         return True
 
-    def change_step(self, multiplier: float) -> None:
-        self.step_degrees = max(
-            MIN_STEP_DEGREES,
-            min(MAX_STEP_DEGREES, self.step_degrees * multiplier),
-        )
-        self._write_controller_status(
-            "connected" if self.connected else "idle",
-            f"Step size {self.step_degrees:.2f} deg",
-        )
-        self._console(f"INDI step\n{self.step_degrees:.2f} deg")
-
     def _read_driver_slew_rate(self) -> Optional[int]:
         properties = sys_utils.get_indi_onstep_properties(
             server_host=self.indi_host,
@@ -2955,10 +2939,6 @@ class MountControlIndi(BacklashCalibrationMixin):
                 str(command.get("direction", "")),
                 command.get("lease_seconds"),
             )
-        elif command_type == "increase_step_size":
-            self.change_step(2.0)
-        elif command_type == "reduce_step_size":
-            self.change_step(0.5)
         elif command_type == "increase_slew_rate":
             self.change_slew_rate(1)
         elif command_type == "reduce_slew_rate":

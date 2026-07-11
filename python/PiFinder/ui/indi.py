@@ -87,7 +87,6 @@ class UIIndiInit(UIIndiBase):
 
         state = status.get("state", "unknown")
         message = status.get("message", "")
-        step = status.get("step_degrees")
         slew_rate = status.get("slew_rate")
         ra = status.get("ra")
         dec = status.get("dec")
@@ -96,9 +95,6 @@ class UIIndiInit(UIIndiBase):
         y += line_h
         if message:
             self._draw_text((6, y), str(message)[:24], fill=self.colors.get(160))
-            y += line_h
-        if step is not None:
-            self._draw_text((6, y), _("Step: {step:.2f} deg").format(step=float(step)))
             y += line_h
         if slew_rate is not None:
             rate = int(slew_rate)
@@ -207,7 +203,6 @@ class UIIndiStatus(GuideKeyMixin, UIIndiBase):
             ("RA", self._format_float(status.get("ra"), 2)),
             ("Dec", self._format_float(status.get("dec"), 2)),
             ("Speed", status.get("slew_rate", "--")),
-            ("Step", self._format_float(status.get("step_degrees"), 2)),
         ]
         if status.get("target_ra") is not None or status.get("target_dec") is not None:
             rows.extend(

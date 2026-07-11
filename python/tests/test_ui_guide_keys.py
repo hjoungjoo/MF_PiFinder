@@ -1,4 +1,10 @@
+import builtins
 from types import SimpleNamespace
+
+# The app installs gettext's ``_`` as a builtin at startup; provide a passthrough
+# here so mount-command messages resolve during unit tests.
+if not hasattr(builtins, "_"):
+    builtins._ = lambda text: text
 
 from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.ui.preview import UIPreview
@@ -24,31 +30,36 @@ def _screen(mount_control=True):
         else default
     )
     screen.command_queues = {"mountcontrol": DummyQueue()}
+    screen.message = lambda *args, **kwargs: None
     return screen
 
 
-def test_guide_mixin_number_key_runs_unified_mount_command():
-    # Number keys now run the unified discrete mount command map (single-step
-    # nudge on 2/4/6/8), not an 8-way hold-to-move jog. Release is a no-op.
+def test_guide_mixin_cardinal_key_hold_to_move():
+    # Cardinal number keys move the mount for as long as they are held:
+    # press starts motion (with lease), release stops it.
     screen = _screen()
 
     screen.key_number_press(8)
     screen.key_number_release(8)
 
     assert screen.command_queues["mountcontrol"].commands == [
-        {"type": "manual_movement", "direction": "north"},
+        {"type": "manual_movement", "direction": "north", "lease_seconds": 2.5},
+        {"type": "stop_movement"},
     ]
 
 
-def test_guide_mixin_number_step_size_keys():
+def test_guide_mixin_discrete_and_removed_number_keys():
+    # 0 = Stop is discrete; the removed step-size (3/9) and init (1) keys do
+    # nothing.
     screen = _screen()
 
-    screen.key_number(9)
-    screen.key_number(3)
+    screen.key_number_press(0)
+    screen.key_number_press(1)
+    screen.key_number_press(3)
+    screen.key_number_press(9)
 
     assert screen.command_queues["mountcontrol"].commands == [
-        {"type": "increase_step_size"},
-        {"type": "reduce_step_size"},
+        {"type": "stop_movement"},
     ]
 
 

@@ -160,6 +160,17 @@ class IndiGotoGuideService:
         if command_type == "goto_target":
             self._handle_goto_target(command)
             return True
+        if command_type == "set_tracking_target":
+            # Re-arm the tracking-guide target for a GoTo the UI sent straight to
+            # mount control (e.g. Object Details key 5). Does not move the mount;
+            # it just lets the tracking guide resume auto-correction.
+            try:
+                self.tracking_target_ra = float(command["ra"]) % 360.0
+                self.tracking_target_dec = float(command["dec"])
+                self.last_action = "tracking target set"
+            except (KeyError, TypeError, ValueError):
+                logger.warning("Invalid set_tracking_target command: %r", command)
+            return True
         if command_type == "stop_movement":
             self._forward_to_mountcontrol({"type": "stop_movement"})
             self.active_target_ra = None
@@ -178,6 +189,10 @@ class IndiGotoGuideService:
             self.final_sync_sent = False
             self._disable_tracking_guide("stop command")
             self._reset_tracking_recovery()
+            # Clear the tracking target so auto-correction stays off until the
+            # next GoTo / tracking start re-arms it.
+            self.tracking_target_ra = None
+            self.tracking_target_dec = None
             self.service_state = "idle"
             self.phase = "idle"
             self.wait_reason = ""
