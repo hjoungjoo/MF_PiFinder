@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-11 14:36+0900\n"
+"POT-Creation-Date: 2026-07-11 17:07+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -510,10 +510,37 @@ msgstr "{icon} 저장  0 취소"
 msgid "AUTO"
 msgstr "자동"
 
-#: PiFinder/ui/base.py:338 PiFinder/ui/dateentry.py:166
+#: PiFinder/ui/base.py:336 PiFinder/ui/dateentry.py:166
 #: PiFinder/ui/locationentry.py:222 PiFinder/ui/timeentry.py:160
 msgid " Cancel"
 msgstr " Cancel"
+
+#: PiFinder/ui/base.py:766
+msgid "Mount Stop"
+msgstr "마운트 정지"
+
+#: PiFinder/ui/base.py:772
+msgid "Mount Init"
+msgstr "마운트 초기화"
+
+# AI-TRANSLATED (claude): needs human review
+#: PiFinder/ui/base.py:787
+msgid "No target"
+msgstr "타겟 없음"
+
+#: PiFinder/ui/base.py:802
+msgid "Mount GoTo"
+msgstr "마운트 GoTo"
+
+#: PiFinder/ui/base.py:806 PiFinder/ui/indi.py:591 PiFinder/ui/indi.py:1063
+#: PiFinder/ui/indi.py:1068 PiFinder/ui/object_details.py:411
+#: PiFinder/ui/polar_align.py:444
+msgid "No solve"
+msgstr "해 없음"
+
+#: PiFinder/ui/base.py:809
+msgid "Mount Sync"
+msgstr "마운트 동기화"
 
 #: PiFinder/ui/bluetooth_keyboard.py:74
 msgid "Scan / Pair"
@@ -1266,7 +1293,7 @@ msgstr "파크 위치 설정"
 msgid "INDI Restart"
 msgstr "INDI 재시작"
 
-#: PiFinder/ui/indi.py:286 PiFinder/ui/indi.py:793 views/indi_mount.html:311
+#: PiFinder/ui/indi.py:286 PiFinder/ui/indi.py:795 views/indi_mount.html:311
 #: views/indi_mount.html:1059
 msgid "Idle"
 msgstr "대기"
@@ -1275,9 +1302,10 @@ msgstr "대기"
 msgid "Axis: {axis}"
 msgstr "축: {axis}"
 
+# AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/indi.py:303
-msgid "+/- Axis"
-msgstr "+/- 축 선택"
+msgid "+ RA  - DE"
+msgstr "+ RA  - DE"
 
 #: PiFinder/ui/indi.py:304
 msgid "Digits input  0 clear"
@@ -1287,196 +1315,190 @@ msgstr "숫자 입력  0 지움"
 msgid "Right Auto  Square Save"
 msgstr "오른쪽 자동  네모 저장"
 
-#: PiFinder/ui/indi.py:341
+#: PiFinder/ui/indi.py:343
 msgid "Auto Backlash"
 msgstr "백래시 자동"
 
-#: PiFinder/ui/indi.py:354
+#: PiFinder/ui/indi.py:356
 msgid "Backlash Saved"
 msgstr "백래시 저장됨"
 
-#: PiFinder/ui/indi.py:474
+#: PiFinder/ui/indi.py:476
 msgid "+/- : Speed {label}"
 msgstr "+/- : 속도 {label}"
 
-#: PiFinder/ui/indi.py:480
+#: PiFinder/ui/indi.py:482
 msgid "5 : Refine {state}"
 msgstr "5 : 보정 {state}"
 
-#: PiFinder/ui/indi.py:486
+#: PiFinder/ui/indi.py:488
 msgid "0 : Guide {state}"
 msgstr "0 : 가이드 {state}"
 
-#: PiFinder/ui/indi.py:524
+#: PiFinder/ui/indi.py:526
 msgid "Guide Correction"
 msgstr "가이드 보정"
 
-#: PiFinder/ui/indi.py:529
+#: PiFinder/ui/indi.py:531
 msgid "Refine On"
 msgstr "보정 켜짐"
 
-#: PiFinder/ui/indi.py:529
+#: PiFinder/ui/indi.py:531
 msgid "Refine Off"
 msgstr "보정 꺼짐"
 
-#: PiFinder/ui/indi.py:580 PiFinder/ui/object_details.py:814
+#: PiFinder/ui/indi.py:582 PiFinder/ui/object_details.py:763
 msgid "Speed +"
 msgstr "속도 +"
 
-#: PiFinder/ui/indi.py:584 PiFinder/ui/object_details.py:826
+#: PiFinder/ui/indi.py:586 PiFinder/ui/object_details.py:775
 msgid "Speed -"
 msgstr "속도 -"
 
-#: PiFinder/ui/indi.py:589 PiFinder/ui/indi.py:1061 PiFinder/ui/indi.py:1066
-#: PiFinder/ui/object_details.py:411 PiFinder/ui/object_details.py:749
-#: PiFinder/ui/polar_align.py:444
-msgid "No solve"
-msgstr "해 없음"
-
-#: PiFinder/ui/indi.py:592
+#: PiFinder/ui/indi.py:594
 msgid "Aligned"
 msgstr "정렬됨"
 
-#: PiFinder/ui/indi.py:763
+#: PiFinder/ui/indi.py:765
 msgid "Align Complete"
 msgstr "정렬 완료"
 
-#: PiFinder/ui/indi.py:797 views/indi_mount.html:341
+#: PiFinder/ui/indi.py:799 views/indi_mount.html:341
 msgid "Align Points"
 msgstr "정렬점 수"
 
-#: PiFinder/ui/indi.py:798 PiFinder/ui/indi.py:814 PiFinder/ui/indi.py:830
+#: PiFinder/ui/indi.py:800 PiFinder/ui/indi.py:816 PiFinder/ui/indi.py:832
 msgid "Points: {points}"
 msgstr "점수: {points}"
 
-#: PiFinder/ui/indi.py:799
+#: PiFinder/ui/indi.py:801
 msgid "Progress: {done}/{total}"
 msgstr "진행: {done}/{total}"
 
-#: PiFinder/ui/indi.py:803
+#: PiFinder/ui/indi.py:805
 msgid "+/- or 1-9 select"
 msgstr "+/- 또는 1-9 선택"
 
-#: PiFinder/ui/indi.py:804
+#: PiFinder/ui/indi.py:806
 msgid "Right/Square next"
 msgstr "오른쪽/네모 다음"
 
-#: PiFinder/ui/indi.py:805
+#: PiFinder/ui/indi.py:807
 msgid "Left back"
 msgstr "왼쪽 뒤로"
 
-#: PiFinder/ui/indi.py:813
+#: PiFinder/ui/indi.py:815
 msgid "Preparing Align"
 msgstr "정렬 준비"
 
-#: PiFinder/ui/indi.py:818
+#: PiFinder/ui/indi.py:820
 msgid "Syncing PiFinder"
 msgstr "PiFinder 동기화"
 
-#: PiFinder/ui/indi.py:819
+#: PiFinder/ui/indi.py:821
 msgid "Wait for mount"
 msgstr "마운트 대기"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:820 PiFinder/ui/indi.py:861
+#: PiFinder/ui/indi.py:822 PiFinder/ui/indi.py:863
 msgid "Left mode/cancel"
 msgstr "왼쪽 모드/취소"
 
-#: PiFinder/ui/indi.py:828 views/indi_mount.html:337
+#: PiFinder/ui/indi.py:830 views/indi_mount.html:337
 msgid "Align Mode"
 msgstr "정렬 모드"
 
-#: PiFinder/ui/indi.py:829
+#: PiFinder/ui/indi.py:831
 msgid "Mode: {mode}"
 msgstr "모드: {mode}"
 
-#: PiFinder/ui/indi.py:834
+#: PiFinder/ui/indi.py:836
 msgid "1 Manual  2 Auto"
 msgstr "1 수동  2 자동"
 
-#: PiFinder/ui/indi.py:835
+#: PiFinder/ui/indi.py:837
 msgid "Up/Down change"
 msgstr "위/아래 변경"
 
-#: PiFinder/ui/indi.py:836
+#: PiFinder/ui/indi.py:838
 msgid "Right/Square start"
 msgstr "오른쪽/네모 시작"
 
-#: PiFinder/ui/indi.py:837
+#: PiFinder/ui/indi.py:839
 msgid "Left points"
 msgstr "왼쪽 점수"
 
-#: PiFinder/ui/indi.py:845
+#: PiFinder/ui/indi.py:847
 msgid "Alt: {alt:.0f} deg"
 msgstr "고도: {alt:.0f}도"
 
-#: PiFinder/ui/indi.py:847
+#: PiFinder/ui/indi.py:849
 msgid "Alt: unknown"
 msgstr "고도: 알 수 없음"
 
-#: PiFinder/ui/indi.py:851
+#: PiFinder/ui/indi.py:853
 msgid "Manual Star"
 msgstr "수동 별"
 
-#: PiFinder/ui/indi.py:852
+#: PiFinder/ui/indi.py:854
 msgid "Star: {star}"
 msgstr "별: {star}"
 
-#: PiFinder/ui/indi.py:854 PiFinder/ui/indi.py:887
+#: PiFinder/ui/indi.py:856 PiFinder/ui/indi.py:889
 msgid "Point {done}/{total}"
 msgstr "점 {done}/{total}"
 
-#: PiFinder/ui/indi.py:858
+#: PiFinder/ui/indi.py:860
 msgid "Up/Down star"
 msgstr "위/아래 별 선택"
 
-#: PiFinder/ui/indi.py:859
+#: PiFinder/ui/indi.py:861
 msgid "Right/Square GoTo"
 msgstr "오른쪽/네모 GoTo"
 
-#: PiFinder/ui/indi.py:860
+#: PiFinder/ui/indi.py:862
 msgid "SkySafari GoTo/Align OK"
 msgstr "SkySafari GoTo/정렬 OK"
 
-#: PiFinder/ui/indi.py:870
+#: PiFinder/ui/indi.py:872
 msgid "Align Star"
 msgstr "정렬 별"
 
-#: PiFinder/ui/indi.py:892
+#: PiFinder/ui/indi.py:894
 msgid "789 / 4 6 / 123 move"
 msgstr "789/4 6/123 이동"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:896
+#: PiFinder/ui/indi.py:898
 msgid "Release stop  Left back"
 msgstr "떼면 정지  왼쪽 뒤로"
 
-#: PiFinder/ui/indi.py:900
+#: PiFinder/ui/indi.py:902
 msgid "Square : Confirm"
 msgstr "네모 : 확정"
 
-#: PiFinder/ui/indi.py:1009 PiFinder/ui/indi.py:1015 PiFinder/ui/indi.py:1021
-#: PiFinder/ui/indi.py:1101
+#: PiFinder/ui/indi.py:1011 PiFinder/ui/indi.py:1017 PiFinder/ui/indi.py:1023
+#: PiFinder/ui/indi.py:1103
 msgid "Align Cancelled"
 msgstr "정렬 취소됨"
 
-#: PiFinder/ui/indi.py:1057
+#: PiFinder/ui/indi.py:1059
 msgid "Manual Align"
 msgstr "수동 정렬"
 
-#: PiFinder/ui/indi.py:1080
+#: PiFinder/ui/indi.py:1082
 msgid "Auto Align"
 msgstr "자동 정렬"
 
-#: PiFinder/ui/indi.py:1086
+#: PiFinder/ui/indi.py:1088
 msgid "Below horizon"
 msgstr "지평선 아래"
 
-#: PiFinder/ui/indi.py:1096
+#: PiFinder/ui/indi.py:1098
 msgid "GoTo Sent"
 msgstr "GoTo 전송됨"
 
-#: PiFinder/ui/indi.py:1120
+#: PiFinder/ui/indi.py:1122
 msgid "Point Confirmed"
 msgstr "정렬점 확정"
 
@@ -1871,7 +1893,7 @@ msgstr "관측목록"
 msgid "Custom"
 msgstr "사용자"
 
-#: PiFinder/ui/menu_structure.py:411
+#: PiFinder/ui/menu_structure.py:411 PiFinder/ui/object_list.py:823
 msgid "Name Search"
 msgstr "이름 검색"
 
@@ -2554,23 +2576,7 @@ msgstr "telescope, and EP."
 msgid "Too Far"
 msgstr "너무 멀음"
 
-#: PiFinder/ui/object_details.py:714
-msgid "Mount Stop"
-msgstr "마운트 정지"
-
-#: PiFinder/ui/object_details.py:722
-msgid "Mount Init"
-msgstr "마운트 초기화"
-
-#: PiFinder/ui/object_details.py:743
-msgid "Mount GoTo"
-msgstr "마운트 GoTo"
-
-#: PiFinder/ui/object_details.py:752
-msgid "Mount Sync"
-msgstr "마운트 동기화"
-
-#: PiFinder/ui/object_details.py:801
+#: PiFinder/ui/object_details.py:750
 msgid "LOG"
 msgstr "로그"
 
@@ -2578,11 +2584,11 @@ msgstr "로그"
 msgid "Sort"
 msgstr "정렬"
 
-#: PiFinder/ui/object_list.py:144 PiFinder/ui/object_list.py:825
+#: PiFinder/ui/object_list.py:144 PiFinder/ui/object_list.py:851
 msgid "Nearest"
 msgstr "가까운순"
 
-#: PiFinder/ui/object_list.py:148 PiFinder/ui/object_list.py:831
+#: PiFinder/ui/object_list.py:148 PiFinder/ui/object_list.py:857
 msgid "Standard"
 msgstr "표준"
 
@@ -2618,7 +2624,7 @@ msgstr ""
 "{sort_order}\n"
 "정렬 중"
 
-#: PiFinder/ui/object_list.py:281 PiFinder/ui/object_list.py:836
+#: PiFinder/ui/object_list.py:281 PiFinder/ui/object_list.py:862
 msgid "RA"
 msgstr "RA"
 
@@ -2652,7 +2658,7 @@ msgstr ", {catalog_info_2}일 전"
 msgid "Sort: {sort_order}"
 msgstr "정렬: {sort_order}"
 
-#: PiFinder/ui/object_list.py:878
+#: PiFinder/ui/object_list.py:904
 msgid "Refreshing..."
 msgstr "새로고침 중..."
 
@@ -5106,4 +5112,7 @@ msgstr ""
 
 #~ msgid "IMU Sensit."
 #~ msgstr "IMU 감도"
+
+#~ msgid "+/- Axis"
+#~ msgstr "+/- 축 선택"
 
