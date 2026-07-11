@@ -27,19 +27,28 @@ def _screen(mount_control=True):
     return screen
 
 
-def test_guide_mixin_number_press_release_sends_motion_and_stop():
+def test_guide_mixin_number_key_runs_unified_mount_command():
+    # Number keys now run the unified discrete mount command map (single-step
+    # nudge on 2/4/6/8), not an 8-way hold-to-move jog. Release is a no-op.
     screen = _screen()
 
     screen.key_number_press(8)
     screen.key_number_release(8)
 
     assert screen.command_queues["mountcontrol"].commands == [
-        {
-            "type": "manual_movement",
-            "direction": "north",
-            "lease_seconds": 2.5,
-        },
-        {"type": "stop_movement"},
+        {"type": "manual_movement", "direction": "north"},
+    ]
+
+
+def test_guide_mixin_number_step_size_keys():
+    screen = _screen()
+
+    screen.key_number(9)
+    screen.key_number(3)
+
+    assert screen.command_queues["mountcontrol"].commands == [
+        {"type": "increase_step_size"},
+        {"type": "reduce_step_size"},
     ]
 
 

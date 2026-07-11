@@ -704,69 +704,18 @@ class UIObjectDetails(UIModule):
         return aligned.RA, aligned.Dec
 
     def key_number(self, number):
-        """Handle Object Details numeric keys for optional INDI mount control."""
-        mountcontrol_queue = self._mount_control_queue()
-        if mountcontrol_queue is None:
-            return
-
-        if number == 0:
-            mountcontrol_queue.put({"type": "stop_movement"})
-            self.message(_("Mount Stop"), 1)
-        elif number == 1:
-            mountcontrol_queue.put({"type": "init"})
-            pointing = self._current_pointing_radec()
-            if pointing is not None:
-                mountcontrol_queue.put(
-                    {"type": "sync", "ra": pointing[0], "dec": pointing[1]}
-                )
-            self.message(_("Mount Init"), 1)
-        elif number == 2:
-            mountcontrol_queue.put({"type": "manual_movement", "direction": "south"})
-        elif number == 3:
-            mountcontrol_queue.put({"type": "reduce_step_size"})
-        elif number == 4:
-            mountcontrol_queue.put({"type": "manual_movement", "direction": "west"})
-        elif number == 5:
-            mountcontrol_queue.put(
-                {
-                    "type": "goto_target",
-                    "ra": self.object.ra,
-                    "dec": self.object.dec,
-                    "refine_after_goto": self.config_object.get_option(
-                        "indi_goto_refine_once", False
-                    ),
-                    "refine_accuracy_arcmin": self.config_object.get_option(
-                        "indi_goto_refine_accuracy_arcmin", 10.0
-                    ),
-                }
-            )
-            self.message(_("Mount GoTo"), 1)
-        elif number == 6:
-            mountcontrol_queue.put({"type": "manual_movement", "direction": "east"})
-        elif number == 7:
-            pointing = self._current_pointing_radec()
-            if pointing is None:
-                self.message(_("No solve"), 1)
-                return
-            mountcontrol_queue.put({"type": "sync", "ra": pointing[0], "dec": pointing[1]})
-            self.message(_("Mount Sync"), 1)
-        elif number == 8:
-            mountcontrol_queue.put({"type": "manual_movement", "direction": "north"})
-        elif number == 9:
-            mountcontrol_queue.put({"type": "increase_step_size"})
-        else:
-            logger.warning("Unhandled mount-control number key: %s", number)
+        """Number keys run the unified INDI mount command map (GoTo uses this
+        object). Continuous directional jog stays on the keyboard letters."""
+        self._mount_command(number, target=(self.object.ra, self.object.dec))
 
     def key_number_press(self, number=None):
-        """Use physical keyboard number keys as guide controls on details."""
+        # Discrete command on press (tap); no hold-to-move on the number keys.
         if number is None:
-            return
-        if self._guide_key_number_press(number):
             return
         self.key_number(number)
 
     def key_number_release(self, number=None):
-        self._guide_key_number_release(number)
+        pass
 
     def key_text(self, char: str = ""):
         self._guide_key_text(char)

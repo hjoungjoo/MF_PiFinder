@@ -300,7 +300,7 @@ class UIIndiBacklash(UIIndiBase):
             )
 
         hints = [
-            _("+/- Axis"),
+            _("+ RA  - DE"),
             _("Digits input  0 clear"),
             _("Right Auto  Square Save"),
         ]
@@ -316,15 +316,17 @@ class UIIndiBacklash(UIIndiBase):
 
         return self.screen_update()
 
-    def _toggle_axis(self):
-        self.selected_axis = "de" if self.selected_axis == "ra" else "ra"
-        self.update()
+    def _select_axis(self, axis):
+        if self.selected_axis != axis:
+            self.selected_axis = axis
+            self.update()
 
     def key_plus(self):
-        self._toggle_axis()
+        # Distinct from key_minus: + selects the RA axis, - selects DE.
+        self._select_axis("ra")
 
     def key_minus(self):
-        self._toggle_axis()
+        self._select_axis("de")
 
     def key_number(self, number):
         axis = self.selected_axis

@@ -809,6 +809,32 @@ class UIObjectList(UITextMenu):
 
         self.update()
 
+    def _open_name_search(self, char: str = ""):
+        """A letter on the object list opens the catalog Name Search, seeded
+        with the typed character (English find). Overrides the mount-jog that
+        the guide mixin would otherwise do with letters on a list."""
+        if not char or not char.isalnum():
+            return
+        # Local import avoids a circular import (textentry imports object_list).
+        from PiFinder.ui.textentry import UITextEntry
+
+        self.add_to_stack(
+            {
+                "name": _("Name Search"),
+                "class": UITextEntry,
+                "initial_text": char.lower(),
+            }
+        )
+
+    def key_text(self, char: str = ""):
+        self._open_name_search(char)
+
+    def key_text_press(self, char: str = ""):
+        self._open_name_search(char)
+
+    def key_text_release(self, char: str = ""):
+        pass
+
     def key_long_up(self):
         self.menu_scroll(-1)
 

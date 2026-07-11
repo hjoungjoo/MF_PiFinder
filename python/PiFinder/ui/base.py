@@ -59,13 +59,11 @@ class GuideKeyMixin:
     """
 
     def key_number(self, number=None):
-        self._guide_key_number(number)
-
-    def key_number_press(self, number=None):
-        self._guide_key_number_press(number)
-
-    def key_number_release(self, number=None):
-        self._guide_key_number_release(number)
+        # Number keys drive the mount via the unified command map (not an 8-way
+        # jog). key_number_press/release fall back to key_number via UIModule,
+        # so a subclass that owns key_number (e.g. object-list catalog jump) keeps
+        # its behavior on the physical keypad.
+        self._mount_command(number)
 
     def key_text(self, char: str = ""):
         self._guide_key_text(char)
@@ -715,6 +713,103 @@ class UIModule:
 
     def _guide_key_minus(self) -> bool:
         return self._guide_send_mount({"type": "reduce_slew_rate"})
+
+    # --- Unified mount command map for number keys -----------------------------
+    # Wherever a number key drives the INDI mount (Object Details, mount-on menus,
+    # status screens) it uses this single discrete mapping instead of an 8-way
+    # directional jog. Continuous jog stays on the keyboard letters and +/- stays
+    # on slew rate. See docs/mf_input_keymap_*.md.
+    _MOUNT_STEP_DIRECTIONS = {2: "south", 4: "west", 6: "east", 8: "north"}
+
+    def _mount_control_queue(self):
+        return self._guide_mount_queue()
+
+    def _mount_pointing_radec(self):
+        solution = self.shared_state.solution()
+        if not solution or not solution.has_pointing():
+            return None
+        aligned = solution.pointing.aligned.estimate
+        if aligned is None:
+            return None
+        return aligned.RA, aligned.Dec
+
+    def _mount_recent_target_radec(self):
+        try:
+            recent = self.shared_state.ui_state().recent_list()
+        except Exception:
+            return None
+        if not recent:
+            return None
+        obj = recent[-1]
+        ra = getattr(obj, "ra", None)
+        dec = getattr(obj, "dec", None)
+        if ra is None or dec is None:
+            return None
+        return ra, dec
+
+    def _mount_command(self, number, target=None) -> bool:
+        """Run the unified mount command for a number key.
+
+        0=Stop 1=Init+Sync 2=Step S 3=Step- 4=Step W 5=GoTo
+        6=Step E 7=Sync 8=Step N 9=Step+
+        ``target`` is the (ra, dec) used for GoTo (5); when None the most-recent
+        object is used. Returns True if the mount was addressed (mount on).
+        """
+        if number is None:
+            return False
+        queue = self._mount_control_queue()
+        if queue is None:
+            return False
+
+        if number == 0:
+            queue.put({"type": "stop_movement"})
+            self.message(_("Mount Stop"), 1)
+        elif number == 1:
+            queue.put({"type": "init"})
+            pointing = self._mount_pointing_radec()
+            if pointing is not None:
+                queue.put({"type": "sync", "ra": pointing[0], "dec": pointing[1]})
+            self.message(_("Mount Init"), 1)
+        elif number in self._MOUNT_STEP_DIRECTIONS:
+            queue.put(
+                {
+                    "type": "manual_movement",
+                    "direction": self._MOUNT_STEP_DIRECTIONS[number],
+                }
+            )
+        elif number == 3:
+            queue.put({"type": "reduce_step_size"})
+        elif number == 9:
+            queue.put({"type": "increase_step_size"})
+        elif number == 5:
+            tgt = target or self._mount_recent_target_radec()
+            if tgt is None:
+                self.message(_("No target"), 1)
+                return True
+            queue.put(
+                {
+                    "type": "goto_target",
+                    "ra": tgt[0],
+                    "dec": tgt[1],
+                    "refine_after_goto": self.config_object.get_option(
+                        "indi_goto_refine_once", False
+                    ),
+                    "refine_accuracy_arcmin": self.config_object.get_option(
+                        "indi_goto_refine_accuracy_arcmin", 10.0
+                    ),
+                }
+            )
+            self.message(_("Mount GoTo"), 1)
+        elif number == 7:
+            pointing = self._mount_pointing_radec()
+            if pointing is None:
+                self.message(_("No solve"), 1)
+                return True
+            queue.put({"type": "sync", "ra": pointing[0], "dec": pointing[1]})
+            self.message(_("Mount Sync"), 1)
+        else:
+            return False
+        return True
 
     def key_number(self, number):
         pass

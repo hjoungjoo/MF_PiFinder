@@ -66,9 +66,12 @@ INDI 마운트 제어는 선택 기능이다. `scripts/install_indi_mount.sh`로
 Settings > Experimental > Mount Control > On
 ```
 
-Mount Control이 켜져 있고 Object Details 화면을 보고 있을 때, 숫자 키는
-마운트 제어 명령으로 사용된다. USB/Bluetooth 키보드의 숫자 키와 keypad
-숫자 키, GPIO 숫자 키가 같은 방식으로 동작한다.
+Mount Control이 켜져 있으면 숫자 키는 Object Details 화면, 일반 메뉴, 상태
+화면에서 아래 마운트 제어 명령을 보낸다(하나의 통일 명령 맵 —
+`docs/mf_input_keymap_ko.md` 참고). USB/Bluetooth 키보드의 숫자 키와 keypad
+숫자 키, GPIO 숫자 키가 같은 방식으로 동작한다. 연속 방향 조그는 키보드 문자로
+하고, 전용 INDI Guide 화면은 자체 조그 방식을 유지한다. 객체 리스트에서는 숫자
+키가 대신 카탈로그 시퀀스 점프를 입력하고, 문자는 Name Search를 연다.
 
 | 키 | INDI 마운트 동작 |
 | --- | --- |

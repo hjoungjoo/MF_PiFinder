@@ -66,9 +66,13 @@ support with `scripts/install_indi_mount.sh` and enabling this PiFinder setting:
 Settings > Experimental > Mount Control > On
 ```
 
-When Mount Control is enabled and the Object Details screen is open, number keys
-send mount-control commands. USB/Bluetooth number keys, keypad number keys, and
-GPIO number keys behave the same way.
+When Mount Control is enabled, the number keys send these mount-control commands
+on the Object Details screen, on ordinary menus, and on the status screens (the
+one unified command map — see `docs/mf_input_keymap_en.md`). USB/Bluetooth number
+keys, keypad number keys, and GPIO number keys behave the same way. Continuous
+directional jog is on the keyboard letters, and the dedicated INDI Guide screen
+keeps its own jog scheme. On the object list the number keys instead type a
+catalog sequence to jump to, and a letter opens the Name Search.
 
 | Key | INDI mount action |
 | --- | --- |
