@@ -2,7 +2,7 @@
 
 작성일: 2026-07-11
 
-이 문서는 `python/locale/ko/LC_MESSAGES/messages.po` 에서 `# AI-TRANSLATED (claude)` 로 표시된 항목(총 256개)을 영어 원문과 한글 번역으로 나란히 정리한 검토용 표입니다. 검수 후 문제가 없으면 .po에서 해당 주석을 지우면 됩니다.
+이 문서는 `python/locale/ko/LC_MESSAGES/messages.po` 에서 `# AI-TRANSLATED (claude)` 로 표시된 항목(총 263개)을 영어 원문과 한글 번역으로 나란히 정리한 검토용 표입니다. 검수 후 문제가 없으면 .po에서 해당 주석을 지우면 됩니다.
 
 - `\n` = 줄바꿈, `%(name)s` / `%%` = 서식 자리표시자(번역에서 그대로 유지).
 - 원문 유지 약어: RA/Dec, EQ, Alt/Az, GPS, INDI, OnStep(X), SkySafari, IMU, RAW, Bayer, TCP/USB/IP/MAC/AP/STA/NTP/UTC/SSID, mag 등.
@@ -67,18 +67,19 @@
 | 1 | Left mode/cancel | 왼쪽 모드/취소 |  |
 | 2 | Release stop  Left back | 떼면 정지  왼쪽 뒤로 |  |
 
-## `PiFinder/ui/menu_structure.py`  (8개)
+## `PiFinder/ui/menu_structure.py`  (9개)
 
 | # | English | 한글 | 비고 |
 | --- | --- | --- | --- |
 | 1 | GoTo Method | GoTo 방식 |  |
-| 2 | Goto/Guide | GoTo/Guide |  |
-| 3 | INDI Mount | INDI 마운트 |  |
-| 4 | pool.ntp.org | pool.ntp.org |  |
-| 5 | time.cloudflare.com | time.cloudflare.com |  |
-| 6 | time.google.com | time.google.com |  |
-| 7 | time.nist.gov | time.nist.gov |  |
-| 8 | Tracking Guide | 추적 가이드 |  |
+| 2 | GoTo Recovery | GoTo 복구 |  |
+| 3 | Goto/Guide | GoTo/Guide |  |
+| 4 | INDI Mount | INDI 마운트 |  |
+| 5 | pool.ntp.org | pool.ntp.org |  |
+| 6 | time.cloudflare.com | time.cloudflare.com |  |
+| 7 | time.google.com | time.google.com |  |
+| 8 | time.nist.gov | time.nist.gov |  |
+| 9 | Tracking Guide | 추적 가이드 |  |
 
 ## `views/base.html`  (6개)
 
@@ -91,7 +92,7 @@
 | 5 | Theme | 테마 |  |
 | 6 | Web theme | 웹 테마 |  |
 
-## `views/indi_mount.html`  (127개)
+## `views/indi_mount.html`  (133개)
 
 | # | English | 한글 | 비고 |
 | --- | --- | --- | --- |
@@ -140,88 +141,94 @@
 | 43 | Forward SkySafari GoTo and Align/Sync to INDI | SkySafari GoTo 및 정렬/동기화를 INDI로 전달 |  |
 | 44 | German EQ | 독일식 EQ | EQ 원문 유지(독일식 적도의) |
 | 45 | GoTo / Guide Settings | GoTo / Guide 설정 |  |
-| 46 | GoTo Selected Star | 선택한 별로 GoTo |  |
-| 47 | GPS Lock | GPS 고정 |  |
-| 48 | Hold | 유지 | 누름 유지 버튼 |
-| 49 | Home State | 홈 상태 |  |
-| 50 | INDI Driver | INDI 드라이버 |  |
-| 51 | INDI Driver Readback | INDI 드라이버 리드백 |  |
-| 52 | INDI GoTo | INDI GoTo |  |
-| 53 | INDI Profile | INDI 프로파일 |  |
-| 54 | INDI Server Host | INDI 서버 호스트 |  |
-| 55 | INDI Server Port | INDI 서버 포트 |  |
-| 56 | INDI Web Manager | INDI Web Manager |  |
-| 57 | Location and Time | 위치 및 시간 |  |
-| 58 | Location Source | 위치 소스 |  |
-| 59 | Location to Send | 전송할 위치 |  |
-| 60 | mag | mag | 단위 라벨, 원문 유지(등급 미사용) |
-| 61 | Manual | 수동 |  |
-| 62 | Manual entry | 수동 입력 |  |
-| 63 | Manual IP or Host | 수동 IP 또는 호스트 |  |
-| 64 | Manual Serial Port | 수동 시리얼 포트 |  |
-| 65 | Motion Command | 이동 명령 |  |
-| 66 | Motion Test Details | 이동 테스트 상세 |  |
-| 67 | Motion Test Repeats | 이동 테스트 반복 |  |
-| 68 | Multi-Point Align | 다지점 정렬 |  |
-| 69 | NE | 북동 |  |
-| 70 | Network Host | 네트워크 호스트 |  |
-| 71 | Network Port | 네트워크 포트 |  |
-| 72 | Network TCP | 네트워크 TCP |  |
-| 73 | No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently visible. Connect the USB-serial cable and reload this page, or use manual entry if the port name is known. | 현재 보이는 /dev/serial/by-id, /dev/ttyUSB, /dev/ttyACM 포트가 없습니다. USB-시리얼 케이블을 연결하고 이 페이지를 다시 불러오거나, 포트 이름을 알면 수동 입력을 사용하세요. |  |
-| 74 | No driver | 드라이버 없음 |  |
-| 75 | No USB serial ports detected | 감지된 USB 시리얼 포트 없음 |  |
-| 76 | North | 북 |  |
-| 77 | Not at Home | 홈 위치 아님 |  |
-| 78 | NW | 북서 |  |
-| 79 | One-shot solve refine after INDI GoTo | INDI GoTo 후 1회 해석 정밀 보정 |  |
-| 80 | OnStep Location | OnStep 위치 |  |
-| 81 | OnStep Network Device | OnStep 네트워크 장치 |  |
-| 82 | OnStep TCP Port | OnStep TCP 포트 |  |
-| 83 | OnStep UTC Time | OnStep UTC 시간 |  |
-| 84 | Park State | 파크 상태 |  |
-| 85 | Parked | 파크됨 |  |
-| 86 | Parking | 파크 중 |  |
-| 87 | Parking Failed | 파크 실패 |  |
-| 88 | PiFinder Mount Type | PiFinder 마운트 종류 |  |
-| 89 | PiFinder UTC Time | PiFinder UTC 시간 |  |
-| 90 | Polar / EQ | 적도의 / EQ | EQ 원문 유지 |
-| 91 | Raw Mount Status | 원시 마운트 상태 |  |
-| 92 | Reading | 읽는 중 |  |
-| 93 | Records | 기록 | 기록 수 |
-| 94 | Refine Accuracy arcmin | 정밀 보정 정확도 arcmin |  |
-| 95 | Reload Current Values | 현재 값 다시 읽기 |  |
-| 96 | Restart requested | 재시작을 요청했습니다 |  |
-| 97 | Restarting INDI | INDI 재시작 중 |  |
-| 98 | Save Backlash | 백래시 저장 |  |
-| 99 | SE | 남동 |  |
-| 100 | Send Location and Time | 위치 및 시간 전송 |  |
-| 101 | Serial Mode | 시리얼 모드 |  |
-| 102 | Serial Port | 시리얼 포트 |  |
-| 103 | SkySafari LX200 Mount Code | SkySafari LX200 마운트 코드 |  |
-| 104 | SkySafari Mount Mode | SkySafari 마운트 모드 |  |
-| 105 | Slew Rate | 슬루 속도 |  |
-| 106 | Solved-coordinate GoTo round-trip test; repeated return/offset GoTo moves are recorded and filtered by direction before recommending candidate backlash values. | 해석 좌표 GoTo 왕복 테스트. 반복적인 복귀/오프셋 GoTo 이동을 기록하고 방향별로 필터링한 뒤 후보 백래시 값을 추천합니다. |  |
-| 107 | South | 남 |  |
-| 108 | Spread | 산포 |  |
-| 109 | Start Align | 정렬 시작 |  |
-| 110 | Start Motion Test | 이동 테스트 시작 |  |
-| 111 | Starting auto calculation | 자동 계산 시작 |  |
-| 112 | STOP | 정지 |  |
-| 113 | Stop | 정지 |  |
-| 114 | Stopping motion test | 이동 테스트 정지 중 |  |
-| 115 | SW | 남서 |  |
-| 116 | TCP Mode | TCP 모드 |  |
-| 117 | Tracking Guide GoTo Recovery (re-slew when off target by more than 3 deg) | 추적 가이드 GoTo 복구 (목표에서 3° 이상 벗어나면 재슬루) |  |
-| 118 | Unparked | 언파크됨 |  |
-| 119 | Updated | 업데이트됨 |  |
-| 120 | USB Serial | USB 시리얼 |  |
-| 121 | USB Serial Port | USB 시리얼 포트 |  |
-| 122 | Use SkySafari Align to calibrate IMU before solve | 해석 전 SkySafari 정렬로 IMU 보정 |  |
-| 123 | UTC Time | UTC 시간 |  |
-| 124 | Waiting at Home | 홈에서 대기 중 |  |
-| 125 | warm-up | 워밍업 |  |
-| 126 | West | 서 |  |
-| 127 | Working | 처리 중 |  |
+| 46 | GoTo / Guide Status | GoTo / Guide 상태 |  |
+| 47 | GoTo Selected Star | 선택한 별로 GoTo |  |
+| 48 | GPS Lock | GPS 고정 |  |
+| 49 | Guide Error | 가이드 오차 |  |
+| 50 | Guide State | 가이드 상태 |  |
+| 51 | Hold | 유지 | 누름 유지 버튼 |
+| 52 | Home State | 홈 상태 |  |
+| 53 | INDI Driver | INDI 드라이버 |  |
+| 54 | INDI Driver Readback | INDI 드라이버 리드백 |  |
+| 55 | INDI GoTo | INDI GoTo |  |
+| 56 | INDI Profile | INDI 프로파일 |  |
+| 57 | INDI Server Host | INDI 서버 호스트 |  |
+| 58 | INDI Server Port | INDI 서버 포트 |  |
+| 59 | INDI Web Manager | INDI Web Manager |  |
+| 60 | Last Action | 마지막 동작 |  |
+| 61 | Location and Time | 위치 및 시간 |  |
+| 62 | Location Source | 위치 소스 |  |
+| 63 | Location to Send | 전송할 위치 |  |
+| 64 | mag | mag | 단위 라벨, 원문 유지(등급 미사용) |
+| 65 | Manual | 수동 |  |
+| 66 | Manual entry | 수동 입력 |  |
+| 67 | Manual IP or Host | 수동 IP 또는 호스트 |  |
+| 68 | Manual Serial Port | 수동 시리얼 포트 |  |
+| 69 | Motion Command | 이동 명령 |  |
+| 70 | Motion Test Details | 이동 테스트 상세 |  |
+| 71 | Motion Test Repeats | 이동 테스트 반복 |  |
+| 72 | Multi-Point Align | 다지점 정렬 |  |
+| 73 | NE | 북동 |  |
+| 74 | Network Host | 네트워크 호스트 |  |
+| 75 | Network Port | 네트워크 포트 |  |
+| 76 | Network TCP | 네트워크 TCP |  |
+| 77 | No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently visible. Connect the USB-serial cable and reload this page, or use manual entry if the port name is known. | 현재 보이는 /dev/serial/by-id, /dev/ttyUSB, /dev/ttyACM 포트가 없습니다. USB-시리얼 케이블을 연결하고 이 페이지를 다시 불러오거나, 포트 이름을 알면 수동 입력을 사용하세요. |  |
+| 78 | No driver | 드라이버 없음 |  |
+| 79 | No USB serial ports detected | 감지된 USB 시리얼 포트 없음 |  |
+| 80 | North | 북 |  |
+| 81 | Not at Home | 홈 위치 아님 |  |
+| 82 | NW | 북서 |  |
+| 83 | One-shot solve refine after INDI GoTo | INDI GoTo 후 1회 해석 정밀 보정 |  |
+| 84 | OnStep Location | OnStep 위치 |  |
+| 85 | OnStep Network Device | OnStep 네트워크 장치 |  |
+| 86 | OnStep TCP Port | OnStep TCP 포트 |  |
+| 87 | OnStep UTC Time | OnStep UTC 시간 |  |
+| 88 | Park State | 파크 상태 |  |
+| 89 | Parked | 파크됨 |  |
+| 90 | Parking | 파크 중 |  |
+| 91 | Parking Failed | 파크 실패 |  |
+| 92 | PiFinder Mount Type | PiFinder 마운트 종류 |  |
+| 93 | PiFinder UTC Time | PiFinder UTC 시간 |  |
+| 94 | Polar / EQ | 적도의 / EQ | EQ 원문 유지 |
+| 95 | Raw Mount Status | 원시 마운트 상태 |  |
+| 96 | Reading | 읽는 중 |  |
+| 97 | Records | 기록 | 기록 수 |
+| 98 | Recovery | 복구 |  |
+| 99 | Refine Accuracy arcmin | 정밀 보정 정확도 arcmin |  |
+| 100 | Reload Current Values | 현재 값 다시 읽기 |  |
+| 101 | Restart requested | 재시작을 요청했습니다 |  |
+| 102 | Restarting INDI | INDI 재시작 중 |  |
+| 103 | Save Backlash | 백래시 저장 |  |
+| 104 | SE | 남동 |  |
+| 105 | Send Location and Time | 위치 및 시간 전송 |  |
+| 106 | Serial Mode | 시리얼 모드 |  |
+| 107 | Serial Port | 시리얼 포트 |  |
+| 108 | Service | 서비스 |  |
+| 109 | SkySafari LX200 Mount Code | SkySafari LX200 마운트 코드 |  |
+| 110 | SkySafari Mount Mode | SkySafari 마운트 모드 |  |
+| 111 | Slew Rate | 슬루 속도 |  |
+| 112 | Solved-coordinate GoTo round-trip test; repeated return/offset GoTo moves are recorded and filtered by direction before recommending candidate backlash values. | 해석 좌표 GoTo 왕복 테스트. 반복적인 복귀/오프셋 GoTo 이동을 기록하고 방향별로 필터링한 뒤 후보 백래시 값을 추천합니다. |  |
+| 113 | South | 남 |  |
+| 114 | Spread | 산포 |  |
+| 115 | Start Align | 정렬 시작 |  |
+| 116 | Start Motion Test | 이동 테스트 시작 |  |
+| 117 | Starting auto calculation | 자동 계산 시작 |  |
+| 118 | STOP | 정지 |  |
+| 119 | Stop | 정지 |  |
+| 120 | Stopping motion test | 이동 테스트 정지 중 |  |
+| 121 | SW | 남서 |  |
+| 122 | TCP Mode | TCP 모드 |  |
+| 123 | Tracking Guide GoTo Recovery (re-slew when off target by more than 3 deg) | 추적 가이드 GoTo 복구 (목표에서 3° 이상 벗어나면 재슬루) |  |
+| 124 | Unparked | 언파크됨 |  |
+| 125 | Updated | 업데이트됨 |  |
+| 126 | USB Serial | USB 시리얼 |  |
+| 127 | USB Serial Port | USB 시리얼 포트 |  |
+| 128 | Use SkySafari Align to calibrate IMU before solve | 해석 전 SkySafari 정렬로 IMU 보정 |  |
+| 129 | UTC Time | UTC 시간 |  |
+| 130 | Waiting at Home | 홈에서 대기 중 |  |
+| 131 | warm-up | 워밍업 |  |
+| 132 | West | 서 |  |
+| 133 | Working | 처리 중 |  |
 
 ## `views/livecam.html`  (41개)
 
