@@ -42,6 +42,7 @@ PIFINDER_MANUAL_MIN_COORDINATE_DELTA_DEGREES = 0.01
 PIFINDER_FINAL_GOTO_SETTLE_SECONDS = 2.0
 PIFINDER_MAX_CORRECTION_GOTOS = 2
 PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
+TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 2
 
 
 class IndiGotoGuideService:
@@ -88,6 +89,16 @@ class IndiGotoGuideService:
         self.tracking_guide_last_action = ""
         self.tracking_guide_error_arcmin: Optional[float] = None
         self.tracking_guide_accuracy_arcmin: Optional[float] = None
+        self.tracking_guide_recovery_mode = "none"
+        self.tracking_guide_recovery_count = 0
+        self.tracking_guide_settle_remaining: Optional[float] = None
+        self.tracking_motion_ra: Optional[float] = None
+        self.tracking_motion_dec: Optional[float] = None
+        self.tracking_last_motion_at = 0.0
+        self.tracking_recovery_state = "idle"
+        self.tracking_recovery_goto_sent_at = 0.0
+        self.tracking_recovery_goto_idle_since = 0.0
+        self.tracking_recovery_attempts = 0
         self.last_action = "startup"
         self.pointing_status: dict[str, Any] = {"available": False}
 
@@ -155,6 +166,7 @@ class IndiGotoGuideService:
             self.previous_goto_error_arcmin = None
             self.final_sync_sent = False
             self._disable_tracking_guide("stop command")
+            self._reset_tracking_recovery()
             self.service_state = "idle"
             self.phase = "idle"
             self.wait_reason = ""
@@ -568,10 +580,13 @@ class IndiGotoGuideService:
         enabled = bool(self.config_values.get("indi_tracking_guide_enabled", False))
         if not enabled:
             self._disable_tracking_guide("disabled in config")
+            self._reset_tracking_recovery()
             self.tracking_guide_state = "off"
             return
 
         if self.tracking_target_ra is None or self.tracking_target_dec is None:
+            self._disable_tracking_guide("no tracking target")
+            self._reset_tracking_recovery()
             self.tracking_guide_state = "waiting_target"
             self.tracking_guide_last_action = "waiting for tracking target"
             return
@@ -581,6 +596,8 @@ class IndiGotoGuideService:
             "final_indi_goto",
             "corrective_indi_goto",
         }:
+            self._disable_tracking_guide(f"paused during {self.phase}")
+            self._reset_tracking_recovery()
             self.tracking_guide_state = "paused"
             self.tracking_guide_last_action = f"paused during {self.phase}"
             return
@@ -592,34 +609,126 @@ class IndiGotoGuideService:
             return
         if self._mount_summary_reports_parked(mount_status):
             self._disable_tracking_guide("mount parked")
+            self._reset_tracking_recovery()
             self.tracking_guide_state = "paused"
             self.tracking_guide_last_action = "paused because mount is parked"
             return
+
+        # Drive an in-progress sync + GoTo recovery to completion first, even
+        # though the mount reports motion during its own recovery slew.
+        if self.tracking_recovery_state == "goto_wait":
+            self._tick_tracking_recovery_goto(mount_status)
+            return
+
+        # Any other slew/manual motion (not our recovery) suspends correction.
         if self._mount_summary_reports_motion(mount_status):
+            self._disable_tracking_guide("mount motion")
+            self.tracking_motion_ra = None
+            self.tracking_motion_dec = None
+            self.tracking_last_motion_at = time.monotonic()
             self.tracking_guide_state = "paused"
             self.tracking_guide_last_action = "paused during mount motion"
             return
 
+        # Coordinate and its usability are decided by PointingCoordinateService;
+        # Tracking Guide trusts usable_for_goto and makes no solve/IMU judgment.
         pointing = self._refresh_pointing_status()
         current = pointing.get("current") or {}
         current_ra = self._finite_float(current.get("ra"))
         current_dec = self._finite_float(current.get("dec"))
-        self.tracking_guide_error_arcmin = self._angular_error_arcmin(
-            current_ra,
-            current_dec,
-            self.tracking_target_ra,
-            self.tracking_target_dec,
-        )
-        if not pointing.get("usable_for_goto") or self.tracking_guide_error_arcmin is None:
+        if (
+            not pointing.get("usable_for_goto")
+            or current_ra is None
+            or current_dec is None
+        ):
+            self._disable_tracking_guide("pointing coordinate unavailable")
+            self.tracking_guide_error_arcmin = None
             self.tracking_guide_state = "waiting_coordinate"
             self.tracking_guide_last_action = str(
                 pointing.get("reason") or "pointing coordinate unavailable"
             )
             return
 
+        self.tracking_guide_error_arcmin = self._angular_error_arcmin(
+            current_ra,
+            current_dec,
+            self.tracking_target_ra,
+            self.tracking_target_dec,
+        )
+
+        # Disturbance detection: while the scope is being moved, suspend all
+        # correction and wait for it to stop.
+        if self._tracking_coordinate_moving(current_ra, current_dec):
+            self._disable_tracking_guide("scope moving")
+            self.tracking_recovery_attempts = 0
+            self.tracking_guide_recovery_mode = "none"
+            self.tracking_guide_state = "disturbed"
+            self.tracking_guide_last_action = "suspended: coordinate moving"
+            return
+
+        # Settle wait: coordinate must stay stable before we correct again.
+        settle_seconds = float(
+            self.config_values.get("indi_tracking_guide_settle_seconds", 2.0)
+        )
+        now = time.monotonic()
+        stable_for = (
+            now - self.tracking_last_motion_at
+            if self.tracking_last_motion_at
+            else settle_seconds
+        )
+        self.tracking_guide_settle_remaining = max(0.0, settle_seconds - stable_for)
+        if stable_for < settle_seconds:
+            self.tracking_guide_state = "settling"
+            self.tracking_guide_last_action = (
+                f"settling {self.tracking_guide_settle_remaining:.1f}s"
+            )
+            return
+
+        if self.tracking_guide_error_arcmin is None:
+            self.tracking_guide_state = "waiting_coordinate"
+            self.tracking_guide_last_action = "tracking error unavailable"
+            return
+
+        goto_threshold_arcmin = (
+            float(self.config_values.get("indi_tracking_guide_goto_threshold_deg", 3.0))
+            * 60.0
+        )
+        goto_recovery_enabled = bool(
+            self.config_values.get("indi_tracking_guide_goto_recovery_enabled", False)
+        )
+
+        # Large error with recovery enabled: sync mount to current, GoTo target.
+        if (
+            self.tracking_guide_error_arcmin > goto_threshold_arcmin
+            and goto_recovery_enabled
+        ):
+            self._begin_tracking_recovery_goto(current_ra, current_dec)
+            return
+
+        # Otherwise pulse-guide fine correction. Within the envelope this closes
+        # the error; with recovery Off it is the only tool and pulses slowly
+        # toward the target without any mount slew.
         accuracy = float(
             self.config_values.get("indi_tracking_guide_threshold_arcmin", 10.0)
         )
+        self._enable_pulse_correction(accuracy)
+        self.tracking_recovery_attempts = 0
+        self.tracking_guide_recovery_mode = "pulse"
+
+        mount_state = str(mount_status.get("state", "")).strip().lower()
+        if mount_state == "guide_correction_failed":
+            self.tracking_guide_state = "failed"
+            self.tracking_guide_last_action = str(
+                mount_status.get("message") or "guide correction failed"
+            )
+        else:
+            self.tracking_guide_state = "enabled"
+            if self.tracking_guide_error_arcmin > goto_threshold_arcmin:
+                self.tracking_guide_last_action = (
+                    "large error; goto recovery off, pulse only"
+                )
+
+    def _enable_pulse_correction(self, accuracy: float) -> None:
         target_changed = not self.tracking_guide_active_sent
         accuracy_changed = self.tracking_guide_accuracy_arcmin != accuracy
         if target_changed or accuracy_changed:
@@ -636,14 +745,116 @@ class IndiGotoGuideService:
             self.tracking_guide_accuracy_arcmin = accuracy
             self.tracking_guide_last_action = "guide correction enabled"
 
-        mount_state = str(mount_status.get("state", "")).strip().lower()
-        if mount_state == "guide_correction_failed":
+    def _tracking_coordinate_moving(
+        self, current_ra: float, current_dec: float
+    ) -> bool:
+        motion_arcmin = float(
+            self.config_values.get("indi_tracking_guide_motion_arcmin", 15.0)
+        )
+        previous_ra = self.tracking_motion_ra
+        previous_dec = self.tracking_motion_dec
+        self.tracking_motion_ra = current_ra
+        self.tracking_motion_dec = current_dec
+        if previous_ra is None or previous_dec is None:
+            # First sample after acquisition; require a fresh settle window.
+            self.tracking_last_motion_at = time.monotonic()
+            return False
+        delta = self._angular_error_arcmin(
+            previous_ra, previous_dec, current_ra, current_dec
+        )
+        if delta is not None and delta >= motion_arcmin:
+            self.tracking_last_motion_at = time.monotonic()
+            return True
+        return False
+
+    def _begin_tracking_recovery_goto(
+        self, current_ra: float, current_dec: float
+    ) -> None:
+        if self.tracking_recovery_attempts >= TRACKING_GUIDE_MAX_RECOVERY_GOTOS:
+            self._disable_tracking_guide("goto recovery limit reached")
+            self.tracking_recovery_state = "idle"
+            self.tracking_guide_recovery_mode = "goto"
             self.tracking_guide_state = "failed"
-            self.tracking_guide_last_action = str(
-                mount_status.get("message") or "guide correction failed"
-            )
-        else:
-            self.tracking_guide_state = "enabled"
+            self.tracking_guide_last_action = "goto recovery limit reached"
+            return
+
+        self._disable_tracking_guide("starting goto recovery")
+        self._forward_to_mountcontrol(
+            {"type": "sync", "ra": current_ra, "dec": current_dec}
+        )
+        self._forward_to_mountcontrol(
+            {
+                "type": "goto_target",
+                "ra": self.tracking_target_ra,
+                "dec": self.tracking_target_dec,
+                "refine_after_goto": False,
+            }
+        )
+        self.tracking_recovery_attempts += 1
+        self.tracking_guide_recovery_count += 1
+        self.tracking_recovery_state = "goto_wait"
+        self.tracking_recovery_goto_sent_at = time.monotonic()
+        self.tracking_recovery_goto_idle_since = 0.0
+        self.tracking_guide_recovery_mode = "goto"
+        self.tracking_guide_state = "recovering_goto"
+        self.tracking_guide_last_action = (
+            f"goto recovery {self.tracking_recovery_attempts}"
+            f"/{TRACKING_GUIDE_MAX_RECOVERY_GOTOS}: sync+goto sent"
+        )
+        logger.info(
+            "Tracking guide recovery %s/%s: sync RA %.4f Dec %.4f then GoTo "
+            "RA %.4f Dec %.4f (error %.2f arcmin)",
+            self.tracking_recovery_attempts,
+            TRACKING_GUIDE_MAX_RECOVERY_GOTOS,
+            current_ra,
+            current_dec,
+            self.tracking_target_ra,
+            self.tracking_target_dec,
+            self.tracking_guide_error_arcmin
+            if self.tracking_guide_error_arcmin is not None
+            else -1.0,
+        )
+
+    def _tick_tracking_recovery_goto(self, mount_status: dict[str, Any]) -> None:
+        self.tracking_guide_state = "recovering_goto"
+        now = time.monotonic()
+        if (
+            now - self.tracking_recovery_goto_sent_at
+            < PIFINDER_FINAL_GOTO_SETTLE_SECONDS
+        ):
+            self.tracking_guide_last_action = "recovery goto settling"
+            return
+        if self._mount_summary_reports_motion(mount_status):
+            self.tracking_recovery_goto_idle_since = 0.0
+            self.tracking_guide_last_action = "waiting for recovery goto"
+            return
+        if self.tracking_recovery_goto_idle_since == 0.0:
+            self.tracking_recovery_goto_idle_since = now
+            return
+        if (
+            now - self.tracking_recovery_goto_idle_since
+            < PIFINDER_FINAL_GOTO_SETTLE_SECONDS
+        ):
+            return
+        # Recovery GoTo finished; re-baseline and re-measure on the next tick.
+        self.tracking_recovery_state = "idle"
+        self.tracking_motion_ra = None
+        self.tracking_motion_dec = None
+        self.tracking_last_motion_at = now
+        self.tracking_guide_last_action = "recovery goto complete"
+
+    def _reset_tracking_recovery(self) -> None:
+        self.tracking_motion_ra = None
+        self.tracking_motion_dec = None
+        self.tracking_last_motion_at = 0.0
+        self.tracking_recovery_state = "idle"
+        self.tracking_recovery_goto_sent_at = 0.0
+        self.tracking_recovery_goto_idle_since = 0.0
+        self.tracking_recovery_attempts = 0
+        self.tracking_guide_recovery_mode = "none"
+        self.tracking_guide_recovery_count = 0
+        self.tracking_guide_settle_remaining = None
+        self.tracking_guide_error_arcmin = None
 
     def _disable_tracking_guide(self, reason: str) -> None:
         if self.tracking_guide_active_sent:
@@ -936,6 +1147,18 @@ class IndiGotoGuideService:
             "indi_tracking_guide_threshold_arcmin": float(
                 cfg.get_option("indi_tracking_guide_threshold_arcmin", 10.0)
             ),
+            "indi_tracking_guide_settle_seconds": float(
+                cfg.get_option("indi_tracking_guide_settle_seconds", 2.0)
+            ),
+            "indi_tracking_guide_motion_arcmin": float(
+                cfg.get_option("indi_tracking_guide_motion_arcmin", 15.0)
+            ),
+            "indi_tracking_guide_goto_recovery_enabled": bool(
+                cfg.get_option("indi_tracking_guide_goto_recovery_enabled", False)
+            ),
+            "indi_tracking_guide_goto_threshold_deg": float(
+                cfg.get_option("indi_tracking_guide_goto_threshold_deg", 3.0)
+            ),
         }
         self.last_config_load = now
 
@@ -983,6 +1206,9 @@ class IndiGotoGuideService:
             "tracking_guide_last_action": self.tracking_guide_last_action,
             "tracking_guide_error_arcmin": self.tracking_guide_error_arcmin,
             "tracking_guide_accuracy_arcmin": self.tracking_guide_accuracy_arcmin,
+            "tracking_guide_recovery_mode": self.tracking_guide_recovery_mode,
+            "tracking_guide_recovery_count": self.tracking_guide_recovery_count,
+            "tracking_guide_settle_remaining": self.tracking_guide_settle_remaining,
             "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
             "tracking_guide_enabled": self.config_values.get(
                 "indi_tracking_guide_enabled", False

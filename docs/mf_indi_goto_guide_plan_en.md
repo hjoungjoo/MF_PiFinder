@@ -204,6 +204,26 @@ indi_pifinder_goto_near_threshold_deg = 1.0
 indi_tracking_guide_threshold_arcmin
   Error threshold where Tracking Guide starts pulse-guide correction.
   The default should be decided through hardware testing.
+
+indi_tracking_guide_settle_seconds = 2.0
+  Coordinate must stay stable this long after an external disturbance
+  before Tracking Guide measures error and corrects again.
+
+indi_tracking_guide_motion_arcmin = 15.0
+  Per-update current-coordinate delta above which Tracking Guide treats
+  the scope as "being moved" (disturbed) and suspends all correction.
+
+indi_tracking_guide_goto_recovery_enabled = false | true
+  default: false
+  Allow the sync + GoTo recovery motion for large post-disturbance errors.
+  When Off, Tracking Guide only does pulse-guide within the pulse envelope
+  and otherwise waits/reports; it never slews the mount.
+
+indi_tracking_guide_goto_threshold_deg = 3.0
+  Pulse-guide handles post-settle errors up to this size (default 3 deg).
+  Errors strictly ABOVE this use the sync + GoTo recovery (when goto
+  recovery is enabled); at/below it, pulse-guide corrects directly.
+  This single boundary is also the practical pulse-guide envelope.
 ```
 
 The exact key names may change during implementation, but this document uses
@@ -431,6 +451,168 @@ guide_correction_wait_reason
 guide_correction_pulse_ms
 guide_correction_threshold_arcmin
 ```
+
+## Tracking Guide Enhancement: Disturbance Recovery
+
+Baseline addition: 2026-07-11.
+
+### Problem
+
+The first Tracking Guide pass keeps sending pulse-guide corrections whenever the
+solved position drifts from the target. If the scope is physically moved during
+tracking (bumped, repositioned by hand, wind, cable pull), IMU + plate solve will
+show the current coordinate changing. Correcting *while the scope is still moving*
+chases a moving point and fights the user. It also treats a 2-degree displacement
+the same as a 5-arcmin drift, so pulse-guide slowly crawls a large error that a
+GoTo would close in one slew.
+
+### Goal
+
+While Tracking Guide is On and a target is held:
+
+1. Detect an external disturbance from the coordinate/IMU signal and **suspend all
+   correction** while the scope is moving. Do not correct from the first frame of
+   motion; wait until motion stops.
+2. Once motion has stopped and the coordinate has settled, measure the error to
+   the target and choose recovery by magnitude:
+   - **Small/medium error** (up to the GoTo threshold, default 3 degrees):
+     pulse-guide fine correction.
+   - **Large error** (strictly above the GoTo threshold, i.e. > 3 degrees): for
+     accurate, fast recovery, **sync the mount to PiFinder's current coordinate**,
+     send a **GoTo back to the target**, then near the target **resume pulse-guide
+     fine correction**.
+3. Every motion above is gated by settings. The sync + GoTo recovery is a
+   separate On/Off (`indi_tracking_guide_goto_recovery_enabled`). When any gate is
+   Off, the corresponding motion is skipped and only reported in status — the
+   mount must never move while its gate is Off.
+
+### State model
+
+Tracking Guide gains a small internal state machine (states surfaced in
+`tracking_guide_state`):
+
+```text
+off             tracking guide disabled in config
+waiting_target  no tracking target yet
+paused          suspended for GoTo/manual/backlash/multi-align or mount motion
+waiting_mount   mount status unavailable / parked
+waiting_coord   pointing coordinate unavailable or stale
+disturbed       current coordinate is moving; all correction suspended
+settling        motion stopped; waiting settle_seconds for a stable coordinate
+enabled         steady; pulse-guide fine correction active (error in pulse band)
+recovering_goto sync + GoTo recovery in progress (large error)
+failed          recovery could not converge / pulse-guide reported failure
+```
+
+### Disturbance and settle detection
+
+- The single coordinate source is `PointingCoordinateService` (consumed through the
+  service's existing `_load_pointing_status`). It already selects the appropriate
+  source (solve / mount+IMU / IMU) and publishes `current` plus `usable_for_goto`
+  and `reason`. **Tracking Guide does not make its own solve/IMU judgment** — it
+  trusts `usable_for_goto`. If the coordinate is not usable, state is
+  `waiting_coord` and no correction runs.
+- **Disturbed**: the per-update `current`-coordinate delta since the last stable
+  sample is at or above `indi_tracking_guide_motion_arcmin` (default 15'), i.e.
+  the scope is being moved. The intent is to catch any physical move.
+- **Settled**: the coordinate delta stays below the motion threshold continuously
+  for `indi_tracking_guide_settle_seconds` (default 2 s). The error to the target
+  is then measured from the same `current` coordinate.
+- This reuses the coordinate-progress idea already used by the PiFinder manual
+  approach (`_update_coordinate_progress_tracking`), but with its own last-stable
+  coordinate and timers so it does not clash with the manual-approach state.
+
+### Recovery decision (after settle)
+
+```mermaid
+flowchart TD
+    A[Tracking Guide On, has target] --> B[Read PointingCoordinateService current]
+    B --> C{Current coordinate moving?}
+    C -->|yes| D[state=disturbed: suspend all correction]
+    D --> B
+    C -->|no| E{Stable for settle_seconds?}
+    E -->|no| F[state=settling: keep waiting]
+    F --> B
+    E -->|yes| G[Measure error vs target from current]
+    G --> H{error <= goto_threshold, 3 deg?}
+    H -->|yes| I[state=enabled: pulse-guide fine correction]
+    I --> B
+    H -->|no| J{goto_recovery_enabled?}
+    J -->|no| K[Report large error; wait / pulse only within envelope]
+    K --> B
+    J -->|yes| L[Sync mount to PiFinder current coordinate]
+    L --> M[GoTo target]
+    M --> N[Wait GoTo complete + settle]
+    N --> I
+```
+
+Bands, using the user-facing numbers:
+
+```text
+error <= 3 deg (goto_threshold)   -> pulse-guide fine correction
+error > 3 deg                     -> sync + GoTo recovery, then pulse-guide near
+                                     target; if recovery Off, wait/report (no slew)
+```
+
+Pulse-guide is still the mechanism that closes the final small error; the sync +
+GoTo step exists so a large displacement is closed in one slew instead of being
+crawled by pulses. The GoTo recovery reuses the existing sync + `goto_target()` +
+settle/verify machinery already built for the final PiFinder GoTo, then hands back
+to pulse-guide near the target.
+
+### On/Off gating rules
+
+- `indi_tracking_guide_enabled` Off -> whole feature off; if a correction was
+  active, send `toggle_guide_correction(false)` once and go to `off`.
+- `indi_tracking_guide_goto_recovery_enabled` Off -> never sync/GoTo from Tracking
+  Guide; large errors stay in a waiting/report state (optionally pulse-guide if
+  within the envelope). This is the "설정에 따라 On/Off" safety the user called out.
+- Recovery never runs during user manual movement, GoTo, backlash test, or
+  multi-point alignment (existing `paused` guard), nor while the mount reports
+  motion or parked.
+- Stop/Abort takes priority in every state and clears the recovery sub-state.
+
+### New status fields
+
+```text
+tracking_guide_state              extended enum above
+tracking_guide_recovery_mode      none | pulse | goto
+tracking_guide_recovery_count     number of sync+GoTo recoveries since target set
+tracking_guide_settle_remaining   seconds left before a settled correction
+tracking_guide_error_arcmin       (existing) current-vs-target error
+tracking_guide_last_action        (existing) human-readable last step
+```
+
+### Files to change (implementation, after review)
+
+```text
+python/PiFinder/indi_goto_guide_service.py
+  Expand _tick_tracking_guide into the settle-detect + banded recovery state
+  machine; add disturbance/settle tracking fields; reuse sync + goto_target +
+  settle logic from the final-GoTo path for recovery_goto; add the new status
+  fields to _status_payload; load the new config keys in _reload_config_if_needed.
+
+default_config.json
+  Add the new indi_tracking_guide_* keys with defaults above.
+
+python/PiFinder/server.py + python/views/indi_mount.html
+  Surface goto-recovery On/Off (and any tunables) on the GoTo/Guide web card.
+
+python/PiFinder/ui/indi.py
+  Optional: expose goto-recovery On/Off on the LCD Goto/Guide screen.
+```
+
+### Checklist
+
+- No correction is sent while `tracking_guide_state = disturbed`.
+- Correction resumes only after `settle_seconds` of stable coordinate.
+- Error below the GoTo threshold uses pulse-guide only; no mount slew.
+- Error above the threshold, with recovery On and a fresh solve, does
+  sync -> GoTo -> pulse-guide, and updates `tracking_guide_recovery_count`.
+- With recovery Off, a large error never slews the mount; status shows it waiting.
+- Coordinate usability comes only from `usable_for_goto`; Tracking Guide makes no
+  independent solve/IMU decision.
+- Turning Tracking Guide Off mid-recovery stops motion immediately.
 
 ## Relationship to Existing Settings
 

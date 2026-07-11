@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-07-08
+Last updated: 2026-07-11
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -45,6 +45,8 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Optional IMU compass heading | No Draft PR yet | local `mf_pifinder` worktree | optional BNO055 NDOF magnetometer fusion mode, IMU calibration status, automatic calibration save/load, manual calibration menu |
 | SkySafari/INDI mount-mode compatibility | No Draft PR yet | local `mf_pifinder` worktree | Alt/Az/EQ SkySafari LX200 status, optional GoTo/Sync forwarding, SkySafari guide keepalive bridge, no-solve IMU alignment correction, mount-mode compatibility checklist |
 | Pointing Coordinate Service | No Draft PR yet | local `mf_pifinder` worktree | shared coordinate service for SkySafari/Web/LCD/INDI Multi Align, requested target coordinates used as-is, IMU smoothing, mount readback priority during GoTo/manual motion |
+| INDI GoTo/Guide service | No Draft PR yet | local `mf_pifinder` worktree | separate `indi_goto_guide_service` process (GoTo/Guide policy state machine) layered over `mountcontrol_indi` executor; SkySafari GoTo routed through the service; PiFinder-driven manual approach loop + correction pass with final INDI GoTo; tracking guide target managed by the service; see `mf_indi_goto_guide_plan` and `mf_goto_mount_source_structure` |
+| LiveCam RAW preview and live stack | No Draft PR yet | local `mf_pifinder` worktree | `raw_live_stack`/`livecam_config` RAW preview and rolling live-stack kept off the solver path; camera backends publish one RAW frame, web API renders display PNG/JPEG/WebP; stack modes (mean/sum/max), sizing/zoom, reset-defaults control; see `mf_raw_live_stack_plan` |
 | Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |
 | Final integration branch | Not an upstream PR | `origin/mf_pifinder` plus local uncommitted changes | integration branch used for install and hardware testing across the features above |
 
@@ -67,6 +69,8 @@ to follow. The following grouping is easier to maintain.
 | Optional IMU compass heading | BNO055 NDOF option, automatic/manual calibration, status UI | New Draft PR needed |
 | SkySafari/INDI mount-mode compatibility | Alt/Az/EQ SkySafari LX200 status, SkySafari GoTo/Sync forwarding, guide keepalive bridge, no-solve IMU correction, INDI mount-mode verification docs | New Draft PR needed |
 | Pointing Coordinate Service | always-running coordinate service combining `pointing.aligned.estimate`, IMU fallback, and INDI mount readback; SkySafari coordinate response; mount progress readback during GoTo/manual motion | Include in SkySafari/INDI mount-mode PR or split as a coordinate-service PR |
+| INDI GoTo/Guide service | `indi_goto_guide_service` process, SkySafari GoTo routing, PiFinder manual approach + correction GoTo, tracking guide target management | Include in the INDI PR or split as a GoTo/Guide service PR |
+| LiveCam RAW preview and live stack | `raw_live_stack`/`livecam_config`, RAW preview + rolling stack, web render endpoint, stack/sizing/zoom/reset controls | New Draft PR needed |
 | Korean localization | Korean locale and CJK language handling | Keep #500 separate because the locale file is large |
 
 Documentation should travel with the feature PR that needs it. For example, INDI

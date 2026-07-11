@@ -198,6 +198,26 @@ indi_pifinder_goto_near_threshold_deg = 1.0
 indi_tracking_guide_threshold_arcmin
   추적 가이드가 pulse guide 보정을 시작할 오차 기준.
   기본값은 실장비 테스트로 결정한다.
+
+indi_tracking_guide_settle_seconds = 2.0
+  외란 이후 좌표가 이 시간만큼 안정되어야 추적 가이드가 다시 오차를
+  측정하고 보정한다. (움직임이 멈춘 뒤 정착 대기)
+
+indi_tracking_guide_motion_arcmin = 15.0
+  현재 좌표의 tick당 변화량이 이 값 이상이면 망원경이 "외부 힘으로
+  움직이는 중(disturbed)"으로 보고 모든 보정을 중단한다.
+
+indi_tracking_guide_goto_recovery_enabled = false | true
+  기본값: false
+  외란 후 큰 오차에 대한 sync + GoTo 복구 동작 허용 여부.
+  Off이면 pulse guide 범위 안에서만 보정하고 그 밖은 대기/상태 표시만 하며,
+  마운트를 절대 슬루하지 않는다.
+
+indi_tracking_guide_goto_threshold_deg = 3.0
+  pulse guide는 정착 후 오차를 이 크기까지 담당한다 (기본 3도).
+  이 값을 "초과"하는 오차는 (복구가 켜져 있을 때) pulse guide 대신
+  sync + GoTo 복구를 사용하고, 이하이면 pulse guide로 직접 보정한다.
+  이 단일 경계가 곧 pulse guide의 실용 한계이기도 하다.
 ```
 
 이름은 구현 시 바뀔 수 있지만, 문서에서는 위 이름을 기준으로 설명한다.
@@ -416,6 +436,158 @@ guide_correction_wait_reason
 guide_correction_pulse_ms
 guide_correction_threshold_arcmin
 ```
+
+## 트래킹 가이드 보강: 외란 복구 (Disturbance Recovery)
+
+추가 기준일: 2026-07-11.
+
+### 문제
+
+1차 트래킹 가이드는 solved 좌표가 target에서 벗어날 때마다 pulse guide 보정을
+계속 보낸다. 추적 중 망원경이 물리적으로 움직이면(부딪힘, 손으로 재배치, 바람,
+케이블 당김) IMU + plate solve로 현재 좌표가 변한다. **움직이는 도중에 보정하면**
+움직이는 점을 쫓게 되어 사용자와 싸우게 된다. 또 2도 변위와 5분각 드리프트를
+똑같이 취급해서, GoTo 한 번이면 닫을 큰 오차를 pulse로 천천히 기어가게 된다.
+
+### 목표
+
+트래킹 가이드가 On이고 target을 잡고 있을 때:
+
+1. 좌표/IMU 신호로 외란을 감지하고, 움직이는 동안에는 **모든 보정을 중단**한다.
+   움직임의 첫 프레임부터 보정하지 않고, 멈출 때까지 기다린다.
+2. 움직임이 멈추고 좌표가 정착하면, target까지 오차를 측정해 크기별로 복구를
+   선택한다:
+   - **작은/중간 오차** (GoTo 임계값 이하, 기본 3도): pulse guide 미세 보정.
+   - **큰 오차** (GoTo 임계값 초과, 즉 3도 초과): 정확하고 빠른 복구를 위해
+     **마운트를 PiFinder 현재 좌표로 sync**하고 **target으로 GoTo**한 뒤, target
+     근처에서 **pulse guide 미세 보정으로 복귀**한다.
+3. 위 동작들은 모두 설정으로 게이트된다. sync + GoTo 복구는 별도 On/Off
+   (`indi_tracking_guide_goto_recovery_enabled`)이다. 어떤 게이트가 Off이면 해당
+   동작은 건너뛰고 상태로만 표시하며, 게이트가 Off인 동안 마운트는 절대 움직이지
+   않는다. (사용자가 강조한 "설정에 따라 On/Off" 안전장치)
+
+### 상태 모델
+
+트래킹 가이드에 작은 내부 상태머신을 둔다 (`tracking_guide_state`로 노출):
+
+```text
+off             config에서 트래킹 가이드 비활성
+waiting_target  아직 추적 target 없음
+paused          GoTo/manual/backlash/multi-align 또는 마운트 모션으로 일시중지
+waiting_mount   마운트 상태 unavailable / parked
+waiting_coord   포인팅 좌표 unavailable/stale
+disturbed       현재 좌표가 움직이는 중; 모든 보정 중단
+settling        움직임 멈춤; settle_seconds 동안 좌표 안정 대기
+enabled         정상; pulse guide 미세 보정 동작 (오차가 pulse 밴드 내)
+recovering_goto sync + GoTo 복구 진행 중 (큰 오차)
+failed          복구 수렴 실패 / pulse guide 실패 보고
+```
+
+### 외란·정착 감지
+
+- 좌표 소스는 `PointingCoordinateService` 하나다 (서비스가 이미 가진
+  `_load_pointing_status`로 가져온다). 이 서비스가 적합한 소스(solve / mount+IMU /
+  IMU)를 선택해 `current`와 `usable_for_goto`, `reason`을 내려준다. **트래킹
+  가이드는 자체 solve/IMU 판단을 하지 않고** `usable_for_goto`를 신뢰한다. 좌표가
+  usable하지 않으면 `waiting_coord` 상태로 두고 보정하지 않는다.
+- **disturbed**: 마지막 안정 샘플 대비 `current`의 tick당 변화량이
+  `indi_tracking_guide_motion_arcmin`(기본 15′) 이상이면 움직이는 것으로 본다.
+  물리적 이동을 잡는 게 목적이다.
+- **settled**: 좌표 변화량이 임계값 아래로 `indi_tracking_guide_settle_seconds`
+  (기본 2초) 동안 연속 유지되면 정착으로 본다. 정착 후 target 오차는 같은
+  `current` 좌표로 측정한다.
+- PiFinder 수동 접근이 쓰는 좌표-진행 추적(`_update_coordinate_progress_tracking`)
+  아이디어를 재사용하되, 수동 접근 상태와 충돌하지 않도록 자체 last-stable 좌표와
+  타이머를 별도로 둔다.
+
+### 복구 결정 (정착 후)
+
+```mermaid
+flowchart TD
+    A[트래킹 가이드 On, target 보유] --> B[PointingCoordinateService current 읽기]
+    B --> C{현재 좌표 움직임?}
+    C -->|yes| D[state=disturbed: 모든 보정 중단]
+    D --> B
+    C -->|no| E{settle_seconds 동안 안정?}
+    E -->|no| F[state=settling: 계속 대기]
+    F --> B
+    E -->|yes| G[current로 target 대비 오차 측정]
+    G --> H{오차 <= goto_threshold, 3도?}
+    H -->|yes| I[state=enabled: pulse guide 미세 보정]
+    I --> B
+    H -->|no| J{goto_recovery_enabled?}
+    J -->|no| K[큰 오차 표시; 대기 / 범위 내 pulse만]
+    K --> B
+    J -->|yes| L[마운트를 PiFinder current로 sync]
+    L --> M[target으로 GoTo]
+    M --> N[GoTo 완료 + 정착 대기]
+    N --> I
+```
+
+밴드:
+
+```text
+오차 <= 3도 (goto_threshold)   -> pulse guide 미세 보정
+오차 > 3도                     -> sync + GoTo 복구 후 target 근처에서 pulse guide;
+                                 복구 Off면 대기/표시 (슬루 없음)
+```
+
+pulse guide는 여전히 마지막 작은 오차를 닫는 수단이고, sync + GoTo 단계는 큰
+변위를 pulse로 기어가는 대신 한 번의 슬루로 닫기 위해 존재한다. GoTo 복구는 최종
+PiFinder GoTo용으로 이미 만든 sync + `goto_target()` + 정착/검증 로직을 재사용한 뒤
+target 근처에서 pulse guide로 넘긴다.
+
+### On/Off 게이트 규칙
+
+- `indi_tracking_guide_enabled` Off → 기능 전체 off; 보정 중이었으면
+  `toggle_guide_correction(false)`를 한 번 보내고 `off`로 간다.
+- `indi_tracking_guide_goto_recovery_enabled` Off → 트래킹 가이드가 절대
+  sync/GoTo하지 않는다; 큰 오차는 대기/표시 상태로 남는다(범위 내면 pulse 가능).
+- 복구는 사용자 수동 이동, GoTo, backlash 테스트, multi-point align 중에는 실행
+  안 함 (기존 `paused` 가드), 마운트 모션/parked 중에도 안 함.
+- Stop/Abort는 모든 상태에서 최우선이며 복구 하위 상태를 초기화한다.
+
+### 신규 상태 필드
+
+```text
+tracking_guide_state              위 확장 enum
+tracking_guide_recovery_mode      none | pulse | goto
+tracking_guide_recovery_count     target 설정 이후 sync+GoTo 복구 횟수
+tracking_guide_settle_remaining   정착 보정까지 남은 초
+tracking_guide_error_arcmin       (기존) current-vs-target 오차
+tracking_guide_last_action        (기존) 사람이 읽는 마지막 단계
+```
+
+### 변경할 파일 (검토 후 구현)
+
+```text
+python/PiFinder/indi_goto_guide_service.py
+  _tick_tracking_guide를 정착 감지 + 밴드 복구 상태머신으로 확장;
+  외란/정착 추적 필드 추가; recovery_goto용으로 최종 GoTo 경로의 sync +
+  goto_target + 정착 로직 재사용; _status_payload에 신규 필드 추가;
+  _reload_config_if_needed에서 신규 config 키 로드.
+
+default_config.json
+  위 기본값으로 indi_tracking_guide_* 키 추가.
+
+python/PiFinder/server.py + python/views/indi_mount.html
+  GoTo/Guide 웹 카드에 goto 복구 On/Off(및 튜너블) 노출.
+
+python/PiFinder/ui/indi.py
+  (선택) LCD Goto/Guide 화면에 goto 복구 On/Off 노출.
+```
+
+### 체크리스트
+
+- `tracking_guide_state = disturbed`인 동안 보정을 보내지 않는다.
+- 좌표가 `settle_seconds` 안정된 후에만 보정을 재개한다.
+- GoTo 임계값 미만 오차는 pulse guide만 사용; 마운트 슬루 없음.
+- 임계값 이상 오차 + 복구 On + 최신 solve면 sync → GoTo → pulse guide를 하고
+  `tracking_guide_recovery_count`를 갱신한다.
+- 복구 Off면 큰 오차라도 마운트를 슬루하지 않고 대기 상태로 표시한다.
+- 좌표 usable 판단은 `usable_for_goto`에만 의존하고, 트래킹 가이드가 독자적으로
+  solve/IMU를 판단하지 않는다.
+- 복구 중 트래킹 가이드를 Off하면 즉시 모션이 멈춘다.
 
 ## 기존 설정과의 관계
 

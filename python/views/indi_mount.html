@@ -464,6 +464,14 @@
         </div>
       </div>
       <div class="row">
+        <div class="col s12">
+          <label>
+            <input type="checkbox" name="indi_tracking_guide_goto_recovery_enabled" {% if indi_tracking_guide_goto_recovery_enabled %}checked{% endif %}>
+            <span>{{ _('Tracking Guide GoTo Recovery (re-slew when off target by more than 3 deg)') }}</span>
+          </label>
+        </div>
+      </div>
+      <div class="row">
         <button type="submit" class="btn">{{ _('Apply GoTo / Guide Settings') }}</button>
       </div>
     </form>

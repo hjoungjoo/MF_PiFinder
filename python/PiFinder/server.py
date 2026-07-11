@@ -1091,6 +1091,9 @@ class Server:
                 "indi_tracking_guide_enabled": bool(
                     cfg.get_option("indi_tracking_guide_enabled", False)
                 ),
+                "indi_tracking_guide_goto_recovery_enabled": bool(
+                    cfg.get_option("indi_tracking_guide_goto_recovery_enabled", False)
+                ),
             }
 
         def _onstep_property_name(property_name, indi_cfg=None):
@@ -1509,6 +1512,10 @@ class Server:
             cfg.set_option(
                 "indi_tracking_guide_enabled",
                 request.form.get("indi_tracking_guide_enabled") == "on",
+            )
+            cfg.set_option(
+                "indi_tracking_guide_goto_recovery_enabled",
+                request.form.get("indi_tracking_guide_goto_recovery_enabled") == "on",
             )
             self.ui_queue.put("reload_config")
             return _render_indi_page(_("INDI GoTo / Guide settings applied"))
