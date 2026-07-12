@@ -428,8 +428,14 @@ class MountControlIndi(BacklashCalibrationMixin):
             motion_type = motion_type or "goto_refine_settle"
             readback_priority = True
         elif state_lower == "guide_correction":
+            # A tracking-guide correction is a sub-arcminute pulse (~0.001 deg at
+            # guide rate) -- it barely moves the mount readback, and the IMU
+            # delta is already rate-gated so the pulse itself is discarded. Do
+            # NOT claim readback priority for it: otherwise, while the guide is
+            # nulling residual error right after a GoTo/recovery, the fused
+            # coordinate falls back to raw mount for several seconds and a real
+            # hand-push (external disturbance) is ignored during that window.
             motion_type = motion_type or "guide_correction"
-            readback_priority = True
         elif state_lower.startswith("backlash_auto_") and state_lower not in {
             "backlash_auto_complete",
             "backlash_auto_failed",

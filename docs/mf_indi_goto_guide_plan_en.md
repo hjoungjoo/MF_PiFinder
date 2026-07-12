@@ -205,13 +205,50 @@ indi_tracking_guide_threshold_arcmin
   Error threshold where Tracking Guide starts pulse-guide correction.
   The default should be decided through hardware testing.
 
-indi_tracking_guide_settle_seconds = 2.0
-  Coordinate must stay stable this long after an external disturbance
-  before Tracking Guide measures error and corrects again.
+indi_tracking_guide_settle_seconds = 4.0
+  The scope must stay STILL this long after an external disturbance before
+  Tracking Guide measures error and corrects again. Raised from 2.0 (Option A,
+  2026-07-13) so a brief pause between hand-pushes does not trigger a recovery
+  slew mid-interaction.
 
 indi_tracking_guide_motion_arcmin = 15.0
   Per-update current-coordinate delta above which Tracking Guide treats
   the scope as "being moved" (disturbed) and suspends all correction.
+
+### Disturbance responsiveness (Option A, 2026-07-13)
+
+Symptom found on hardware: after a GoTo completed, moving the scope by hand
+showed "no response" for a while, then it "moved once and snapped back to the
+original position," then responded normally. Debugging (RAW IMU + fused
+coordinate + mount state capture) showed:
+
+- The IMU is NOT frozen; the fused coordinate reflects a push immediately while
+  the mount is idle.
+- The "no response" is the mount SLEWING (a corrective GoTo near arrival, or the
+  Tracking Guide's own recovery GoTo): during a slew `mount_readback_priority`
+  is set, so the pointing service uses the raw mount readback and the IMU delta
+  is suppressed. The recovery slew returns the scope to target ("snap back").
+- Because recovery fired every time the coordinate briefly stabilised, it looped
+  while the operator was still handling the scope.
+
+Fixes:
+
+1. Settle keys off physical motion, not just the coordinate. `_tick_tracking_guide`
+   now treats the IMU `moving` flag (BNO055 motion detection) as "moving" in
+   addition to the arcmin coordinate delta, and refreshes the settle window
+   while the IMU reports motion. So while the scope is being handled — even
+   during a brief pause where the fused-coordinate delta dips below the
+   threshold — it stays `disturbed` and never settles into a recovery. Recovery
+   fires only once the scope is genuinely still for `settle_seconds`.
+2. A guide-correction pulse no longer claims mount readback priority
+   (mountcontrol `_motion_status`), so the IMU stays live during fine pulse
+   corrections (the pulse is sub-arcminute and the IMU-delta rate gate discards
+   it anyway).
+
+Verified on hardware: with ~30 s of continuous hand movement the guide stayed
+`disturbed` (coordinate tracked the push, median ~585'), fired exactly ONE
+recovery GoTo ~3-4 s AFTER the scope was released, then returned to `enabled`.
+Previously it looped recovery slews throughout the interaction.
 
 indi_tracking_guide_goto_recovery_enabled = false | true
   default: false

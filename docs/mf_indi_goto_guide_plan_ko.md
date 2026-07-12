@@ -199,13 +199,43 @@ indi_tracking_guide_threshold_arcmin
   추적 가이드가 pulse guide 보정을 시작할 오차 기준.
   기본값은 실장비 테스트로 결정한다.
 
-indi_tracking_guide_settle_seconds = 2.0
-  외란 이후 좌표가 이 시간만큼 안정되어야 추적 가이드가 다시 오차를
-  측정하고 보정한다. (움직임이 멈춘 뒤 정착 대기)
+indi_tracking_guide_settle_seconds = 4.0
+  외란 이후 망원경이 이 시간만큼 정지해 있어야 추적 가이드가 다시 오차를
+  측정하고 보정한다. 밀기 사이의 짧은 멈춤에 recovery 슬루가 끼어들지
+  않도록 2.0에서 상향(Option A, 2026-07-13).
 
 indi_tracking_guide_motion_arcmin = 15.0
   현재 좌표의 tick당 변화량이 이 값 이상이면 망원경이 "외부 힘으로
   움직이는 중(disturbed)"으로 보고 모든 보정을 중단한다.
+
+### 외란 반응성 (Option A, 2026-07-13)
+
+실장비 증상: GoTo 완료 후 경통을 손으로 움직이면 한동안 "무반응"이다가, 한 번
+움직였다 원위치로 되돌아오고, 그 뒤 정상 반응. RAW IMU + 융합 좌표 + 마운트 상태를
+캡처해 디버깅한 결과:
+
+- IMU는 얼지 않는다; 마운트가 idle일 때는 밀기가 융합 좌표에 즉시 반영된다.
+- "무반응"의 정체는 마운트가 슬루 중일 때다(도착 부근의 corrective GoTo, 또는
+  추적 가이드 자체의 recovery GoTo). 슬루 중엔 `mount_readback_priority`가 서서
+  pointing service가 raw 마운트 readback을 쓰고 IMU delta가 억제된다. recovery
+  슬루가 타겟으로 되돌리는 것이 "원위치 복귀"다.
+- 좌표가 잠깐 안정될 때마다 recovery가 발동해, 조작 중에도 루프가 돌았다.
+
+수정:
+
+1. settle이 좌표뿐 아니라 물리적 움직임을 기준으로 한다. `_tick_tracking_guide`가
+   arcmin 좌표 델타에 더해 IMU `moving` 플래그(BNO055 모션 감지)를 "움직임"으로
+   취급하고, IMU가 움직이는 동안 settle 창을 계속 리셋한다. 그래서 경통을 다루는
+   동안엔(융합 좌표 델타가 잠깐 임계값 아래로 떨어지는 순간에도) `disturbed`를
+   유지하고 recovery로 넘어가지 않는다. 정말로 `settle_seconds`만큼 정지한 뒤에만
+   recovery가 한 번 발동한다.
+2. guide-correction 펄스는 더 이상 마운트 readback 우선권을 주장하지 않는다
+   (mountcontrol `_motion_status`). 미세 펄스 보정 중에도 IMU가 살아 있게 한다
+   (펄스는 sub-arcminute이고 IMU-delta rate 게이트가 어차피 버린다).
+
+실장비 검증: ~30초 연속 손 움직임 동안 가이드가 `disturbed`를 유지하고(좌표는 밀기
+반영, median ~585'), 경통을 놓은 뒤 ~3–4초 후 recovery GoTo를 정확히 한 번만
+발동한 뒤 `enabled`로 복귀. 이전엔 조작 내내 recovery 슬루가 반복됐다.
 
 indi_tracking_guide_goto_recovery_enabled = false | true
   기본값: false

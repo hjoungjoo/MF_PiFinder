@@ -765,18 +765,38 @@ class IndiGotoGuideService:
         )
 
         # Disturbance detection: while the scope is being moved, suspend all
-        # correction and wait for it to stop.
-        if self._tracking_coordinate_moving(current_ra, current_dec):
+        # correction and wait for it to stop. We treat BOTH a jump in the fused
+        # coordinate AND the IMU's own motion flag as "moving". A hand-push
+        # frequently pauses for a moment (the fused-coordinate delta dips below
+        # the arcmin threshold) while the scope is clearly still being handled;
+        # keying the settle window off the IMU motion flag as well keeps the
+        # recovery slew from firing mid-interaction -- it holds off until the
+        # scope is genuinely still (the operator's original "correct only once
+        # movement stops" intent).
+        imu_moving = bool(
+            ((pointing.get("imu") or {}).get("metadata") or {}).get("moving")
+        )
+        coordinate_moving = self._tracking_coordinate_moving(current_ra, current_dec)
+        if coordinate_moving or imu_moving:
+            if imu_moving:
+                # Refresh the settle window even when the coordinate looks stable.
+                self.tracking_last_motion_at = time.monotonic()
             self._disable_tracking_guide("scope moving")
             self.tracking_recovery_attempts = 0
             self.tracking_guide_recovery_mode = "none"
             self.tracking_guide_state = "disturbed"
-            self.tracking_guide_last_action = "suspended: coordinate moving"
+            self.tracking_guide_last_action = (
+                "suspended: IMU moving"
+                if imu_moving
+                else "suspended: coordinate moving"
+            )
             return
 
-        # Settle wait: coordinate must stay stable before we correct again.
+        # Settle wait: the scope must stay still before we correct again. Kept
+        # comfortably longer than a reflexive nudge so a brief pause between
+        # pushes does not trigger a recovery slew (Option A).
         settle_seconds = float(
-            self.config_values.get("indi_tracking_guide_settle_seconds", 2.0)
+            self.config_values.get("indi_tracking_guide_settle_seconds", 4.0)
         )
         now = time.monotonic()
         stable_for = (
@@ -1362,7 +1382,7 @@ class IndiGotoGuideService:
                 cfg.get_option("indi_tracking_guide_threshold_arcmin", 10.0)
             ),
             "indi_tracking_guide_settle_seconds": float(
-                cfg.get_option("indi_tracking_guide_settle_seconds", 2.0)
+                cfg.get_option("indi_tracking_guide_settle_seconds", 4.0)
             ),
             "indi_tracking_guide_motion_arcmin": float(
                 cfg.get_option("indi_tracking_guide_motion_arcmin", 15.0)
