@@ -1534,13 +1534,17 @@ class Server:
         @app.route("/indi/pointing_status")
         @auth_required
         def indi_pointing_status():
-            # Lightweight poll for the Pointing Coordinate Service card: reads
-            # only the status JSON (no INDI property shell-out), so the page can
-            # refresh it at ~1 Hz for a near real-time view.
+            # Lightweight ~1 Hz poll for the values that change second-to-second:
+            # the Pointing Coordinate Service card plus the live mount/goto
+            # status. All three are cheap status-file reads with no INDI property
+            # shell-out (unlike the 5 s /indi/current_values poll), so they can
+            # refresh far more often for a near real-time view.
             return jsonify(
                 {
                     "ok": True,
                     "pointing_coordinate_status": _pointing_coordinate_status(),
+                    "mount_control_status": _mount_control_status(),
+                    "goto_guide_status": _goto_guide_status(),
                 }
             )
 

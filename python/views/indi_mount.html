@@ -937,6 +937,37 @@ document.addEventListener('DOMContentLoaded', function() {
     M.updateTextFields();
   }
 
+  // The OnStepX INDI driver holds TIME_UTC static after connect (polling it
+  // returns the connect-time value), so the displayed "OnStep UTC Time" was
+  // frozen. Tick it client-side from the driver value, re-seeding only when the
+  // driver actually reports a NEW time (e.g. after a Set Location/Time sync) --
+  // re-seeding every poll would snap the clock back to the frozen value.
+  var onstepUtcBaseMs = null;
+  var onstepUtcBasePerf = null;
+  var onstepUtcLastDriverText = null;
+
+  function setOnstepUtcBase(utcText) {
+    if (!utcText || utcText === '-' || utcText === onstepUtcLastDriverText) {
+      return;
+    }
+    var parsed = Date.parse(String(utcText).replace(/Z$/, '') + 'Z');
+    if (!isNaN(parsed)) {
+      onstepUtcBaseMs = parsed;
+      onstepUtcBasePerf = performance.now();
+      onstepUtcLastDriverText = utcText;
+    }
+  }
+
+  function updateOnstepUtcDisplay() {
+    if (onstepUtcBaseMs === null) {
+      return;
+    }
+    setText(
+      'onstep_utc_time_value',
+      formatUtcDate(new Date(onstepUtcBaseMs + performance.now() - onstepUtcBasePerf))
+    );
+  }
+
   function updateLocationValues(payload) {
     var pifinder = payload.pifinder_location_time || {};
     var onstep = payload.onstep_props || {};
@@ -973,7 +1004,8 @@ document.addEventListener('DOMContentLoaded', function() {
         onstep[onstepKey('GEOGRAPHIC_COORD.ELEV')]
       )
     );
-    setText('onstep_utc_time_value', textOrDash(onstep[onstepKey('TIME_UTC.UTC')]));
+    setOnstepUtcBase(onstep[onstepKey('TIME_UTC.UTC')]);
+    updateOnstepUtcDisplay();
     updateBacklashValues(payload.backlash_values || {}, payload.mount_control_status || {});
     updateMultipointAlign(payload.multipoint_align || {});
     updateGotoGuideStatus(payload.goto_guide_status || {});
@@ -1162,17 +1194,24 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // Dedicated fast poll for the Pointing Coordinate Service card. It reads only
-  // the status JSON (no INDI property shell-out like /indi/current_values), so
-  // it can run at ~1 Hz for a near real-time view of the fused coordinate.
+  // Dedicated fast poll for the values that change second-to-second. It reads
+  // only status JSON files (no INDI property shell-out like
+  // /indi/current_values), so it can run at ~1 Hz for a near real-time view of
+  // the fused coordinate, the live mount status, and the goto/tracking guide.
   function refreshPointingStatus() {
     return fetch('/indi/pointing_status', {
       headers: {'X-Requested-With': 'XMLHttpRequest'}
     }).then(function(response) {
       return response.json();
     }).then(function(payload) {
-      if (payload && payload.ok) {
-        updatePointingCoordinateStatus(payload.pointing_coordinate_status || {});
+      if (!payload || !payload.ok) {
+        return;
+      }
+      updatePointingCoordinateStatus(payload.pointing_coordinate_status || {});
+      updateGotoGuideStatus(payload.goto_guide_status || {});
+      var mcs = payload.mount_control_status || {};
+      if (mcs.raw_mount_status) {
+        setText('indi_raw_mount_status_value', textOrDash(mcs.raw_mount_status));
       }
     }).catch(function() { /* transient read errors are ignored */ });
   }
@@ -1191,6 +1230,13 @@ document.addEventListener('DOMContentLoaded', function() {
     updateLiveUtcDisplay();
     setInterval(updateLiveUtcDisplay, 1000);
   }
+
+  // Seed the OnStep clock from the server-rendered value and keep it ticking.
+  var onstepUtcInitial = document.getElementById('onstep_utc_time_value');
+  if (onstepUtcInitial) {
+    setOnstepUtcBase(onstepUtcInitial.textContent.trim());
+  }
+  setInterval(updateOnstepUtcDisplay, 1000);
 
   if (locationTimeForm) {
     locationTimeForm.addEventListener('submit', function() {

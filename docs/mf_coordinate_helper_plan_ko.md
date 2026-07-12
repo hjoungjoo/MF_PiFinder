@@ -409,8 +409,12 @@ UI:
 - Web INDI 페이지: "Location and Time" 다음에 "Pointing Coordinate Service"
   카드 — selected source, mode, quality, RA/Dec(deg), mount separation,
   IMU–mount separation, warnings, 마지막 초기화 시각 표시 + "Reset Pointing" 버튼.
-  이 값들은 상태 JSON만 읽는 전용 경량 엔드포인트 `GET /indi/pointing_status`로
+  이 값들은 상태 JSON 파일만 읽는 전용 경량 엔드포인트 `GET /indi/pointing_status`로
   ~1Hz 갱신된다(INDI 속성 셸 조회가 없어 5초짜리 `/indi/current_values`보다 가볍다).
+  같은 빠른 엔드포인트가 `mount_control_status`·`goto_guide_status`도 함께 실어,
+  라이브 raw 마운트 상태와 goto/추적 가이드 상태도 ~1Hz로 갱신된다. (별도로
+  "OnStep UTC Time"은 OnStepX 드라이버가 `TIME_UTC` 속성을 드물게만 갱신하므로
+  클라이언트에서 틱시키며, 드라이버가 새 값을 보고할 때만 재시드한다.)
   상태는 `server.py::_pointing_coordinate_status()`가
   평탄화하고, 서비스가 `pointing_coordinate_status.json`에 `last_reset_at`를 추가.
 - LCD UI: INDI > INIT > "Reset Pointing" ("Set Location" 다음). 요청 파일을 쓰고

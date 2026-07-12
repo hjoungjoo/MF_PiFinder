@@ -407,8 +407,13 @@ UI surfaces:
   showing selected source, mode, quality, RA/Dec (deg), mount separation,
   IMU–mount separation, warnings, and last-reset time, plus a "Reset Pointing"
   button. These fields refresh at ~1 Hz via a dedicated lightweight endpoint
-  `GET /indi/pointing_status` that reads only the status JSON (no INDI property
-  shell-out, unlike the 5 s `/indi/current_values` poll). Status flattened by
+  `GET /indi/pointing_status` that reads only status JSON files (no INDI
+  property shell-out, unlike the 5 s `/indi/current_values` poll). The same
+  fast endpoint also carries `mount_control_status` and `goto_guide_status`, so
+  the live raw mount status and the goto/tracking-guide state update at ~1 Hz
+  too. (Separately, the "OnStep UTC Time" is ticked client-side because the
+  OnStepX driver only refreshes its `TIME_UTC` property occasionally; the tick
+  re-seeds whenever the driver reports a new value.) Status flattened by
   `server.py::_pointing_coordinate_status()`; the service adds `last_reset_at`
   to `pointing_coordinate_status.json`.
 - LCD UI: INDI > INIT > "Reset Pointing" (after "Set Location"), a simple action
