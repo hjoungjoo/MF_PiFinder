@@ -390,16 +390,26 @@ file pattern):
    `callbacks.reset_pointing` writes an atomic request file
    `PiFinder_data/pointing_reset_request.json` (`{requested_at, source}`).
 2. `_coordinate_service_loop` polls it each tick (`_handle_pointing_reset_request`
-   in pos_server.py): consumes/deletes the file, calls
-   `PointingCoordinateService.clear_state()`, invalidates the pointing cache,
-   and records `_pointing_reset_last_at`.
+   in pos_server.py): consumes/deletes the file, aligns the mount to the IMU
+   when unsolved (see below), calls `PointingCoordinateService.clear_state()`,
+   invalidates the pointing cache, and records `_pointing_reset_last_at`.
 3. `clear_state()` nulls `_state`, `_mount_imu_anchor`, `_imu_delta_tracker`,
    `_imu_filter_altaz`, `_mount_motion_hold_until`, `_last_mount_motion_radec`.
    It does NOT clear the SkySafari IMU alignment correction (that is the
    IMU→sky reference; dropping it would un-align the IMU fallback).
 
-Reset does not force a source; it only clears accumulated fusion state so the
-normal selection priority re-baselines cleanly. Consume latency is ~0.1 s.
+**No-solve mount→IMU alignment** (`_align_mount_to_imu_on_reset`): `clear_state()`
+alone is not enough when there is no solve — the mount is still "aligned"
+(previously synced), so the selection priority keeps returning the mount
+coordinate and the display stays on the (diverged) mount value instead of the
+IMU. So, before clearing state, when the solve is invalid and the IMU is valid
+and mount control is on, reset reads the current IMU RA/Dec and queues a
+`{"type": "sync", ...}` to mount control at that coordinate. Sync only redefines
+the mount's coordinate system (it does not slew), so the mount readback — and
+therefore the fused coordinate — then follows the IMU. With a valid solve, no
+IMU alignment is done; the solve drives the coordinate.
+
+Consume latency is ~0.1 s.
 
 UI surfaces:
 

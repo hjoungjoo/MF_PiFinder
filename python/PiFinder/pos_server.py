@@ -393,15 +393,50 @@ def _update_coordinate_service_state(shared_state):
     return state
 
 
+def _align_mount_to_imu_on_reset() -> Optional[Tuple[float, float]]:
+    """Re-align the mount to the current IMU coordinate (no-solve reset).
+
+    When there is no valid plate solve, a bare ``clear_state()`` is not enough:
+    the mount is still "aligned" (previously synced), so the selection priority
+    keeps returning the mount coordinate and the display stays on the (possibly
+    diverged) mount value instead of the IMU. To make the coordinate reflect the
+    IMU, sync the mount to the current IMU RA/Dec. Sync only redefines the
+    mount's coordinate system; it does not slew the scope. Returns the IMU
+    RA/Dec that was applied, or None if no sync was issued.
+    """
+    state = _coordinate_service.get_state()
+    if state is None:
+        return None
+    if state.solved is not None and state.solved.valid:
+        # A solve is available; let it drive the coordinate. No IMU alignment.
+        return None
+    imu_radec = state.imu.radec() if state.imu is not None else None
+    if imu_radec is None:
+        logger.info("Pointing reset: no valid IMU coordinate to align the mount to")
+        return None
+    if not _mount_control_enabled():
+        # No mount to align; clear_state alone will fall through to the IMU.
+        return None
+    ra_deg, dec_deg = imu_radec
+    mountcontrol_queue.put({"type": "sync", "ra": ra_deg, "dec": dec_deg})
+    logger.info(
+        "Pointing reset: synced mount to IMU coordinate RA %.4f Dec %.4f",
+        ra_deg,
+        dec_deg,
+    )
+    return ra_deg, dec_deg
+
+
 def _handle_pointing_reset_request() -> None:
     """Poll for a "Reset Pointing" request file and reinitialize the service.
 
     Reset discards the accumulated fusion anchor / IMU-delta so the coordinate
-    re-baselines on the next tick from the best available source (a valid plate
-    solve if present, otherwise the aligned mount, otherwise the IMU fallback).
-    This is the operator's escape hatch when the fused coordinate has diverged
-    from the sky (bad/absent solves, or indoor IMU drift accumulating on the
-    fused source).
+    re-baselines on the next tick from the best available source. When there is
+    no plate solve it additionally syncs the mount to the current IMU coordinate
+    (``_align_mount_to_imu_on_reset``) so the display follows the IMU rather than
+    staying on the previously-synced mount value. This is the operator's escape
+    hatch when the fused coordinate has diverged from the sky (bad/absent solves,
+    or indoor IMU drift accumulating on the fused source).
     """
     global _pointing_reset_last_at
     try:
@@ -419,10 +454,17 @@ def _handle_pointing_reset_request() -> None:
             _POINTING_RESET_REQUEST_FILE.unlink()
         except FileNotFoundError:
             pass
+        # Capture the IMU coordinate and align the mount to it (no-solve case)
+        # BEFORE clearing state, since clear_state() drops the cached samples.
+        aligned = _align_mount_to_imu_on_reset()
         _coordinate_service.clear_state()
         _invalidate_pointing_cache()
         _pointing_reset_last_at = time.time()
-        logger.info("Pointing coordinate service reset (source=%s)", source)
+        logger.info(
+            "Pointing coordinate service reset (source=%s, imu_align=%s)",
+            source,
+            "yes" if aligned is not None else "no",
+        )
     except Exception:
         logger.exception("Could not handle pointing reset request")
 

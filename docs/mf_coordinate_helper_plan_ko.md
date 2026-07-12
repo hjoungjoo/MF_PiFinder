@@ -393,16 +393,24 @@ tick에 최적 소스로 다시 기준을 잡는다: 유효한 solve > 정렬된
    `callbacks.reset_pointing`가 원자적 요청 파일
    `PiFinder_data/pointing_reset_request.json`(`{requested_at, source}`)을 쓴다.
 2. `_coordinate_service_loop`가 매 tick 폴링(pos_server.py의
-   `_handle_pointing_reset_request`): 파일을 소비/삭제하고
-   `PointingCoordinateService.clear_state()` 호출, pointing 캐시 무효화,
-   `_pointing_reset_last_at` 기록.
+   `_handle_pointing_reset_request`): 파일을 소비/삭제하고, 솔빙이 없으면
+   마운트를 IMU에 정렬(아래), `PointingCoordinateService.clear_state()` 호출,
+   pointing 캐시 무효화, `_pointing_reset_last_at` 기록.
 3. `clear_state()`는 `_state`, `_mount_imu_anchor`, `_imu_delta_tracker`,
    `_imu_filter_altaz`, `_mount_motion_hold_until`, `_last_mount_motion_radec`를
    비운다. SkySafari IMU 정렬 보정(`_imu_alignment_correction`)은 지우지 않는다
    (그것은 IMU→하늘 기준이며, 지우면 IMU fallback 자체가 미정렬 상태가 된다).
 
-초기화는 소스를 강제하지 않는다 — 누적된 fusion 상태만 비워 정상 선택 우선순위가
-깨끗하게 다시 기준을 잡게 한다. 요청 소비 지연은 ~0.1초.
+**솔빙 없음 시 마운트→IMU 정렬**(`_align_mount_to_imu_on_reset`): 솔빙이 없을 때는
+`clear_state()`만으로 부족하다 — 마운트가 여전히 "aligned"(이전에 sync됨) 상태라
+선택 우선순위가 계속 마운트 좌표를 반환해, 화면이 IMU가 아니라 (벗어난) 마운트
+값에 머문다. 그래서 state를 비우기 전에, 솔빙이 무효이고 IMU가 유효하며 마운트
+컨트롤이 켜져 있으면, 현재 IMU RA/Dec를 읽어 그 좌표로 마운트에
+`{"type": "sync", ...}`를 큐잉한다. sync는 마운트의 좌표계를 재정의할 뿐 스코프를
+움직이지 않으므로, 마운트 readback(따라서 fused 좌표)이 IMU를 따라가게 된다.
+솔빙이 유효하면 IMU 정렬은 하지 않고 솔빙이 좌표를 주도한다.
+
+요청 소비 지연은 ~0.1초.
 
 UI:
 

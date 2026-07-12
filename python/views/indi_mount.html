@@ -175,7 +175,7 @@
         <tr><td>{{ _('Last Reset') }}</td><td id="pcs_last_reset_value">{{ pointing_coordinate_status.last_reset }}</td></tr>
       </tbody>
     </table>
-    <p class="grey-text">{{ _('Reinitialize the fused coordinate when it has drifted from the sky (bad/absent plate solves, or IMU drift). It re-baselines from a valid solve, otherwise the aligned mount, otherwise the IMU.') }}</p>
+    <p class="grey-text">{{ _('Reinitialize the fused coordinate when it has drifted from the sky (bad/absent plate solves, or IMU drift). With a valid plate solve it re-baselines from the solve; without one it aligns the mount to the current IMU coordinate.') }}</p>
     <div class="row">
       <button type="button" id="reset_pointing_button" class="btn">{{ _('Reset Pointing') }}</button>
       <span id="pcs_action_status" class="grey-text"></span>
