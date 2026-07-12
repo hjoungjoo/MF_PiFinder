@@ -99,6 +99,10 @@ pifinder_menu = {
                                     "callback": callbacks.indi_sync_location_time,
                                 },
                                 {
+                                    "name": _("Reset Pointing"),
+                                    "callback": callbacks.reset_pointing,
+                                },
+                                {
                                     "name": _("Park"),
                                     "callback": callbacks.indi_park,
                                 },

@@ -62,6 +62,7 @@ WEB_BACKLASH_DEFAULT_REPEATS = 10
 WEB_BACKLASH_MIN_REPEATS = 1
 WEB_BACKLASH_MAX_REPEATS = 50
 WEB_BACKLASH_STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
+WEB_POINTING_RESET_REQUEST_FILE = utils.data_dir / "pointing_reset_request.json"
 DEFAULT_WEB_LANGUAGE = "en"
 
 
@@ -1275,6 +1276,61 @@ class Server:
             except (FileNotFoundError, json.JSONDecodeError, OSError):
                 return {}
 
+        def _pointing_coordinate_status():
+            """Flatten pointing_coordinate_status.json into display strings.
+
+            Written by the pointing coordinate service in the pos_server
+            process; read-only here. Used both for first render and the
+            /indi/current_values poll so the two stay in sync.
+            """
+            try:
+                with open(
+                    utils.data_dir / "pointing_coordinate_status.json",
+                    encoding="utf-8",
+                ) as status_in:
+                    raw = json.load(status_in)
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                raw = {}
+
+            current = raw.get("current") or {}
+            health = raw.get("health") or {}
+            warnings = health.get("warnings") or []
+
+            def _fmt(value, digits):
+                try:
+                    return f"{float(value):.{digits}f}"
+                except (TypeError, ValueError):
+                    return "-"
+
+            last_reset_at = raw.get("last_reset_at")
+            try:
+                last_reset = (
+                    time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(last_reset_at))
+                    if last_reset_at
+                    else "-"
+                )
+            except (TypeError, ValueError, OSError):
+                last_reset = "-"
+
+            return {
+                "available": bool(raw),
+                "selected_source": raw.get("selected_source") or "-",
+                "mode": raw.get("mode") or "-",
+                "quality": current.get("quality") or "-",
+                "ra_deg": _fmt(current.get("ra"), 4),
+                "dec_deg": _fmt(current.get("dec"), 4),
+                "mount_separation": _fmt(
+                    health.get("mount_separation_degrees"), 2
+                ),
+                "imu_mount_separation": _fmt(
+                    health.get("imu_mount_separation_degrees"), 2
+                ),
+                "warnings": (
+                    ", ".join(str(w) for w in warnings) if warnings else "-"
+                ),
+                "last_reset": last_reset,
+            }
+
         def _write_backlash_stop_request():
             utils.create_path(utils.data_dir)
             payload = {"requested_at": time.time(), "source": "web"}
@@ -1286,6 +1342,18 @@ class Server:
                 stop_out.flush()
                 os.fsync(stop_out.fileno())
             tmp_path.replace(WEB_BACKLASH_STOP_REQUEST_FILE)
+
+        def _write_pointing_reset_request():
+            utils.create_path(utils.data_dir)
+            payload = {"requested_at": time.time(), "source": "web"}
+            tmp_path = WEB_POINTING_RESET_REQUEST_FILE.with_name(
+                f"{WEB_POINTING_RESET_REQUEST_FILE.name}.{os.getpid()}.tmp"
+            )
+            with open(tmp_path, "w", encoding="utf-8") as reset_out:
+                json.dump(payload, reset_out)
+                reset_out.flush()
+                os.fsync(reset_out.fileno())
+            tmp_path.replace(WEB_POINTING_RESET_REQUEST_FILE)
 
         def _parse_backlash_value(value):
             try:
@@ -1405,6 +1473,7 @@ class Server:
                 multipoint_align=_multipoint_align_status(),
                 mount_control_status=_mount_control_status(),
                 goto_guide_status=_goto_guide_status(),
+                pointing_coordinate_status=_pointing_coordinate_status(),
                 web_motion_keepalive_ms=int(WEB_MOTION_KEEPALIVE_INTERVAL * 1000),
                 slew_rate_labels=[
                     "Off",
@@ -1458,6 +1527,7 @@ class Server:
                     "multipoint_align": _multipoint_align_status(),
                     "mount_control_status": _mount_control_status(),
                     "goto_guide_status": _goto_guide_status(),
+                    "pointing_coordinate_status": _pointing_coordinate_status(),
                 }
             )
 
@@ -2012,6 +2082,19 @@ class Server:
                     )
                 return _indi_json_response(message=message)
             except (RuntimeError, ValueError, OSError) as e:
+                return _indi_json_response(ok=False, error=str(e))
+
+        @app.route("/indi/reset_pointing", methods=["POST"])
+        @auth_required
+        def indi_reset_pointing():
+            # Drop a request file the pointing coordinate service (pos_server
+            # process) polls; it calls clear_state() so the fused coordinate
+            # re-baselines from the best available source (solve > aligned
+            # mount > IMU fallback). No shared queue exists to that process.
+            try:
+                _write_pointing_reset_request()
+                return _indi_json_response(message=_("Pointing reset requested"))
+            except OSError as e:
                 return _indi_json_response(ok=False, error=str(e))
 
         @app.route("/logs")

@@ -161,6 +161,30 @@
 
 <div class="card grey darken-2">
   <div class="card-content">
+    <h5 class="grey-text">{{ _('Pointing Coordinate Service') }}</h5>
+    <table class="striped grey-text">
+      <tbody>
+        <tr><td>{{ _('Selected Source') }}</td><td id="pcs_selected_source_value">{{ pointing_coordinate_status.selected_source }}</td></tr>
+        <tr><td>{{ _('Mode') }}</td><td id="pcs_mode_value">{{ pointing_coordinate_status.mode }}</td></tr>
+        <tr><td>{{ _('Quality') }}</td><td id="pcs_quality_value">{{ pointing_coordinate_status.quality }}</td></tr>
+        <tr><td>{{ _('RA (deg)') }}</td><td id="pcs_ra_value">{{ pointing_coordinate_status.ra_deg }}</td></tr>
+        <tr><td>{{ _('Dec (deg)') }}</td><td id="pcs_dec_value">{{ pointing_coordinate_status.dec_deg }}</td></tr>
+        <tr><td>{{ _('Mount Separation (deg)') }}</td><td id="pcs_mount_separation_value">{{ pointing_coordinate_status.mount_separation }}</td></tr>
+        <tr><td>{{ _('IMU-Mount Separation (deg)') }}</td><td id="pcs_imu_mount_separation_value">{{ pointing_coordinate_status.imu_mount_separation }}</td></tr>
+        <tr><td>{{ _('Warnings') }}</td><td id="pcs_warnings_value">{{ pointing_coordinate_status.warnings }}</td></tr>
+        <tr><td>{{ _('Last Reset') }}</td><td id="pcs_last_reset_value">{{ pointing_coordinate_status.last_reset }}</td></tr>
+      </tbody>
+    </table>
+    <p class="grey-text">{{ _('Reinitialize the fused coordinate when it has drifted from the sky (bad/absent plate solves, or IMU drift). It re-baselines from a valid solve, otherwise the aligned mount, otherwise the IMU.') }}</p>
+    <div class="row">
+      <button type="button" id="reset_pointing_button" class="btn">{{ _('Reset Pointing') }}</button>
+      <span id="pcs_action_status" class="grey-text"></span>
+    </div>
+  </div>
+</div>
+
+<div class="card grey darken-2">
+  <div class="card-content">
     <h5 class="grey-text">{{ _('Mount Control') }}</h5>
     <div class="indi-mount-states">
       <div class="indi-mount-state">
@@ -953,6 +977,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateBacklashValues(payload.backlash_values || {}, payload.mount_control_status || {});
     updateMultipointAlign(payload.multipoint_align || {});
     updateGotoGuideStatus(payload.goto_guide_status || {});
+    updatePointingCoordinateStatus(payload.pointing_coordinate_status || {});
     setText('onstep_connection_value', textOrDash(onstep[onstepKey('CONNECTION.CONNECT')]));
     setText('onstep_serial_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_SERIAL')]));
     setText('onstep_tcp_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_TCP')]));
@@ -1081,6 +1106,18 @@ document.addEventListener('DOMContentLoaded', function() {
     setText('goto_guide_last_action_value', status.last_action || '-');
   }
 
+  function updatePointingCoordinateStatus(status) {
+    setText('pcs_selected_source_value', textOrDash(status.selected_source));
+    setText('pcs_mode_value', textOrDash(status.mode));
+    setText('pcs_quality_value', textOrDash(status.quality));
+    setText('pcs_ra_value', textOrDash(status.ra_deg));
+    setText('pcs_dec_value', textOrDash(status.dec_deg));
+    setText('pcs_mount_separation_value', textOrDash(status.mount_separation));
+    setText('pcs_imu_mount_separation_value', textOrDash(status.imu_mount_separation));
+    setText('pcs_warnings_value', textOrDash(status.warnings));
+    setText('pcs_last_reset_value', textOrDash(status.last_reset));
+  }
+
   function updateMultipointAlignButtons(active) {
     setButtonEnabled(multipointAlignStart, !active);
     setButtonEnabled(multipointAlignGoto, active);
@@ -1194,6 +1231,26 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(function(error) { setActionStatus(error.message); });
     });
   });
+
+  var resetPointingButton = document.getElementById('reset_pointing_button');
+  if (resetPointingButton) {
+    resetPointingButton.addEventListener('click', function(event) {
+      event.preventDefault();
+      var pcsStatus = document.getElementById('pcs_action_status');
+      if (pcsStatus) { pcsStatus.textContent = '{{ _("Resetting...") }}'; }
+      postIndiAction('/indi/reset_pointing', {})
+        .then(function(payload) {
+          if (pcsStatus) {
+            pcsStatus.textContent = (payload && payload.message)
+              || '{{ _("Pointing reset requested") }}';
+          }
+          refreshIndiState(false);
+        })
+        .catch(function(error) {
+          if (pcsStatus) { pcsStatus.textContent = error.message; }
+        });
+    });
+  }
 
   if (backlashMotionStart) {
     backlashMotionStart.addEventListener('click', function(event) {

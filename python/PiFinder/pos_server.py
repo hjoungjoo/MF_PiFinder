@@ -91,6 +91,13 @@ _guide_motion_state = {
 }
 _coordinate_service = PointingCoordinateService()
 _POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
+# Cross-process "Reset Pointing" request. The web server (server.py) and the
+# LCD UI (main.py) run in separate processes and share no queue with the
+# pointing coordinate service, so they drop this request file (mirroring the
+# backlash stop-request pattern) and the coordinate-service loop below polls
+# for it and calls clear_state(). See mf_coordinate_helper_plan.
+_POINTING_RESET_REQUEST_FILE = utils.data_dir / "pointing_reset_request.json"
+_pointing_reset_last_at = 0.0
 
 def _get_config_option(option: str, default):
     global _config_last_loaded
@@ -144,6 +151,7 @@ def _write_pointing_status(state) -> None:
         utils.create_path(utils.data_dir)
         payload = {
             "updated": time.time(),
+            "last_reset_at": _pointing_reset_last_at,
             "selected_source": state.current.source,
             "mode": state.mode,
             "weights": state.weights,
@@ -385,10 +393,45 @@ def _update_coordinate_service_state(shared_state):
     return state
 
 
+def _handle_pointing_reset_request() -> None:
+    """Poll for a "Reset Pointing" request file and reinitialize the service.
+
+    Reset discards the accumulated fusion anchor / IMU-delta so the coordinate
+    re-baselines on the next tick from the best available source (a valid plate
+    solve if present, otherwise the aligned mount, otherwise the IMU fallback).
+    This is the operator's escape hatch when the fused coordinate has diverged
+    from the sky (bad/absent solves, or indoor IMU drift accumulating on the
+    fused source).
+    """
+    global _pointing_reset_last_at
+    try:
+        if not _POINTING_RESET_REQUEST_FILE.exists():
+            return
+        source = "unknown"
+        try:
+            with open(_POINTING_RESET_REQUEST_FILE, encoding="utf-8") as request_in:
+                request = json.load(request_in)
+            source = str(request.get("source", "unknown"))
+        except (json.JSONDecodeError, OSError):
+            pass
+        # Consume the request first so a failure below cannot spin-loop on it.
+        try:
+            _POINTING_RESET_REQUEST_FILE.unlink()
+        except FileNotFoundError:
+            pass
+        _coordinate_service.clear_state()
+        _invalidate_pointing_cache()
+        _pointing_reset_last_at = time.time()
+        logger.info("Pointing coordinate service reset (source=%s)", source)
+    except Exception:
+        logger.exception("Could not handle pointing reset request")
+
+
 def _coordinate_service_loop(shared_state, stop_event: threading.Event) -> None:
     logger.info("Pointing coordinate service loop started")
     while not stop_event.is_set():
         try:
+            _handle_pointing_reset_request()
             _update_coordinate_service_state(shared_state)
         except Exception:
             logger.exception("Pointing coordinate service update failed")

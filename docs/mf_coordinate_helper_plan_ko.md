@@ -378,6 +378,42 @@ SkySafari target 입력:
 SkySafari가 지정한 target을 아이피스 중앙에 맞췄다는 의미이므로, 그 target 좌표를
 정렬 좌표로 사용한다.
 
+## Reset Pointing / 좌표 초기화 (2026-07-12 추가)
+
+fused 좌표가 실제 하늘에서 크게 벗어났을 때 운영자가 직접 초기화하는 기능이다 —
+플레이트 솔빙이 안 되거나 잘못됐을 때, 또는 실내 테스트에서 IMU 드리프트가 fused
+소스에 누적됐을 때. 초기화하면 fusion anchor와 IMU-delta tracker를 버려서 다음
+tick에 최적 소스로 다시 기준을 잡는다: 유효한 solve > 정렬된 mount > IMU fallback
+(즉 "솔빙이 없으면 IMU를 기준으로 재정리").
+
+메커니즘 (서비스는 `pos_server` 프로세스 내 싱글톤이라 web/UI 프로세스와 큐를
+공유하지 않으므로, 백래시 정지-요청 파일 패턴을 그대로 따른다):
+
+1. Web `POST /indi/reset_pointing` (server.py) 또는 LCD 메뉴 콜백
+   `callbacks.reset_pointing`가 원자적 요청 파일
+   `PiFinder_data/pointing_reset_request.json`(`{requested_at, source}`)을 쓴다.
+2. `_coordinate_service_loop`가 매 tick 폴링(pos_server.py의
+   `_handle_pointing_reset_request`): 파일을 소비/삭제하고
+   `PointingCoordinateService.clear_state()` 호출, pointing 캐시 무효화,
+   `_pointing_reset_last_at` 기록.
+3. `clear_state()`는 `_state`, `_mount_imu_anchor`, `_imu_delta_tracker`,
+   `_imu_filter_altaz`, `_mount_motion_hold_until`, `_last_mount_motion_radec`를
+   비운다. SkySafari IMU 정렬 보정(`_imu_alignment_correction`)은 지우지 않는다
+   (그것은 IMU→하늘 기준이며, 지우면 IMU fallback 자체가 미정렬 상태가 된다).
+
+초기화는 소스를 강제하지 않는다 — 누적된 fusion 상태만 비워 정상 선택 우선순위가
+깨끗하게 다시 기준을 잡게 한다. 요청 소비 지연은 ~0.1초.
+
+UI:
+
+- Web INDI 페이지: "Location and Time" 다음에 "Pointing Coordinate Service"
+  카드 — selected source, mode, quality, RA/Dec(deg), mount separation,
+  IMU–mount separation, warnings, 마지막 초기화 시각 표시(`/indi/current_values`
+  5초 폴링) + "Reset Pointing" 버튼. 상태는 `server.py::_pointing_coordinate_status()`가
+  평탄화하고, 서비스가 `pointing_coordinate_status.json`에 `last_reset_at`를 추가.
+- LCD UI: INDI > INIT > "Reset Pointing" ("Set Location" 다음). 요청 파일을 쓰고
+  확인 메시지를 띄우는 단순 액션 항목.
+
 ## 디버깅 포인트
 
 좌표가 흔들릴 때 먼저 확인할 파일:

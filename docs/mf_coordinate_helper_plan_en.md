@@ -373,6 +373,45 @@ Rules:
 The align coordinate is the requested target coordinate, not the IMU coordinate
 at confirm time.
 
+## Reset Pointing (added 2026-07-12)
+
+An operator-triggered reinitialize for when the fused coordinate has drifted
+away from the sky — bad or absent plate solves, or IMU drift accumulating on
+the fused source during indoor testing. Reset discards the fusion anchor and
+IMU-delta tracker so the coordinate re-baselines on the next tick from the best
+available source: a valid plate solve, otherwise the aligned mount, otherwise
+the IMU fallback (i.e. "when unsolved, re-derive from the IMU").
+
+Mechanism (the service is a singleton inside the `pos_server` process and shares
+no queue with the web/UI processes, so this mirrors the backlash stop-request
+file pattern):
+
+1. Web `POST /indi/reset_pointing` (server.py) or the LCD menu callback
+   `callbacks.reset_pointing` writes an atomic request file
+   `PiFinder_data/pointing_reset_request.json` (`{requested_at, source}`).
+2. `_coordinate_service_loop` polls it each tick (`_handle_pointing_reset_request`
+   in pos_server.py): consumes/deletes the file, calls
+   `PointingCoordinateService.clear_state()`, invalidates the pointing cache,
+   and records `_pointing_reset_last_at`.
+3. `clear_state()` nulls `_state`, `_mount_imu_anchor`, `_imu_delta_tracker`,
+   `_imu_filter_altaz`, `_mount_motion_hold_until`, `_last_mount_motion_radec`.
+   It does NOT clear the SkySafari IMU alignment correction (that is the
+   IMU→sky reference; dropping it would un-align the IMU fallback).
+
+Reset does not force a source; it only clears accumulated fusion state so the
+normal selection priority re-baselines cleanly. Consume latency is ~0.1 s.
+
+UI surfaces:
+
+- Web INDI page: a "Pointing Coordinate Service" card after "Location and Time"
+  showing selected source, mode, quality, RA/Dec (deg), mount separation,
+  IMU–mount separation, warnings, and last-reset time (5 s poll via
+  `/indi/current_values`), plus a "Reset Pointing" button. Status flattened by
+  `server.py::_pointing_coordinate_status()`; the service adds `last_reset_at`
+  to `pointing_coordinate_status.json`.
+- LCD UI: INDI > INIT > "Reset Pointing" (after "Set Location"), a simple action
+  item that writes the request file and flashes a confirmation.
+
 ## Debugging
 
 Useful commands:

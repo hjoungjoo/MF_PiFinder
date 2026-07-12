@@ -10,6 +10,8 @@ Each one takes the current ui module as an argument
 
 import logging
 import gettext
+import json
+import os
 import time
 from datetime import datetime
 
@@ -339,6 +341,31 @@ def indi_sync_location_time(ui_module: UIModule) -> None:
         {"type": "sync_location_time"},
         "Time/Location",
     )
+
+
+def reset_pointing(ui_module: UIModule) -> None:
+    """Reinitialize the Pointing Coordinate Service.
+
+    The service runs inside the SkySafari/pos_server process and shares no
+    queue with the UI, so (mirroring the web INDI page) we drop a request file
+    that its loop polls and then calls clear_state(). The fused coordinate
+    re-baselines from the best available source: a valid plate solve, else the
+    aligned mount, else the IMU fallback.
+    """
+    try:
+        utils.create_path(utils.data_dir)
+        request_file = utils.data_dir / "pointing_reset_request.json"
+        payload = {"requested_at": time.time(), "source": "lcd"}
+        tmp_path = request_file.with_name(f"{request_file.name}.{os.getpid()}.tmp")
+        with open(tmp_path, "w", encoding="utf-8") as reset_out:
+            json.dump(payload, reset_out)
+            reset_out.flush()
+            os.fsync(reset_out.fileno())
+        tmp_path.replace(request_file)
+        ui_module.message(_("Pointing Reset"), 1)
+    except OSError:
+        logging.exception("Could not request pointing reset")
+        ui_module.message(_("Reset Failed"), 1)
 
 
 def indi_park(ui_module: UIModule) -> None:
