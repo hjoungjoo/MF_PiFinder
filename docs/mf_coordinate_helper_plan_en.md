@@ -405,8 +405,10 @@ UI surfaces:
 
 - Web INDI page: a "Pointing Coordinate Service" card after "Location and Time"
   showing selected source, mode, quality, RA/Dec (deg), mount separation,
-  IMU–mount separation, warnings, and last-reset time (5 s poll via
-  `/indi/current_values`), plus a "Reset Pointing" button. Status flattened by
+  IMU–mount separation, warnings, and last-reset time, plus a "Reset Pointing"
+  button. These fields refresh at ~1 Hz via a dedicated lightweight endpoint
+  `GET /indi/pointing_status` that reads only the status JSON (no INDI property
+  shell-out, unlike the 5 s `/indi/current_values` poll). Status flattened by
   `server.py::_pointing_coordinate_status()`; the service adds `last_reset_at`
   to `pointing_coordinate_status.json`.
 - LCD UI: INDI > INIT > "Reset Pointing" (after "Set Location"), a simple action

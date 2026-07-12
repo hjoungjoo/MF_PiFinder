@@ -408,8 +408,10 @@ UI:
 
 - Web INDI 페이지: "Location and Time" 다음에 "Pointing Coordinate Service"
   카드 — selected source, mode, quality, RA/Dec(deg), mount separation,
-  IMU–mount separation, warnings, 마지막 초기화 시각 표시(`/indi/current_values`
-  5초 폴링) + "Reset Pointing" 버튼. 상태는 `server.py::_pointing_coordinate_status()`가
+  IMU–mount separation, warnings, 마지막 초기화 시각 표시 + "Reset Pointing" 버튼.
+  이 값들은 상태 JSON만 읽는 전용 경량 엔드포인트 `GET /indi/pointing_status`로
+  ~1Hz 갱신된다(INDI 속성 셸 조회가 없어 5초짜리 `/indi/current_values`보다 가볍다).
+  상태는 `server.py::_pointing_coordinate_status()`가
   평탄화하고, 서비스가 `pointing_coordinate_status.json`에 `last_reset_at`를 추가.
 - LCD UI: INDI > INIT > "Reset Pointing" ("Set Location" 다음). 요청 파일을 쓰고
   확인 메시지를 띄우는 단순 액션 항목.

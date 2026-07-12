@@ -1162,6 +1162,21 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // Dedicated fast poll for the Pointing Coordinate Service card. It reads only
+  // the status JSON (no INDI property shell-out like /indi/current_values), so
+  // it can run at ~1 Hz for a near real-time view of the fused coordinate.
+  function refreshPointingStatus() {
+    return fetch('/indi/pointing_status', {
+      headers: {'X-Requested-With': 'XMLHttpRequest'}
+    }).then(function(response) {
+      return response.json();
+    }).then(function(payload) {
+      if (payload && payload.ok) {
+        updatePointingCoordinateStatus(payload.pointing_coordinate_status || {});
+      }
+    }).catch(function() { /* transient read errors are ignored */ });
+  }
+
   if (reloadLocationValues) {
     reloadLocationValues.addEventListener('click', function(event) {
       event.preventDefault();
@@ -1468,6 +1483,8 @@ document.addEventListener('DOMContentLoaded', function() {
   setInterval(function() {
     refreshIndiState(false);
   }, 5000);
+  refreshPointingStatus();
+  setInterval(refreshPointingStatus, 1000);
   updateConnectionSections();
   updateNetworkManual();
 });

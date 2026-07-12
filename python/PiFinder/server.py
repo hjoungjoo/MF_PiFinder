@@ -1531,6 +1531,19 @@ class Server:
                 }
             )
 
+        @app.route("/indi/pointing_status")
+        @auth_required
+        def indi_pointing_status():
+            # Lightweight poll for the Pointing Coordinate Service card: reads
+            # only the status JSON (no INDI property shell-out), so the page can
+            # refresh it at ~1 Hz for a near real-time view.
+            return jsonify(
+                {
+                    "ok": True,
+                    "pointing_coordinate_status": _pointing_coordinate_status(),
+                }
+            )
+
         @app.route("/indi/skysafari", methods=["POST"])
         @auth_required
         def indi_skysafari_update():
