@@ -235,6 +235,43 @@ anchor reset 조건:
 - `coordinate_sync` 또는 `multipoint_align` sync key 변경
 - mount readback이 anchor 기준으로 의미 있게 이동
 
+### IMU delta 속도 게이트 (2026-07-12 추가)
+
+추적 중 실장비에서 발견: mount가 사이드리얼 추적을 하면 readback RA/Dec는 target에
+고정되지만, IMU 스무딩 필터가 느린 추적 모션(~15"/s)을 "작은 지터"로 취급해 사실상
+얼려버린다. 그 결과 IMU 환산 RA가 사이드리얼 속도로 드리프트하고, raw delta가 무한
+누적되어 fused 좌표가 target에서 계속 흘러갔다(분당 ~20'). 이 가짜 드리프트가
+추적 가이드의 GoTo 복구를 오발시켜 물리적으로는 오히려 target을 벗어나게 했다.
+
+수정: `_mount_with_imu_delta`가 raw delta 대신 **속도 게이트를 통과한 applied
+delta**를 사용한다 (`_gated_imu_delta`).
+
+```text
+IMU_DELTA_FAST_RATE_DEG_PER_SEC = 0.05
+  tick당 IMU 이동 속도가 이 값 이상일 때만(실제 충격/밀림) delta 증분을
+  applied에 반영한다. 추적 아티팩트(~0.005 deg/s)의 10배 마진.
+
+IMU_DELTA_DECAY_TAU_SECONDS = 120.0
+  느린 구간에서 applied delta는 이 시간상수로 0으로 감쇠한다. 충격 후 정지
+  상태에서는 오프셋이 충분히 오래(외란 복구 창보다 길게) 유지된다.
+```
+
+- 충격/수동 이동(빠름) -> `fast_follow`: 오프셋이 fused 좌표에 그대로 반영되어
+  외란 감지와 복구가 정확한 오차로 동작한다.
+- 추적 아티팩트/센서 드리프트(느림) -> `slow_decay`: 증분이 버려지고 applied가
+  감쇠해 fused 좌표가 mount readback(=target)에 고정된다.
+- anchor reset(마운트 이동/sync) 시 tracker와 applied가 함께 초기화된다.
+- 진단 metadata: `imu_delta_applied_ra/dec`, `imu_delta_gate`,
+  `imu_delta_rate_deg_per_sec`.
+- 한계: 게이트(0.05 deg/s)보다 느린 실제 외력은 solve 없이는 보이지 않는다.
+  야간에는 solve(SOLVED_PRIMARY)가 우선되므로 영향 없다.
+- 실장비 end-to-end 검증(2026-07-12, 사용자가 경통을 실제로 밀어 테스트): 밀기
+  감지(0.99 deg/s, err 1488') -> disturbed -> sync+GoTo 복구 -> settling 2.9' ->
+  enabled 0.0'으로 밀기 전 위치 재획득. 안정 추적 구간에서는 slow_decay로 가짜
+  드리프트가 소멸함을 확인.
+- 참고: GoTo 단계 중에는 mount readback이 우선이므로 GoTo 도중의 밀림은 표시
+  좌표에 즉시 반영되지 않고, GoTo 종료 후 corrective/트래킹 가이드가 처리한다.
+
 ## GoTo 중 좌표 처리
 
 OnStepX는 GoTo 중에 큰 이동 후 잠시 멈춘 것처럼 보이다가 마지막 정밀 이동을 수행할 수

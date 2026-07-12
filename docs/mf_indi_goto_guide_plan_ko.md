@@ -368,6 +368,12 @@ flowchart TD
 기존 초안은 접근 마지막을 20x(~5'/s)로 끝내 마지막 1도에 ~17초가 걸렸다. 48x
 마지막 구간은 ~6초에 통과하며, 최종 INDI GoTo는 여전히 보고 오차 0'으로 도달한다.
 
+미해결 이슈(2026-07-12): 제자리/초단거리 INDI GoTo(마운트가 이미 target 위에 sync된
+뒤의 final/corrective GoTo 등)의 완료 판정이 매우 느리다(~1-2분) — no-move GoTo에서
+OnStepX가 goto-active를 보고하지 않아 mount-control의 완료 감지가 grace/fallback
+창까지 대기한다. 수정 후보: 오차가 이미 near threshold 이내면 INDI GoTo를 생략하고
+바로 final sync로 가거나, mount-control의 no-move 완료 판정을 단축.
+
 실장비에서 발견한 모션 연속성 규칙 두 가지(둘 다 필수):
 
 - **OnStepX는 슬루 레이트 변경 시 모션을 정지**하며, keepalive만으로는 재시동되지

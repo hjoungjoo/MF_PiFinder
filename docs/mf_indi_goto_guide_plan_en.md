@@ -381,6 +381,14 @@ The earlier draft ended the approach at 20x (~5'/s), which made the final degree
 crawl (~17 s); the 48x last leg covers it in ~6 s and the final INDI GoTo still
 lands at 0' reported error.
 
+Known open issue (2026-07-12): a zero/short-move INDI GoTo (target already at
+the mount position, e.g. the final/corrective GoTo after the mount was synced on
+target) completes very slowly (~1-2 min) — OnStepX never reports goto-active for
+a no-move GoTo, so mount-control's completion detection waits out its
+grace/fallback window. Candidate fix: skip the INDI GoTo (go straight to final
+sync) when the error is already inside the near threshold, or shorten the
+no-move completion detection in mount-control.
+
 Two motion-continuity rules found on hardware (both required):
 
 - **OnStepX halts motion on a slew-rate change**, and a keepalive alone never

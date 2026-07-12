@@ -60,6 +60,14 @@ IMU_SMOOTH_MODERATE_ALPHA = 0.25
 IMU_SMOOTH_LARGE_ALPHA = 0.65
 MOUNT_IMU_DELTA_HOLD_SECONDS = 1.5
 MOUNT_READBACK_MOVING_DELTA_DEGREES = 0.005
+# Rate gate for the mount+IMU-delta fusion. The IMU delta exists to catch fast
+# physical disturbances (a bump, a manual push). While the mount is tracking, the
+# smoothed IMU lags the slow (~15"/s) tracking motion, so the raw delta drifts at
+# near-sidereal rate and would drag the fused coordinate off target without
+# bound. Only IMU steps faster than this rate are applied to the fused
+# coordinate; slower accumulation is discarded and any applied offset decays.
+IMU_DELTA_FAST_RATE_DEG_PER_SEC = 0.05
+IMU_DELTA_DECAY_TAU_SECONDS = 120.0
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -224,6 +232,7 @@ class PointingCoordinateService:
         self.imu_weight_when_mount_aligned = imu_weight_when_mount_aligned
         self.max_fusion_separation_degrees = max_fusion_separation_degrees
         self._mount_imu_anchor: Optional[dict[str, Any]] = None
+        self._imu_delta_tracker: Optional[dict[str, Any]] = None
         self._imu_filter_altaz: Optional[Tuple[float, float]] = None
         self._mount_motion_hold_until = 0.0
         self._last_mount_motion_radec: Optional[Tuple[float, float]] = None
@@ -262,6 +271,7 @@ class PointingCoordinateService:
         with self._state_lock:
             self._state = None
             self._mount_imu_anchor = None
+            self._imu_delta_tracker = None
             self._imu_filter_altaz = None
             self._mount_motion_hold_until = 0.0
             self._last_mount_motion_radec = None
@@ -707,8 +717,15 @@ class PointingCoordinateService:
 
         imu_delta_ra = _wrap_angle_delta_degrees(imu_radec[0] - anchor["imu_ra"])
         imu_delta_dec = imu_radec[1] - anchor["imu_dec"]
-        east_delta = imu_delta_ra * math.cos(math.radians(anchor["imu_dec"]))
-        dec_deg = max(-89.9, min(89.9, anchor["mount_dec"] + imu_delta_dec))
+        # Rate-gate the delta: only fast IMU motion (a real push/bump) is applied
+        # to the fused coordinate. Slow accumulation — the smoothed IMU lagging
+        # sidereal tracking, or sensor drift — is discarded, so the fused
+        # coordinate stays anchored to the mount readback while tracking.
+        applied_ra, applied_dec, gate_state, imu_rate = self._gated_imu_delta(
+            imu_radec
+        )
+        east_delta = applied_ra * math.cos(math.radians(anchor["imu_dec"]))
+        dec_deg = max(-89.9, min(89.9, anchor["mount_dec"] + applied_dec))
         cos_dec = max(0.05, abs(math.cos(math.radians(dec_deg))))
         ra_deg = (anchor["mount_ra"] + east_delta / cos_dec) % 360.0
 
@@ -733,6 +750,10 @@ class PointingCoordinateService:
                 "anchor_imu_dec": anchor["imu_dec"],
                 "imu_delta_ra": imu_delta_ra,
                 "imu_delta_dec": imu_delta_dec,
+                "imu_delta_applied_ra": applied_ra,
+                "imu_delta_applied_dec": applied_dec,
+                "imu_delta_gate": gate_state,
+                "imu_delta_rate_deg_per_sec": imu_rate,
                 "mount_ra": mount_radec[0],
                 "mount_dec": mount_radec[1],
                 "imu_ra": imu_radec[0],
@@ -741,6 +762,57 @@ class PointingCoordinateService:
                 "sync_key": anchor["sync_key"],
                 "motion_active": False,
             },
+        )
+
+    def _gated_imu_delta(
+        self, imu_radec: Tuple[float, float]
+    ) -> Tuple[float, float, str, float]:
+        """Accumulate only fast IMU motion into the applied fusion delta.
+
+        Returns (applied_delta_ra, applied_delta_dec, gate_state, rate_deg_s).
+        The tracker resets whenever the mount/IMU anchor is recreated (a mount
+        move or sync), which also clears any applied offset after a disturbance
+        has been corrected.
+        """
+        now = time.monotonic()
+        tracker = self._imu_delta_tracker
+        if tracker is None or tracker.get("anchor") is not self._mount_imu_anchor:
+            self._imu_delta_tracker = {
+                "anchor": self._mount_imu_anchor,
+                "imu_ra": imu_radec[0],
+                "imu_dec": imu_radec[1],
+                "t": now,
+                "applied_ra": 0.0,
+                "applied_dec": 0.0,
+            }
+            return 0.0, 0.0, "init", 0.0
+
+        dt = max(1e-3, now - tracker["t"])
+        step_ra = _wrap_angle_delta_degrees(imu_radec[0] - tracker["imu_ra"])
+        step_dec = imu_radec[1] - tracker["imu_dec"]
+        step_deg = angular_separation_degrees(
+            tracker["imu_ra"], tracker["imu_dec"], imu_radec[0], imu_radec[1]
+        )
+        rate = step_deg / dt
+
+        if rate >= IMU_DELTA_FAST_RATE_DEG_PER_SEC:
+            tracker["applied_ra"] += step_ra
+            tracker["applied_dec"] += step_dec
+            gate_state = "fast_follow"
+        else:
+            decay = math.exp(-dt / IMU_DELTA_DECAY_TAU_SECONDS)
+            tracker["applied_ra"] *= decay
+            tracker["applied_dec"] *= decay
+            gate_state = "slow_decay"
+
+        tracker["imu_ra"] = imu_radec[0]
+        tracker["imu_dec"] = imu_radec[1]
+        tracker["t"] = now
+        return (
+            tracker["applied_ra"],
+            tracker["applied_dec"],
+            gate_state,
+            rate,
         )
 
     def _new_mount_imu_anchor(

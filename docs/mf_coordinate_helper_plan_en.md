@@ -226,6 +226,49 @@ Intent:
 The anchor is reset when no anchor exists, the sync key changes, or mount
 readback moves meaningfully away from the anchor.
 
+### IMU-delta rate gate (added 2026-07-12)
+
+Found on hardware while tracking: with the mount tracking sidereal, the readback
+RA/Dec stays fixed on the target, but the IMU smoothing filter treats the slow
+tracking motion (~15"/s) as small jitter and effectively freezes it. The
+IMU-derived RA then drifts at near-sidereal rate, the raw delta accumulates
+without bound, and the fused coordinate flows off target (~20'/min). This false
+drift falsely triggered the tracking-guide GoTo recovery, physically moving the
+mount *off* target.
+
+Fix: `_mount_with_imu_delta` applies a **rate-gated delta** (`_gated_imu_delta`)
+instead of the raw delta.
+
+```text
+IMU_DELTA_FAST_RATE_DEG_PER_SEC = 0.05
+  Delta increments are applied only when the per-tick IMU motion rate is at
+  least this fast (a real push/bump). 10x margin above the tracking artifact
+  (~0.005 deg/s).
+
+IMU_DELTA_DECAY_TAU_SECONDS = 120.0
+  In slow intervals the applied delta decays toward zero with this time
+  constant; after a bump the offset stays visible much longer than the
+  disturbance-recovery window.
+```
+
+- Bump / manual push (fast) -> `fast_follow`: the offset enters the fused
+  coordinate, so disturbance detection and recovery act on the true error.
+- Tracking artifact / sensor drift (slow) -> `slow_decay`: increments are
+  discarded and the applied delta decays, keeping the fused coordinate anchored
+  to the mount readback (= the target).
+- An anchor reset (mount move / sync) also resets the tracker and applied delta.
+- Diagnostics in metadata: `imu_delta_applied_ra/dec`, `imu_delta_gate`,
+  `imu_delta_rate_deg_per_sec`.
+- Limitation: a real external force slower than the gate (0.05 deg/s) is
+  invisible without a solve. At night SOLVED_PRIMARY takes precedence anyway.
+- End-to-end hardware validation (2026-07-12, user physically pushed the tube):
+  push detected (0.99 deg/s, err 1488') -> disturbed -> sync+GoTo recovery ->
+  settling 2.9' -> enabled 0.0', re-acquiring the pre-push position. During
+  stable tracking the false drift is gone (slow_decay).
+- Note: during GoTo phases mount readback has priority, so a push mid-GoTo is
+  not immediately visible in the displayed coordinate; the corrective pass /
+  tracking guide handles it after the GoTo ends.
+
 ## GoTo Handling
 
 OnStepX can perform a large GoTo movement, appear briefly idle, then perform a
