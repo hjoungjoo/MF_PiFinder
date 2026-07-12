@@ -30,10 +30,12 @@ import math
 import os
 import queue
 import time
+from datetime import datetime, timezone
 from multiprocessing import Queue
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 from PiFinder import config, utils
+from PiFinder.calc_utils import FastAltAz
 from PiFinder.multiproclogging import MultiprocLogging
 
 
@@ -44,16 +46,36 @@ MOUNT_STATUS_FILE = utils.data_dir / "mount_control_status.json"
 POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
 
 HEARTBEAT_SECONDS = 1.0
+# While a PiFinder manual approach / final GoTo is active, tick the service loop
+# faster than the idle heartbeat so manual-motion keepalives keep the mount moving
+# (the motion lease must not expire between commands). See the "manual-approach
+# motion dies between ticks" finding in mf_indi_goto_guide_plan.
+PIFINDER_ACTIVE_LOOP_SECONDS = 0.25
 CONFIG_RELOAD_SECONDS = 5.0
 POINTING_STATUS_MAX_AGE_SECONDS = 5.0
-PIFINDER_MANUAL_LEASE_SECONDS = 0.8
-PIFINDER_MANUAL_TICK_SECONDS = 0.7
+# Motion lease must be comfortably larger than the command interval so the mount
+# keeps moving (mount-control stays in state=manual_motion) between keepalives.
+PIFINDER_MANUAL_LEASE_SECONDS = 2.5
+PIFINDER_MANUAL_TICK_SECONDS = 0.25
+# Re-send a fresh manual_movement before mount-control's 10 s continuous-hold
+# guard starts refusing keepalives (same idea as the UI hold-to-move restart).
+PIFINDER_MANUAL_RESTART_SECONDS = 8.0
 PIFINDER_MANUAL_STALL_SECONDS = 5.0
 PIFINDER_MANUAL_MIN_COORDINATE_DELTA_DEGREES = 0.01
 PIFINDER_FINAL_GOTO_SETTLE_SECONDS = 2.0
 PIFINDER_MAX_CORRECTION_GOTOS = 2
 PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
 TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 2
+
+# Alt/Az manual approach: jog directions that move altitude and azimuth. On an
+# Alt/Az mount TELESCOPE_MOTION_NS/WE move altitude/azimuth, so the approach jogs
+# in Alt/Az (not RA/Dec). Confirmed on hardware: "north" raises altitude, and
+# "east" increases azimuth. Flip the azimuth pair if a different mount turns the
+# wrong way in azimuth.
+ALTAZ_ALT_UP_DIRECTION = "north"
+ALTAZ_ALT_DOWN_DIRECTION = "south"
+ALTAZ_AZ_INCREASE_DIRECTION = "east"
+ALTAZ_AZ_DECREASE_DIRECTION = "west"
 
 
 class IndiGotoGuideService:
@@ -85,6 +107,7 @@ class IndiGotoGuideService:
         self.manual_direction: Optional[str] = None
         self.manual_slew_rate: Optional[int] = None
         self.last_manual_command_at = 0.0
+        self.last_fresh_motion_at = 0.0
         self.last_coordinate_change_at = 0.0
         self.last_coordinate_ra: Optional[float] = None
         self.last_coordinate_dec: Optional[float] = None
@@ -111,6 +134,7 @@ class IndiGotoGuideService:
         self.tracking_recovery_goto_idle_since = 0.0
         self.tracking_recovery_attempts = 0
         self.last_action = "startup"
+        self._altaz_debug = ""
         self.pointing_status: dict[str, Any] = {"available": False}
 
     def run(self) -> None:
@@ -123,7 +147,7 @@ class IndiGotoGuideService:
             self._tick_tracking_guide()
             self._write_status()
             try:
-                command = self.service_queue.get(timeout=HEARTBEAT_SECONDS)
+                command = self.service_queue.get(timeout=self._loop_timeout())
             except queue.Empty:
                 continue
 
@@ -140,6 +164,17 @@ class IndiGotoGuideService:
         self.phase = "stopped"
         self._write_status(force=True)
         logger.info("INDI GoTo/Guide service stopped")
+
+    def _loop_timeout(self) -> float:
+        # Tick fast while actively driving the mount so manual-motion keepalives
+        # keep the lease alive; idle otherwise.
+        if self.phase in {
+            "manual_approach",
+            "final_indi_goto",
+            "corrective_indi_goto",
+        }:
+            return PIFINDER_ACTIVE_LOOP_SECONDS
+        return HEARTBEAT_SECONDS
 
     def handle_command(self, command: Any) -> bool:
         if not isinstance(command, dict):
@@ -182,6 +217,7 @@ class IndiGotoGuideService:
             self.manual_direction = None
             self.manual_slew_rate = None
             self.last_manual_command_at = 0.0
+            self.last_fresh_motion_at = 0.0
             self.final_goto_sent_at = 0.0
             self.final_goto_idle_since = 0.0
             self.correction_count = 0
@@ -291,6 +327,19 @@ class IndiGotoGuideService:
             "lease_seconds": PIFINDER_MANUAL_LEASE_SECONDS,
         }
 
+        # Auto-align at GoTo start: sync the mount to the current PiFinder
+        # coordinate so the manual approach navigates with reliable mount readback
+        # (PointingCoordinateService current.source = mount) instead of the raw
+        # IMU fallback. Without this the mount stays unaligned (source =
+        # imu_fallback) and the approach cannot converge.
+        if self.current_ra is not None and self.current_dec is not None:
+            self._forward_to_mountcontrol(
+                {"type": "sync", "ra": self.current_ra, "dec": self.current_dec}
+            )
+            if self.goto_plan is not None:
+                self.goto_plan["start_sync_ra"] = self.current_ra
+                self.goto_plan["start_sync_dec"] = self.current_dec
+
         self.service_state = "running"
         self.phase = "manual_approach"
         self.wait_reason = ""
@@ -383,25 +432,36 @@ class IndiGotoGuideService:
             return
         slew_rate = self._manual_slew_rate_for_error(self.last_error_arcmin)
 
-        if self.manual_slew_rate != slew_rate:
+        rate_changed = self.manual_slew_rate != slew_rate
+        if rate_changed:
             self._forward_to_mountcontrol({"type": "set_slew_rate", "rate": slew_rate})
             self.manual_slew_rate = slew_rate
 
         if self.manual_direction and self.manual_direction != direction:
             self._forward_to_mountcontrol({"type": "stop_movement"})
 
-        command_type = (
-            "manual_movement_keepalive"
-            if self.manual_direction == direction
-            else "manual_movement"
+        # A fresh manual_movement (not a keepalive) is needed when:
+        # - the direction changed (motion was stopped above),
+        # - the slew rate changed — OnStepX halts motion on a rate change, and a
+        #   keepalive alone never restarts it (observed on hardware: readback
+        #   froze right at the 9->8 transition, tripping the stall guard),
+        # - or periodically, because mount-control refuses keepalives after 10 s
+        #   of continuous hold (MANUAL_MOTION_MAX_CONTINUOUS_SECONDS); re-send
+        #   before that window closes, like the UI hold-to-move restart.
+        needs_fresh = (
+            self.manual_direction != direction
+            or rate_changed
+            or now - self.last_fresh_motion_at >= PIFINDER_MANUAL_RESTART_SECONDS
         )
         self._forward_to_mountcontrol(
             {
-                "type": command_type,
+                "type": "manual_movement" if needs_fresh else "manual_movement_keepalive",
                 "direction": direction,
                 "lease_seconds": PIFINDER_MANUAL_LEASE_SECONDS,
             }
         )
+        if needs_fresh:
+            self.last_fresh_motion_at = now
         self.manual_direction = direction
         self.last_manual_command_at = now
         self.last_action = f"pifinder manual approach {direction}"
@@ -950,10 +1010,34 @@ class IndiGotoGuideService:
         ):
             return None
 
+        component_threshold = 0.15
+
+        # On an Alt/Az mount the manual-motion buttons move altitude/azimuth, so
+        # jog in Alt/Az. Fall back to RA/Dec if the conversion is unavailable
+        # (no location/time) or for EQ mounts.
+        if self._is_altaz_mount():
+            errors = self._altaz_errors(
+                current_ra, current_dec, target_ra, target_dec
+            )
+            if errors is not None:
+                alt_error, az_error = errors
+                ns = ""
+                ew = ""
+                if alt_error > component_threshold:
+                    ns = ALTAZ_ALT_UP_DIRECTION
+                elif alt_error < -component_threshold:
+                    ns = ALTAZ_ALT_DOWN_DIRECTION
+                if az_error > component_threshold:
+                    ew = ALTAZ_AZ_INCREASE_DIRECTION
+                elif az_error < -component_threshold:
+                    ew = ALTAZ_AZ_DECREASE_DIRECTION
+                if ns and ew:
+                    return ns + ew
+                return ns or ew or None
+
         ra_delta = self._wrap_angle_delta_degrees(target_ra - current_ra)
         east_west_error = ra_delta * math.cos(math.radians(current_dec))
         north_south_error = target_dec - current_dec
-        component_threshold = 0.15
 
         ns = ""
         ew = ""
@@ -970,17 +1054,99 @@ class IndiGotoGuideService:
             return ns + ew
         return ns or ew or None
 
+    def _is_altaz_mount(self) -> bool:
+        mount_type = str(self.config_values.get("mount_type", "Alt/Az")).strip().lower()
+        return "alt" in mount_type and "az" in mount_type
+
+    def _altaz_converter(self) -> Optional[FastAltAz]:
+        try:
+            location = self.shared_state.location()
+            dt = self.shared_state.datetime()
+        except Exception as exc:
+            self._altaz_debug = f"shared_state error: {exc!r}"
+            return None
+        dt_source = "shared"
+        if dt is None:
+            # No GPS/manual time in shared state yet. The device keeps its
+            # system clock synced (gps_time_sync helper / NTP), so fall back to
+            # system UTC rather than dropping to the RA/Dec jog logic, which is
+            # plain wrong on an Alt/Az mount.
+            dt = datetime.now(timezone.utc)
+            dt_source = "system_utc"
+
+        # A shared-state Location without a lock is the zeroed default
+        # (lat=lon=0), which would flip the computed jog directions. Prefer a
+        # locked shared location; otherwise fall back to the saved default
+        # location from config.
+        lat = lon = None
+        loc_source = "shared"
+        if location is not None and bool(getattr(location, "lock", False)):
+            lat = getattr(location, "lat", None)
+            lon = getattr(location, "lon", None)
+        if lat is None or lon is None:
+            default_loc = self.config_values.get("default_location")
+            if isinstance(default_loc, dict):
+                lat = self._finite_float(default_loc.get("latitude"))
+                lon = self._finite_float(default_loc.get("longitude"))
+                loc_source = "config_default"
+        if lat is None or lon is None:
+            self._altaz_debug = "no usable location (no lock, no default)"
+            return None
+        try:
+            conv = FastAltAz(lat, lon, dt)
+            self._altaz_debug = (
+                f"ok lat={lat:.3f} lon={lon:.3f} ({loc_source}) "
+                f"dt={dt.isoformat()} ({dt_source})"
+            )
+            return conv
+        except Exception as exc:
+            self._altaz_debug = f"FastAltAz error: {exc!r}"
+            return None
+
+    def _altaz_errors(
+        self,
+        current_ra: float,
+        current_dec: float,
+        target_ra: float,
+        target_dec: float,
+    ) -> Optional[Tuple[float, float]]:
+        """Altitude/azimuth error (target - current) for Alt/Az jogging.
+
+        Both points use the same location/time, so the relative alt/az direction
+        is robust even if the absolute location is only approximate. Returns None
+        if the conversion is unavailable (caller falls back to RA/Dec).
+        """
+        converter = self._altaz_converter()
+        if converter is None:
+            return None
+        try:
+            cur_alt, cur_az = converter.radec_to_altaz(
+                current_ra, current_dec, alt_only=False
+            )
+            tgt_alt, tgt_az = converter.radec_to_altaz(
+                target_ra, target_dec, alt_only=False
+            )
+        except Exception:
+            logger.debug("Alt/Az conversion failed", exc_info=True)
+            return None
+        if None in (cur_alt, cur_az, tgt_alt, tgt_az):
+            return None
+        alt_error = tgt_alt - cur_alt
+        az_error = self._wrap_angle_delta_degrees(tgt_az - cur_az)
+        return alt_error, az_error
+
     def _manual_slew_rate_for_error(self, error_arcmin: float) -> int:
+        # The approach only needs to get inside the ~1 deg near threshold; the
+        # final INDI GoTo handles precision. Keep the last leg fast (48x) — the
+        # earlier 20x leg made the final degree crawl (~5'/s).
         error_degrees = error_arcmin / 60.0
-        if error_degrees >= 15.0:
+        if error_degrees >= 10.0:
             return 9
-        if error_degrees >= 5.0:
+        if error_degrees >= 3.0:
             return 8
-        if error_degrees >= 2.0:
-            return 7
         if error_degrees >= 1.0:
-            return 6
-        return 4
+            return 7
+        return 6
 
     def _refresh_pointing_status(self) -> dict[str, Any]:
         self.pointing_status = self._load_pointing_status()
@@ -1185,7 +1351,16 @@ class IndiGotoGuideService:
             "indi_tracking_guide_goto_threshold_deg": float(
                 cfg.get_option("indi_tracking_guide_goto_threshold_deg", 3.0)
             ),
+            "mount_type": str(cfg.get_option("mount_type", "Alt/Az")),
         }
+        locations = cfg.get_option("locations", {}) or {}
+        loc_list = (
+            locations.get("locations", []) if isinstance(locations, dict) else []
+        )
+        self.config_values["default_location"] = next(
+            (loc for loc in loc_list if loc.get("is_default")),
+            loc_list[0] if loc_list else None,
+        )
         self.last_config_load = now
 
     def _mount_status_summary(self) -> dict[str, Any]:
@@ -1242,6 +1417,7 @@ class IndiGotoGuideService:
             "last_error_arcmin": self.last_error_arcmin,
             "goto_plan": self.goto_plan,
             "last_action": self.last_action,
+            "altaz_debug": self._altaz_debug,
             "mountcontrol_queue_available": self.mountcontrol_queue is not None,
             "pointing": self._refresh_pointing_status(),
             "mount_status": self._mount_status_summary(),
