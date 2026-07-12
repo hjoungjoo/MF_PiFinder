@@ -258,6 +258,21 @@ class IndiGotoGuideService:
 
         self.active_target_ra = target_ra
         self.active_target_dec = target_dec
+
+        # Reset per-GoTo approach state. Without this a second GoTo in the same
+        # session (e.g. a fresh SkySafari GoTo after one already completed, or a
+        # disturbance recovery) inherits a stale final_sync_sent=True, so
+        # _send_final_sync_once() no-ops and the pifinder state machine hangs in
+        # final_indi_goto forever (mount control finishes in ~7s but the guide
+        # never advances to "complete"). Stale correction_count /
+        # previous_goto_error_arcmin would likewise mis-fire the correction
+        # limit and the "error did not improve" guard.
+        self.correction_count = 0
+        self.previous_goto_error_arcmin = None
+        self.final_sync_sent = False
+        self.final_goto_idle_since = 0.0
+        self.final_goto_sent_at = 0.0
+
         goto_method = self.config_values.get("indi_goto_method", "indi_mount")
 
         if goto_method == "indi_mount":
@@ -398,6 +413,24 @@ class IndiGotoGuideService:
             self._stop_with_error("manual approach error unavailable")
             return
 
+        near_threshold_arcmin = (
+            float(self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0))
+            * 60.0
+        )
+        self._update_goto_plan()
+        if self.last_error_arcmin <= near_threshold_arcmin:
+            # Already within the hand-off threshold (includes a GoTo issued while
+            # on target): go straight to the final INDI GoTo. The stall guard
+            # must NOT run first here -- a stationary on-target coordinate
+            # legitimately stops changing and would otherwise be misread as a
+            # stalled approach and error out.
+            self._forward_to_mountcontrol({"type": "stop_movement"})
+            self.manual_direction = None
+            self._begin_final_indi_goto()
+            return
+
+        # Actively jogging toward the target: from here the coordinate must keep
+        # updating, otherwise the manual approach has stalled.
         self._update_coordinate_progress_tracking()
         now = time.monotonic()
         if (
@@ -405,17 +438,6 @@ class IndiGotoGuideService:
             and now - self.last_coordinate_change_at > PIFINDER_MANUAL_STALL_SECONDS
         ):
             self._stop_with_error("pointing coordinate stopped updating")
-            return
-
-        near_threshold_arcmin = (
-            float(self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0))
-            * 60.0
-        )
-        self._update_goto_plan()
-        if self.last_error_arcmin <= near_threshold_arcmin:
-            self._forward_to_mountcontrol({"type": "stop_movement"})
-            self.manual_direction = None
-            self._begin_final_indi_goto()
             return
 
         if now - self.last_manual_command_at < PIFINDER_MANUAL_TICK_SECONDS:

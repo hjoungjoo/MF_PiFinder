@@ -381,13 +381,25 @@ The earlier draft ended the approach at 20x (~5'/s), which made the final degree
 crawl (~17 s); the 48x last leg covers it in ~6 s and the final INDI GoTo still
 lands at 0' reported error.
 
-Known open issue (2026-07-12): a zero/short-move INDI GoTo (target already at
-the mount position, e.g. the final/corrective GoTo after the mount was synced on
-target) completes very slowly (~1-2 min) — OnStepX never reports goto-active for
-a no-move GoTo, so mount-control's completion detection waits out its
-grace/fallback window. Candidate fix: skip the INDI GoTo (go straight to final
-sync) when the error is already inside the near threshold, or shorten the
-no-move completion detection in mount-control.
+Resolved 2026-07-12 (was previously misdiagnosed as an OnStep no-move
+completion lag): the second and later pifinder GoTo in a session appeared to
+"hang" in `final_indi_goto` for minutes. Root cause was in the guide, not mount
+control (mount control finishes the GoTo in ~7 s). `_handle_goto_target` did not
+reset the per-GoTo approach flags, so a stale `final_sync_sent = True` from the
+previous GoTo (or a disturbance recovery) made `_send_final_sync_once()` no-op,
+and the state machine never advanced to `complete`. Fixes:
+
+1. Reset `final_sync_sent`, `correction_count`, `previous_goto_error_arcmin`,
+   `final_goto_idle_since`, `final_goto_sent_at` at the start of every
+   `_handle_goto_target`.
+2. In `_tick_manual_approach`, evaluate the near-threshold hand-off *before* the
+   coordinate-stall guard. An on-target GoTo (error already within the near
+   threshold) hands off to the final INDI GoTo immediately; a stationary
+   on-target coordinate legitimately stops changing and must not be read as a
+   stalled approach.
+
+Verified on hardware: consecutive GoTos in one session both reach `complete`
+(previously the 2nd+ hung), and an on-target GoTo completes in ~0 s.
 
 Two motion-continuity rules found on hardware (both required):
 

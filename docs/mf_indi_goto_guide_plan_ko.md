@@ -368,11 +368,23 @@ flowchart TD
 기존 초안은 접근 마지막을 20x(~5'/s)로 끝내 마지막 1도에 ~17초가 걸렸다. 48x
 마지막 구간은 ~6초에 통과하며, 최종 INDI GoTo는 여전히 보고 오차 0'으로 도달한다.
 
-미해결 이슈(2026-07-12): 제자리/초단거리 INDI GoTo(마운트가 이미 target 위에 sync된
-뒤의 final/corrective GoTo 등)의 완료 판정이 매우 느리다(~1-2분) — no-move GoTo에서
-OnStepX가 goto-active를 보고하지 않아 mount-control의 완료 감지가 grace/fallback
-창까지 대기한다. 수정 후보: 오차가 이미 near threshold 이내면 INDI GoTo를 생략하고
-바로 final sync로 가거나, mount-control의 no-move 완료 판정을 단축.
+해결됨 2026-07-12 (이전에 OnStep no-move 완료 지연으로 오진했던 건): 한 세션에서
+두 번째 이후 pifinder GoTo가 `final_indi_goto`에서 수 분간 "멈춘 것처럼" 보였다.
+원인은 mount control이 아니라 guide였다(mount control은 ~7초에 GoTo 완료).
+`_handle_goto_target`가 GoTo별 approach 플래그를 리셋하지 않아, 직전 GoTo(또는 외란
+복구)가 남긴 `final_sync_sent = True` 때문에 `_send_final_sync_once()`가 no-op이
+되고 상태기계가 `complete`로 넘어가지 못했다. 수정:
+
+1. 모든 `_handle_goto_target` 시작 시 `final_sync_sent`, `correction_count`,
+   `previous_goto_error_arcmin`, `final_goto_idle_since`, `final_goto_sent_at`를
+   리셋.
+2. `_tick_manual_approach`에서 near-threshold 핸드오프를 좌표 stall 가드보다
+   *먼저* 평가. 이미 near threshold 이내(on-target)인 GoTo는 즉시 final INDI
+   GoTo로 넘어간다 — 정지한 on-target 좌표는 원래 안 변하므로 stall로 오판하면
+   안 된다.
+
+실장비 검증: 한 세션 내 연속 GoTo가 모두 `complete`에 도달(이전엔 2번째부터 멈춤),
+on-target GoTo는 ~0초에 완료.
 
 실장비에서 발견한 모션 연속성 규칙 두 가지(둘 다 필수):
 
