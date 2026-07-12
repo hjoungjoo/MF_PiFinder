@@ -277,6 +277,20 @@ mount_readback_priority == true
 mount readback is still changing between ticks
 ```
 
+### Hardware validation (2026-07-12)
+
+This source-selection logic itself works. During a direct hold-to-move (keypad),
+mount-control reports `state = manual_motion`, `mount_motion_active = true`, and
+`current.source = mount`, smoothly tracking the driver `EQUATORIAL_EOD_COORD`.
+
+Note: this path only engages while the mount is **actually moving** so that
+mount-control keeps `state = manual_motion`. The PiFinder GoTo
+(`indi_goto_method = pifinder`) "moves then stops" problem was **not** this
+coordinate logic — the manual approach's motion lease was shorter than the service
+tick, so motion expired and stopped, dropping `state` to `connected` and falling
+back to the stopped-only `mount_imu_delta` fusion. See "Hardware test finding:
+manual-approach motion dies between ticks" in `mf_indi_goto_guide_plan`.
+
 If `mount_readback_priority` is absent in an older status file, the service
 falls back to interpreting `goto_motion_active`, `goto_refine_pending`,
 `manual_motion_direction`, `state`, `multipoint_align`, and `backlash_auto`.

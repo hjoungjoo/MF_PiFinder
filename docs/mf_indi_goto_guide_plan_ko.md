@@ -338,6 +338,10 @@ flowchart TD
 
 세부 절차:
 
+- **GoTo 시작 시 자동 align: 현재 PiFinder 좌표로 mount를 sync한다.** 이렇게 하면
+  mount가 aligned 되어 접근이 신뢰할 수 있는 mount readback(`current.source = mount`)
+  으로 navigate한다. 이 초기 sync가 없으면 mount가 미정렬 상태로 남아 `current`가 원시
+  IMU(`source = imu_fallback`)로 폴백되어, 실내/무솔빙에서 제대로 navigate하지 못한다.
 - 이동량 계산에 필요한 현재 좌표는 `PointingCoordinateService`의
   `CoordinateState.current`를 사용한다.
 - target까지의 거리와 방향을 계산해 manual movement 방향과 속도를 정한다.
@@ -352,15 +356,27 @@ flowchart TD
 - 목표 위치 범위 안에 들어오면 최종 target 좌표로 다시 sync/alignment한다.
   이 마지막 동기화는 이후 tracking 정밀도를 높이기 위한 절차다.
 
-속도 선택 초안:
+속도 정책 (실장비 튜닝, 2026-07-12):
 
 ```text
-큰 오차       -> fast/slew 계열 수동 이동
-중간 오차     -> find/center 계열 수동 이동
-near threshold 근처 -> guide/slow 계열 수동 이동
+오차 >= 10도  -> rate 9 (Max)
+오차 >=  3도  -> rate 8 (1/2 Max)
+오차 >=  1도  -> rate 7 (48x)   # 1도 threshold 직전 마지막 구간
+오차 <   1도  -> rate 6 (20x)   # threshold를 낮출 때만 사용
 ```
 
-정확한 속도 단계와 거리 구간은 실장비 테스트로 조정한다.
+기존 초안은 접근 마지막을 20x(~5'/s)로 끝내 마지막 1도에 ~17초가 걸렸다. 48x
+마지막 구간은 ~6초에 통과하며, 최종 INDI GoTo는 여전히 보고 오차 0'으로 도달한다.
+
+실장비에서 발견한 모션 연속성 규칙 두 가지(둘 다 필수):
+
+- **OnStepX는 슬루 레이트 변경 시 모션을 정지**하며, keepalive만으로는 재시동되지
+  않는다 — `set_slew_rate` 후 서비스는 fresh `manual_movement`를 재전송해야 한다
+  (관측: 9->8 전환 순간 readback이 얼어붙어 stall 가드가 접근을 중단시켰다).
+- mount-control은 10초 연속 유지 후 keepalive를 거부하므로
+  (`MANUAL_MOTION_MAX_CONTINUOUS_SECONDS`), 접근은 UI 홀드 이동 재시동과 같은
+  패턴으로 `PIFINDER_MANUAL_RESTART_SECONDS = 8.0`초마다 fresh
+  `manual_movement`를 재전송한다.
 
 주의 사항:
 
@@ -369,6 +385,83 @@ near threshold 근처 -> guide/slow 계열 수동 이동
 - solve가 없으면 IMU/mount 융합 좌표로 coarse 접근은 가능하지만 오차가 커질 수 있다.
 - 마운트가 Park 상태이거나 위치/시간이 유효하지 않으면 시작하지 않는다.
 - Stop/Abort는 manual 접근, 최종 GoTo, 보정 GoTo 어느 단계에서도 최우선 처리한다.
+
+### 실장비 테스트 발견: 수동 접근 모션이 tick 사이에 끊김 (2026-07-12)
+
+증상: `indi_goto_method = pifinder`에서 마운트가 조금 이동하다 멈추고, 접근이
+수렴하지 못한 채 `error`(`wait_reason = "pointing coordinate stopped updating"`)로
+끝난다.
+
+근본 원인 — 수동 접근의 **모션 lease가 서비스 tick 간격보다 짧아** 명령 사이에
+모션이 만료된다:
+
+- `_tick_manual_approach`는 `manual_movement`를 `PIFINDER_MANUAL_LEASE_SECONDS =
+  0.8`로 보낸다.
+- 서비스 루프는 `service_queue.get(timeout = HEARTBEAT_SECONDS = 1.0)`에 묶여
+  tick(및 다음 keepalive)이 **약 1초에 한 번**만 발생한다.
+- lease 0.8초 < tick ~1.0초 → 다음 명령 전에 mount-control의 수동 모션 deadline이
+  만료되어 마운트를 정지시킨다. state가 다시 `connected`로 떨어진다.
+
+좌표 체인에서의 결과(실장비 검증):
+
+- 마운트가 실제로 움직이는 동안은 모두 정상: mount-control이 `state =
+  manual_motion`, `mount_motion_active = true`를 보고하고,
+  `PointingCoordinateService.current.source = mount`로 드라이버
+  `EQUATORIAL_EOD_COORD`를 부드럽게 추종한다.
+- 그러나 lease가 계속 만료되어 마운트가 대부분 정지 상태라, `mount_motion_active`가
+  `false`로 읽히고 `current`가 **정지 전용**인 `mount_imu_delta` 융합으로 폴백한다
+  (`mf_coordinate_helper_plan`의 "Mount + IMU Delta" 참고). 이 좌표는 이동을 추종하지
+  못해(Dec 사실상 고정) 접근이 stall→정지한다.
+
+좌표 쪽은 **문제가 아니다** — 직접 홀드 이동(`_guide_move`, lease 2.5초, UI 루프가
+~0.25초마다 keepalive 펌핑)은 `state = manual_motion`과 `current.source = mount`를
+유지하며 마운트를 연속 구동한다.
+
+수정 방향:
+
+- `PIFINDER_MANUAL_LEASE_SECONDS`를 tick 간격(~1초)보다 충분히 크게(예: ~2.0~2.5초,
+  동작하는 홀드 이동과 동일) 올리고, 그리고/또는 접근 중 tick을 더 빠르게(접근이 진행
+  중일 때 `HEARTBEAT_SECONDS`보다 짧은 대기)해서 모션을 연속으로 유지하고 mount-control이
+  `state = manual_motion`을 유지하게 한다.
+- 모션이 유지되면 `PointingCoordinateService`가 `mount` source에 머물러 접근이
+  수렴할 수 있다.
+
+### 실장비 테스트 발견: Alt/Az 마운트인데 수동 접근이 RA/Dec 방향으로 조그 (2026-07-12)
+
+증상(lease 수정 후): 마운트가 더는 멈추지 않지만 수동 접근이 엉뚱한 방향으로 간다.
+잠깐 타겟으로 수렴하다가 오버슛하며 발산한다 — error가 커지고 마운트가 의도한 방향의
+반대로 움직인다. 실제 예: 타겟 Dec 42.5도, 접근이 Dec ~42도까지 갔다가("southeast"
+명령) Dec가 ~47도까지 올라가고 RA도 반대로 움직여 error가 274'→432'로 증가.
+
+근본 원인 — `_manual_direction_to_target`는 조그 방향을 **RA/Dec**(Dec 오차=남북, RA
+오차=동서)로 계산해 `manual_movement`(`TELESCOPE_MOTION_NS`/`TELESCOPE_MOTION_WE`)로
+보낸다. **Alt/Az 마운트에서 이 버튼들은 고도(Alt)/방위(Az)로 움직이지** RA/Dec가
+아니다. 두 좌표계는 특정 위치에서만 일치하고 스코프가 움직이면 회전/반전하므로, 고정된
+RA/Dec 방향 가정이 마운트를 반대로 보낸다.
+
+검증: 이동 중 `current.source = mount`(IMU 정확히 보류) → IMU 문제가 아니라 수동 조그의
+**프레임 불일치**다.
+
+수정 — 수동 접근을 기존 config `mount_type`(`Alt/Az` | `EQ`)에 맞춰 분기:
+
+- `EQ`: 기존 RA/Dec 방향 로직 유지(Dec=남북, RA=동서).
+- `Alt/Az`: 현재·타겟 RA/Dec를 Alt/Az로 변환(`FastAltAz(lat, lon, dt).radec_to_altaz`)해
+  Alt/Az 공간에서 조그:
+  - 고도 오차 -> `north`(Alt↑) / `south`(Alt↓). 실장비 검증: `north` 명령
+    (`MOTION_NORTH`)이 고도를 올린다.
+  - 방위 오차(최단 wrap) -> `east` / `west`. 실장비 확인: `east`가 방위를 증가,
+    `west`가 감소시킨다.
+- 변환에 관측 위치·시간이 필요. 실내 테스트에서 실제로 두 가지 폴백이 필요했다:
+  - `shared_state.datetime()`은 GPS/수동 시간 설정 전까지 `None` -> **시스템 UTC
+    시계**로 폴백(시간 동기 헬퍼가 동기 유지).
+  - `lock` 없는 `shared_state.location()`은 0으로 초기화된 기본값(lat=lon=0)이라
+    계산된 방향이 뒤집힘 -> config의 **저장된 기본 위치**(`locations` 목록의
+    `is_default`)로 폴백.
+  변환기 입력은 status 파일의 `altaz_debug`로 노출된다.
+- 사용 가능한 위치가 전혀 없을 때만 RA/Dec 로직으로 폴백.
+- 무솔빙 실내에서 end-to-end 검증 완료(2026-07-12): 시작 시 자동 align sync,
+  명령/정답 방향이 일치하는 Alt/Az 접근, 오차 799' -> 63' 단조 감소, near
+  threshold 진입 -> sync + 최종 INDI GoTo -> 보고 오차 0'으로 `complete`.
 
 ## 추적 가이드
 

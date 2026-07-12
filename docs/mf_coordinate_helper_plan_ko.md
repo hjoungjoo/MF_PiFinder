@@ -285,6 +285,19 @@ mount_readback_priority == true
 mount readback이 최근 tick 대비 계속 변하는 중
 ```
 
+### 실장비 검증 (2026-07-12)
+
+이 소스 선택 로직 자체는 정상 동작함을 확인했다. 직접 홀드 이동(키패드) 중에는
+mount-control이 `state = manual_motion`, `mount_motion_active = true`를 보고하고,
+`current.source = mount`로 드라이버 `EQUATORIAL_EOD_COORD`를 부드럽게 추종한다.
+
+주의: 이 로직은 **마운트가 실제로 계속 움직여 mount-control state가 `manual_motion`으로
+유지될 때만** 활성화된다. PiFinder GoTo(`indi_goto_method = pifinder`)의 수동 접근에서
+마운트가 멈추던 문제는 이 좌표 로직이 아니라, 수동 접근의 모션 lease가 서비스 tick
+간격보다 짧아 모션이 만료→정지되어 state가 `connected`로 떨어지고 `mount_imu_delta`
+(정지 전용)로 폴백된 것이 원인이다. 자세한 내용은 `mf_indi_goto_guide_plan`의
+"실장비 테스트 발견: 수동 접근 모션이 tick 사이에 끊김" 참고.
+
 `mount_readback_priority`가 없는 오래된 status를 읽는 경우에만 fallback으로
 `goto_motion_active`, `goto_refine_pending`, `manual_motion_direction`, `state`,
 `multipoint_align`, `backlash_auto`를 해석한다.

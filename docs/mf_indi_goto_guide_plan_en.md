@@ -345,6 +345,12 @@ flowchart TD
 
 Detailed procedure:
 
+- **At GoTo start, auto-align: sync the mount to the current PiFinder
+  coordinate.** This makes the mount aligned so the approach navigates with
+  reliable mount readback (`current.source = mount`). Without this initial sync
+  the mount stays unaligned and `current` falls back to the raw IMU
+  (`source = imu_fallback`), which cannot navigate reliably indoors/without a
+  solve.
 - Current coordinates needed for movement calculation come from
   `PointingCoordinateService.CoordinateState.current`.
 - Calculate distance and direction to the target, then choose manual movement
@@ -362,15 +368,29 @@ Detailed procedure:
 - When inside the target range, sync/alignment the mount to the final target
   coordinate. This final sync improves tracking precision after acquisition.
 
-Draft speed policy:
+Speed policy (tuned on hardware, 2026-07-12):
 
 ```text
-large error       -> fast/slew-style manual movement
-medium error      -> find/center-style manual movement
-near threshold    -> guide/slow-style manual movement
+error >= 10 deg  -> rate 9 (Max)
+error >=  3 deg  -> rate 8 (1/2 Max)
+error >=  1 deg  -> rate 7 (48x)   # last leg before the 1-deg threshold
+error <   1 deg  -> rate 6 (20x)   # only used if the threshold is lowered
 ```
 
-Exact speed levels and distance bands should be tuned with hardware testing.
+The earlier draft ended the approach at 20x (~5'/s), which made the final degree
+crawl (~17 s); the 48x last leg covers it in ~6 s and the final INDI GoTo still
+lands at 0' reported error.
+
+Two motion-continuity rules found on hardware (both required):
+
+- **OnStepX halts motion on a slew-rate change**, and a keepalive alone never
+  restarts it — after `set_slew_rate` the service must re-send a fresh
+  `manual_movement` (observed: readback froze right at a 9->8 transition and the
+  stall guard aborted the approach).
+- mount-control refuses keepalives after 10 s of continuous hold
+  (`MANUAL_MOTION_MAX_CONTINUOUS_SECONDS`), so the approach re-sends a fresh
+  `manual_movement` every `PIFINDER_MANUAL_RESTART_SECONDS = 8.0` s, mirroring
+  the UI hold-to-move restart.
 
 Safety notes:
 
@@ -381,6 +401,92 @@ Safety notes:
 - Do not start when the mount is parked or location/time is invalid.
 - Stop/Abort must take priority during manual approach, final GoTo, and
   corrective GoTo.
+
+### Hardware test finding: manual-approach motion dies between ticks (2026-07-12)
+
+Symptom: with `indi_goto_method = pifinder`, the mount moves a little then stops,
+and the approach never converges (it ends in `error`, `wait_reason = "pointing
+coordinate stopped updating"`).
+
+Root cause — the manual-approach **motion lease is shorter than the service tick
+interval**, so the mount motion expires between commands:
+
+- `_tick_manual_approach` sends `manual_movement` with
+  `PIFINDER_MANUAL_LEASE_SECONDS = 0.8`.
+- The service loop is bounded by `service_queue.get(timeout = HEARTBEAT_SECONDS =
+  1.0)`, so the tick (and the next keepalive) only fires about **once per
+  second**.
+- 0.8 s lease < ~1.0 s tick, so mount-control's manual-motion deadline expires and
+  it stops the mount before the next command. State drops back to `connected`.
+
+Consequence in the coordinate chain (validated on hardware):
+
+- While the mount is actually moving, everything works: mount-control reports
+  `state = manual_motion`, `mount_motion_active = true`, and
+  `PointingCoordinateService.current.source = mount` tracking the live driver
+  `EQUATORIAL_EOD_COORD` smoothly.
+- But because the lease keeps expiring, the mount is mostly stopped, so
+  `mount_motion_active` reads `false` and `current` falls back to the
+  **stopped-only** `mount_imu_delta` fusion (see
+  `mf_coordinate_helper_plan`, "Mount + IMU Delta"). That coordinate does not
+  track the motion (Dec effectively frozen), so the approach stalls and stops.
+
+The coordinate side is **not** at fault — a direct hold-to-move (`_guide_move`,
+lease 2.5 s, keepalive every ~0.25 s pumped by the UI loop) drives the mount
+continuously with `state = manual_motion` and `current.source = mount` throughout.
+
+Fix direction:
+
+- Raise `PIFINDER_MANUAL_LEASE_SECONDS` comfortably above the tick interval (e.g.
+  ~2.0–2.5 s, matching the working hold-to-move), and/or shorten the approach tick
+  (a smaller wait than `HEARTBEAT_SECONDS` while an approach is active) so motion
+  stays continuous and mount-control keeps `state = manual_motion`.
+- With motion sustained, `PointingCoordinateService` stays on the `mount` source
+  and the approach can converge.
+
+### Hardware test finding: manual approach jogs in RA/Dec on an Alt/Az mount (2026-07-12)
+
+Symptom (after the lease fix): the mount no longer stops, but the manual approach
+goes the wrong way. It converges toward the target for a moment, then overshoots
+and diverges — the error grows and the mount moves opposite to the intended
+direction. Example run: target Dec 42.5 deg; the approach reached Dec ~42 deg,
+then (commanding "southeast") ran Dec up to ~47 deg with RA moving the wrong way,
+so the error climbed from ~274' back to ~432'.
+
+Root cause — `_manual_direction_to_target` computes the jog direction in **RA/Dec**
+(north/south from the Dec error, east/west from the RA error) and sends it as
+`manual_movement` (`TELESCOPE_MOTION_NS` / `TELESCOPE_MOTION_WE`). On an **Alt/Az
+mount** those motion buttons move in **Altitude / Azimuth**, not RA/Dec. The two
+frames coincide only at special positions and otherwise rotate/invert as the scope
+moves, so a fixed RA/Dec direction sends the mount the wrong way.
+
+Verified: during the motion `current.source = mount` (IMU correctly held), so this
+is not an IMU problem — it is a manual-jog **frame mismatch**.
+
+Fix — make the manual approach mount-type aware, using the existing config
+`mount_type` (`Alt/Az` | `EQ`):
+
+- `EQ`: keep the RA/Dec direction logic (`north`/`south` from Dec, `east`/`west`
+  from RA).
+- `Alt/Az`: convert current and target RA/Dec to Alt/Az (`FastAltAz(lat, lon, dt)
+  .radec_to_altaz`) and jog in Alt/Az:
+  - altitude error -> `north` (Alt up) / `south` (Alt down). Verified on hardware:
+    the `north` command (`MOTION_NORTH`) raises altitude.
+  - azimuth error (shortest wrap) -> `east` / `west`. Confirmed on hardware:
+    `east` increases azimuth, `west` decreases it.
+- Needs the observer location and time for the conversion. Two fallbacks were
+  required in practice (both hit during indoor testing):
+  - `shared_state.datetime()` is `None` until a GPS/manual time is set -> fall
+    back to the **system UTC clock** (kept synced by the time-sync helper).
+  - `shared_state.location()` without a `lock` is the zeroed default
+    (lat=lon=0), which flips the computed directions -> fall back to the **saved
+    default location** from config (`locations` list, `is_default`).
+  The converter's inputs are surfaced in the status file as `altaz_debug`.
+- Only if no usable location exists at all, fall back to the RA/Dec logic.
+- End-to-end verified indoors without solving (2026-07-12): auto-align sync at
+  start, Alt/Az approach with matching commanded/correct directions, error
+  799' -> 63' monotonically, near threshold -> sync + final INDI GoTo ->
+  `complete` with 0' reported error.
 
 ## Tracking Guide
 
