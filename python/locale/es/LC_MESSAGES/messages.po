@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-12 21:43+0900\n"
+"POT-Creation-Date: 2026-07-13 12:04+0900\n"
 "PO-Revision-Date: 2025-01-22 17:58+0100\n"
 "Last-Translator: Claude Code\n"
 "Language: es\n"
@@ -505,34 +505,42 @@ msgid "AUTO"
 msgstr "AUTO"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/base.py:341 PiFinder/ui/dateentry.py:166
+#: PiFinder/ui/base.py:336 PiFinder/ui/dateentry.py:166
 #: PiFinder/ui/locationentry.py:222 PiFinder/ui/timeentry.py:160
 msgid " Cancel"
 msgstr " Cancelar"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/base.py:775
+#: PiFinder/ui/base.py:766
 #, fuzzy
 msgid "Mount Stop"
 msgstr "Tipo Montura"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/base.py:804
+#: PiFinder/ui/base.py:795
 #, fuzzy
 msgid "Mount GoTo"
 msgstr "Tipo Montura"
 
-#: PiFinder/ui/base.py:808 PiFinder/ui/indi.py:586 PiFinder/ui/indi.py:1058
-#: PiFinder/ui/indi.py:1063 PiFinder/ui/object_details.py:411
+#: PiFinder/ui/base.py:799 PiFinder/ui/indi.py:577 PiFinder/ui/indi.py:1049
+#: PiFinder/ui/indi.py:1054 PiFinder/ui/object_details.py:411
 #: PiFinder/ui/polar_align.py:444
 msgid "No solve"
 msgstr "Sin resolver"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/base.py:811
+#: PiFinder/ui/base.py:802
 #, fuzzy
 msgid "Mount Sync"
 msgstr "Tipo Montura"
+
+#: PiFinder/ui/base.py:805 PiFinder/ui/indi.py:522 PiFinder/ui/indi.py:908
+msgid "Speed +"
+msgstr ""
+
+#: PiFinder/ui/base.py:808 PiFinder/ui/indi.py:525 PiFinder/ui/indi.py:911
+msgid "Speed -"
+msgstr ""
 
 #: PiFinder/ui/bluetooth_keyboard.py:74
 msgid "Scan / Pair"
@@ -1351,7 +1359,7 @@ msgstr "Estrella"
 msgid "INDI Restart"
 msgstr "Reiniciar"
 
-#: PiFinder/ui/indi.py:281 PiFinder/ui/indi.py:790 views/indi_mount.html:335
+#: PiFinder/ui/indi.py:281 PiFinder/ui/indi.py:781 views/indi_mount.html:335
 #: views/indi_mount.html:1116
 #, fuzzy
 msgid "Idle"
@@ -1381,217 +1389,209 @@ msgstr ""
 msgid "Backlash Saved"
 msgstr ""
 
-#: PiFinder/ui/indi.py:471
-msgid "+/- : Speed {label}"
+#: PiFinder/ui/indi.py:464
+msgid "9/3 : Speed {label}"
 msgstr ""
 
-#: PiFinder/ui/indi.py:477
+#: PiFinder/ui/indi.py:470
 msgid "5 : Refine {state}"
 msgstr ""
 
-#: PiFinder/ui/indi.py:483
+#: PiFinder/ui/indi.py:476
 msgid "0 : Guide {state}"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:521
+#: PiFinder/ui/indi.py:514
 #, fuzzy
 msgid "Guide Correction"
 msgstr "Corrección SQM"
 
-#: PiFinder/ui/indi.py:526
+#: PiFinder/ui/indi.py:519
 msgid "Refine On"
 msgstr ""
 
-#: PiFinder/ui/indi.py:526
+#: PiFinder/ui/indi.py:519
 msgid "Refine Off"
 msgstr ""
 
-#: PiFinder/ui/indi.py:577 PiFinder/ui/object_details.py:760
-msgid "Speed +"
-msgstr ""
-
-#: PiFinder/ui/indi.py:581 PiFinder/ui/object_details.py:772
-msgid "Speed -"
-msgstr ""
-
-#: PiFinder/ui/indi.py:589
+#: PiFinder/ui/indi.py:580
 #, fuzzy
 msgid "Aligned"
 msgstr "¡Alineado!"
 
-#: PiFinder/ui/indi.py:760
+#: PiFinder/ui/indi.py:751
 msgid "Align Complete"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:794 views/indi_mount.html:365
+#: PiFinder/ui/indi.py:785 views/indi_mount.html:365
 #, fuzzy
 msgid "Align Points"
 msgstr "Sin puntos"
 
-#: PiFinder/ui/indi.py:795 PiFinder/ui/indi.py:811 PiFinder/ui/indi.py:827
+#: PiFinder/ui/indi.py:786 PiFinder/ui/indi.py:802 PiFinder/ui/indi.py:818
 msgid "Points: {points}"
 msgstr ""
 
-#: PiFinder/ui/indi.py:796
+#: PiFinder/ui/indi.py:787
 msgid "Progress: {done}/{total}"
 msgstr ""
 
-#: PiFinder/ui/indi.py:800
+#: PiFinder/ui/indi.py:791
 msgid "+/- or 1-9 select"
 msgstr ""
 
-#: PiFinder/ui/indi.py:801
+#: PiFinder/ui/indi.py:792
 msgid "Right/Square next"
 msgstr ""
 
-#: PiFinder/ui/indi.py:802
+#: PiFinder/ui/indi.py:793
 #, fuzzy
 msgid "Left back"
 msgstr "Izquierda"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:810
+#: PiFinder/ui/indi.py:801
 #, fuzzy
 msgid "Preparing Align"
 msgstr "Alin. polar"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:815
+#: PiFinder/ui/indi.py:806
 #, fuzzy
 msgid "Syncing PiFinder"
 msgstr "Reiniciando PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:816
+#: PiFinder/ui/indi.py:807
 #, fuzzy
 msgid "Wait for mount"
 msgstr "esperando"
 
-#: PiFinder/ui/indi.py:817 PiFinder/ui/indi.py:858
+#: PiFinder/ui/indi.py:808 PiFinder/ui/indi.py:849
 msgid "Left mode/cancel"
 msgstr ""
 
-#: PiFinder/ui/indi.py:825 views/indi_mount.html:361
+#: PiFinder/ui/indi.py:816 views/indi_mount.html:361
 #, fuzzy
 msgid "Align Mode"
 msgstr "en modo cliente"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:826
+#: PiFinder/ui/indi.py:817
 #, fuzzy
 msgid "Mode: {mode}"
 msgstr "Modo WiFi: {mode}"
 
-#: PiFinder/ui/indi.py:831
+#: PiFinder/ui/indi.py:822
 msgid "1 Manual  2 Auto"
 msgstr ""
 
-#: PiFinder/ui/indi.py:832
+#: PiFinder/ui/indi.py:823
 #, fuzzy
 msgid "Up/Down change"
 msgstr "Contraseña Cambiada"
 
-#: PiFinder/ui/indi.py:833
+#: PiFinder/ui/indi.py:824
 msgid "Right/Square start"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:834
+#: PiFinder/ui/indi.py:825
 #, fuzzy
 msgid "Left points"
 msgstr "Sin puntos"
 
-#: PiFinder/ui/indi.py:842
+#: PiFinder/ui/indi.py:833
 #, fuzzy
 msgid "Alt: {alt:.0f} deg"
 msgstr "Alt:   {altitude:.1f} m"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:844
+#: PiFinder/ui/indi.py:835
 #, fuzzy
 msgid "Alt: unknown"
 msgstr "Desconocido"
 
-#: PiFinder/ui/indi.py:848
+#: PiFinder/ui/indi.py:839
 #, fuzzy
 msgid "Manual Star"
 msgstr "Estrella Doble"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:849
+#: PiFinder/ui/indi.py:840
 #, fuzzy
 msgid "Star: {star}"
 msgstr "Orden: {sort_order}"
 
-#: PiFinder/ui/indi.py:851 PiFinder/ui/indi.py:884
+#: PiFinder/ui/indi.py:842 PiFinder/ui/indi.py:875
 msgid "Point {done}/{total}"
 msgstr ""
 
-#: PiFinder/ui/indi.py:855
+#: PiFinder/ui/indi.py:846
 #, fuzzy
 msgid "Up/Down star"
 msgstr "Estrella Doble"
 
-#: PiFinder/ui/indi.py:856
+#: PiFinder/ui/indi.py:847
 msgid "Right/Square GoTo"
 msgstr ""
 
-#: PiFinder/ui/indi.py:857
+#: PiFinder/ui/indi.py:848
 msgid "SkySafari GoTo/Align OK"
 msgstr ""
 
-#: PiFinder/ui/indi.py:867
+#: PiFinder/ui/indi.py:858
 #, fuzzy
 msgid "Align Star"
 msgstr "Alineación Establecida"
 
-#: PiFinder/ui/indi.py:889
-msgid "789 / 4 6 / 123 move"
+#: PiFinder/ui/indi.py:880
+msgid "8/2/4/6 move  9/3 speed"
 msgstr ""
 
-#: PiFinder/ui/indi.py:893
+#: PiFinder/ui/indi.py:884
 msgid "Release stop  Left back"
 msgstr ""
 
-#: PiFinder/ui/indi.py:897
+#: PiFinder/ui/indi.py:888
 #, fuzzy
 msgid "Square : Confirm"
 msgstr "Confirmar"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1006 PiFinder/ui/indi.py:1012 PiFinder/ui/indi.py:1018
-#: PiFinder/ui/indi.py:1098
+#: PiFinder/ui/indi.py:997 PiFinder/ui/indi.py:1003 PiFinder/ui/indi.py:1009
+#: PiFinder/ui/indi.py:1089
 #, fuzzy
 msgid "Align Cancelled"
 msgstr "Cancelado"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1054
+#: PiFinder/ui/indi.py:1045
 #, fuzzy
 msgid "Manual Align"
 msgstr "Alin. polar"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1077
+#: PiFinder/ui/indi.py:1068
 #, fuzzy
 msgid "Auto Align"
 msgstr "Alin. polar"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1083
+#: PiFinder/ui/indi.py:1074
 #, fuzzy
 msgid "Below horizon"
 msgstr "Horizontal"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1093
+#: PiFinder/ui/indi.py:1084
 #, fuzzy
 msgid "GoTo Sent"
 msgstr "Restablecer ubicación"
 
-#: PiFinder/ui/indi.py:1117
+#: PiFinder/ui/indi.py:1108
 #, fuzzy
 msgid "Point Confirmed"
 msgstr "Confirmar"
@@ -2782,7 +2782,7 @@ msgid "Too Far"
 msgstr "Muy Lejos"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/object_details.py:747
+#: PiFinder/ui/object_details.py:748
 msgid "LOG"
 msgstr "REG"
 
@@ -5636,5 +5636,11 @@ msgstr ""
 #~ " It re-baselines from a valid "
 #~ "solve, otherwise the aligned mount, "
 #~ "otherwise the IMU."
+#~ msgstr ""
+
+#~ msgid "+/- : Speed {label}"
+#~ msgstr ""
+
+#~ msgid "789 / 4 6 / 123 move"
 #~ msgstr ""
 

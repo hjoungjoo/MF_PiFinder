@@ -49,8 +49,8 @@ def test_guide_mixin_cardinal_key_hold_to_move():
 
 
 def test_guide_mixin_discrete_and_removed_number_keys():
-    # 0 = Stop is discrete; the removed step-size (3/9) and init (1) keys do
-    # nothing.
+    # 0 = Stop is discrete, 9/3 adjust the slew rate; the removed init (1)
+    # key does nothing.
     screen = _screen()
 
     screen.key_number_press(0)
@@ -60,6 +60,8 @@ def test_guide_mixin_discrete_and_removed_number_keys():
 
     assert screen.command_queues["mountcontrol"].commands == [
         {"type": "stop_movement"},
+        {"type": "reduce_slew_rate"},
+        {"type": "increase_slew_rate"},
     ]
 
 
@@ -149,9 +151,13 @@ def test_guide_mixin_plain_text_event_does_not_keep_motion_alive():
     ]
 
 
-def test_guide_mixin_plus_minus_adjust_slew_rate():
+def test_guide_mixin_9_3_adjust_slew_rate_and_plus_minus_do_not():
+    # Slew rate lives on 9 (up) / 3 (down); +/- keep their per-screen
+    # content meaning and never touch the mount.
     screen = _screen()
 
+    screen.key_number(9)
+    screen.key_number(3)
     screen.key_plus()
     screen.key_minus()
 
@@ -165,13 +171,16 @@ def test_guide_mixin_is_noop_when_mount_control_is_off():
     screen = _screen(mount_control=False)
 
     screen.key_number_press(8)
+    screen.key_number_press(9)
     screen.key_text_press("q")
-    screen.key_plus()
 
     assert screen.command_queues["mountcontrol"].commands == []
 
 
 def test_focus_preview_uses_guide_keys_without_overriding_zoom_controls():
     assert issubclass(UIPreview, GuideKeyMixin)
-    assert UIPreview.key_plus is not GuideKeyMixin.key_plus
-    assert UIPreview.key_minus is not GuideKeyMixin.key_minus
+    # The mixin no longer touches +/- (slew rate moved to 9/3), so preview's
+    # zoom stays on its own key_plus/key_minus overrides.
+    assert not hasattr(GuideKeyMixin, "key_plus")
+    assert UIPreview.key_plus is not UIModule.key_plus
+    assert UIPreview.key_minus is not UIModule.key_minus

@@ -354,15 +354,14 @@ class UIIndiBacklash(UIIndiBase):
 class UIIndiGuide(UIIndiBase):
     __title__ = "INDI GUIDE"
 
+    # Cardinal-only, matching the unified mount map used by Object Details /
+    # status screens. Diagonal jog stays on the keyboard letters (q/e/z/c);
+    # 9/3 adjust the slew rate like everywhere else.
     _number_direction = {
-        1: "southwest",
         2: "south",
-        3: "southeast",
         4: "west",
         6: "east",
-        7: "northwest",
         8: "north",
-        9: "northeast",
     }
     _text_direction = {
         "z": "southwest",
@@ -452,23 +451,17 @@ class UIIndiGuide(UIIndiBase):
         bottom_key_y = max(top_y + line_h * 2, bottom_hint_y - line_h - 2)
         side_key_y = (top_y + bottom_key_y) // 2
 
-        key_9_w, _height = text_size("9")
-        key_3_w, _height = text_size("3")
-        overlay_text(4, top_y, "7")
         centered(top_y, "8")
-        overlay_text(self.display_class.resX - key_9_w - 4, top_y, "9")
         overlay_text(4, side_key_y, "4")
         right_w, _height = text_size("6")
         overlay_text(self.display_class.resX - right_w - 4, side_key_y, "6")
-        overlay_text(4, bottom_key_y, "1")
         centered(bottom_key_y, "2")
-        overlay_text(self.display_class.resX - key_3_w - 4, bottom_key_y, "3")
 
         compact_label = label.replace(" ", "")
         overlay_text(
             4,
             bottom_hint_y,
-            _("+/- : Speed {label}").format(label=compact_label),
+            _("9/3 : Speed {label}").format(label=compact_label),
         )
         refine = self.config_object.get_option("indi_goto_refine_once", False)
         overlay_text(
@@ -524,11 +517,17 @@ class UIIndiGuide(UIIndiBase):
             self.config_object.set_option("indi_goto_refine_once", enabled)
             self.command_queues["ui_queue"].put("reload_config")
             self.message(_("Refine On") if enabled else _("Refine Off"), 1)
+        elif number == 9:
+            self._send_mount({"type": "increase_slew_rate"})
+            self.message(_("Speed +"), 0.5)
+        elif number == 3:
+            self._send_mount({"type": "reduce_slew_rate"})
+            self.message(_("Speed -"), 0.5)
 
     def key_number_press(self, number=None):
         if number is None:
             return
-        if number in (0, 5):
+        if number in (0, 3, 5, 9):
             self.key_number(number)
             return
         direction = self._number_direction.get(number)
@@ -538,7 +537,7 @@ class UIIndiGuide(UIIndiBase):
     def key_number_release(self, number=None):
         if number is None:
             return
-        if number in (0, 5):
+        if number in (0, 3, 5, 9):
             return
         if number in self._number_direction:
             self._move("stop")
@@ -571,14 +570,6 @@ class UIIndiGuide(UIIndiBase):
             return
         if char.lower() in self._text_direction:
             self._move("stop")
-
-    def key_plus(self):
-        self._send_mount({"type": "increase_slew_rate"})
-        self.message(_("Speed +"), 0.5)
-
-    def key_minus(self):
-        self._send_mount({"type": "reduce_slew_rate"})
-        self.message(_("Speed -"), 0.5)
 
     def key_square(self):
         pointing = self._current_pointing_radec()
@@ -886,7 +877,7 @@ class UIIndiMultiPointAlign(UIIndiGuide):
         )
 
         bottom_y = self.display_class.resY - (small_h * 3) - 2
-        overlay_text(4, bottom_y, _("789 / 4 6 / 123 move"), use_font=small_font)
+        overlay_text(4, bottom_y, _("8/2/4/6 move  9/3 speed"), use_font=small_font)
         overlay_text(
             4,
             bottom_y + small_h,
@@ -912,6 +903,12 @@ class UIIndiMultiPointAlign(UIIndiGuide):
         if self._stage == self._STAGE_ADJUST:
             if number == 0:
                 self._cancel_and_exit()
+            elif number == 9:
+                self._send_mount({"type": "increase_slew_rate"})
+                self.message(_("Speed +"), 0.5)
+            elif number == 3:
+                self._send_mount({"type": "reduce_slew_rate"})
+                self.message(_("Speed -"), 0.5)
             return
 
         if self._stage == self._STAGE_POINTS and 1 <= number <= 9:
@@ -962,18 +959,12 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             super().key_text_release(char)
 
     def key_plus(self):
-        if self._stage == self._STAGE_ADJUST and self._is_adjusting():
-            super().key_plus()
-            return
         if self._stage != self._STAGE_POINTS:
             return
         self.align_points = clamp_align_points(self.align_points + 1)
         self.update()
 
     def key_minus(self):
-        if self._stage == self._STAGE_ADJUST and self._is_adjusting():
-            super().key_minus()
-            return
         if self._stage != self._STAGE_POINTS:
             return
         self.align_points = clamp_align_points(self.align_points - 1)

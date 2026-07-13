@@ -705,7 +705,8 @@ class UIObjectDetails(UIModule):
 
     def key_number(self, number):
         """Cardinal keys nudge the mount, 0/5/7 are discrete commands (GoTo uses
-        this object). Held cardinal keys move for as long as they are held."""
+        this object) and 9/3 adjust the slew rate. Held cardinal keys move for
+        as long as they are held."""
         self._mount_key(number, target=(self.object.ra, self.object.dec))
 
     def key_number_press(self, number=None):
@@ -756,9 +757,6 @@ class UIObjectDetails(UIModule):
         self.update()
 
     def key_plus(self):
-        if self._guide_key_plus():
-            self.message(_("Speed +"), 0.5)
-            return
         if self.object_display_mode == DM_DESC:
             self.descTextLayout.next()
             typeconst = self.texts.get("type-const")
@@ -768,9 +766,6 @@ class UIObjectDetails(UIModule):
             self.change_fov(1)
 
     def key_minus(self):
-        if self._guide_key_minus():
-            self.message(_("Speed -"), 0.5)
-            return
         if self.object_display_mode == DM_DESC:
             self.descTextLayout.previous()
             typeconst = self.texts.get("type-const")

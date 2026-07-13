@@ -70,9 +70,10 @@ When Mount Control is enabled, the number keys send these mount-control actions 
 the Object Details screen, on ordinary menus, and on the status screens (the one
 shared map — see `docs/mf_input_keymap_en.md`). USB/Bluetooth number keys, keypad
 number keys, and GPIO number keys behave the same way. Continuous directional jog
-is also on the keyboard letters, and the dedicated INDI Guide screen keeps its own
-jog scheme. On the object list the number keys instead type a catalog sequence to
-jump to, and a letter opens the Name Search.
+is also on the keyboard letters; the dedicated INDI Guide screen uses the same
+map (its number-key diagonal jog was removed — diagonals stay on the letters).
+On the object list the number keys instead type a catalog sequence to jump to,
+and a letter opens the Name Search.
 
 | Key | INDI mount action |
 | --- | --- |
@@ -83,14 +84,17 @@ jump to, and a letter opens the Name Search.
 | `6` | Move east — while the key is held |
 | `7` | Sync mount to the current PiFinder solved position |
 | `8` | Move north — while the key is held |
-| `1`, `3`, `9` | unused |
+| `9` | Slew rate (speed) up |
+| `3` | Slew rate (speed) down |
+| `1` | unused |
 
 The cardinal keys move the mount for as long as they are held (press starts the
 motion, release stops it), so you move exactly as much as you press. `5` (GoTo)
 only works on the Object Details screen, where an object is selected; on ordinary
 menus and status screens there is no target, so `5` does nothing. There is no
 step-size setting, and `1` no longer initializes/syncs — the mount inits and syncs
-automatically at startup. Movement speed is set by the slew rate (`+`/`-`).
+automatically at startup. Movement speed is set by the slew rate on `9` (up) /
+`3` (down); `+`/`-` never touch the mount.
 
 If the INDI server or mount connection has a problem, the normal PiFinder
 features continue running. Mount connection status is written here:

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-12 21:43+0900\n"
+"POT-Creation-Date: 2026-07-13 12:04+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -515,28 +515,36 @@ msgstr "{icon} 저장  0 취소"
 msgid "AUTO"
 msgstr "자동"
 
-#: PiFinder/ui/base.py:341 PiFinder/ui/dateentry.py:166
+#: PiFinder/ui/base.py:336 PiFinder/ui/dateentry.py:166
 #: PiFinder/ui/locationentry.py:222 PiFinder/ui/timeentry.py:160
 msgid " Cancel"
 msgstr " Cancel"
 
-#: PiFinder/ui/base.py:775
+#: PiFinder/ui/base.py:766
 msgid "Mount Stop"
 msgstr "마운트 정지"
 
-#: PiFinder/ui/base.py:804
+#: PiFinder/ui/base.py:795
 msgid "Mount GoTo"
 msgstr "마운트 GoTo"
 
-#: PiFinder/ui/base.py:808 PiFinder/ui/indi.py:586 PiFinder/ui/indi.py:1058
-#: PiFinder/ui/indi.py:1063 PiFinder/ui/object_details.py:411
+#: PiFinder/ui/base.py:799 PiFinder/ui/indi.py:577 PiFinder/ui/indi.py:1049
+#: PiFinder/ui/indi.py:1054 PiFinder/ui/object_details.py:411
 #: PiFinder/ui/polar_align.py:444
 msgid "No solve"
 msgstr "해 없음"
 
-#: PiFinder/ui/base.py:811
+#: PiFinder/ui/base.py:802
 msgid "Mount Sync"
 msgstr "마운트 동기화"
+
+#: PiFinder/ui/base.py:805 PiFinder/ui/indi.py:522 PiFinder/ui/indi.py:908
+msgid "Speed +"
+msgstr "속도 +"
+
+#: PiFinder/ui/base.py:808 PiFinder/ui/indi.py:525 PiFinder/ui/indi.py:911
+msgid "Speed -"
+msgstr "속도 -"
 
 #: PiFinder/ui/bluetooth_keyboard.py:74
 msgid "Scan / Pair"
@@ -1295,7 +1303,7 @@ msgstr "파크 위치 설정"
 msgid "INDI Restart"
 msgstr "INDI 재시작"
 
-#: PiFinder/ui/indi.py:281 PiFinder/ui/indi.py:790 views/indi_mount.html:335
+#: PiFinder/ui/indi.py:281 PiFinder/ui/indi.py:781 views/indi_mount.html:335
 #: views/indi_mount.html:1116
 msgid "Idle"
 msgstr "대기"
@@ -1325,182 +1333,176 @@ msgstr "백래시 자동"
 msgid "Backlash Saved"
 msgstr "백래시 저장됨"
 
-#: PiFinder/ui/indi.py:471
-msgid "+/- : Speed {label}"
-msgstr "+/- : 속도 {label}"
+#: PiFinder/ui/indi.py:464
+# AI-TRANSLATED (claude): needs human review
+msgid "9/3 : Speed {label}"
+msgstr "9/3 : 속도 {label}"
 
-#: PiFinder/ui/indi.py:477
+#: PiFinder/ui/indi.py:470
 msgid "5 : Refine {state}"
 msgstr "5 : 보정 {state}"
 
-#: PiFinder/ui/indi.py:483
+#: PiFinder/ui/indi.py:476
 msgid "0 : Guide {state}"
 msgstr "0 : 가이드 {state}"
 
-#: PiFinder/ui/indi.py:521
+#: PiFinder/ui/indi.py:514
 msgid "Guide Correction"
 msgstr "가이드 보정"
 
-#: PiFinder/ui/indi.py:526
+#: PiFinder/ui/indi.py:519
 msgid "Refine On"
 msgstr "보정 켜짐"
 
-#: PiFinder/ui/indi.py:526
+#: PiFinder/ui/indi.py:519
 msgid "Refine Off"
 msgstr "보정 꺼짐"
 
-#: PiFinder/ui/indi.py:577 PiFinder/ui/object_details.py:760
-msgid "Speed +"
-msgstr "속도 +"
-
-#: PiFinder/ui/indi.py:581 PiFinder/ui/object_details.py:772
-msgid "Speed -"
-msgstr "속도 -"
-
-#: PiFinder/ui/indi.py:589
+#: PiFinder/ui/indi.py:580
 msgid "Aligned"
 msgstr "정렬됨"
 
-#: PiFinder/ui/indi.py:760
+#: PiFinder/ui/indi.py:751
 msgid "Align Complete"
 msgstr "정렬 완료"
 
-#: PiFinder/ui/indi.py:794 views/indi_mount.html:365
+#: PiFinder/ui/indi.py:785 views/indi_mount.html:365
 msgid "Align Points"
 msgstr "정렬점 수"
 
-#: PiFinder/ui/indi.py:795 PiFinder/ui/indi.py:811 PiFinder/ui/indi.py:827
+#: PiFinder/ui/indi.py:786 PiFinder/ui/indi.py:802 PiFinder/ui/indi.py:818
 msgid "Points: {points}"
 msgstr "점수: {points}"
 
-#: PiFinder/ui/indi.py:796
+#: PiFinder/ui/indi.py:787
 msgid "Progress: {done}/{total}"
 msgstr "진행: {done}/{total}"
 
-#: PiFinder/ui/indi.py:800
+#: PiFinder/ui/indi.py:791
 msgid "+/- or 1-9 select"
 msgstr "+/- 또는 1-9 선택"
 
-#: PiFinder/ui/indi.py:801
+#: PiFinder/ui/indi.py:792
 msgid "Right/Square next"
 msgstr "오른쪽/네모 다음"
 
-#: PiFinder/ui/indi.py:802
+#: PiFinder/ui/indi.py:793
 msgid "Left back"
 msgstr "왼쪽 뒤로"
 
-#: PiFinder/ui/indi.py:810
+#: PiFinder/ui/indi.py:801
 msgid "Preparing Align"
 msgstr "정렬 준비"
 
-#: PiFinder/ui/indi.py:815
+#: PiFinder/ui/indi.py:806
 msgid "Syncing PiFinder"
 msgstr "PiFinder 동기화"
 
-#: PiFinder/ui/indi.py:816
+#: PiFinder/ui/indi.py:807
 msgid "Wait for mount"
 msgstr "마운트 대기"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:817 PiFinder/ui/indi.py:858
+#: PiFinder/ui/indi.py:808 PiFinder/ui/indi.py:849
 msgid "Left mode/cancel"
 msgstr "왼쪽 모드/취소"
 
-#: PiFinder/ui/indi.py:825 views/indi_mount.html:361
+#: PiFinder/ui/indi.py:816 views/indi_mount.html:361
 msgid "Align Mode"
 msgstr "정렬 모드"
 
-#: PiFinder/ui/indi.py:826
+#: PiFinder/ui/indi.py:817
 msgid "Mode: {mode}"
 msgstr "모드: {mode}"
 
-#: PiFinder/ui/indi.py:831
+#: PiFinder/ui/indi.py:822
 msgid "1 Manual  2 Auto"
 msgstr "1 수동  2 자동"
 
-#: PiFinder/ui/indi.py:832
+#: PiFinder/ui/indi.py:823
 msgid "Up/Down change"
 msgstr "위/아래 변경"
 
-#: PiFinder/ui/indi.py:833
+#: PiFinder/ui/indi.py:824
 msgid "Right/Square start"
 msgstr "오른쪽/네모 시작"
 
-#: PiFinder/ui/indi.py:834
+#: PiFinder/ui/indi.py:825
 msgid "Left points"
 msgstr "왼쪽 점수"
 
-#: PiFinder/ui/indi.py:842
+#: PiFinder/ui/indi.py:833
 msgid "Alt: {alt:.0f} deg"
 msgstr "고도: {alt:.0f}도"
 
-#: PiFinder/ui/indi.py:844
+#: PiFinder/ui/indi.py:835
 msgid "Alt: unknown"
 msgstr "고도: 알 수 없음"
 
-#: PiFinder/ui/indi.py:848
+#: PiFinder/ui/indi.py:839
 msgid "Manual Star"
 msgstr "수동 별"
 
-#: PiFinder/ui/indi.py:849
+#: PiFinder/ui/indi.py:840
 msgid "Star: {star}"
 msgstr "별: {star}"
 
-#: PiFinder/ui/indi.py:851 PiFinder/ui/indi.py:884
+#: PiFinder/ui/indi.py:842 PiFinder/ui/indi.py:875
 msgid "Point {done}/{total}"
 msgstr "점 {done}/{total}"
 
-#: PiFinder/ui/indi.py:855
+#: PiFinder/ui/indi.py:846
 msgid "Up/Down star"
 msgstr "위/아래 별 선택"
 
-#: PiFinder/ui/indi.py:856
+#: PiFinder/ui/indi.py:847
 msgid "Right/Square GoTo"
 msgstr "오른쪽/네모 GoTo"
 
-#: PiFinder/ui/indi.py:857
+#: PiFinder/ui/indi.py:848
 msgid "SkySafari GoTo/Align OK"
 msgstr "SkySafari GoTo/정렬 OK"
 
-#: PiFinder/ui/indi.py:867
+#: PiFinder/ui/indi.py:858
 msgid "Align Star"
 msgstr "정렬 별"
 
-#: PiFinder/ui/indi.py:889
-msgid "789 / 4 6 / 123 move"
-msgstr "789/4 6/123 이동"
+#: PiFinder/ui/indi.py:880
+# AI-TRANSLATED (claude): needs human review
+msgid "8/2/4/6 move  9/3 speed"
+msgstr "8/2/4/6 이동  9/3 속도"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:893
+#: PiFinder/ui/indi.py:884
 msgid "Release stop  Left back"
 msgstr "떼면 정지  왼쪽 뒤로"
 
-#: PiFinder/ui/indi.py:897
+#: PiFinder/ui/indi.py:888
 msgid "Square : Confirm"
 msgstr "네모 : 확정"
 
-#: PiFinder/ui/indi.py:1006 PiFinder/ui/indi.py:1012 PiFinder/ui/indi.py:1018
-#: PiFinder/ui/indi.py:1098
+#: PiFinder/ui/indi.py:997 PiFinder/ui/indi.py:1003 PiFinder/ui/indi.py:1009
+#: PiFinder/ui/indi.py:1089
 msgid "Align Cancelled"
 msgstr "정렬 취소됨"
 
-#: PiFinder/ui/indi.py:1054
+#: PiFinder/ui/indi.py:1045
 msgid "Manual Align"
 msgstr "수동 정렬"
 
-#: PiFinder/ui/indi.py:1077
+#: PiFinder/ui/indi.py:1068
 msgid "Auto Align"
 msgstr "자동 정렬"
 
-#: PiFinder/ui/indi.py:1083
+#: PiFinder/ui/indi.py:1074
 msgid "Below horizon"
 msgstr "지평선 아래"
 
-#: PiFinder/ui/indi.py:1093
+#: PiFinder/ui/indi.py:1084
 msgid "GoTo Sent"
 msgstr "GoTo 전송됨"
 
-#: PiFinder/ui/indi.py:1117
+#: PiFinder/ui/indi.py:1108
 msgid "Point Confirmed"
 msgstr "정렬점 확정"
 
@@ -2583,7 +2585,7 @@ msgstr "telescope, and EP."
 msgid "Too Far"
 msgstr "너무 멀음"
 
-#: PiFinder/ui/object_details.py:747
+#: PiFinder/ui/object_details.py:748
 msgid "LOG"
 msgstr "로그"
 
@@ -3891,16 +3893,14 @@ msgstr "마지막 초기화"
 
 # AI-TRANSLATED (claude): needs human review
 #: views/indi_mount.html:178
-# AI-TRANSLATED (claude): needs human review
 msgid ""
 "Reinitialize the fused coordinate when it has drifted from the sky "
 "(bad/absent plate solves, or IMU drift). With a valid plate solve it re-"
 "baselines from the solve; without one it aligns the mount to the current "
 "IMU coordinate."
 msgstr ""
-"융합 좌표가 실제 하늘에서 벗어났을 때(플레이트 솔빙 실패/부재 또는 IMU 드리프트) "
-"다시 초기화합니다. 유효한 솔빙이 있으면 솔빙 기준으로 다시 잡고, 없으면 마운트를 "
-"현재 IMU 좌표에 정렬합니다."
+"융합 좌표가 실제 하늘에서 벗어났을 때(플레이트 솔빙 실패/부재 또는 IMU 드리프트) 다시 초기화합니다. 유효한 솔빙이 있으면 "
+"솔빙 기준으로 다시 잡고, 없으면 마운트를 현재 IMU 좌표에 정렬합니다."
 
 # AI-TRANSLATED (claude): needs human review
 #: views/indi_mount.html:191
@@ -5197,4 +5197,7 @@ msgstr ""
 
 #~ msgid "Step: {step:.2f} deg"
 #~ msgstr "스텝: {step:.2f}도"
+
+#~ msgid "789 / 4 6 / 123 move"
+#~ msgstr "789/4 6/123 이동"
 

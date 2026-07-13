@@ -58,7 +58,9 @@ with mount control on, status screens), they use one shared mapping:
 | `6` | Move East — **while held** |
 | `7` | Sync to current solve |
 | `8` | Move North — **while held** |
-| `1` `3` `9` | unused |
+| `9` | Slew rate (speed) up |
+| `3` | Slew rate (speed) down |
+| `1` | unused |
 
 The cardinal keys (`2`/`4`/`6`/`8`) **move the mount for as long as they are
 held** (press starts motion, release stops it) — you move exactly as much as you
@@ -69,9 +71,10 @@ step-size setting** (removed) and **no Init/Sync on `1`** (removed — the mount
 auto-inits and syncs at startup, and a stray `1` would needlessly restart the
 connection). `0` (Stop) also halts the GoTo/Guide **auto-correction** (tracking
 guide) and clears its target so it will not immediately re-correct; a later `5`
-(GoTo) or a new tracking start re-arms it. Continuous jog is also on the keyboard
-letters (`q w e / a s d / z x c`, `s` = stop), and `+`/`-` set the slew rate
-(speed).
+(GoTo) or a new tracking start re-arms it. The slew rate (speed) is on `9`
+(faster) / `3` (slower) — **not** on `+`/`-`, which keep their per-screen
+content meaning. Continuous jog is also on the keyboard letters
+(`q w e / a s d / z x c`, `s` = stop).
 
 ## Page groups
 
@@ -102,11 +105,12 @@ for the number/letter keys.
 | `RIGHT` | Select / enter submenu / set config value |
 | `LEFT` | Back |
 | `SQUARE` | Cycle display mode (usually a no-op on plain menus) |
-| `0-9` | **Shared mount map** (2/4/6/8 move while held; 0=Stop, 7=Sync; 5/GoTo unused here — no selected object) when mount control is on; otherwise no-op |
-| letters / `+` `-` | INDI directional jog / slew rate when mount control is on; otherwise no-op |
+| `0-9` | **Shared mount map** (2/4/6/8 move while held; 0=Stop, 7=Sync, 9/3=slew rate; 5/GoTo unused here — no selected object) when mount control is on; otherwise no-op |
+| letters | INDI directional jog when mount control is on; otherwise no-op |
 
 Menus keep working as today, except the number keys now use the shared mount map
-(move-while-held cardinals + 0/5/7) instead of the 8-way directional guide.
+(move-while-held cardinals + 0/5/7 + 9/3 slew rate) instead of the 8-way
+directional guide.
 
 ## G2 — Objects (selection + details)
 
@@ -135,9 +139,9 @@ intended keypad jump (today it is shadowed) and gives English name search.
 | `RIGHT` | Open the Log screen |
 | `LEFT` | Back |
 | `SQUARE` | Cycle view: DESC / LOCATE / POSS / SDSS / Contrast |
-| `0-9` (keypad) | **Shared mount map**: 2/4/6/8 = move S/W/E/N **while held**, 5=**GoTo** this object, 7=**Sync**, 0=Stop (1/3/9 unused) |
+| `0-9` (keypad) | **Shared mount map**: 2/4/6/8 = move S/W/E/N **while held**, 5=**GoTo** this object, 7=**Sync**, 0=Stop, 9/3=slew rate up/down (1 unused) |
 | letters (kbd) | **Continuous INDI jog** (`q w e / a s d / z x c`, `s` = stop) |
-| `+` / `-` | Mount on: slew rate; mount off: eyepiece FOV / description scroll |
+| `+` / `-` | Eyepiece FOV / description scroll (never the mount) |
 
 Reconciliation: on the keypad the number keys run the **documented discrete
 commands** (so GoTo/Sync/step are actually usable on the device — today they are
@@ -178,25 +182,26 @@ separately (see §Reconciliation).
 
 ## G5 — INDI Manual Control
 
-The dedicated manual-driving screens. **These are the exception to the unified
-number map**: `UIIndiGuide` and `UIIndiMultiPointAlign` (ADJUST) are purpose-built
-jog controllers with a visual keypad overlay and keepalive motion, so they keep
-their existing directional-jog scheme unchanged (implemented 2026-07-11):
+The dedicated manual-driving screens. `UIIndiGuide` and `UIIndiMultiPointAlign`
+(ADJUST) now follow the **same number map as everywhere else** (diagonal jog on
+the number keys was removed 2026-07-13; diagonals remain available on the
+keyboard letters). They keep their visual keypad overlay, keepalive motion and
+screen-specific `0`/`5` commands:
 
 | Key | Action |
 | --- | --- |
 | `2` `4` `6` `8` | Cardinal jog (press-hold; release stops) |
-| `1` `3` `7` `9` | Diagonal jog |
-| `0` / `5` | Screen-specific (e.g. toggle guide correction / refine) |
-| letters (kbd) | INDI directional jog (`q w e / a s d / z x c`, `s` = stop) |
-| `+` / `-` | Slew rate up / down |
-| `SQUARE` | Sync / align to current solve |
+| `9` / `3` | Slew rate up / down |
+| `0` / `5` | Screen-specific (guide: toggle guide correction / refine; ADJUST: `0` cancels) |
+| `1` `7` | unused |
+| letters (kbd) | INDI directional jog incl. diagonals (`q w e / a s d / z x c`, `s` = stop) |
+| `+` / `-` | unused (was slew rate; moved to `9`/`3`) |
+| `SQUARE` | Sync / align to current solve (guide) / confirm (ADJUST) |
 
 `UIIndiInit` keeps its own discrete INDI panel (Init/Park/Home on digits) for
-connection management. The shared mount map (§Number keys that drive the mount) is
-applied to *incidental* mount access on Object Details, mount-on menus, and status
-screens — not to these dedicated controllers, whose whole purpose is hands-on
-jogging.
+connection management and is out of scope for the shared map. The
+`UIIndiMultiPointAlign` POINTS stage also keeps `1-9` = number of alignment
+points (out of scope by decision).
 
 ## G6 — Alignment Wizards
 
@@ -228,18 +233,18 @@ Letters ignored; numbers are wizard-specific.
 | --- | --- | --- | --- |
 | G1 Menus/Nav | shared mount map (mount on) / none | directional jog / none | default |
 | G2 Object list | catalog-sequence jump | start name search | no |
-| G2 Object details | shared mount map (hold-to-move + 0/5/7) | continuous jog | yes |
+| G2 Object details | shared mount map (hold-to-move + 0/5/7 + 9/3 speed) | continuous jog | yes |
 | G3 Text/Search | T9 / multi-tap text | English text input | no |
 | G4 Numeric input | digits | ignored | no |
-| G5 INDI Manual | directional jog + screen-specific (dedicated controllers) | directional jog | yes |
+| G5 INDI Manual | shared mount map (cardinals + 9/3 speed) + screen-specific 0/5 | directional jog | yes |
 | G6 Alignment | wizard-specific | ignored | no |
 | G7 Info/Passive | ratings / dev / none (status: shared mount map) | ignored (status: jog) | status only |
 
-Incidental mount access (G1 menus mount-on, G2 Object Details, G7 status) uses the
-shared mount map (2/4/6/8 move S/W/E/N while held, 0=Stop 7=Sync; 5=GoTo only on
-Object Details where an object is selected; 1/3/9 unused); continuous directional
-jog is also on the keyboard letters. The dedicated INDI jog controllers (G5) keep
-their own directional-jog scheme.
+Mount access everywhere (G1 menus mount-on, G2 Object Details, G5 dedicated
+controllers, G7 status) uses the shared mount map (2/4/6/8 move S/W/E/N while
+held, 0=Stop 7=Sync, 9/3=slew rate up/down; 5=GoTo only on Object Details where
+an object is selected; 1 unused); continuous directional jog — including
+diagonals — is on the keyboard letters.
 
 ## Reconciliation steps (small, additive — to implement)
 
@@ -255,15 +260,20 @@ wholesale.
    7=Sync are discrete. Step-size (3/9) and Init/Sync (1) were **removed** — you
    move as much as you press, and the mount already inits/syncs at startup.
    Implemented as shared `_mount_key` / `_mount_key_press` / `_mount_key_release`
-   on `UIModule`, used by `GuideKeyMixin` and `UIObjectDetails`. The dedicated
-   INDI jog controllers (G5) keep their own directional-jog scheme.
-3. **Keep continuous jog on the keyboard letters** (`q w e / a s d / z x c`) on the
-   mount screens, and keep `+`/`-` as slew-rate — unchanged.
-4. **Fix** `UIIndiBacklash` `+`/`-` (both currently toggle axis) into distinct
+   on `UIModule`, used by `GuideKeyMixin` and `UIObjectDetails`.
+3. **Slew rate on `9`/`3`** (done 2026-07-13): slew rate moved off `+`/`-` onto
+   `9` (up) / `3` (down) in the shared mount map, applied uniformly — including
+   `UIIndiGuide` and `UIIndiMultiPointAlign` (ADJUST), whose number-key diagonal
+   jog (1/3/7/9) was removed to make room (diagonals stay on the keyboard
+   letters). The MultiPointAlign POINTS stage (`1-9` = point count) is excluded.
+   `+`/`-` now always mean the screen's own content action (FOV, scroll, zoom).
+4. **Keep continuous jog on the keyboard letters** (`q w e / a s d / z x c`) on the
+   mount screens — unchanged.
+5. **Fix** `UIIndiBacklash` `+`/`-` (both currently toggle axis) into distinct
    actions.
-5. **Optional**: tap-vs-hold on the number keys, only if hold-jog on the keypad is
+6. **Optional**: tap-vs-hold on the number keys, only if hold-jog on the keypad is
    desired on G2 Object Details.
-6. **Re-sync** `docs/mf_keyboard_mapping_*` and the user guide once implemented.
+7. **Re-sync** `docs/mf_keyboard_mapping_*` and the user guide once implemented.
 
 Open decisions for review: whether plain menus should keep INDI jog at all (or
 require an explicit "mount jog" screen); the exact letter that triggers name

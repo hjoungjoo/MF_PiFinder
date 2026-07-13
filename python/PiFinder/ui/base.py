@@ -54,12 +54,13 @@ class GuideKeyMixin:
     """Keyboard guide controls for passive LCD screens.
 
     Screens using this mixin keep their normal arrow/square controls while
-    Bluetooth/USB keyboard letters, numeric keypad keys, and +/- provide quick
+    Bluetooth/USB keyboard letters and numeric keypad keys provide quick
     INDI guide movement when mount control is enabled.
     """
 
     def key_number(self, number=None):
-        # Cardinal keys nudge/jog the mount; 0/5/7 are discrete commands.
+        # Cardinal keys nudge/jog the mount; 0/5/7 are discrete commands
+        # and 9/3 adjust the slew rate.
         # A subclass that owns key_number (e.g. object-list catalog jump) must
         # also override key_number_press/release to keep its behavior.
         self._mount_key(number)
@@ -78,12 +79,6 @@ class GuideKeyMixin:
 
     def key_text_release(self, char: str = ""):
         self._guide_key_text_release(char)
-
-    def key_plus(self):
-        self._guide_key_plus()
-
-    def key_minus(self):
-        self._guide_key_minus()
 
 
 class RotatingInfoDisplay:
@@ -713,18 +708,13 @@ class UIModule:
             return self._guide_move("stop")
         return False
 
-    def _guide_key_plus(self) -> bool:
-        return self._guide_send_mount({"type": "increase_slew_rate"})
-
-    def _guide_key_minus(self) -> bool:
-        return self._guide_send_mount({"type": "reduce_slew_rate"})
-
     # --- Mount number keys -----------------------------------------------------
     # Wherever a number key drives the INDI mount (Object Details, mount-on menus,
-    # status screens), the cardinal keys (2/4/6/8) move the mount for as long as
-    # they are held (press starts motion, release stops it), and a few discrete
-    # commands sit on 0/5/7. Continuous jog is also on the keyboard letters and
-    # +/- stays on slew rate. See docs/mf_input_keymap_*.md.
+    # status screens, INDI guide screens), the cardinal keys (2/4/6/8) move the
+    # mount for as long as they are held (press starts motion, release stops it),
+    # a few discrete commands sit on 0/5/7 and the slew rate is on 9 (faster) /
+    # 3 (slower). Continuous jog is also on the keyboard letters. See
+    # docs/mf_input_keymap_*.md.
     _MOUNT_JOG_DIRECTIONS = {2: "south", 4: "west", 6: "east", 8: "north"}
 
     def _mount_control_queue(self):
@@ -751,7 +741,8 @@ class UIModule:
         return aligned.RA, aligned.Dec
 
     def _mount_command(self, number, target=None) -> bool:
-        """Run a discrete mount command for a number key: 0=Stop 5=GoTo 7=Sync.
+        """Run a discrete mount command for a number key: 0=Stop 5=GoTo 7=Sync
+        9=Speed+ 3=Speed-.
 
         Directional keys (2/4/6/8) are handled as hold-to-move by _mount_key_*,
         not here. GoTo (5) needs an explicit ``target`` (ra, dec) — the screen
@@ -809,6 +800,12 @@ class UIModule:
                 return True
             queue.put({"type": "sync", "ra": pointing[0], "dec": pointing[1]})
             self.message(_("Mount Sync"), 1)
+        elif number == 9:
+            queue.put({"type": "increase_slew_rate"})
+            self.message(_("Speed +"), 0.5)
+        elif number == 3:
+            queue.put({"type": "reduce_slew_rate"})
+            self.message(_("Speed -"), 0.5)
         else:
             return False
         return True
