@@ -123,10 +123,11 @@ def test_imu_settings_menu_entries_exist():
 @pytest.mark.smoke
 def test_indi_settings_menu_entries_exist():
     menu = menu_structure.pifinder_menu
-    start_menu = next(item for item in menu["items"] if item["name"] == "Start")
-    indi_menu = next(item for item in start_menu["items"] if item["name"] == "INDI")
+    settings_menu = next(
+        item for item in menu["items"] if item["name"] == "Settings"
+    )
     setting_menu = next(
-        item for item in indi_menu["items"] if item["name"] == "Setting"
+        item for item in settings_menu["items"] if item["name"] == "INDI Setting"
     )
 
     setting_names = [item["name"] for item in setting_menu["items"]]

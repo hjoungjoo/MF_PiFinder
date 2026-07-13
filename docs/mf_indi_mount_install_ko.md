@@ -164,7 +164,9 @@ PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 
 
 ### OnStepX 설정
 
-INDI 페이지의 `Settings` 영역에는 OnStepX 유지보수 제어가 포함됩니다.
+`Settings > INDI Setting` 메뉴에는 OnStepX 유지보수 제어가 포함됩니다.
+(이전에는 `Start > INDI > Setting`에 있었으나, 이제 다른 설정 메뉴와 함께
+`Settings` 아래에 위치합니다.)
 
 - `Multi Align`은 Web/LCD/SkySafari가 같은 공통 session controller를
   사용합니다. 시작 시 PiFinder 위치/시간을 mount에 전송하고, PiFinder가

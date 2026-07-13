@@ -164,7 +164,9 @@ This web control page sends commands directly to the INDI driver. It can be used
 
 ### OnStepX Settings
 
-The `Settings` area on the INDI page includes OnStepX maintenance controls.
+The `Settings > INDI Setting` menu includes OnStepX maintenance controls.
+(It used to live under `Start > INDI > Setting`; it now sits alongside the
+other configuration menus under `Settings`.)
 
 - `Multi Align` is driven by one shared session controller used by the Web UI,
   LCD UI, and SkySafari bridge. At start, PiFinder sends its location/time to

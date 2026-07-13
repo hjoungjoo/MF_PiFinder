@@ -431,48 +431,32 @@ class UIIndiGuide(UIIndiBase):
         bright = self.colors.get(192)
         shadow = self.colors.get(0)
 
-        def text_size(text):
-            bbox = font.getbbox(text)
-            return bbox[2] - bbox[0], bbox[3] - bbox[1]
-
         def overlay_text(x, y, text, fill=bright):
             self.draw.text((x + 1, y + 1), text, font=font, fill=shadow)
             self.draw.text((x, y), text, font=font, fill=fill)
 
-        def centered(y, text):
-            width, _height = text_size(text)
-            overlay_text((self.display_class.resX - width) // 2, y, text)
-
         bottom_hint_y = max(
-            self.display_class.titlebar_height + line_h * 3,
-            self.display_class.resY - (line_h * 3) - 2,
+            self.display_class.titlebar_height + 1,
+            self.display_class.resY - (line_h * 4) - 2,
         )
-        top_y = self.display_class.titlebar_height + 1
-        bottom_key_y = max(top_y + line_h * 2, bottom_hint_y - line_h - 2)
-        side_key_y = (top_y + bottom_key_y) // 2
 
-        centered(top_y, "8")
-        overlay_text(4, side_key_y, "4")
-        right_w, _height = text_size("6")
-        overlay_text(self.display_class.resX - right_w - 4, side_key_y, "6")
-        centered(bottom_key_y, "2")
-
+        overlay_text(4, bottom_hint_y, _("2/4/6/8 : Move"))
         compact_label = label.replace(" ", "")
         overlay_text(
             4,
-            bottom_hint_y,
+            bottom_hint_y + line_h,
             _("9/3 : Speed {label}").format(label=compact_label),
         )
         refine = self.config_object.get_option("indi_goto_refine_once", False)
         overlay_text(
             4,
-            bottom_hint_y + line_h,
+            bottom_hint_y + (line_h * 2),
             _("5 : Refine {state}").format(state="On" if refine else "off"),
         )
         guide_corr = status.get("guide_correction_enabled", False)
         overlay_text(
             4,
-            bottom_hint_y + (line_h * 2),
+            bottom_hint_y + (line_h * 3),
             _("0 : Guide {state}").format(state="On" if guide_corr else "off"),
         )
 
