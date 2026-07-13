@@ -340,6 +340,9 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 - GoTo forwarding이 켜져 있으면 Align/Sync도 INDI/OnStep에 전달할 수 있어야 한다.
 - solve 전에는 IMU fallback/보정값을 사용할 수 있다.
 - solve가 성공하면 IMU alignment correction은 초기화한다.
+- Reset Pointing은 IMU alignment correction을 폐기하고, 솔빙이 없으면 raw
+  (보정 미적용) IMU 좌표로 마운트를 재-sync한다 — 잘못된 target으로 정렬했을 때
+  IMU 원좌표로 복구하는 유일한 수단이다.
 - mount mode가 Alt/Az, EQ, 기타 INDI mount에서 동작할 수 있도록 OnStep 전용 코드는 driver
   capability/name으로 gate한다.
 

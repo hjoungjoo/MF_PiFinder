@@ -318,6 +318,9 @@ Preserve:
 - If GoTo forwarding is enabled, Align/Sync can also be forwarded to INDI/OnStep.
 - Before solving, IMU fallback/correction may be used.
 - After a successful solve, IMU alignment correction is reset.
+- Reset Pointing discards the IMU alignment correction and, when unsolved,
+  re-syncs the mount to the raw (uncorrected) IMU coordinate — it is the only
+  way to recover from an alignment made against the wrong target.
 - OnStep-specific behavior is gated by driver capability/name.
 
 ### IMU Compass / Calibration
