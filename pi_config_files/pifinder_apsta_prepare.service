@@ -1,6 +1,7 @@
 [Unit]
-Description=PiFinder AP+STA Virtual AP Interface
-After=sys-subsystem-net-devices-wlan0.device
+Description=PiFinder AP / AP+STA Virtual AP Interface
+After=sys-subsystem-net-devices-wlan0.device NetworkManager.service
+Wants=NetworkManager.service
 Before=hostapd.service dnsmasq.service
 
 [Service]

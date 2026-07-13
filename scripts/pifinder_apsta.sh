@@ -28,6 +28,7 @@ IP_BIN="${IP_BIN:-$(command -v ip || true)}"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-$(command -v systemctl || true)}"
 SYSCTL_BIN="${SYSCTL_BIN:-$(command -v sysctl || true)}"
 NFT_BIN="${NFT_BIN:-$(command -v nft || true)}"
+NMCLI_BIN="${NMCLI_BIN:-$(command -v nmcli || true)}"
 
 log() {
     printf "pifinder_apsta: %s\n" "$*" >&2
@@ -255,9 +256,47 @@ prepare_apsta() {
     log "prepared ${AP_IFACE} on channel ${channel}"
 }
 
-configure_ap_only() {
-    configure_dnsmasq "${STA_IFACE}"
-    configure_hostapd "${STA_IFACE}" "${DEFAULT_CHANNEL}"
+nm_is_running() {
+    [[ -n "${NMCLI_BIN}" ]] && "${NMCLI_BIN}" general status >/dev/null 2>&1
+}
+
+release_sta() {
+    # Free the shared single radio for AP-only use. A plain `device disconnect`
+    # is not enough: the wlan0 profile has connection.autoconnect=yes, so
+    # NetworkManager immediately reconnects wlan0 to its saved network and pins
+    # the radio to that STA channel. On a single-radio device the AP (uap0) must
+    # share that channel, so hostapd cannot bring uap0 up on the default channel
+    # and the AP never starts. Take wlan0 out of NetworkManager entirely and
+    # bring it down instead. `managed no` is a runtime setting, so a normal
+    # reboot (used when switching back to Client/AP+STA) restores management.
+    if [[ -n "${NMCLI_BIN}" ]]; then
+        # prepare can race NetworkManager's boot-time auto-connect; wait briefly
+        # so the unmanage actually sticks.
+        local waited=0
+        while [[ "${waited}" -lt 10 ]] && ! nm_is_running; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+        "${NMCLI_BIN}" device set "${STA_IFACE}" managed no >/dev/null 2>&1 || true
+    fi
+    if [[ -n "${IP_BIN}" ]]; then
+        "${IP_BIN}" link set "${STA_IFACE}" down 2>/dev/null || true
+    fi
+}
+
+prepare_ap_only() {
+    # AP-only reuses the AP+STA plumbing: hostapd/dnsmasq bind the uap0 virtual
+    # interface and the AP IP is assigned directly with `ip addr`. This is the
+    # NetworkManager-friendly path; binding hostapd to wlan0 with a dhcpcd
+    # static IP does not work on Bookworm because dhcpcd is disabled and NM
+    # keeps wlan0 in managed (STA) mode.
+    disable_internet_sharing
+    release_sta
+    ensure_ap_iface
+    configure_dnsmasq "${AP_IFACE}"
+    configure_hostapd "${AP_IFACE}" "${DEFAULT_CHANNEL}"
+    configure_ap_ip
+    log "prepared ${AP_IFACE} (AP-only) on channel ${DEFAULT_CHANNEL}"
 }
 
 cleanup_apsta() {
@@ -277,24 +316,43 @@ restart_hostapd() {
 }
 
 monitor_apsta() {
-    local last_channel
+    local last_channel candidate stable_channel stable_count
     last_channel="$(current_hostapd_channel)"
+    stable_channel=""
+    stable_count=0
     while true; do
         if ! is_apsta_mode; then
             sleep 30
             continue
         fi
 
-        local channel
-        channel="$(sta_channel)"
         ensure_ap_iface
         configure_ap_ip
         configure_internet_sharing
-        if [[ "${channel}" != "${last_channel}" ]]; then
-            configure_hostapd "${AP_IFACE}" "${channel}"
-            restart_hostapd
-            last_channel="${channel}"
-            log "hostapd set to STA channel ${channel}"
+
+        # Only follow the STA channel when the STA is actually associated.
+        # sta_channel_or_empty returns empty while wlan0 is disconnected or
+        # roaming; in that case keep the AP on its current channel instead of
+        # flapping to DEFAULT_CHANNEL and restarting hostapd (which drops every
+        # AP client) on every cycle. A single-radio device also cannot host the
+        # AP on a different channel than the STA association, so a bad guess
+        # actively breaks the AP.
+        candidate="$(sta_channel_or_empty)"
+        if [[ -n "${candidate}" ]]; then
+            # Require the same channel twice in a row before acting so a brief
+            # roam does not trigger an unnecessary hostapd restart.
+            if [[ "${candidate}" == "${stable_channel}" ]]; then
+                stable_count=$((stable_count + 1))
+            else
+                stable_channel="${candidate}"
+                stable_count=1
+            fi
+            if [[ "${stable_count}" -ge 2 && "${candidate}" != "${last_channel}" ]]; then
+                configure_hostapd "${AP_IFACE}" "${candidate}"
+                restart_hostapd
+                last_channel="${candidate}"
+                log "hostapd set to STA channel ${candidate}"
+            fi
         fi
         sleep 20
     done
@@ -302,7 +360,17 @@ monitor_apsta() {
 
 case "${1:-prepare}" in
     prepare)
-        prepare_apsta
+        case "$(wifi_mode)" in
+            "AP+STA")
+                prepare_apsta
+                ;;
+            "AP")
+                prepare_ap_only
+                ;;
+            *)
+                log "not in an AP mode; skipping prepare"
+                ;;
+        esac
         ;;
     monitor)
         monitor_apsta
@@ -311,8 +379,7 @@ case "${1:-prepare}" in
         cleanup_apsta
         ;;
     configure-ap)
-        disable_internet_sharing
-        configure_ap_only
+        prepare_ap_only
         ;;
     sharing)
         configure_internet_sharing
