@@ -393,7 +393,7 @@ def _update_coordinate_service_state(shared_state):
     return state
 
 
-def _align_mount_to_imu_on_reset() -> Optional[Tuple[float, float]]:
+def _align_mount_to_imu_on_reset(shared_state) -> Optional[Tuple[float, float]]:
     """Re-align the mount to the current IMU coordinate (no-solve reset).
 
     When there is no valid plate solve, a bare ``clear_state()`` is not enough:
@@ -410,12 +410,17 @@ def _align_mount_to_imu_on_reset() -> Optional[Tuple[float, float]]:
     if state.solved is not None and state.solved.valid:
         # A solve is available; let it drive the coordinate. No IMU alignment.
         return None
-    imu_radec = state.imu.radec() if state.imu is not None else None
-    if imu_radec is None:
-        logger.info("Pointing reset: no valid IMU coordinate to align the mount to")
-        return None
     if not _mount_control_enabled():
         # No mount to align; clear_state alone will fall through to the IMU.
+        return None
+    # Use the raw IMU coordinate (apply_alignment=False), not the cached
+    # state.imu sample: that sample was computed with any SkySafari alignment
+    # offset applied, and reset must discard that offset, not re-bake it into
+    # the mount's coordinate system.
+    dt = _current_datetime(shared_state)
+    imu_radec = _imu_fallback_pointing(shared_state, dt, apply_alignment=False)
+    if imu_radec is None:
+        logger.info("Pointing reset: no valid IMU coordinate to align the mount to")
         return None
     ra_deg, dec_deg = imu_radec
     mountcontrol_queue.put({"type": "sync", "ra": ra_deg, "dec": dec_deg})
@@ -427,16 +432,18 @@ def _align_mount_to_imu_on_reset() -> Optional[Tuple[float, float]]:
     return ra_deg, dec_deg
 
 
-def _handle_pointing_reset_request() -> None:
+def _handle_pointing_reset_request(shared_state) -> None:
     """Poll for a "Reset Pointing" request file and reinitialize the service.
 
-    Reset discards the accumulated fusion anchor / IMU-delta so the coordinate
-    re-baselines on the next tick from the best available source. When there is
-    no plate solve it additionally syncs the mount to the current IMU coordinate
-    (``_align_mount_to_imu_on_reset``) so the display follows the IMU rather than
-    staying on the previously-synced mount value. This is the operator's escape
-    hatch when the fused coordinate has diverged from the sky (bad/absent solves,
-    or indoor IMU drift accumulating on the fused source).
+    Reset discards the accumulated fusion anchor / IMU-delta and any SkySafari
+    IMU alignment offset so the coordinate re-baselines on the next tick from
+    the best available source. When there is no plate solve it additionally
+    syncs the mount to the current raw IMU coordinate
+    (``_align_mount_to_imu_on_reset``) so the display follows the IMU rather
+    than staying on the previously-synced mount value. This is the operator's
+    escape hatch when the fused coordinate has diverged from the sky
+    (bad/absent solves, a sync to the wrong target, or indoor IMU drift
+    accumulating on the fused source).
     """
     global _pointing_reset_last_at
     try:
@@ -454,9 +461,15 @@ def _handle_pointing_reset_request() -> None:
             _POINTING_RESET_REQUEST_FILE.unlink()
         except FileNotFoundError:
             pass
+        # Discard any SkySafari IMU alignment offset first: reset must return
+        # to the raw IMU coordinate, not carry a stale (possibly wrong-target)
+        # alignment forward. clear_state runs below either way.
+        _reset_imu_alignment_correction(
+            "pointing reset request", clear_coordinate_state=False
+        )
         # Capture the IMU coordinate and align the mount to it (no-solve case)
         # BEFORE clearing state, since clear_state() drops the cached samples.
-        aligned = _align_mount_to_imu_on_reset()
+        aligned = _align_mount_to_imu_on_reset(shared_state)
         _coordinate_service.clear_state()
         _invalidate_pointing_cache()
         _pointing_reset_last_at = time.time()
@@ -473,7 +486,7 @@ def _coordinate_service_loop(shared_state, stop_event: threading.Event) -> None:
     logger.info("Pointing coordinate service loop started")
     while not stop_event.is_set():
         try:
-            _handle_pointing_reset_request()
+            _handle_pointing_reset_request(shared_state)
             _update_coordinate_service_state(shared_state)
         except Exception:
             logger.exception("Pointing coordinate service update failed")
