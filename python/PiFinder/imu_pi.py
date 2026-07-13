@@ -11,7 +11,7 @@ import math
 from PiFinder import config, imu_calibration
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.types.positioning import ImuSample
-import board
+from PiFinder.i2c_bus import get_i2c
 import adafruit_bno055
 import logging
 import quaternion  # Numpy quaternion
@@ -30,7 +30,7 @@ class Imu:
 
     def __init__(self):
         cfg = config.Config()
-        i2c = board.I2C()
+        i2c = get_i2c()
         self.sensor = adafruit_bno055.BNO055_I2C(i2c)
         self.use_magnetometer = bool(cfg.get_option("imu_use_magnetometer", False))
         self.auto_calibration_store = bool(

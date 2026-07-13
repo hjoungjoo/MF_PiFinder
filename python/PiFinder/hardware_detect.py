@@ -11,9 +11,9 @@ older PiFinder hardware keeps the SSD1351 default.
 import logging
 
 try:
-    import board
+    from PiFinder.i2c_bus import get_i2c
 except Exception:
-    board = None
+    get_i2c = None
 
 
 logger = logging.getLogger("HardwareDetect")
@@ -22,11 +22,11 @@ BQ25895_ADDRESS = 0x6A
 
 
 def i2c_present(address: int) -> bool:
-    """Return True when an I2C address ACKs on the default board I2C bus."""
-    if board is None:
+    """Return True when an I2C address ACKs on the board I2C bus."""
+    if get_i2c is None:
         raise RuntimeError("blinka / board unavailable; no I2C bus")
 
-    i2c = board.I2C()
+    i2c = get_i2c()
     locked = False
     try:
         while not i2c.try_lock():
