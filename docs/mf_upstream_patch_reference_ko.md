@@ -33,6 +33,20 @@
 - local MF-only patch:
   - SSD1333 automatic display detection, separated from the larger Rev-4 hardware patch
 
+2026-07-13 추가 반영:
+
+- upstream selected commits applied:
+  - Stellarium 2.0 observing list import (#527, `39412ac`)
+  - catalog filter cache: skip re-filtering unchanged catalogs on list open (#526, `f704a26`)
+- 검토 후 이번엔 제외:
+  - UBlox GPS NAV-SVINFO/NAV-SAT 디코딩 수정 (#524, `9cb0060`) — 병합 방식 결정 후 적용 예정
+    (`gps_ubx_parser.py`/테스트는 clean, `gps_ubx.py`는 MF 리팩터링과 수동 병합 필요)
+  - NixOS 마이그레이션 3건 (#523 `e22ac48`, #521 `0621d15`, #517 `02e6b30`) — MF의
+    NixOS 이관 지원 여부 미결정
+  - state datetime tz 수정 (#508, `e64f0b6`) — timez.py 기준 이미 반영됨, 재적용 시
+    제외한 Rev-4 state.py 변경이 딸려오므로 하지 않음
+  - Rev-4 hardware enablement (#498, `e82b809`) — 정책상 제외 유지
+
 주의:
 
 - 이 문서는 전체 변경 히스토리 문서가 아니다.
@@ -48,6 +62,8 @@
 | NixOS PR build CI | 적용됨 | 런타임 영향 없음. GitHub Actions와 manifest script 추가 |
 | case/accessory files | 적용됨 | 코드 영향 없음. STL/JPG/README 변경 |
 | Observing list CSV import | 적용됨 | `obslist_formats.py`, docs, tests 적용 |
+| Observing list Stellarium 2.0 import | 적용됨 | #527 `39412ac`. `obslist_formats.py` Stellarium reader 확장 |
+| catalog filter cache | 적용됨 | #526 `f704a26`. `catalog_base.py` 추가, 변경 없는 카탈로그 재필터 생략 |
 | UTC-aware datetime | 적용됨 | `timez.py` 추가, `state.py`, `server.py`, callback 시간 처리 변경 |
 | Set Time/Date self-gate | 적용됨 | 위치 lock이 없으면 수동 시간/날짜 설정 UI가 inert 상태로 메시지 표시 |
 | OBJ_TYPES single-source | 적용됨 | Type filter menu가 `OBJ_TYPES`에서 생성됨 |
