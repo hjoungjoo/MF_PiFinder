@@ -68,14 +68,18 @@ async def process_messages(
         elif msg_class == "NAV-SVINFO" and not got_sat_update:
             # Fallback satellite info if NAV-SAT not available
             if "nSat" in msg:
-                # uSat is also in the message but contains stale info
                 sats_seen = msg["nSat"]
+                sats_used = msg["uSat"]
                 sats[0] = sats_seen
+                sats[1] = sats_used
                 gps_queue.put(("satellites", tuple(sats)))
-                logger.debug("Number of sats (SVINFO) seen: %i", sats_seen)
+                logger.debug(
+                    "Number of sats (SVINFO) seen: %i, used: %i", sats_seen, sats_used
+                )
 
         elif msg_class == "NAV-SAT":
             # Preferred satellite info source - not seen in the current pifinder gps versions
+            got_sat_update = True
             sats_seen = msg["nSat"]
             sats_used = sum(
                 1 for sat in msg.get("satellites", []) if sat.get("used", False)
@@ -123,6 +127,12 @@ async def process_messages(
                 logger.debug("TIMEGPS message has no time: %s", msg)
 
         elif msg_class == "NAV-PVT":
+            # Upstream #524: on protVer>=15 receivers gpsd sends NAV-PVT
+            # instead of NAV-SOL, so surface numSV as the used count here.
+            if "numSV" in msg:
+                sats[1] = msg["numSV"]
+                gps_queue.put(("satellites", tuple(sats)))
+            # MF: NAV-PVT also carries the time we forward via the helper.
             time_msg = _gps_time_message(msg, info=info)
             if time_msg is not None:
                 gps_queue.put(time_msg)
