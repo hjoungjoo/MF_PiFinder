@@ -175,9 +175,20 @@ flowchart TD
   mid-2028). The replacement, **AssistNow Predictive Orbits**, is **free**
   for M9/M10/F9/F10 receivers and delivers the data as the **same
   UBX-MGA-ANO messages**, so the injection/cache/filter logic in this
-  document stays valid — only the acquisition path changes (Thingstream
-  device-registration based auth). Pin down the current endpoint/auth when
-  Stage 4 starts.
+  document stays valid — only the acquisition path changes.
+  Predictive Orbits access procedure (as researched 2026-07):
+  1) free Thingstream account signup, 2) create a ZTP Device Profile in
+  the portal → obtain the **ZTP token** (registration-only), 3) the host
+  reads `UBX-SEC-UNIQID` (0x27 0x03) from the receiver and posts that raw
+  message with the ZTP token to the registration API → receives the
+  per-device **chipcode** credential (once per device, internet needed),
+  4) afterwards MGA-ANO data downloads from
+  `assistnow.services.u-blox.com` using the chipcode. The PiFinder
+  implementation needs a Web field for the ZTP token plus a one-time
+  "Register device" action, with the chipcode stored in the gps_aiding
+  data directory. u-blox's AssistNow C Client Toolkit is the reference
+  implementation. Re-verify the current endpoint/auth when Stage 4
+  starts.
 - Never inject the whole multi-week file (hundreds of KB). **Filter to
   today ±1 day** (each ANO message carries a date field).
 - A failed fetch never deletes the existing cache; only a validated new

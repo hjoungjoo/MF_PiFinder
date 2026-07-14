@@ -163,9 +163,17 @@ flowchart TD
   않는다** (기존 developer 토큰은 2028년 중반까지 동작). 대체 서비스인
   **AssistNow Predictive Orbits**는 M9/M10/F9/F10 수신기에 **무료**이고
   데이터가 **동일한 UBX-MGA-ANO 메시지**로 제공되므로, 주입/캐시/필터
-  로직은 이 문서 그대로 유효하다 — 달라지는 것은 데이터 확보 경로
-  (Thingstream 기기 등록 기반 인증)뿐이다. Stage 4 착수 시점에 최신
-  엔드포인트/인증 방식을 확정한다.
+  로직은 이 문서 그대로 유효하다 — 달라지는 것은 데이터 확보 경로뿐이다.
+  Predictive Orbits의 접근 절차(2026-07 조사 기준):
+  1) Thingstream 무료 계정 가입, 2) 포털에서 ZTP Device Profile 생성 →
+  **ZTP 토큰**(등록 전용) 획득, 3) 호스트가 수신기에서 `UBX-SEC-UNIQID`
+  (0x27 0x03)를 읽어 그 메시지 원문을 ZTP 토큰과 함께 등록 API에 전송 →
+  기기별 자격증명 **chipcode** 수신(기기당 1회, 인터넷 필요),
+  4) 이후에는 chipcode로 `assistnow.services.u-blox.com`에서 MGA-ANO
+  데이터를 다운로드. PiFinder 구현 시 Web에 ZTP 토큰 입력 + "기기 등록"
+  1회 실행 UI가 필요하고, chipcode는 gps_aiding 데이터 디렉터리에
+  저장한다. u-blox의 AssistNow C Client Toolkit이 참조 구현이다.
+  Stage 4 착수 시점에 최신 엔드포인트/인증 방식을 재확인한다.
 - 파일 전체(수 주치, 수백 KB)를 다 넣지 않는다. **오늘 ±1일 메시지만
   필터해서 주입**한다 (각 ANO 메시지에 날짜 필드가 있음).
 - 실패 시 기존 캐시를 지우지 않는다. 검증 통과한 새 파일로만 교체.
