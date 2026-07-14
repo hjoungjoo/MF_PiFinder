@@ -25,9 +25,9 @@ Alt/Az 전용 가정에 묶이지 않고 적도의 계열 마운트에서도 동
 | 영역 | 현재 상태 | 조치 |
 | --- | --- | --- |
 | PiFinder push-to UI | `calc_utils.aim_degrees()`가 `mount_type == "Alt/Az"`이면 Alt/Az 차이, 그 외에는 RA/Dec 차이를 계산한다. | 기존 구조 유지, 회귀 테스트 대상 |
-| SkySafari 현재 좌표 | `pos_server.get_telescope_ra/dec()`는 solve 좌표가 있으면 solve 기반 JNOW, 없으면 IMU Alt/Az를 RA/Dec로 변환한다. | 유지 |
+| SkySafari 현재 좌표 | `pos_server.get_telescope_ra/dec()`는 pointing coordinate service가 선택한 좌표를 반환한다. solve pointing이 우선이고, 없으면 IMU/mount 기반 fallback을 사용한다. | 유지 |
 | SkySafari status `:GW#` | 기존에는 항상 `AT1`을 반환해서 Alt/Az처럼 보였다. | `mount_type`과 override 설정을 반영하도록 수정 |
-| no-solve IMU 보정 | SkySafari Sync 시 마지막 GoTo 대상과 현재 IMU Alt/Az 차이를 저장한다. | solve 성공 시 초기화 보장 |
+| no-solve IMU 보정 | SkySafari Sync 시 sync target(최신 `Sr/Sd`, 없으면 마지막 GoTo 대상)과 현재 IMU Alt/Az 차이를 저장한다. | solve 성공 시 초기화 보장 |
 | INDI GoTo | `goto_target`은 RA/Dec를 INDI `EQUATORIAL_EOD_COORD`로 전달한다. | 마운트 독립으로 유지 |
 | INDI guide/manual move | `north/south/east/west` guide motion을 INDI driver에 전달한다. | 마운트 독립으로 유지, 실제 장치별 확인 필요 |
 | OnStepX 위치/시간 | OnStepX driver일 때만 표시/동작한다. | OnStepX 전용으로 유지 |

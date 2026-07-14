@@ -9,7 +9,7 @@ Set `Settings > IMU Settings > Compass > On` to use BNO055 NDOF mode. This inclu
 ## Automatic Calibration
 
 1. Set `Settings > IMU Settings > Compass > On`.
-2. Restart PiFinder.
+2. PiFinder restarts automatically after the setting is changed.
 3. Check `Tools > Status` and watch `IMU CAL`.
    - Format: `NDO Sx Gy Az Mw`
    - `S/G/A/M` mean system, gyro, accelerometer, and magnetometer calibration.

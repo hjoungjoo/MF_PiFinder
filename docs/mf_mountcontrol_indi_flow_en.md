@@ -108,7 +108,6 @@ message
 updated
 ra
 dec
-step_degrees
 slew_rate
 home_state
 park_state
@@ -220,6 +219,8 @@ updates. Manual motion therefore also has explicit polling publication.
 | `manual_movement` | `manual_move()` | Start/continue manual movement |
 | `manual_movement_keepalive` | `manual_motion_keepalive()` | Extend manual movement lease |
 | `toggle_guide_correction` | `toggle_guide_correction()` | Solve-based guide correction |
+| `increase_slew_rate` | `change_slew_rate(1)` | Increase slew rate |
+| `reduce_slew_rate` | `change_slew_rate(-1)` | Reduce slew rate |
 | `set_slew_rate` | `set_slew_rate()` | Set driver slew rate |
 | `refresh_slew_rate` | `refresh_slew_rate()` | Read driver slew rate |
 | `refresh_backlash` | `refresh_backlash()` | Read backlash |
@@ -233,6 +234,8 @@ updates. Manual motion therefore also has explicit polling publication.
 | `multipoint_align_confirm` | `confirm_multipoint_align()` | Confirm align point |
 | `multipoint_align_clear_target` | `clear_multipoint_align_target()` | Clear only the current target and keep the session active |
 | `multipoint_align_cancel` | `cancel_multipoint_align()` | Cancel Multi Align |
+| `sync_location_time` | `sync_location_time()` | Sync location/time |
+| `park_action` | `park_action()` | park/unpark/home/set-park actions |
 
 Backlash ownership:
 

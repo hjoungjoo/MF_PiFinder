@@ -181,7 +181,7 @@ Main changes:
 - Bluetooth keyboard scan/pair/connect UI
 - USB keyboard input support
 - Additional text-entry keycodes
-- INDI Guide page-only `qwe/asd/zxc` direction mapping
+- `qwe/asd/zxc` direction mapping (INDI Guide page plus mount-enabled menu/status screens via `GuideKeyMixin`)
 - Guide motion release/fail-safe stop handling
 
 Key files:
@@ -197,7 +197,7 @@ Review points:
 
 - [ ] Bluetooth keyboard appears as `/dev/input/event*`
 - [ ] Both key press and release events arrive
-- [ ] Normal menu input does not conflict with INDI Guide-only mapping
+- [ ] Normal menu input does not conflict with the shared guide direction mapping (`GuideKeyMixin`)
 - [ ] Mount motion stops after freezes/SSH latency/missed key release
 - [ ] Bluetooth keyboard reconnects after AP+STA/Wi-Fi changes
 
@@ -484,12 +484,12 @@ Main changes:
 
 - INDI entry at bottom of LCD Start menu
 - INIT / STATUS / GUIDE pages
-- INIT actions: connect/init, send location/time, park/unpark, set home, return home, set-park, restart
+- INIT actions: connect/init, send location/time, reset pointing, park/unpark, set home, return home, set-park, restart
 - STATUS periodic update
 - GUIDE keypad overlay
-- `789 / 4 6 / 123` direction layout
+- `2/4/6/8` cardinal directions + `q/e/z/c` diagonals, `9/3` slew rate layout
 - press-to-move, release-to-stop
-- `qwe/asd/zxc` mapping only inside Guide page
+- `qwe/asd/zxc` mapping (Guide page and other mount-enabled screens)
 - Top-bar `I` indicator
 
 Key files:
@@ -505,7 +505,7 @@ Review points:
 - [ ] INIT menu fits the screen
 - [ ] Restart action appears in INIT
 - [ ] STATUS updates periodically
-- [ ] Guide numeric layout matches screen position
+- [ ] Guide overlay hints (`2/4/6/8` move, `9/3` speed, `5` refine, `0` guide) match actual behavior
 - [ ] Key 5 is not used for guide motion
 - [ ] Timeout stop works on missed key release
 - [ ] Bluetooth keyboard starts and stops motion
@@ -518,7 +518,7 @@ Test items:
 - [ ] LCD park/unpark
 - [ ] LCD set home/return home
 - [ ] LCD restart INDI
-- [ ] LCD Guide 8-direction motion
+- [ ] LCD Guide direction motion (keypad `2/4/6/8`, keyboard `q/e/z/c` diagonals)
 - [ ] LCD Guide release stop
 - [ ] Bluetooth keyboard Guide motion
 - [ ] Web UI stop recovery

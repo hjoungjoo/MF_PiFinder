@@ -330,7 +330,7 @@ cgps -s
 Check in PiFinder:
 
 ```text
-Settings > GPS Settings > GPS Port
+Settings > Advanced > GPS Settings > GPS Port
 ```
 
 Check:
@@ -411,7 +411,7 @@ Check:
 Select Korean in PiFinder:
 
 ```text
-Settings > Advanced > Language > Korean
+Settings > User Pref... > Language > Korean
 ```
 
 Check:

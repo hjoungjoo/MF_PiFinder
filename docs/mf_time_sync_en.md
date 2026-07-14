@@ -70,7 +70,7 @@ Important defaults in `default_config.json`:
 
 ## Source Selection
 
-In `Chrony` mode, PiFinder selects the system clock state managed by chronyd. PiFinder shows `chronyc tracking` details such as stratum, reference, leap status, and offsets.
+In `Chrony` mode, PiFinder selects the system clock state managed by chronyd. PiFinder records `chronyc tracking` details such as stratum, reference, leap status, and offsets in the status file; the UI shows the chrony state, reference, and offset.
 
 In `Best` mode, PiFinder compares Chrony, stable GPS candidates, and valid PiFinder SNTP candidates. GPS is judged by `valid`, `tAcc`, recent sample jitter, and stale age. PiFinder SNTP is judged by response validity, stratum, round-trip delay, root dispersion, and stale age.
 

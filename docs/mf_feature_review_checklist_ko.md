@@ -181,7 +181,7 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - Bluetooth keyboard scan/pair/connect UI
 - USB keyboard 입력 지원
 - 텍스트 입력용 키코드 확장
-- INDI Guide page 전용 `qwe/asd/zxc` 방향 키맵
+- `qwe/asd/zxc` 방향 키맵 (INDI Guide page 및 mount 제어가 켜진 메뉴/상태 화면 공통, `GuideKeyMixin`)
 - Guide motion release/fail-safe stop 보완
 
 주요 파일:
@@ -197,7 +197,7 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 
 - [ ] Bluetooth keyboard가 paired/connected 상태에서 `/dev/input/event*`로 잡히는가
 - [ ] key press와 release가 모두 들어오는가
-- [ ] 일반 메뉴 입력과 INDI Guide page 전용 입력이 충돌하지 않는가
+- [ ] 일반 메뉴 입력과 guide 방향 키맵(`GuideKeyMixin`)이 충돌하지 않는가
 - [ ] 장시간 key hold 중 freeze/SSH 지연이 있어도 mount motion이 멈추는가
 - [ ] AP+STA/Wi-Fi 변경 후 Bluetooth keyboard reconnect가 유지되는가
 
@@ -483,12 +483,12 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 
 - LCD Start menu 하단 INDI 항목
 - INIT / STATUS / GUIDE 페이지
-- INIT actions: connect/init, send location/time, park/unpark, set home, return home, set-park, restart
+- INIT actions: connect/init, send location/time, reset pointing, park/unpark, set home, return home, set-park, restart
 - STATUS periodic update
 - GUIDE keypad overlay
-- `789 / 4 6 / 123` guide direction layout
+- `2/4/6/8` cardinal 방향 + `q/e/z/c` 대각선, `9/3` 속도 조절 layout
 - key press-to-move, release-to-stop
-- `qwe/asd/zxc` keyboard mapping only inside Guide page
+- `qwe/asd/zxc` keyboard mapping (Guide page 및 mount 제어가 가능한 다른 화면 공통)
 - `I` top-bar indicator
 
 주요 파일:
@@ -504,7 +504,7 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - [ ] INIT menu 항목이 화면을 넘지 않는가
 - [ ] Restart action이 INIT에서 보이는가
 - [ ] STATUS가 주기적으로 갱신되는가
-- [ ] Guide 숫자 layout이 실제 화면 위치와 일치하는가
+- [ ] Guide overlay 안내(`2/4/6/8` 이동, `9/3` 속도, `5` Refine, `0` Guide)가 실제 동작과 일치하는가
 - [ ] 5키는 guide motion에 사용되지 않는가
 - [ ] motion 중 key release 누락 시 timeout stop이 동작하는가
 - [ ] Bluetooth keyboard로 start/stop 모두 동작하는가
@@ -517,7 +517,7 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - [ ] LCD park/unpark
 - [ ] LCD set home/return home
 - [ ] LCD restart INDI
-- [ ] LCD Guide 8방향 motion
+- [ ] LCD Guide 방향 motion (키패드 `2/4/6/8`, 키보드 `q/e/z/c` 대각선)
 - [ ] LCD Guide release stop
 - [ ] Bluetooth keyboard Guide motion
 - [ ] Web UI로 stop recovery

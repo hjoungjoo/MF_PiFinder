@@ -9,7 +9,7 @@
 ## 자동 캘리브레이션
 
 1. `Settings > IMU Settings > Compass > On`으로 변경합니다.
-2. PiFinder를 재시작합니다.
+2. 설정을 바꾸면 PiFinder가 자동으로 재시작됩니다.
 3. `Tools > Status`에서 `IMU CAL`을 확인합니다.
    - 형식: `NDO Sx Gy Az Mw`
    - `S/G/A/M`은 각각 system, gyro, accel, magnetometer calibration입니다.

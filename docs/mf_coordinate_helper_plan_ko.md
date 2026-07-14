@@ -1,6 +1,6 @@
 # MF PiFinder Pointing Coordinate Service
 
-최종 업데이트: 2026-07-08
+최종 업데이트: 2026-07-13
 
 이 문서는 현재 `mf_pifinder` 브랜치의 상시 좌표 서비스 구현을 기준으로
 SkySafari, Web UI, LCD UI, INDI Multi Align이 공통으로 사용할 좌표 흐름을
@@ -175,7 +175,7 @@ goto_wait_seconds
 
 mount 후보 제외 조건:
 
-- disconnected/error/fault/server_offline/driver_offline 상태
+- disconnected/disconnecting/error/fault/failed/server_offline/driver_offline 상태
 - Parked 상태
 - RA/Dec readback 없음
 
@@ -360,11 +360,13 @@ SkySafari target 입력:
 
 처리 원칙:
 
-- `:Sr/:Sd`로 들어온 좌표를 `last_target_coordinates`에 그대로 저장한다.
-- `:MS#`는 같은 좌표를 PiFinder push target 및 선택적으로 INDI GoTo로 전달한다.
+- `:Sr/:Sd`로 들어온 좌표를 파싱해 그대로 보관한다(`sr_result`/`sd_result`).
+- `:MS#`는 같은 좌표를 `last_target_coordinates`로 저장하고 PiFinder push target 및
+  선택적으로 INDI GoTo로 전달한다.
 - Multi Align active 중이면 일반 PushTo 화면으로 넘기지 않고
   `multipoint_align_goto_target`으로 라우팅한다.
-- `:CM#` Sync/Align은 가장 최근 target 좌표 또는 현재 `:Sr/:Sd` 좌표를 그대로 사용한다.
+- `:CM#` Sync/Align은 현재 파싱된 `:Sr/:Sd` 좌표를 우선 사용하고, 없으면 가장 최근
+  GoTo target(`last_target_coordinates`)을 그대로 사용한다.
 - Multi Align active 중 `:CM#`은 `multipoint_align_confirm`으로 라우팅된다.
 - SkySafari guide 입력(`:Mn#`, `:Ms#`, `:Me#`, `:Mw#`)은 target 좌표가 아니라
   수동 이동 명령이다. `pos_server.py`가 keepalive timer를 관리해
@@ -418,7 +420,7 @@ tick에 최적 소스로 다시 기준을 잡는다: 유효한 solve > 정렬된
 움직이지 않으므로, 마운트 readback(따라서 fused 좌표)이 IMU를 따라가게 된다.
 솔빙이 유효하면 IMU 정렬은 하지 않고 솔빙이 좌표를 주도한다.
 
-요청 소비 지연은 ~0.1초.
+요청 소비 지연은 최대 ~0.2초(서비스 tick 주기 `_POINTING_UPDATE_SECONDS`).
 
 UI:
 

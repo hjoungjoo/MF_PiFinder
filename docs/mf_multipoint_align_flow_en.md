@@ -43,7 +43,7 @@ python/PiFinder/mountcontrol_indi.py
   GoTo, confirm, and cancel
 
 python/PiFinder/ui/indi.py
-  LCD INDI > Setting > Multi Align screens and keypad/keyboard handling
+  LCD Settings > INDI Setting > Multi Align screens and keypad/keyboard handling
 
 python/PiFinder/server.py
   Web /indi rendering and /indi/multipoint_align route
@@ -197,7 +197,7 @@ Manual star selection:
 ```text
 select_multipoint_align_star(star_name, goto=False|True)
 
-1. Require an active session.
+1. Start a new manual session when no session is active.
 2. Look up the star with get_align_star(star_name).
 3. Store name/ra/dec/mag in current_star with target_sent=false.
 4. goto=false -> state=adjust.
@@ -209,7 +209,7 @@ SkySafari target selection:
 ```text
 1. SkySafari :Sr/:Sd stores the target.
 2. :MS# routes to select_multipoint_align_target(..., goto=True).
-3. The target name defaults to SkySafari Target N.
+3. The target name is SkySafari Target, as sent by pos_server.
 4. Successful GoTo sets target_sent=true.
 ```
 
@@ -218,7 +218,7 @@ GoTo:
 ```text
 1. Require current_star.
 2. Convert target RA/Dec to Alt/Az for the current location/time.
-3. If altitude is below 20 deg or above 80 deg, clear current_star and return
+3. If altitude is below 20 deg or above 78 deg, clear current_star and return
    to state=waiting.
 4. Otherwise call goto_target(ra, dec, refine_after_goto=False).
 5. Verify INDI GoTo target accept/readback.
@@ -262,12 +262,13 @@ confirmed_at
 
 ## Web UI Flow
 
-`/indi/multipoint_align` handles:
+`/indi/multipoint_align` requires the active LX200 OnStepX driver and handles:
 
 ```text
 align_action=start
-  Queue mode, points, and optional align_star.
-  manual + align_star only selects the star; it does not GoTo.
+  Queue mode, points, and align_star.
+  manual mode requires a valid align_star; it only selects the star and does
+  not GoTo.
 
 align_action=select_star
   Store the selected star and GoTo it.
@@ -290,7 +291,7 @@ points      choose alignment point count
 mode        choose Manual or Auto
 preparing   wait for location/time sync, stale align reset, PiFinder sync
 star        choose a manual star or show an auto-selected star
-guide       center the target and confirm
+adjust      center the target and confirm
 ```
 
 LCD controls:
@@ -298,16 +299,18 @@ LCD controls:
 - Points: `+/-` or `1..9`
 - Mode: Manual / Auto
 - Manual Star: right/square selects the star and sends GoTo
-- Guide: `789 / 4 6 / 123` moves while held; release stops
-- Guide: square confirms
+- Adjust: `2/4/6/8` moves while held; release stops; `9/3` changes speed
+- Adjust: square confirms
 - Left:
-  - In Guide with Manual mode, send `multipoint_align_clear_target`, clear only
+  - In Adjust with Manual mode, send `multipoint_align_clear_target`, clear only
     the current target, and return to Manual Star. The session stays active.
   - From Manual Star/Preparing to the Manual/Auto mode screen, cancel the session.
   - From Manual/Auto mode to Points, there should be no active session.
 
-Auto mode prefers solved pointing. IMU fallback exists, but solve-based Auto mode
-is safer during real observing.
+The LCD Auto mode does not start without solved pointing and shows No solve.
+Sessions started from other layers (for example the Web UI) can fall back to
+IMU pointing in the controller, but solve-based Auto mode is safer during real
+observing.
 
 ## SkySafari Integration
 

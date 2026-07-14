@@ -43,7 +43,7 @@ Country > State / Province > County / District > City / Place
 
 Selecting `City / Place` fills the existing manual-entry fields.
 
-- Location Name: filled only when the field is empty.
+- Location Name: filled unless the user has manually edited the name.
 - Latitude / Longitude: filled from GeoNames coordinates.
 - Altitude: filled from GeoNames elevation or DEM data.
 - Error: filled with `1000m` by default. Users should adjust this for the actual observing site.

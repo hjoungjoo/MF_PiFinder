@@ -25,9 +25,9 @@ equatorial-class mounts.
 | Area | Current state | Action |
 | --- | --- | --- |
 | PiFinder push-to UI | `calc_utils.aim_degrees()` uses Alt/Az deltas for Alt/Az mounts and RA/Dec deltas otherwise. | Keep and regression-test |
-| SkySafari current coordinates | `pos_server.get_telescope_ra/dec()` returns solved JNOW coordinates when available, otherwise IMU Alt/Az converted to RA/Dec. | Keep |
+| SkySafari current coordinates | `pos_server.get_telescope_ra/dec()` return the pointing coordinate service selection: solved pointing when available, otherwise IMU/mount-based fallbacks. | Keep |
 | SkySafari status `:GW#` | Previously returned `AT1` unconditionally. | Make it follow `mount_type` plus override setting |
-| no-solve IMU correction | SkySafari Sync stores the difference between the last GoTo target and current IMU Alt/Az. | Reset on plate solve |
+| no-solve IMU correction | SkySafari Sync stores the difference between the sync target (latest `Sr/Sd`, falling back to the last GoTo target) and current IMU Alt/Az. | Reset on plate solve |
 | INDI GoTo | `goto_target` sends RA/Dec through INDI `EQUATORIAL_EOD_COORD`. | Mount-independent |
 | INDI guide/manual move | Sends `north/south/east/west` guide motion through the active INDI driver. | Driver-independent, hardware-test required |
 | OnStepX location/time | Shown only for the OnStepX driver. | Keep OnStepX-specific |

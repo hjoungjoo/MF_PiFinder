@@ -16,8 +16,8 @@ and coordinate-service stack.
    default behavior reads PiFinder's current pointing and pushes a selected
    target into PiFinder's recent target list.
 2. INDI LX200 OnStepX support can set location/time, park/unpark, slew rate, manual motion, sync, and GoTo through the optional mount-control stack.
-3. When enabled, SkySafari `:MS#` GoTo and `:CM#` Sync/Align can be forwarded
-   to the mount-control queue.
+3. When enabled, SkySafari `:MS#` GoTo is forwarded to the GoTo/Guide service
+   queue and `:CM#` Sync/Align to the mount-control queue.
 4. When Multi Align is active, SkySafari GoTo/Align are routed into the active
    alignment session instead of the normal PushTo screen.
 5. SkySafari guide buttons are bridged to mount-control manual motion.
@@ -40,7 +40,8 @@ main.py
   ├─ Solver process
   ├─ Integrator process              -> shared_state.solution()
   ├─ SkySafariServer process         -> pos_server.py, TCP 4030
-  └─ MountControl process(optional)  -> mountcontrol_indi.py
+  ├─ MountControl process(optional)  -> mountcontrol_indi.py
+  └─ IndiGotoGuide process(optional) -> indi_goto_guide_service.py
 ```
 
 Relevant startup points:
@@ -48,7 +49,8 @@ Relevant startup points:
 - `python/PiFinder/main.py`
   - SkySafari server: `Process(name="SkySafariServer", target=pos_server.run_server, ...)`
   - INDI mount control: `Process(name="MountControl", target=mountcontrol_indi.run, ...)`
-- The mount-control process starts only when the `mount_control` config option is `true`.
+  - INDI GoTo/Guide service: `Process(name="IndiGotoGuide", target=indi_goto_guide_service.run, ...)`
+- The mount-control and GoTo/Guide processes start only when the `mount_control` config option is `true`.
 
 ## Shared State
 
@@ -199,7 +201,10 @@ Current PiFinder behavior:
 4. Adds it to `shared_state.ui_state().add_recent(obj)`.
 5. Sets `shared_state.ui_state().set_new_pushto(True)`.
 6. Sends `ui_queue.put("push_object")`.
-7. Queues an INDI GoTo when mount control and SkySafari INDI GoTo are enabled.
+7. When mount control and SkySafari INDI GoTo are enabled, queues the GoTo
+   request on `goto_guide_queue`. The GoTo/Guide service forwards it to mount
+   control or runs the PiFinder manual-approach loop depending on
+   `indi_goto_method`.
 8. While Multi Align is active, routes the target to
    `multipoint_align_goto_target` instead of switching to PushTo.
 
@@ -235,13 +240,23 @@ Routes:
 
 ```text
 GET  /indi
+GET  /tools/indi_mount
 GET  /indi/current_values
+GET  /indi/pointing_status
+POST /indi/skysafari
+POST /indi/goto_guide
 POST /indi/driver
 POST /indi/restart
 POST /indi/park
 POST /indi/slew_rate
 POST /indi/motion
 POST /indi/location_time
+POST /indi/multipoint_align
+POST /indi/backlash
+POST /indi/backlash/auto
+POST /indi/backlash/auto/continue
+POST /indi/backlash/auto/stop
+POST /indi/reset_pointing
 ```
 
 Template:
@@ -429,8 +444,9 @@ Start
   INDI
     STATUS
     INIT
-      Connect / Init
-      Send Location/Time
+      Connect
+      Set Location
+      Reset Pointing
       Park
       Unpark
       Set Home
@@ -453,7 +469,8 @@ Screen implementation:
 `UIIndiStatus`
 
 - Reads `mount_control_status.json`.
-- Displays state, message, age, device, RA, Dec, speed, step, and target RA/Dec.
+- Displays state, message, age, device, home/park state, raw mount status,
+  RA, Dec, speed, and target RA/Dec.
 
 ### INIT
 
@@ -463,6 +480,7 @@ Current implementation is callback-based.
 
 - `indi_init`
 - `indi_sync_location_time`
+- `reset_pointing` (drops a pointing-reset request file instead of using the mount queue)
 - `indi_park`
 - `indi_unpark`
 - `indi_set_home`
@@ -470,7 +488,8 @@ Current implementation is callback-based.
 - `indi_set_park`
 - `indi_restart_driver`
 
-Each callback sends a command dict to the mount-control queue.
+Each callback except `reset_pointing` sends a command dict to the mount-control
+queue.
 
 ### Guide
 
@@ -478,16 +497,18 @@ Each callback sends a command dict to the mount-control queue.
 
 - Uses the camera image as the background.
 - Numeric keys and text keys perform manual motion.
-- Numeric layout:
+- Numeric layout (2/4/6/8 cardinal moves; diagonals live on the keyboard
+  letters `q/e/z/c`):
 
 ```text
-7 8 9
+  8
 4   6
-1 2 3
+  2
 ```
 
-- `+`, `-`: change slew rate.
-- `Square`: sync mount to the current PiFinder solve.
+- `9`, `3`: increase/decrease the slew rate.
+- `5`: toggle GoTo refine, `0`: toggle guide correction.
+- `Square`: sync mount to the current PiFinder pointing.
 - Key press starts motion; key release stops motion.
 - Keepalive and lease logic reduce the risk of motion continuing through UI freeze.
 
@@ -501,24 +522,33 @@ Current mapping:
 
 ```text
 0 stop
-1 init + sync current solve if available
 2 south
-3 reduce step
+3 reduce slew rate
 4 west
 5 GoTo current object
 6 east
-7 sync current solve
+7 sync to current pointing
 8 north
-9 increase step
+9 increase slew rate
 ```
+
+Keys 2/4/6/8 move while held and stop on release (hold-to-move). The shared
+implementation lives in `_mount_key`/`_mount_command` in
+`python/PiFinder/ui/base.py`.
 
 Key `5` is the existing internal PiFinder target-to-INDI-GoTo path.
 
 ```python
-mountcontrol_queue.put({
+queue.put({
     "type": "goto_target",
-    "ra": self.object.ra,
-    "dec": self.object.dec,
+    "ra": target[0],
+    "dec": target[1],
+    "refine_after_goto": self.config_object.get_option(
+        "indi_goto_refine_once", False
+    ),
+    "refine_accuracy_arcmin": self.config_object.get_option(
+        "indi_goto_refine_accuracy_arcmin", 10.0
+    ),
 })
 ```
 
@@ -549,7 +579,9 @@ SkySafari target selected
   -> LX200 :Sr / :Sd / :MS
   -> pos_server.handle_goto_command()
   -> normal Push-To target storage
-  -> mountcontrol_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
+  -> goto_guide_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec,
+     "refine_after_goto": ..., "refine_accuracy_arcmin": ...}
+  -> IndiGotoGuideService (forwards to mountcontrol_queue when indi_goto_method=indi_mount)
   -> MountControlIndi.goto_target()
   -> INDI EQUATORIAL_EOD_COORD
   -> active INDI telescope driver
@@ -559,8 +591,12 @@ SkySafari target selected
 Requirements:
 
 - `mount_control` must be enabled.
-- SkySafari INDI GoTo forwarding must be enabled.
+- SkySafari INDI GoTo forwarding (`skysafari_indi_goto`) must be enabled.
 - The target coordinate is used exactly as received from SkySafari.
+- With `indi_goto_method = pifinder` the GoTo/Guide service runs the
+  PiFinder-coordinate manual-approach loop instead of a direct INDI GoTo.
+- While Multi Align is active the GoTo bypasses the GoTo/Guide service and
+  `multipoint_align_goto_target` is queued directly on the mount-control queue.
 
 ### SkySafari Sync/Align Forwarding Path
 

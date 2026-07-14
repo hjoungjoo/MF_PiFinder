@@ -1,6 +1,6 @@
 # MF PiFinder Input Controls (Keypad & Keyboard)
 
-Baseline: `mf_pifinder` branch, 2026-07-11.
+Baseline: `mf_pifinder` branch, 2026-07-13.
 
 This document is the accurate, source-derived reference for how keypad and
 keyboard input is handled across the PiFinder UI: the global behavior shared by
@@ -18,9 +18,14 @@ There are three input sources, and they do **not** all emit the same events.
 
 | Source | Module | Numbers | Letters | Notes |
 | --- | --- | --- | --- | --- |
-| GPIO keypad (device) | `keyboard_pi.py` | **press/release** (`NUMBER_PRESS_BASE=3000`, `RELEASE=3100`) | n/a | `SQUARE` held + key = `ALT_*` |
-| USB/Bluetooth HID keyboard (device) | `keyboard_pi.py` (libinput) | **press/release** | **press/release** (`TEXT_PRESS/RELEASE`) | Alt/Ctrl/Shift combos = `ALT_*` / `LNG_*` |
+| GPIO keypad (device) | `keyboard_pi.py` | **press/release** (`NUMBER_PRESS_BASE=3000`, `RELEASE=3100`; `0` is single-shot) | n/a | `SQUARE` held + key = `ALT_*` |
+| USB/Bluetooth HID keyboard (device) | `keyboard_pi.py` (libinput) | **press/release** (`0` currently emits no event) | **press/release** (`TEXT_PRESS/RELEASE`) | Alt/Ctrl/Shift combos = `ALT_*` / `LNG_*` |
 | Dev host keyboard | `keyboard_local.py` (`--keyboard local`) | **plain 0-9** (`key_number`) | mapped keys only | pyhotkey; for development |
+
+Number press/release applies only to 1-9 (`_direction_number_key`). `0` arrives
+as plain keycode 0 on release from the GPIO keypad; on the HID keyboard its
+mapped value 0 collides with "no key", so no event currently reaches the queue
+(a `get_keyboard_key` return of 0 is dropped in `keyboard_pi.py`).
 
 **Key consequence (the root of most divergences):** on real hardware (keypad +
 USB/BT) number and letter keys arrive as **press/release** events, while the dev
@@ -83,8 +88,10 @@ Unless a screen overrides them:
 ## 4. Standard menu — `UITextMenu` (and list variants)
 
 `UITextMenu` inherits **`GuideKeyMixin`** (see §6), so on standard menus the
-number/letter/`+`/`-` keys are hijacked for INDI mount guiding **when mount
-control is on**, and are otherwise no-ops.
+number and letter keys are hijacked for INDI mount control **when mount control
+is on** (numbers = shared mount map, letters = directional jog), and are
+otherwise no-ops. The mixin does **not** override `+`/`-`, so on standard menus
+`+`/`-` are always no-ops.
 
 | Input | Action |
 | --- | --- |
@@ -92,7 +99,8 @@ control is on**, and are otherwise no-ops.
 | `RIGHT` | Select: run item `callback`, or enter submenu `class`, or set a `config_option` value (see below), then run menu `post_callback` |
 | `LEFT` | Go back (pop) |
 | `SQUARE` | `cycle_display_mode` (usually a no-op on plain menus) |
-| numbers / letters / `+` / `-` | **GuideKeyMixin** -> mount guide (mount on) or no-op |
+| numbers / letters | **GuideKeyMixin** -> mount control (mount on: numbers = shared mount map, letters = directional jog) or no-op |
+| `+` / `-` | No-op (not overridden by the mixin) |
 
 Config-option menus (via `RIGHT`):
 - `single`: set the one value. For `filter.*` options, changing the value also
@@ -122,11 +130,11 @@ Config-option menus (via `RIGHT`):
 | `UP` / `DOWN` | Previous / next object in the list |
 | `LEFT` | Back (and add to recents) |
 | `RIGHT` | Open the **Log** screen (requires a pointing solution) |
-| `SQUARE` | Cycle display mode: DESC / LOCATE / POSS / SDSS / Contrast |
-| `PLUS` / `MINUS` | Mount on: slew-rate up/down ("Speed +/-"); mount off: cycle eyepiece FOV / scroll description |
-| number **tap** (`key_number`) | Discrete INDI mount command: 0=Stop 1=Init+Sync 2=South-step 3=Step- 4=West 5=**GoTo target** 6=East 7=**Sync** 8=North 9=Step+ |
-| number **press/release** (`key_number_press`) | If mount control on: 8-way **hold-to-move** guide (1=SW 2=S 3=SE 4=W 6=E 7=NW 8=N 9=NE; 0/5=stop; release=stop) |
-| letters (HID) | 8-way hold-to-move guide (q/w/e/a/s/d/z/x/c, s=stop) |
+| `SQUARE` | Cycle display mode: LOCATE / POSS / DESC / Contrast |
+| `PLUS` / `MINUS` | Cycle eyepiece FOV (scroll description in DESC mode) — never the mount |
+| number **tap** (`key_number`) | Shared mount map: 2/4/6/8 = one move South/West/East/North, 5=**GoTo target**, 7=**Sync**, 0=Stop, 9/3=slew-rate up/down (1 unused) |
+| number **press/release** (`key_number_press`) | If mount control on: 2/4/6/8 **hold-to-move** (release stops); 5=GoTo, 7=Sync, 0=Stop, 9/3=slew rate are discrete |
+| letters (HID) | 8-way hold-to-move guide incl. diagonals (q/w/e/a/s/d/z/x/c, s=stop) |
 
 ### Text / number entry
 
@@ -146,13 +154,14 @@ Config-option menus (via `RIGHT`):
 - **`UIIndiInit`**: discrete one-shot commands on digits — 1=Init 2=Sync
   loc/time 3=Park 4=Set Home 5=Return Home 6=Unpark 7=Set Park 8=Restart driver;
   `SQUARE` = Init.
-- **`UIIndiBacklash`**: digits enter the selected axis's backlash value (0-999);
-  `PLUS` **and** `MINUS` both toggle RA<->DE axis; `RIGHT` runs auto-backlash;
-  `SQUARE` saves both axes.
+- **`UIIndiBacklash`**: digits enter the selected axis's backlash value (0-999;
+  `0` clears the entry); `PLUS` selects the RA axis, `MINUS` selects the DE axis;
+  `RIGHT` runs auto-backlash; `SQUARE` saves both axes.
 - **`UIIndiGuide`**: `0`/`5` are discrete toggles (0=guide correction on/off,
-  5=one-shot refine on/off); direction digits `1-4/6-9` and letters are
-  **press/hold-to-move** guide (release stops); `PLUS`/`MINUS` slew-rate up/down;
-  `SQUARE` syncs the mount to the current solve.
+  5=one-shot refine on/off); direction digits `2/4/6/8` and letters are
+  **press/hold-to-move** guide (letters incl. diagonals; release stops); slew
+  rate is on `9` (up) / `3` (down); `PLUS`/`MINUS` are no-ops; `SQUARE` syncs the
+  mount to the current solve.
 - **`UIIndiMultiPointAlign`** (extends `UIIndiGuide`): staged wizard. In setup
   stages digits are discrete (pick point count / mode); in the ADJUST stage the
   same direction digits/letters become hold-to-move jog. `UP`/`DOWN`, `LEFT`/
@@ -175,57 +184,64 @@ Config-option menus (via `RIGHT`):
   submenu / eyepiece); `UP`/`DOWN` move the field index; digits set the current
   star rating (observability / appeal).
 - **`UIChart`**: `PLUS`/`MINUS` zoom; `SQUARE` reset FOV to the camera view.
-- **`UIPreview`** (`GuideKeyMixin`): `PLUS`/`MINUS` **zoom** (overrides the mixin
-  slew-rate), `SQUARE` toggles the focus/HUD overlay; numbers/letters still guide
-  the mount when mount control is on.
+- **`UIPreview`** (`GuideKeyMixin`): `PLUS`/`MINUS` **zoom** (the mixin does not
+  touch `+`/`-`), `SQUARE` toggles the focus/HUD overlay; numbers/letters still
+  drive the mount when mount control is on (numbers = shared mount map, letters =
+  directional jog).
 - **`UIConsole`**: `UP`/`DOWN` scroll log; digits are a dev shortcut (0 toggles
   camera debug; any digit sets a fixed debug datetime).
 - **Passive status screens** (`UIGPSStatus`, `UIGPSTimeSyncStatus`,
-  `UIIndiStatus`): plain `GuideKeyMixin` — arrows do their local thing, all
-  numbers/letters/`+`/`-` are mount guide when mount control is on.
+  `UIIndiStatus`): plain `GuideKeyMixin` — arrows do their local thing, numbers
+  (shared mount map) and letters (directional jog) drive the mount when mount
+  control is on; `+`/`-` are no-ops.
 
 ## 6. GuideKeyMixin — the cross-cutting number/letter hijack
 
-`GuideKeyMixin` (`base.py`) overrides `key_number`, `key_number_press`,
-`key_number_release`, `key_text*`, `key_plus`, `key_minus` and routes them to
-INDI mount guiding (`_guide_*`). It is inherited by `UITextMenu` (hence every
-standard menu and list), `UIEquipment`, `UIPreview`, and the passive status
-screens.
+`GuideKeyMixin` (`base.py`) overrides `key_number` / `key_number_press` /
+`key_number_release` (-> the shared mount map `_mount_key*`) and `key_text` /
+`key_text_press` / `key_text_release` (-> directional jog `_guide_key_text*`). It
+does **not** override `key_plus` / `key_minus`. It is inherited by `UITextMenu`
+(hence every standard menu and list), `UIEquipment`, `UIPreview`, and the passive
+status screens.
 
-- Numbers 1-9 -> compass move (1=SW 2=S 3=SE 4=W 6=E 7=NW 8=N 9=NE), 0/5=stop.
-- Letters q/w/e/a/s/d/z/x/c -> compass move, s=stop.
-- `+`/`-` -> increase/reduce slew rate.
-- Everything funnels through `_guide_mount_queue`; if `mount_control` is off it
-  returns `None` and the key is a **no-op**. Arrow and `SQUARE` controls are never
-  touched by the mixin.
+- Numbers -> shared mount map: 2/4/6/8 move South/West/East/North while held (a
+  tap is one move), 0=Stop, 5=GoTo (only where a target is selected), 7=Sync,
+  9/3=slew rate up/down, 1 unused.
+- Letters q/w/e/a/s/d/z/x/c -> 8-way move incl. diagonals, s=stop.
+- `+`/`-` are not touched by the mixin (screen-specific action or no-op).
+- Everything funnels through the mount-control queue
+  (`_mount_control_queue`/`_guide_mount_queue`); if `mount_control` is off it is
+  `None` and the key is a **no-op**. Arrow, `SQUARE`, `+` and `-` controls are
+  never touched by the mixin.
 
-Because the mixin overrides `key_number_press` to go straight to guide (it does
-**not** fall back to `key_number`), a subclass's own `key_number` handler is
-**unreachable from the physical keypad / HID** (press/release) and only fires
-from the dev keyboard's plain numbers.
+Because the mixin routes `key_number_press` to the shared mount map (it does
+**not** fall back to `key_number`), a subclass whose own `key_number` behavior
+must also work from the physical keypad / HID (press/release) — e.g.
+`UIObjectList` catalog jump, `UIObjectDetails` GoTo/Sync — must additionally
+override `key_number_press` / `key_number_release`, and those screens do.
 
 ## 7. Known inconsistencies (candidates to fix)
 
-1. **Discrete Object Details mount commands are shadowed on real hardware.** On a
-   device with mount control on, number press/release routes to hold-to-move
-   guide, so `key_number`'s GoTo(5)/Sync(7)/Init(1)/step(3,9) never run — you
-   cannot GoTo/Sync a target from the keypad. They only run from the dev keyboard.
-2. **Object List catalog-number jump is dead on the keypad.** `UIObjectList`
-   implements only `key_number`; the keypad/HID send press/release, which
-   `GuideKeyMixin` consumes for guide, so typing a sequence number to jump works
-   only from the dev keyboard.
-3. **Standard menus become a mount joystick.** With mount control on, every
-   `UITextMenu` (all menus/lists) turns its number/letter/`+`/`-` keys into mount
-   guiding — easy to trigger unintentionally while navigating.
-4. **Dev keyboard vs device diverge fundamentally** (plain number vs
+> Updated 2026-07-13: three items previously listed here are resolved in the
+> source — ① discrete Object Details mount commands being shadowed on hardware
+> and ② Object List catalog-number jump being dead on the keypad were fixed by
+> `UIObjectDetails`/`UIObjectList` overriding `key_number_press`/
+> `key_number_release` so taps work on the device, and ③ `UIIndiBacklash`'s
+> `PLUS`/`MINUS` are now distinct (`PLUS`=RA, `MINUS`=DE).
+
+Remaining inconsistencies:
+
+1. **Standard menus become a mount joystick.** With mount control on, every
+   `UITextMenu` (all menus/lists) turns its number/letter keys into mount control
+   (the mixin does not touch `+`/`-`) — easy to trigger unintentionally while
+   navigating.
+2. **Dev keyboard vs device diverge fundamentally** (plain number vs
    press/release), so behavior differs between `--keyboard local` testing and real
    hardware.
-5. **Dead keys**: `LNG_UP`/`LNG_DOWN`, `ALT_UP`/`ALT_DOWN`/`ALT_SQUARE` are
-   emitted but never dispatched.
-6. **`UIIndiBacklash`**: `PLUS` and `MINUS` do the identical action (toggle axis).
-7. **Docs vs code**: `mf_keyboard_mapping` presents the discrete Object Details
-   number commands as the behavior for keypad/HID/GPIO, but on real hardware they
-   are shadowed by guide (see #1).
+3. **Dead keys**: `LNG_UP`/`LNG_DOWN`, `ALT_UP`/`ALT_DOWN`/`ALT_SQUARE` are
+   emitted but never dispatched. `LNG_MINUS` (long MINUS) has no keycode in
+   `keyboard_interface.py` and no driver emits it, so `textentry.py`'s
+   `key_long_minus` (clear all) is currently unreachable.
 
 ## 8. Proposed target model (for discussion)
 

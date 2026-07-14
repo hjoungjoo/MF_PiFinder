@@ -138,7 +138,7 @@ intended keypad jump (today it is shadowed) and gives English name search.
 | `UP` / `DOWN` | Previous / next object |
 | `RIGHT` | Open the Log screen |
 | `LEFT` | Back |
-| `SQUARE` | Cycle view: DESC / LOCATE / POSS / SDSS / Contrast |
+| `SQUARE` | Cycle view: LOCATE / POSS / DESC / Contrast |
 | `0-9` (keypad) | **Shared mount map**: 2/4/6/8 = move S/W/E/N **while held**, 5=**GoTo** this object, 7=**Sync**, 0=Stop, 9/3=slew rate up/down (1 unused) |
 | letters (kbd) | **Continuous INDI jog** (`q w e / a s d / z x c`, `s` = stop) |
 | `+` / `-` | Eyepiece FOV / description scroll (never the mount) |

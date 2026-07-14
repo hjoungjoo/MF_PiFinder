@@ -1,6 +1,6 @@
 # MF PiFinder 입력 조작법 (키패드 & 키보드)
 
-기준: `mf_pifinder` 브랜치, 2026-07-11.
+기준: `mf_pifinder` 브랜치, 2026-07-13.
 
 이 문서는 PiFinder UI가 키패드/키보드 입력을 처리하는 방식을 소스에서 정확히
 정리한 참조 문서입니다. 모든 화면이 공유하는 전역 동작과, 특수하게 동작하는
@@ -17,9 +17,14 @@
 
 | 소스 | 모듈 | 숫자 | 문자 | 비고 |
 | --- | --- | --- | --- | --- |
-| GPIO 키패드 (기기) | `keyboard_pi.py` | **press/release** (`NUMBER_PRESS_BASE=3000`, `RELEASE=3100`) | 없음 | `SQUARE` 홀드 + 키 = `ALT_*` |
-| USB/블루투스 HID 키보드 (기기) | `keyboard_pi.py` (libinput) | **press/release** | **press/release** (`TEXT_PRESS/RELEASE`) | Alt/Ctrl/Shift 조합 = `ALT_*` / `LNG_*` |
+| GPIO 키패드 (기기) | `keyboard_pi.py` | **press/release** (`NUMBER_PRESS_BASE=3000`, `RELEASE=3100`; `0`만 단발) | 없음 | `SQUARE` 홀드 + 키 = `ALT_*` |
+| USB/블루투스 HID 키보드 (기기) | `keyboard_pi.py` (libinput) | **press/release** (`0`은 현재 이벤트가 전달되지 않음) | **press/release** (`TEXT_PRESS/RELEASE`) | Alt/Ctrl/Shift 조합 = `ALT_*` / `LNG_*` |
 | 개발용 호스트 키보드 | `keyboard_local.py` (`--keyboard local`) | **단발 0-9** (`key_number`) | 매핑된 키만 | pyhotkey, 개발용 |
+
+숫자 press/release는 1-9에만 적용됩니다(`_direction_number_key`). `0`은 GPIO
+키패드에서 릴리스 시 단발 키코드 0으로 도착하고, HID 키보드에서는 매핑값 0이
+"키 없음"과 겹쳐 현재 아무 이벤트도 큐에 들어가지 않습니다
+(`keyboard_pi.py`의 `get_keyboard_key` 반환값 0은 버려짐).
 
 **핵심 결과(대부분 불일치의 근원):** 실제 하드웨어(키패드 + USB/BT)에서는 숫자·
 문자 키가 **press/release** 이벤트로 도착하지만, 개발용 키보드는 **단발 숫자**를
@@ -81,9 +86,10 @@ press/release base; 단발 숫자는 `keycode < 10`.
 
 ## 4. 표준 메뉴 — `UITextMenu` (및 리스트 파생)
 
-`UITextMenu`는 **`GuideKeyMixin`**(§6)을 상속하므로, 표준 메뉴에서 숫자·문자·`+`·
-`-` 키는 **마운트 제어가 켜져 있을 때** INDI 마운트 가이드로 가로채이고, 그 외에는
-동작이 없습니다.
+`UITextMenu`는 **`GuideKeyMixin`**(§6)을 상속하므로, 표준 메뉴에서 숫자·문자
+키는 **마운트 제어가 켜져 있을 때** INDI 마운트 제어로 가로채이고(숫자=공통 마운트
+맵, 문자=방향 조그), 그 외에는 동작이 없습니다. 믹스인은 `+`/`-`를 재정의하지
+않으므로 표준 메뉴에서 `+`/`-`는 항상 무효입니다.
 
 | 입력 | 동작 |
 | --- | --- |
@@ -91,7 +97,8 @@ press/release base; 단발 숫자는 `keycode < 10`.
 | `RIGHT` | 선택: 항목 `callback` 실행, 또는 서브메뉴 `class` 진입, 또는 `config_option` 값 설정(아래), 이후 메뉴 `post_callback` |
 | `LEFT` | 뒤로(pop) |
 | `SQUARE` | `cycle_display_mode` (일반 메뉴에서는 보통 무효) |
-| 숫자 / 문자 / `+` / `-` | **GuideKeyMixin** -> 마운트 가이드(마운트 ON) 또는 무효 |
+| 숫자 / 문자 | **GuideKeyMixin** -> 마운트 제어(마운트 ON: 숫자=공통 마운트 맵, 문자=방향 조그) 또는 무효 |
+| `+` / `-` | 무효 (믹스인이 재정의하지 않음) |
 
 config-option 메뉴(`RIGHT`):
 - `single`: 값 하나 설정. `filter.*` 옵션은 값이 바뀌면 상위 메뉴로 자동 복귀.
@@ -119,11 +126,11 @@ config-option 메뉴(`RIGHT`):
 | `UP` / `DOWN` | 목록의 이전/다음 객체 |
 | `LEFT` | 뒤로(최근 목록에 추가) |
 | `RIGHT` | **Log** 화면 열기(pointing solution 필요) |
-| `SQUARE` | 표시 모드 순환: DESC / LOCATE / POSS / SDSS / Contrast |
-| `PLUS` / `MINUS` | 마운트 ON: 슬루 속도 +/-("Speed +/-"); 마운트 OFF: 아이피스 시야(FOV) 순환 / 설명 스크롤 |
-| 숫자 **탭** (`key_number`) | 개별 INDI 마운트 명령: 0=정지 1=Init+Sync 2=남(스텝) 3=스텝- 4=서 5=**타겟 GoTo** 6=동 7=**Sync** 8=북 9=스텝+ |
-| 숫자 **press/release** (`key_number_press`) | 마운트 ON: 8방향 **홀드 이동** 가이드(1=SW 2=S 3=SE 4=W 6=E 7=NW 8=N 9=NE; 0/5=정지; 떼면 정지) |
-| 문자 (HID) | 8방향 홀드 이동 가이드(q/w/e/a/s/d/z/x/c, s=정지) |
+| `SQUARE` | 표시 모드 순환: LOCATE / POSS / DESC / Contrast |
+| `PLUS` / `MINUS` | 아이피스 시야(FOV) 순환(DESC 모드에서는 설명 스크롤) — 마운트와 무관 |
+| 숫자 **탭** (`key_number`) | 공통 마운트 맵: 2/4/6/8=남/서/동/북 한 번 이동, 5=**타겟 GoTo**, 7=**Sync**, 0=정지, 9/3=슬루 속도 +/- (1 미사용) |
+| 숫자 **press/release** (`key_number_press`) | 마운트 ON: 2/4/6/8 **홀드 이동**(떼면 정지); 5=GoTo·7=Sync·0=정지·9/3=슬루 속도는 개별 명령 |
+| 문자 (HID) | 8방향 홀드 이동 가이드(대각 포함, q/w/e/a/s/d/z/x/c, s=정지) |
 
 ### 텍스트 / 숫자 입력
 
@@ -141,11 +148,12 @@ config-option 메뉴(`RIGHT`):
 
 - **`UIIndiInit`**: 숫자로 개별 1회 명령 — 1=Init 2=위치/시간 Sync 3=Park 4=홈
   설정 5=홈 복귀 6=Unpark 7=Park 설정 8=드라이버 재시작; `SQUARE` = Init.
-- **`UIIndiBacklash`**: 숫자로 선택 축의 백래시 값 입력(0-999); `PLUS`**와** `MINUS`
-  **둘 다** RA<->DE 축 토글; `RIGHT` 자동 백래시 실행; `SQUARE` 두 축 저장.
+- **`UIIndiBacklash`**: 숫자로 선택 축의 백래시 값 입력(0-999, `0`은 입력 초기화);
+  `PLUS`는 RA 축, `MINUS`는 DE 축 선택; `RIGHT` 자동 백래시 실행; `SQUARE` 두 축 저장.
 - **`UIIndiGuide`**: `0`/`5`는 개별 토글(0=가이드 보정 on/off, 5=1회 정밀보정
-  on/off); 방향 숫자 `1-4/6-9`와 문자는 **press/홀드 이동** 가이드(떼면 정지);
-  `PLUS`/`MINUS` 슬루 속도 +/-; `SQUARE` 현재 solve로 마운트 Sync.
+  on/off); 방향 숫자 `2/4/6/8`과 문자는 **press/홀드 이동** 가이드(문자는 대각 포함;
+  떼면 정지); 슬루 속도는 `9`(증가)/`3`(감소); `PLUS`/`MINUS`는 무효; `SQUARE`
+  현재 solve로 마운트 Sync.
 - **`UIIndiMultiPointAlign`** (`UIIndiGuide` 확장): 단계별 마법사. 설정 단계에서는
   숫자가 개별(정렬점 수/모드 선택), ADJUST 단계에서는 같은 방향 숫자·문자가 홀드
   이동 조그. `UP`/`DOWN`, `LEFT`/`RIGHT`, `SQUARE`가 마법사 단계 전환을 담당.
@@ -165,50 +173,57 @@ config-option 메뉴(`RIGHT`):
 - **`UILog`**: `RIGHT`는 현재 항목 실행(로그 & 종료 / 평점 순환 / 서브메뉴 /
   아이피스); `UP`/`DOWN` 항목 이동; 숫자는 현재 별점(관측성/매력도) 설정.
 - **`UIChart`**: `PLUS`/`MINUS` 확대/축소; `SQUARE` 카메라 시야로 FOV 리셋.
-- **`UIPreview`** (`GuideKeyMixin`): `PLUS`/`MINUS`는 **확대/축소**(믹스인의 슬루
-  속도를 재정의), `SQUARE`는 포커스/HUD 오버레이 토글; 숫자·문자는 마운트 ON이면
-  여전히 가이드.
+- **`UIPreview`** (`GuideKeyMixin`): `PLUS`/`MINUS`는 **확대/축소**(믹스인은
+  `+`/`-`를 건드리지 않음), `SQUARE`는 포커스/HUD 오버레이 토글; 숫자·문자는 마운트
+  ON이면 여전히 마운트 제어(숫자=공통 마운트 맵, 문자=방향 조그).
 - **`UIConsole`**: `UP`/`DOWN` 로그 스크롤; 숫자는 개발 단축키(0=카메라 디버그
   토글, 아무 숫자나 고정 디버그 시각 설정).
 - **수동 상태 화면** (`UIGPSStatus`, `UIGPSTimeSyncStatus`, `UIIndiStatus`): 순수
-  `GuideKeyMixin` — 화살표는 로컬 동작, 숫자·문자·`+`·`-`는 마운트 ON이면 가이드.
+  `GuideKeyMixin` — 화살표는 로컬 동작, 숫자(공통 마운트 맵)·문자(방향 조그)는 마운트
+  ON이면 마운트 제어; `+`/`-`는 무효.
 
 ## 6. GuideKeyMixin — 전 화면 숫자·문자 가로채기
 
-`GuideKeyMixin`(`base.py`)은 `key_number`, `key_number_press`,
-`key_number_release`, `key_text*`, `key_plus`, `key_minus`를 재정의해 INDI 마운트
-가이드(`_guide_*`)로 보냅니다. `UITextMenu`(따라서 모든 표준 메뉴·리스트),
-`UIEquipment`, `UIPreview`, 수동 상태 화면이 상속합니다.
+`GuideKeyMixin`(`base.py`)은 `key_number`/`key_number_press`/`key_number_release`
+(-> 공통 마운트 맵 `_mount_key*`)와 `key_text`/`key_text_press`/`key_text_release`
+(-> 방향 조그 `_guide_key_text*`)를 재정의합니다. **`key_plus`/`key_minus`는
+재정의하지 않습니다.** `UITextMenu`(따라서 모든 표준 메뉴·리스트), `UIEquipment`,
+`UIPreview`, 수동 상태 화면이 상속합니다.
 
-- 숫자 1-9 -> 방위 이동(1=SW 2=S 3=SE 4=W 6=E 7=NW 8=N 9=NE), 0/5=정지.
-- 문자 q/w/e/a/s/d/z/x/c -> 방위 이동, s=정지.
-- `+`/`-` -> 슬루 속도 증가/감소.
-- 모두 `_guide_mount_queue`를 거치며, `mount_control`이 꺼져 있으면 `None`을 반환해
-  키는 **무효**. 화살표와 `SQUARE`는 믹스인이 건드리지 않음.
+- 숫자 -> 공통 마운트 맵: 2/4/6/8 누르는 동안 남/서/동/북 이동(탭=한 번), 0=정지,
+  5=GoTo(타겟이 선택된 화면만), 7=Sync, 9/3=슬루 속도 +/-, 1 미사용.
+- 문자 q/w/e/a/s/d/z/x/c -> 8방향 이동(대각 포함), s=정지.
+- `+`/`-`는 믹스인이 건드리지 않음(화면 고유 동작 또는 무효).
+- 모두 마운트 제어 큐(`_mount_control_queue`/`_guide_mount_queue`)를 거치며,
+  `mount_control`이 꺼져 있으면 `None`이라 키는 **무효**. 화살표·`SQUARE`·`+`·`-`는
+  믹스인이 건드리지 않음.
 
-믹스인이 `key_number_press`를 가이드로 직행시키고(**`key_number`로 폴백하지 않음**),
-그래서 서브클래스 자체의 `key_number` 핸들러는 **물리 키패드/HID(press/release)에서
-도달 불가**하고 개발용 키보드의 단발 숫자에서만 실행됩니다.
+믹스인이 `key_number_press`를 공통 마운트 맵으로 보내므로(**`key_number`로 폴백하지
+않음**), 자체 `key_number` 동작이 물리 키패드/HID(press/release)에서도 동작해야 하는
+서브클래스(예: `UIObjectList` 카탈로그 점프, `UIObjectDetails` GoTo/Sync)는
+`key_number_press`/`key_number_release`도 함께 재정의해야 하며, 실제로 그렇게 되어
+있습니다.
 
 ## 7. 알려진 불일치 (수정 후보)
 
-1. **Object Details의 개별 마운트 명령이 실제 하드웨어에서 가려짐.** 마운트 ON인
-   기기에서 숫자 press/release는 홀드 이동 가이드로 가므로, `key_number`의
-   GoTo(5)/Sync(7)/Init(1)/스텝(3,9)이 실행되지 않음 — 키패드로 타겟 GoTo/Sync
-   불가. 개발용 키보드에서만 실행됨.
-2. **Object List 카탈로그 숫자 점프가 키패드에서 죽어 있음.** `UIObjectList`는
-   `key_number`만 구현하는데 키패드/HID는 press/release를 보내고 `GuideKeyMixin`이
-   가이드로 소비 -> 시퀀스 번호 점프는 개발용 키보드에서만 동작.
-3. **표준 메뉴가 마운트 조이스틱이 됨.** 마운트 ON이면 모든 `UITextMenu`(전 메뉴·
-   리스트)의 숫자·문자·`+`·`-`가 마운트 가이드로 바뀌어, 탐색 중 의도치 않게 마운트가
-   움직이기 쉬움.
-4. **개발용 키보드와 기기가 근본적으로 다름**(단발 숫자 vs press/release), 그래서
+> 2026-07-13 갱신: 이전에 이 목록에 있던 세 항목은 소스에서 해소됨 —
+> ① Object Details 개별 마운트 명령이 하드웨어에서 가려지던 문제와
+> ② Object List 카탈로그 숫자 점프가 키패드에서 죽던 문제는
+> `UIObjectDetails`/`UIObjectList`가 `key_number_press`/`key_number_release`를
+> 재정의해 탭이 기기에서도 동작하도록 고쳐졌고,
+> ③ `UIIndiBacklash`의 `PLUS`/`MINUS`는 `PLUS`=RA·`MINUS`=DE로 분리됐다.
+
+남아 있는 불일치:
+
+1. **표준 메뉴가 마운트 조이스틱이 됨.** 마운트 ON이면 모든 `UITextMenu`(전 메뉴·
+   리스트)의 숫자·문자가 마운트 제어로 바뀌어(믹스인은 `+`/`-`는 건드리지 않음),
+   탐색 중 의도치 않게 마운트가 움직이기 쉬움.
+2. **개발용 키보드와 기기가 근본적으로 다름**(단발 숫자 vs press/release), 그래서
    `--keyboard local` 테스트와 실제 하드웨어의 동작이 갈림.
-5. **죽은 키**: `LNG_UP`/`LNG_DOWN`, `ALT_UP`/`ALT_DOWN`/`ALT_SQUARE`가 발생하지만
-   디스패치되지 않음.
-6. **`UIIndiBacklash`**: `PLUS`와 `MINUS`가 동일 동작(축 토글).
-7. **문서 vs 코드**: `mf_keyboard_mapping`은 Object Details 개별 숫자 명령을
-   키패드/HID/GPIO 동작으로 제시하지만, 실제 하드웨어에서는 가이드에 가려짐(#1).
+3. **죽은 키**: `LNG_UP`/`LNG_DOWN`, `ALT_UP`/`ALT_DOWN`/`ALT_SQUARE`가 발생하지만
+   디스패치되지 않음. `LNG_MINUS`(MINUS 길게)는 `keyboard_interface.py`에 키코드가
+   없어 어떤 드라이버도 발생시키지 않으므로, `textentry.py`의
+   `key_long_minus`(전체 삭제)는 현재 도달 불가.
 
 ## 8. 제안 목표 모델 (논의용)
 

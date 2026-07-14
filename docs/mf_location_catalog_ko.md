@@ -43,7 +43,7 @@ Country > State / Province > County / District > City / Place
 
 `City / Place`를 선택하면 기존 수동 입력 필드에 기본값을 채운다.
 
-- Location Name: 비어 있을 때만 장소 이름을 입력한다.
+- Location Name: 사용자가 직접 수정한 이름이 없으면 장소 이름을 입력한다.
 - Latitude / Longitude: GeoNames 좌표를 입력한다.
 - Altitude: GeoNames elevation 또는 DEM 값을 입력한다.
 - Error: 기본 `1000m`로 입력한다. 실제 관측지는 필요에 따라 사용자가 수정한다.

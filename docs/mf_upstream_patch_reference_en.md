@@ -166,7 +166,8 @@ Preserve:
 
 - libinput-based HID keyboard mapping.
 - Bluetooth scan/pair/connect UI.
-- INDI Guide page-only `qwe/asd/zxc` mapping.
+- INDI guide `qwe/asd/zxc` mapping (Guide page and `GuideKeyMixin` passive
+  screens).
 - Guide motion press/release and timeout fail-safe behavior.
 
 ### Integrated Time Sync
@@ -254,6 +255,10 @@ Preserve:
 Key files:
 
 - `python/PiFinder/mountcontrol_indi.py`
+- `python/PiFinder/indi_align.py`
+- `python/PiFinder/indi_backlash_calibration.py`
+- `python/PiFinder/indi_goto_guide_service.py`
+- `python/PiFinder/indi_multipoint_align.py`
 - `python/PiFinder/pos_server.py`
 - `python/PiFinder/ui/indi.py`
 - `python/views/indi_mount.html`
@@ -293,8 +298,9 @@ Preserve:
 
 - INDI entry at the bottom of the Start menu.
 - INIT/STATUS/GUIDE pages.
-- Guide keypad layout `789 / 4 6 / 123`.
-- `qwe/asd/zxc` mapping only inside the Guide page.
+- Guide keypad `2/4/6/8` cardinal moves; `9/3` adjust the slew rate.
+- `qwe/asd/zxc` keyboard mapping for guide motion; diagonals are on the
+  keyboard letters only.
 - Key 5 is not a guide-motion key.
 - Motion is press-to-move, release-to-stop.
 - Timeout/fail-safe stop protects against freezes or missed key releases.
@@ -305,6 +311,7 @@ Preserve:
 Key files:
 
 - `python/PiFinder/pos_server.py`
+- `python/PiFinder/pointing_coordinate_service.py`
 - `python/PiFinder/mountcontrol_indi.py`
 - `python/PiFinder/imu_pi.py`
 - `python/PiFinder/imu_calibration.py`

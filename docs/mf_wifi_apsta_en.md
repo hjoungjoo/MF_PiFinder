@@ -27,7 +27,7 @@ During startup PiFinder waits briefly for the STA channel before starting the AP
 Web UI:
 
 ```text
-Tools > Network > Wifi Mode > AP+STA
+Network Setup > Wifi Mode > AP+STA
 ```
 
 The same Network page also manages:

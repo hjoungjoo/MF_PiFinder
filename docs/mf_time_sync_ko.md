@@ -70,7 +70,7 @@ Custom
 
 ## 선택 방식
 
-`Chrony` 모드에서는 chronyd가 관리 중인 system clock 상태를 선택합니다. PiFinder는 `chronyc tracking` 결과의 stratum, reference, leap 상태, offset 정보를 상태 파일과 UI에 표시합니다.
+`Chrony` 모드에서는 chronyd가 관리 중인 system clock 상태를 선택합니다. PiFinder는 `chronyc tracking` 결과의 stratum, reference, leap 상태, offset 정보를 상태 파일에 기록하고, UI에는 chrony 상태, reference, offset을 표시합니다.
 
 `Best` 모드에서는 Chrony, 안정적인 GPS 후보, 유효한 PiFinder SNTP 후보를 비교합니다. GPS는 `valid`, `tAcc`, 최근 샘플 jitter, stale 여부를 기준으로 판단합니다. PiFinder SNTP는 응답 유효성, stratum, 왕복 지연, root dispersion, stale 여부를 기준으로 판단합니다.
 

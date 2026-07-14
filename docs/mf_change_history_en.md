@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-07-11
+Last updated: 2026-07-13
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -44,7 +44,7 @@ Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the loca
 | Web UI red night theme and PWA fullscreen app mode | No Draft PR yet | local `mf_pifinder` worktree | red night theme, per-browser theme storage, PWA manifest, service worker, PWA icons |
 | Optional IMU compass heading | No Draft PR yet | local `mf_pifinder` worktree | optional BNO055 NDOF magnetometer fusion mode, IMU calibration status, automatic calibration save/load, manual calibration menu |
 | SkySafari/INDI mount-mode compatibility | No Draft PR yet | local `mf_pifinder` worktree | Alt/Az/EQ SkySafari LX200 status, optional GoTo/Sync forwarding, SkySafari guide keepalive bridge, no-solve IMU alignment correction, mount-mode compatibility checklist |
-| Pointing Coordinate Service | No Draft PR yet | local `mf_pifinder` worktree | shared coordinate service for SkySafari/Web/LCD/INDI Multi Align, requested target coordinates used as-is, IMU smoothing, mount readback priority during GoTo/manual motion |
+| Pointing Coordinate Service | No Draft PR yet | local `mf_pifinder` worktree | shared coordinate service for SkySafari/Web/LCD/INDI Multi Align, requested target coordinates used as-is, IMU smoothing, mount readback priority during GoTo/manual motion, Reset Pointing discards the SkySafari IMU alignment correction and re-syncs the mount to the raw IMU coordinate |
 | INDI GoTo/Guide service | No Draft PR yet | local `mf_pifinder` worktree | separate `indi_goto_guide_service` process (GoTo/Guide policy state machine) layered over `mountcontrol_indi` executor; SkySafari GoTo routed through the service; PiFinder-driven manual approach loop + correction pass with final INDI GoTo; tracking guide target managed by the service; tracking-guide disturbance recovery (settle-detect then 3° banded pulse-guide vs sync+GoTo re-acquisition, separate GoTo-recovery On/Off); web GoTo/Guide status panel + LCD GoTo Recovery toggle; see `mf_indi_goto_guide_plan` and `mf_goto_mount_source_structure` |
 | LiveCam RAW preview and live stack | No Draft PR yet | local `mf_pifinder` worktree | `raw_live_stack`/`livecam_config` RAW preview and rolling live-stack kept off the solver path; camera backends publish one RAW frame, web API renders display PNG/JPEG/WebP; stack modes (mean/sum/max), sizing/zoom, reset-defaults control; see `mf_raw_live_stack_plan` |
 | Change history and PR regrouping documentation | No Draft PR yet | local `mf_pifinder` worktree | this document's work-area table of contents, PR status, and regrouping guidance |

@@ -1,6 +1,6 @@
 # MF PiFinder Pointing Coordinate Service
 
-Last updated: 2026-07-08
+Last updated: 2026-07-13
 
 This document describes the current `mf_pifinder` implementation of the
 always-running pointing coordinate service shared by SkySafari, Web UI, LCD UI,
@@ -173,8 +173,9 @@ target_error_deg
 goto_wait_seconds
 ```
 
-Mount candidates are excluded when the mount is disconnected, faulted, parked,
-or has no RA/Dec readback.
+Mount candidates are excluded when the mount is disconnected/disconnecting,
+errored/faulted/failed, server/driver offline, parked, or has no RA/Dec
+readback.
 
 Before PiFinder and the mount have been synchronized/aligned, mount readback is
 diagnostic only. It is not mixed into the current coordinate.
@@ -359,10 +360,12 @@ SkySafari target input:
 
 Rules:
 
-- `:Sr/:Sd` are stored directly as `last_target_coordinates`.
-- `:MS#` uses the same target for PiFinder push target and optional INDI GoTo.
+- `:Sr/:Sd` are parsed and kept as-is (`sr_result`/`sd_result`).
+- `:MS#` stores the same target as `last_target_coordinates` and uses it for
+  the PiFinder push target and optional INDI GoTo.
 - In Multi Align, GoTo is routed to `multipoint_align_goto_target`.
-- `:CM#` Sync/Align uses the latest requested target coordinates.
+- `:CM#` Sync/Align uses the currently parsed `:Sr/:Sd` coordinates, falling
+  back to the last GoTo target (`last_target_coordinates`).
 - In Multi Align, `:CM#` is routed to `multipoint_align_confirm`.
 - SkySafari guide input (`:Mn#`, `:Ms#`, `:Me#`, `:Mw#`) is not target
   coordinate input. `pos_server.py` owns the guide keepalive timer and queues
@@ -420,7 +423,8 @@ the mount's coordinate system (it does not slew), so the mount readback — and
 therefore the fused coordinate — then follows the IMU. With a valid solve, no
 IMU alignment is done; the solve drives the coordinate.
 
-Consume latency is ~0.1 s.
+Consume latency is at most ~0.2 s (the service tick interval,
+`_POINTING_UPDATE_SECONDS`).
 
 UI surfaces:
 

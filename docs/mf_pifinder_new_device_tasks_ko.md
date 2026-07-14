@@ -328,7 +328,7 @@ cgps -s
 PiFinder 메뉴에서 확인:
 
 ```text
-Settings > GPS Settings > GPS Port
+Settings > Advanced > GPS Settings > GPS Port
 ```
 
 확인할 것:
@@ -409,7 +409,7 @@ Settings > Advanced > Keyboard
 PiFinder 메뉴에서 한국어를 선택한다.
 
 ```text
-Settings > Advanced > Language > Korean
+Settings > User Pref... > Language > Korean
 ```
 
 확인할 것:

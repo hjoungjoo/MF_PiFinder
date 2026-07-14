@@ -190,7 +190,8 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 
 - libinput 기반 HID keyboard event mapping을 유지한다.
 - Bluetooth scan/pair/connect UI를 유지한다.
-- LCD INDI Guide page에서만 쓰는 `qwe/asd/zxc` 추가 키맵을 유지한다.
+- INDI guide 이동용 `qwe/asd/zxc` 추가 키맵을 유지한다 (Guide page와
+  `GuideKeyMixin` 기반 passive 화면).
 - key press/release가 필요한 guide motion은 release/timeout fail-safe를 유지한다.
 
 ### Integrated time sync
@@ -280,6 +281,10 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 주요 파일:
 
 - `python/PiFinder/mountcontrol_indi.py`
+- `python/PiFinder/indi_align.py`
+- `python/PiFinder/indi_backlash_calibration.py`
+- `python/PiFinder/indi_goto_guide_service.py`
+- `python/PiFinder/indi_multipoint_align.py`
 - `python/PiFinder/pos_server.py`
 - `python/PiFinder/ui/indi.py`
 - `python/views/indi_mount.html`
@@ -316,7 +321,8 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 
 - Start 메뉴 하단에 INDI 항목을 둔다.
 - INIT/STATUS/GUIDE 페이지를 유지한다.
-- Guide page는 숫자키 `789 / 4 6 / 123`과 `qwe/asd/zxc` 키맵을 사용한다.
+- Guide page는 숫자키 `2/4/6/8`(동서남북)과 `qwe/asd/zxc` 키맵을 사용하고,
+  `9/3`은 slew rate 조절이다. 대각선 이동은 키보드 문자키에만 있다.
 - 5키는 guide motion에 사용하지 않는다.
 - motion은 press-to-move, release-to-stop 방식이다.
 - freeze나 key release 누락 시 timeout/fail-safe stop을 유지한다.
@@ -327,6 +333,7 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 주요 파일:
 
 - `python/PiFinder/pos_server.py`
+- `python/PiFinder/pointing_coordinate_service.py`
 - `python/PiFinder/mountcontrol_indi.py`
 - `python/PiFinder/imu_pi.py`
 - `python/PiFinder/imu_calibration.py`

@@ -40,7 +40,7 @@ The Pi camera backend currently handles RAW frames as follows:
 Picamera2 raw capture request
   -> acquire sensor RAW with the camera profile raw_size / raw format
   -> raw ndarray, viewed as uint16
-  -> current code does not store this original RAW frame in shared state
+  -> when LiveCam processing is enabled, publish_selected_frame shares the selected RAW here
   -> CameraProfile.crop_and_rotate()
   -> bias/digital gain/8-bit stretch
   -> PIL image resize(512, 512)
@@ -53,15 +53,17 @@ Related files:
 - `python/PiFinder/camera_pi.py`
   - `CameraPI.capture()`
   - RAW capture, profile crop/rotate
-  - needs a shared point for the frame selected from pre-crop original RAW or
-    crop/rotate RAW
+  - calls `publish_selected_frame` to share the frame selected from pre-crop
+    original RAW or crop/rotate RAW
   - existing processed image resize to 512x512
 - `python/PiFinder/sqm/camera_profiles.py`
   - per-sensor raw format, raw size, crop, rotation, bit depth, bias offset
 - `python/PiFinder/state.py`
-  - needs selected RAW frame getter/setter for the new module
+  - selected RAW frame getter/setter (`raw_live_frame` / `set_raw_live_frame`)
+    for the new module
 - `python/PiFinder/api_extensions.py`
   - `/api/camera/raw`
+  - `/api/camera/raw-stack/*`
 - `python/PiFinder/ui/preview.py`
   - LCD Preview RAW display helper
 
@@ -88,7 +90,8 @@ Important notes:
   `cropped_raw`.
 - The RAW sharing point should carry metadata such as source, shape, rotation,
   exposure time, gain, timestamp, and frame id.
-- There is no dedicated observation-friendly original RAW stretch API yet.
+- `/api/camera/raw-stack/image` returns an observation-friendly stretched
+  display image built from the selected RAW frame.
 
 ## Proposed Architecture
 
@@ -483,7 +486,6 @@ accepted_count
 rejected_count
 stack_mode
 frame_limit
-latest_frame_age
 raw_shape
 last_error
 ```
@@ -587,13 +589,14 @@ UI layout:
 - Reset Defaults
 - Stack mode select
 - Stack Frames (Max 500)
-- Preview header controls: Color mode, Image format, Download
+- Settings selects: Color mode, Image format
+- Preview header controls: Download
 - Preview zoom controls: Zoom out / 100% / Zoom in / Actual size
 - Frame count / accepted / rejected
-- Raw shape / display shape / dtype / exposure / gain
+- Frame source / raw shape / display shape / dtype
 - Stretch low/high controls
 - Download image
-- Last reject reason
+- Last error / reject reason
 
 Web transfer format:
 
@@ -665,7 +668,9 @@ class RawFrameInfo:
     source: str
     shape: tuple[int, int]
     dtype: str
+    raw_format: str | None
     rotation_90: int
+    display_rotation_degrees: int
     min_value: float
     max_value: float
     p01: float
@@ -778,8 +783,9 @@ Verified by automated tests/source checks:
 
 Implemented but still needs field/browser verification:
 
-- [x] In the LiveCam Web UI, confirm that `Color Mode`, `Image Format`, and
-      `Download` are placed correctly at the top right of the Preview panel.
+- [x] In the LiveCam Web UI, confirm that the zoom controls and `Download` are
+      placed at the top right of the Preview panel and the `Color Mode` /
+      `Image Format` selects are in the settings panel.
 - [x] Confirm that `Stack Frames (Max 500)` input and save behavior work from the
       Web UI.
 - [x] Confirm that Output-driven `Stack On/Off` and `Reset Stack` update the
