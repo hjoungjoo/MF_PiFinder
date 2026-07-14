@@ -5,9 +5,10 @@ Status: design draft (for review before implementation)
 
 This document describes the design and operation flows for injecting the
 Raspberry Pi's time, position, and assistance data into the u-blox receiver
-(GEP-M1025, M10 SPG 5.10) after boot, to mitigate the full cold start the
-receiver falls into after longer power-off periods. The flows and policies
-here are to be agreed on before any implementation.
+(GEP-M1025, M10 SPG 5.10) **at the moment the user requests an injection**,
+to mitigate the full cold start the receiver falls into after longer
+power-off periods. The flows and policies here are to be agreed on before
+any implementation.
 
 ## Background
 
@@ -27,8 +28,10 @@ here are to be agreed on before any implementation.
 
 ## Goals
 
-- Turn the receiver's start right after boot from cold into warm (close to
-  hot where possible).
+- Turn the receiver's start from cold into warm (close to hot where
+  possible) **when the user requests an injection** (Inject Now on
+  LCD/Web). **There is no automatic injection at boot** — the user always
+  decides when the receiver is written to.
 - Must work at observing sites with no internet. Online access is
   "use it when available".
 - The user can enable/disable each method and trigger inject/save manually.
@@ -89,11 +92,14 @@ Status:     ~/PiFinder_data/gps_aiding_status.json
 
 Execution:
 
-- **Boot injection + periodic DBD backup**: the GPS process starts a
-  `gps_aiding.start_worker()` daemon thread. It acts only after the gpsd
+- **All injection is user-requested**: server.py routes and LCD callbacks
+  call the module's inject functions directly. No new queue, and no
+  boot-time injection path exists.
+- **The background worker only does ③ periodic DBD backups**: the GPS
+  process starts a `gps_aiding.start_worker()` daemon thread, but this
+  worker never injects aiding data — it only **reads and stores** DBD
+  periodically while the fix is locked. It acts only after the gpsd
   connection is up and the receiver is detected as u-blox.
-- **Manual actions (Web/LCD)**: server.py routes and LCD callbacks call
-  the same module functions directly. No new queue.
 - **Serialization**: every receiver write takes a file lock
   (`gps_aiding.lock`, flock), safe across processes.
 - Sends run `ubxtool -P 34.10 -c CLASS,ID,<hex payload>` as a subprocess;
@@ -101,11 +107,13 @@ Execution:
   when `CFG-NAVSPG-ACKAIDING` is enabled, so ACKs are "recorded when seen"
   and their absence is not treated as failure (fire-and-forget allowed).
 
-## Boot injection flow
+## Injection request flow
+
+Injection runs only when the user presses `Inject Now` on the LCD or Web.
 
 ```mermaid
 flowchart TD
-    A[GPS process start] --> B{gpsd ready and driver == u-blox?}
+    A[user requests Inject Now<br/>LCD or Web] --> B{gpsd ready and driver == u-blox?}
     B -->|no| Z1[skip aiding - reason into status]
     B -->|yes| C{gps_aiding_enabled?}
     C -->|no| Z1
@@ -140,7 +148,7 @@ that follows.
 
 ```mermaid
 flowchart TD
-    A[ANO inject request<br/>boot or manual] --> B{token configured?}
+    A[ANO inject request<br/>Inject Now or Refresh ANO] --> B{token configured?}
     B -->|no| Z[skip - status token_missing]
     B -->|yes| C{internet check<br/>HEAD to u-blox server, short timeout}
     C -->|online| D{cache older than refresh period?<br/>default 3 days}
@@ -187,11 +195,11 @@ flowchart TD
     G --> H[rotate old snapshots<br/>beyond max_snapshots]
 ```
 
-Restore (at boot):
+Restore (at injection request):
 
 ```mermaid
 flowchart TD
-    A[DBD restore request] --> B{snapshots in index.json?}
+    A[DBD restore<br/>one step of the Inject Now flow] --> B{snapshots in index.json?}
     B -->|no| Z[skip]
     B -->|yes| C[determine intended location<br/>PiFinder selected location or last fix]
     C --> D{snapshot with age < 4h and<br/>distance < location_match_km?}
@@ -225,6 +233,9 @@ flowchart TD
   assumptions update the moment the location changes. Hook points: the
   main.py `gps_msg == "fix"` path when the source is not GPS (manual/saved
   location applied) and the locations callbacks.
+- A location change is an explicit user action, so this stays within the
+  "inject at user request" principle — it is not an unattended automatic
+  injection like a boot hook would be.
 
 ## User control (UI)
 
@@ -271,8 +282,10 @@ LiveCam processing case — aiding does not consume resources continuously).
 
 ## Safety rules
 
-- **Never block boot**: every step has a timeout (sends a few seconds, ANO
-  fetch ~10 s); failures log + record status and move on.
+- **Never block the UI or GPS reception**: injection runs only on user
+  request, every step has a timeout (sends a few seconds, ANO fetch
+  ~10 s), and failures log + record status and move on. The LCD/Web stay
+  responsive during an injection (background execution + status display).
 - **Never inject false data**:
   - Time: only when chrony is synced or the time sync helper trusts its
     source. Set `tAccS/Ns` honestly (hundreds of ms to seconds for NTP,
@@ -306,8 +319,9 @@ Receive: UBXParser raw watch
 ## Implementation stages
 
 ```text
-Stage 1  gps_aiding.py skeleton + ① time/position + boot hook + status file
-         (u-blox detection, flock, ubxtool wrapper, gating rules)
+Stage 1  gps_aiding.py skeleton + ① time/position + Inject Now entry
+         point (Web) + status file (u-blox detection, flock, ubxtool
+         wrapper, gating rules)
 Stage 2  config keys + LCD menu + Web card/buttons (Inject Now)
 Stage 3  ③ DBD: UBXParser MGA passthrough, backup (periodic/manual/
          shutdown), restore, index.json, location tagging/selection
@@ -325,8 +339,9 @@ already yields the cold → warm improvement.
 - Indoors: send success/timeout, status file fields, flock contention,
   disabled behavior under gpsd `-b` / missing ubxtool.
 - Outdoors A/B (reusing scripts/gps_acquisition_diag.py):
-  - TTFF of cold (aiding off) vs ① vs ①+③ vs ①+②+③
-  - reboot after hours powered off
+  - TTFF of cold (no injection) vs ① vs ①+③ vs ①+②+③
+    (each case measured from the user pressing Inject Now after boot)
+  - hours powered off, then reboot, then Inject Now
   - moving between observing sites (location-change reaction)
 - Regression: no impact on the existing GPS flow (fix/time/satellites
   messages, time sync helper). With aiding fully Off the behavior must be
