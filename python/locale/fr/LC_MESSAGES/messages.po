@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-14 11:04+0900\n"
+"POT-Creation-Date: 2026-07-14 11:12+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: xxxxxx <xxxxx@xxxxx.com>\n"
 "Language: fr_FR\n"
@@ -1263,7 +1263,7 @@ msgstr "{square} Détails basculés"
 
 #: PiFinder/ui/gpsstatus.py:268
 #, fuzzy
-msgid "Sat s/u/v: {seen}/{used}/{in_view}"
+msgid "Sat v/s/u: {in_view}/{seen}/{used}"
 msgstr "Sats vus/utilisés: {sats_seen}/{sats_used}"
 
 #: PiFinder/ui/gpsstatus.py:279
@@ -1303,7 +1303,7 @@ msgstr ""
 msgid "From:  {location_source}"
 msgstr "Depuis:  {location_source}"
 
-#: PiFinder/ui/gpsstatus.py:364
+#: PiFinder/ui/gpsstatus.py:362
 msgid "Top C/N0: {cno}"
 msgstr ""
 

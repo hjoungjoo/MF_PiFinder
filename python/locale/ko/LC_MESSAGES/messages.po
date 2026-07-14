@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-14 11:04+0900\n"
+"POT-Creation-Date: 2026-07-14 11:12+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -1191,10 +1191,10 @@ msgstr "위성 보임/사용:"
 msgid "{square} Toggle Details"
 msgstr "{square} 상세 전환"
 
-#: PiFinder/ui/gpsstatus.py:268
 # AI-TRANSLATED (claude): needs human review
-msgid "Sat s/u/v: {seen}/{used}/{in_view}"
-msgstr "위성 s/u/v: {seen}/{used}/{in_view}"
+#: PiFinder/ui/gpsstatus.py:268
+msgid "Sat v/s/u: {in_view}/{seen}/{used}"
+msgstr "위성 v/s/u: {in_view}/{seen}/{used}"
 
 #: PiFinder/ui/gpsstatus.py:279
 msgid "Error: {error}"
@@ -1224,8 +1224,8 @@ msgstr "시간:  {time}"
 msgid "Date:  {date}"
 msgstr "날짜:  {date}"
 
-#: PiFinder/ui/gpsstatus.py:347
 # AI-TRANSLATED (claude): needs human review
+#: PiFinder/ui/gpsstatus.py:347
 msgid "None (cold)"
 msgstr "없음(콜드)"
 
@@ -1233,8 +1233,8 @@ msgstr "없음(콜드)"
 msgid "From:  {location_source}"
 msgstr "출처:  {location_source}"
 
-#: PiFinder/ui/gpsstatus.py:364
 # AI-TRANSLATED (claude): needs human review
+#: PiFinder/ui/gpsstatus.py:362
 msgid "Top C/N0: {cno}"
 msgstr "상위 C/N0: {cno}"
 

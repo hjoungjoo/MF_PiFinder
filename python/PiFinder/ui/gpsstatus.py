@@ -262,11 +262,11 @@ class UIGPSStatus(GuideKeyMixin, UIModule):
             )
 
         if self.display_mode == "detailed":
-            # Satellite info: seen (signal-locked) / used (in fix) / in view
+            # Satellite info: in view / seen (signal-locked) / used (in fix)
             self.draw.text(
                 (0, draw_pos),
-                _("Sat s/u/v: {seen}/{used}/{in_view}").format(
-                    seen=sats_seen, used=sats_used, in_view=sats_in_view
+                _("Sat v/s/u: {in_view}/{seen}/{used}").format(
+                    in_view=sats_in_view, seen=sats_seen, used=sats_used
                 ),
                 font=self.fonts.base.font,
                 fill=self.colors.get(128),

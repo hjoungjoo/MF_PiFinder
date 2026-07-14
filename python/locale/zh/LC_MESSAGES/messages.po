@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-14 11:04+0900\n"
+"POT-Creation-Date: 2026-07-14 11:12+0900\n"
 "PO-Revision-Date: 2025-02-05 15:00+0800\n"
 "Last-Translator: ClawdPulse\n"
 "Language: zh_CN\n"
@@ -1273,7 +1273,7 @@ msgstr "{square} 切换详情"
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/gpsstatus.py:268
 #, fuzzy
-msgid "Sat s/u/v: {seen}/{used}/{in_view}"
+msgid "Sat v/s/u: {in_view}/{seen}/{used}"
 msgstr "可见/使用卫星: {sats_seen}/{sats_used}"
 
 # AI-TRANSLATED (claude): needs human review
@@ -1320,7 +1320,7 @@ msgstr ""
 msgid "From:  {location_source}"
 msgstr "来源:  {location_source}"
 
-#: PiFinder/ui/gpsstatus.py:364
+#: PiFinder/ui/gpsstatus.py:362
 msgid "Top C/N0: {cno}"
 msgstr ""
 
