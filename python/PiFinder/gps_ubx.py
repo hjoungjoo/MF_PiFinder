@@ -10,7 +10,18 @@ from PiFinder.gps_ubx_parser import UBXParser
 import logging
 
 logger = logging.getLogger("GPS.parser")
-sats = [0, 0]
+# Latest satellite telemetry: seen (signal-locked), used (in fix),
+# in_view (all listed by the receiver), top_cno (strongest C/N0 values).
+sats = [0, 0, 0, ()]
+
+
+def _top_cno(satellites):
+    values = sorted(
+        (int(s["signal"]) for s in satellites if s.get("signal")),
+        reverse=True,
+    )
+    return tuple(values[:4])
+
 
 MAX_GPS_ERROR = 50000  # 50 km
 
@@ -68,27 +79,33 @@ async def process_messages(
         elif msg_class == "NAV-SVINFO" and not got_sat_update:
             # Fallback satellite info if NAV-SAT not available
             if "nSat" in msg:
-                sats_seen = msg["nSat"]
-                sats_used = msg["uSat"]
-                sats[0] = sats_seen
-                sats[1] = sats_used
+                sats[0] = msg["nSat"]  # seen (code-locked)
+                sats[1] = msg["uSat"]  # used
+                sats[2] = msg.get("in_view", msg["nSat"])  # all listed
+                sats[3] = _top_cno(msg.get("satellites", []))
                 gps_queue.put(("satellites", tuple(sats)))
                 logger.debug(
-                    "Number of sats (SVINFO) seen: %i, used: %i", sats_seen, sats_used
+                    "Number of sats (SVINFO) seen: %i, used: %i, in-view: %i",
+                    sats[0],
+                    sats[1],
+                    sats[2],
                 )
 
         elif msg_class == "NAV-SAT":
             # Preferred satellite info source - not seen in the current pifinder gps versions
             got_sat_update = True
-            sats_seen = msg["nSat"]
-            sats_used = sum(
+            sats[0] = msg["nSat"]  # seen (code-locked)
+            sats[1] = sum(
                 1 for sat in msg.get("satellites", []) if sat.get("used", False)
             )
-            sats[0] = sats_seen
-            sats[1] = sats_used
+            sats[2] = msg.get("in_view", msg["nSat"])  # all listed
+            sats[3] = _top_cno(msg.get("satellites", []))
             gps_queue.put(("satellites", tuple(sats)))
             logger.debug(
-                "Number of sats (NAV-SAT) seen: %i, used: %i", sats_seen, sats_used
+                "Number of sats (NAV-SAT) seen: %i, used: %i, in-view: %i",
+                sats[0],
+                sats[1],
+                sats[2],
             )
 
         elif msg_class == "NAV-SOL":

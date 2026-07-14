@@ -122,6 +122,21 @@ class UIGPSStatus(GuideKeyMixin, UIModule):
         self.message(_("Location locked"), timeout=2)  # TRANSLATORS Location was stored
         return True
 
+    @staticmethod
+    def _normalize_sats(sats):
+        """Return (seen, used, in_view, top_cno) from the sats payload.
+
+        Backends may publish a legacy 2-tuple (seen, used) or the richer
+        4-tuple (seen, used, in_view, top_cno); tolerate both.
+        """
+        if not sats:
+            return 0, 0, 0, ()
+        seen = sats[0] if len(sats) > 0 else 0
+        used = sats[1] if len(sats) > 1 else 0
+        in_view = sats[2] if len(sats) > 2 else seen
+        top_cno = sats[3] if len(sats) > 3 else ()
+        return seen, used, in_view, tuple(top_cno)
+
     def _get_error_string(self, error: float) -> str:
         if error > 1000:
             return _("{error:.1f} km").format(
@@ -143,26 +158,29 @@ class UIGPSStatus(GuideKeyMixin, UIModule):
         self.clear_screen()
         draw_pos = self.display_class.titlebar_height + 1
         location = self.shared_state.location()
-        sats = self.shared_state.sats()
-        if sats is None:
-            sats = (0, 0)
+        sats_seen, sats_used, sats_in_view, sats_top_cno = self._normalize_sats(
+            self.shared_state.sats()
+        )
 
-        # Status message
-        if location.lock_type and location.lock_type > 1:
-            self.draw.text(
-                (20, draw_pos),
-                _("GPS Locked"),
-                font=self.fonts.large.font,
-                fill=self.colors.get(255),
-            )
-        else:
-            self.draw.text(
-                (5, draw_pos),
-                _("Lock boost on"),
-                font=self.fonts.large.font,
-                fill=self.colors.get(255),
-            )
-        draw_pos += 16
+        # Status message. The large banner is only shown in the "large" mode;
+        # the "detailed" mode reclaims that space for its extra rows (it already
+        # reports lock state on its own "Lock:" line).
+        if self.display_mode == "large":
+            if location.lock_type and location.lock_type > 1:
+                self.draw.text(
+                    (20, draw_pos),
+                    _("GPS Locked"),
+                    font=self.fonts.large.font,
+                    fill=self.colors.get(255),
+                )
+            else:
+                self.draw.text(
+                    (5, draw_pos),
+                    _("Lock boost on"),
+                    font=self.fonts.large.font,
+                    fill=self.colors.get(255),
+                )
+            draw_pos += 16
         if self.display_mode == "large":
             if location.lock_type and location.lock_type > 1:
                 self.draw.text(
@@ -231,7 +249,7 @@ class UIGPSStatus(GuideKeyMixin, UIModule):
             # Satellite info
             self.draw.text(
                 (10, draw_pos),
-                f"{sats[0]}/{sats[1]}",
+                f"{sats_seen}/{sats_used}",
                 font=self.fonts.large.font,
                 fill=self.colors.get(192),
             )
@@ -244,11 +262,11 @@ class UIGPSStatus(GuideKeyMixin, UIModule):
             )
 
         if self.display_mode == "detailed":
-            # Satellite info
+            # Satellite info: seen (signal-locked) / used (in fix) / in view
             self.draw.text(
                 (0, draw_pos),
-                _("Sats seen/used: {sats_seen}/{sats_used}").format(
-                    sats_seen=sats[0], sats_used=sats[1]
+                _("Sat s/u/v: {seen}/{used}/{in_view}").format(
+                    seen=sats_seen, used=sats_used, in_view=sats_in_view
                 ),
                 font=self.fonts.base.font,
                 fill=self.colors.get(128),
@@ -323,9 +341,25 @@ class UIGPSStatus(GuideKeyMixin, UIModule):
                 fill=self.colors.get(128),
             )
             draw_pos += 10
+            # "None" source means no fix has been acquired yet: flag it as a
+            # cold start so the operator knows the receiver is still searching.
+            if not location.source or location.source == "None":
+                source_text = _("None (cold)")
+            else:
+                source_text = location.source
             self.draw.text(
                 (0, draw_pos),
-                _("From:  {location_source}").format(location_source=location.source),
+                _("From:  {location_source}").format(location_source=source_text),
+                font=self.fonts.base.font,
+                fill=self.colors.get(128),
+            )
+            draw_pos += 10
+
+            # Strongest satellite signals (C/N0, dB-Hz); "--" while searching.
+            cno_text = "/".join(str(v) for v in sats_top_cno) if sats_top_cno else "--"
+            self.draw.text(
+                (0, draw_pos),
+                _("Top C/N0: {cno}").format(cno=cno_text),
                 font=self.fonts.base.font,
                 fill=self.colors.get(128),
             )

@@ -135,11 +135,33 @@ def gps_main(gps_queue, console_queue, log_queue):
                             error_2d = result.get("hdop", 999)
                             error_3d = result.get("pdop", 999)
                         if result["class"] == "SKY" and "nSat" in result:
-                            sats_seen = result["nSat"]
-                            sats_used = result["uSat"]
-                            num_sats = (sats_seen, sats_used)
+                            sat_list = result.get("satellites") or []
+                            # in view: every satellite the receiver lists.
+                            in_view = result.get("nSat", len(sat_list))
+                            # used: satellites contributing to the fix.
+                            sats_used = result.get(
+                                "uSat",
+                                sum(1 for s in sat_list if s.get("used")),
+                            )
+                            # seen: satellites with an actual signal lock
+                            # (C/N0 > 0), not just listed as candidates.
+                            sats_seen = sum(
+                                1 for s in sat_list if (s.get("ss") or 0) > 0
+                            )
+                            top_cno = tuple(
+                                sorted(
+                                    (int(s["ss"]) for s in sat_list if s.get("ss")),
+                                    reverse=True,
+                                )[:4]
+                            )
+                            num_sats = (sats_seen, sats_used, in_view, top_cno)
                             msg = ("satellites", num_sats)
-                            logger.debug("Number of sats seen: %i", sats_seen)
+                            logger.debug(
+                                "Sats seen/used/in-view: %i/%i/%i",
+                                sats_seen,
+                                sats_used,
+                                in_view,
+                            )
                             gps_queue.put(msg)
         except Exception as e:
             logger.error(f"Error in GPS monitor: {e}")

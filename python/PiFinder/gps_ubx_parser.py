@@ -338,6 +338,10 @@ class UBXParser:
         result = {
             "class": "NAV-SAT",
             "nSat": len(satellites),
+            # numSvs is every satellite the receiver lists, including
+            # acquisition candidates not yet code-locked; nSat above only
+            # counts tracked (quality >= 4) signals.
+            "in_view": numSvs,
             "satellites": satellites,
         }
         logger.debug(f"NAV-SAT result: {result}")
@@ -398,6 +402,9 @@ class UBXParser:
             "class": "NAV-SVINFO",
             "nSat": len(satellites),
             "uSat": used_sats,
+            # numCh is every channel the receiver reports, including
+            # acquisition candidates; nSat only counts code-locked signals.
+            "in_view": numCh,
             "satellites": sorted(satellites, key=lambda x: x["id"]),
         }
         logger.debug(f"NAV-SVINFO result: {result}")

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-13 13:49+0900\n"
+"POT-Creation-Date: 2026-07-14 11:04+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: Jens Scheidtmann\n"
 "Language: de_DE\n"
@@ -897,7 +897,7 @@ msgstr ""
 #: PiFinder/ui/gps_time_sync_status.py:64
 #: PiFinder/ui/gps_time_sync_status.py:127
 #: PiFinder/ui/gps_time_sync_status.py:175
-#: PiFinder/ui/gps_time_sync_status.py:268 PiFinder/ui/gpsstatus.py:273
+#: PiFinder/ui/gps_time_sync_status.py:268 PiFinder/ui/gpsstatus.py:291
 msgid "No"
 msgstr "Nix"
 
@@ -1149,90 +1149,99 @@ msgstr "Ort setzen"
 msgid "Location locked"
 msgstr "Ort gesetzt"
 
-#: PiFinder/ui/gpsstatus.py:127
+#: PiFinder/ui/gpsstatus.py:142
 msgid "{error:.1f} km"
 msgstr "{error:.1f} km"
 
-#: PiFinder/ui/gpsstatus.py:131
+#: PiFinder/ui/gpsstatus.py:146
 msgid "{error:.0f} m"
 msgstr "{error:.0f} m"
 
-#: PiFinder/ui/gpsstatus.py:154
+#: PiFinder/ui/gpsstatus.py:172
 msgid "GPS Locked"
 msgstr "GPS fix!"
 
-#: PiFinder/ui/gpsstatus.py:161
+#: PiFinder/ui/gpsstatus.py:179
 msgid "Lock boost on"
 msgstr "GPS verstärkt"
 
-#: PiFinder/ui/gpsstatus.py:170
+#: PiFinder/ui/gpsstatus.py:188
 msgid "You are ready"
 msgstr "Bereit zur"
 
-#: PiFinder/ui/gpsstatus.py:177
+#: PiFinder/ui/gpsstatus.py:195
 msgid "to observe!"
 msgstr "Beobachtung!"
 
-#: PiFinder/ui/gpsstatus.py:185
+#: PiFinder/ui/gpsstatus.py:203
 msgid "Stay on this screen"
 msgstr "Hiergeblieben für"
 
-#: PiFinder/ui/gpsstatus.py:194
+#: PiFinder/ui/gpsstatus.py:212
 msgid "for quicker lock"
 msgstr "schnellen GPS Fix"
 
-#: PiFinder/ui/gpsstatus.py:205
+#: PiFinder/ui/gpsstatus.py:223
 msgid "Lock Type:"
 msgstr "Fix-Typ:"
 
-#: PiFinder/ui/gpsstatus.py:212 PiFinder/ui/menu_structure.py:504
+#: PiFinder/ui/gpsstatus.py:230 PiFinder/ui/menu_structure.py:504
 #: PiFinder/ui/menu_structure.py:536 views/network.html:196
 msgid "None"
 msgstr "Nix"
 
-#: PiFinder/ui/gpsstatus.py:225
+#: PiFinder/ui/gpsstatus.py:243
 msgid "Sats seen/used:"
 msgstr "Sat gesehen/ben:"
 
-#: PiFinder/ui/gpsstatus.py:241
+#: PiFinder/ui/gpsstatus.py:259
 msgid "{square} Toggle Details"
 msgstr "{square} für Details"
 
-#: PiFinder/ui/gpsstatus.py:250
-msgid "Sats seen/used: {sats_seen}/{sats_used}"
+#: PiFinder/ui/gpsstatus.py:268
+#, fuzzy
+msgid "Sat s/u/v: {seen}/{used}/{in_view}"
 msgstr "Sats ges/ben: {sats_seen}/{sats_used}"
 
-#: PiFinder/ui/gpsstatus.py:261
+#: PiFinder/ui/gpsstatus.py:279
 msgid "Error: {error}"
 msgstr "Fehler: {error}"
 
-#: PiFinder/ui/gpsstatus.py:272
+#: PiFinder/ui/gpsstatus.py:290
 msgid "Lock:  {locktype}"
 msgstr "Fix:   {locktype}"
 
-#: PiFinder/ui/gpsstatus.py:285
+#: PiFinder/ui/gpsstatus.py:303
 msgid "Lat:   {latitude:.5f}"
 msgstr "Länge: {latitude:.5f}"
 
-#: PiFinder/ui/gpsstatus.py:293
+#: PiFinder/ui/gpsstatus.py:311
 msgid "Lon:   {longitude:.5f}"
 msgstr "Breite: {longitude:.5f}"
 
-#: PiFinder/ui/gpsstatus.py:301
+#: PiFinder/ui/gpsstatus.py:319
 msgid "Alt:   {altitude:.1f} m"
 msgstr "Höhe:  {altitude:.1f} m"
 
-#: PiFinder/ui/gpsstatus.py:310
+#: PiFinder/ui/gpsstatus.py:328
 msgid "Time:  {time}"
 msgstr "Zeit:  {time}"
 
-#: PiFinder/ui/gpsstatus.py:319
+#: PiFinder/ui/gpsstatus.py:337
 msgid "Date:  {date}"
 msgstr "Datum:  {date}"
 
-#: PiFinder/ui/gpsstatus.py:328
+#: PiFinder/ui/gpsstatus.py:347
+msgid "None (cold)"
+msgstr ""
+
+#: PiFinder/ui/gpsstatus.py:352
 msgid "From:  {location_source}"
 msgstr "Quelle: {location_source}"
+
+#: PiFinder/ui/gpsstatus.py:364
+msgid "Top C/N0: {cno}"
+msgstr ""
 
 #: PiFinder/ui/indi.py:59
 #, fuzzy

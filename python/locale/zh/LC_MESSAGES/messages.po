@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-13 13:49+0900\n"
+"POT-Creation-Date: 2026-07-14 11:04+0900\n"
 "PO-Revision-Date: 2025-02-05 15:00+0800\n"
 "Last-Translator: ClawdPulse\n"
 "Language: zh_CN\n"
@@ -957,7 +957,7 @@ msgstr ""
 #: PiFinder/ui/gps_time_sync_status.py:64
 #: PiFinder/ui/gps_time_sync_status.py:127
 #: PiFinder/ui/gps_time_sync_status.py:175
-#: PiFinder/ui/gps_time_sync_status.py:268 PiFinder/ui/gpsstatus.py:273
+#: PiFinder/ui/gps_time_sync_status.py:268 PiFinder/ui/gpsstatus.py:291
 msgid "No"
 msgstr "否"
 
@@ -1214,106 +1214,115 @@ msgstr "位置已保存"
 msgid "Location locked"
 msgstr "位置已锁定"
 
-#: PiFinder/ui/gpsstatus.py:127
+#: PiFinder/ui/gpsstatus.py:142
 msgid "{error:.1f} km"
 msgstr "{error:.1f} 公里"
 
-#: PiFinder/ui/gpsstatus.py:131
+#: PiFinder/ui/gpsstatus.py:146
 msgid "{error:.0f} m"
 msgstr "{error:.0f} 米"
 
-#: PiFinder/ui/gpsstatus.py:154
+#: PiFinder/ui/gpsstatus.py:172
 msgid "GPS Locked"
 msgstr "GPS已锁定"
 
-#: PiFinder/ui/gpsstatus.py:161
+#: PiFinder/ui/gpsstatus.py:179
 msgid "Lock boost on"
 msgstr "锁定增强开启"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:170
+#: PiFinder/ui/gpsstatus.py:188
 msgid "You are ready"
 msgstr "已准备就绪"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:177
+#: PiFinder/ui/gpsstatus.py:195
 msgid "to observe!"
 msgstr "可以开始观测！"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:185
+#: PiFinder/ui/gpsstatus.py:203
 msgid "Stay on this screen"
 msgstr "请停留在此界面"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:194
+#: PiFinder/ui/gpsstatus.py:212
 msgid "for quicker lock"
 msgstr "以加快锁定速度"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:205
+#: PiFinder/ui/gpsstatus.py:223
 msgid "Lock Type:"
 msgstr "锁定类型:"
 
-#: PiFinder/ui/gpsstatus.py:212 PiFinder/ui/menu_structure.py:504
+#: PiFinder/ui/gpsstatus.py:230 PiFinder/ui/menu_structure.py:504
 #: PiFinder/ui/menu_structure.py:536 views/network.html:196
 msgid "None"
 msgstr "无"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:225
+#: PiFinder/ui/gpsstatus.py:243
 msgid "Sats seen/used:"
 msgstr "可见/使用卫星:"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:241
+#: PiFinder/ui/gpsstatus.py:259
 msgid "{square} Toggle Details"
 msgstr "{square} 切换详情"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:250
-msgid "Sats seen/used: {sats_seen}/{sats_used}"
+#: PiFinder/ui/gpsstatus.py:268
+#, fuzzy
+msgid "Sat s/u/v: {seen}/{used}/{in_view}"
 msgstr "可见/使用卫星: {sats_seen}/{sats_used}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:261
+#: PiFinder/ui/gpsstatus.py:279
 msgid "Error: {error}"
 msgstr "误差: {error}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:272
+#: PiFinder/ui/gpsstatus.py:290
 msgid "Lock:  {locktype}"
 msgstr "锁定:  {locktype}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:285
+#: PiFinder/ui/gpsstatus.py:303
 msgid "Lat:   {latitude:.5f}"
 msgstr "纬度:  {latitude:.5f}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:293
+#: PiFinder/ui/gpsstatus.py:311
 msgid "Lon:   {longitude:.5f}"
 msgstr "经度:  {longitude:.5f}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:301
+#: PiFinder/ui/gpsstatus.py:319
 msgid "Alt:   {altitude:.1f} m"
 msgstr "海拔:  {altitude:.1f} m"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:310
+#: PiFinder/ui/gpsstatus.py:328
 msgid "Time:  {time}"
 msgstr "时间:  {time}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:319
+#: PiFinder/ui/gpsstatus.py:337
 msgid "Date:  {date}"
 msgstr "日期:  {date}"
 
+#: PiFinder/ui/gpsstatus.py:347
+msgid "None (cold)"
+msgstr ""
+
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/gpsstatus.py:328
+#: PiFinder/ui/gpsstatus.py:352
 msgid "From:  {location_source}"
 msgstr "来源:  {location_source}"
+
+#: PiFinder/ui/gpsstatus.py:364
+msgid "Top C/N0: {cno}"
+msgstr ""
 
 #: PiFinder/ui/indi.py:59
 #, fuzzy
