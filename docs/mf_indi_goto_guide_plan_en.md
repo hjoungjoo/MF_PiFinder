@@ -174,8 +174,9 @@ updated
 - `PointingCoordinateService` is the single coordinate-selection source.
 - PiFinder GoTo must not start while the mount is parked or location/time is
   invalid.
-- Manual approach must use leased manual movement with explicit keepalive or
-  stop behavior.
+- PiFinder GoTo approach reuses the mount sync + `goto_target()` primitives in a
+  loop and hands off to pulse guide within the last 1 degree; it uses no manual
+  movement.
 - Tracking Guide must not intervene during user manual movement, GoTo, backlash
   test, or multi-point alignment.
 - If pulse guide is unreliable for a driver, short manual movement fallback may
@@ -195,11 +196,24 @@ indi_tracking_guide_enabled = false | true
   default: false
 
 indi_goto_refine_accuracy_arcmin
-  existing setting.
-  Candidate shared accuracy setting for PiFinder GoTo and tracking guide.
+  existing setting. Used as the target accuracy of the PiFinder GoTo final
+  pulse-guide alignment (0.1 deg = 6 arcmin). Also shared as the tracking-guide
+  target accuracy.
 
 indi_pifinder_goto_near_threshold_deg = 1.0
-  Default "near target" threshold for PiFinder GoTo.
+  The boundary where PiFinder GoTo stops the sync + mount GoTo loop and switches
+  to pulse-guide fine correction. Errors at or above this repeat sync + GoTo;
+  below it, pulse guide takes over and aligns down to the target accuracy
+  (0.1 deg).
+
+indi_pifinder_goto_max_gotos = 10
+  Maximum number of sync + mount GoTo iterations (including the initial GoTo) in
+  PiFinder GoTo. If the error does not fall below the near threshold (1 deg)
+  within this many, the service stops in error. Default 10. (Replaces the old
+  hardcoded `PIFINDER_MAX_CORRECTION_GOTOS = 2`.) Independently, if a step's error
+  does not improve on the previous by at least
+  `PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN` (1 arcmin), it stops early so the mount
+  does not keep slewing without converging.
 
 indi_tracking_guide_threshold_arcmin = 10.0
   Error threshold where Tracking Guide starts pulse-guide correction.
@@ -260,6 +274,15 @@ indi_tracking_guide_goto_threshold_deg = 3.0
   Errors strictly ABOVE this use the sync + GoTo recovery (when goto
   recovery is enabled); at/below it, pulse-guide corrects directly.
   This single boundary is also the practical pulse-guide envelope.
+
+indi_tracking_guide_manual_retarget_enabled = true | false
+  default: true
+  When the scope is moved by a mount manual-movement command during tracking
+  and then stops, adopt the stopped position (current coordinate) as the new
+  target and keep tracking there, instead of recovering to the original target.
+  Does not apply to a physical hand-push (disturbance) -- that keeps the
+  existing disturbance recovery. When Off, a manual move is treated like a
+  disturbance and recovers to the original target.
 ```
 
 The exact key names may change during implementation, but this document uses
@@ -353,99 +376,107 @@ Behavior:
 
 ## GoTo Method: PiFinder
 
-In this mode, PiFinder uses `PointingCoordinateService` coordinates to approach
-near the target with manual movement commands, then combines mount
-sync/alignment with INDI GoTo for the final target.
+In this mode, PiFinder uses `PointingCoordinateService` coordinates and repeats
+mount sync + INDI GoTo to approach the target, then within the last 1 degree
+switches to pulse guide to align down to under 0.1 degree.
+
+The earlier draft approached a far target with distance-based manual movement,
+but hardware testing surfaced several problems (coordinate-frame mismatch, motion
+lease management, slow final leg), so it is removed and replaced by the sync +
+GoTo loop below.
 
 ```mermaid
 flowchart TD
-    A[target selected] --> B[Read PointingCoordinateService current coordinate]
-    B --> C[Calculate target error]
-    C --> D{Within 1 degree near threshold?}
-    D -->|no| E[Choose manual speed from distance]
-    E --> F[Approach with manual movement command]
-    F --> G[Wait for coordinate update]
-    G --> B
-    D -->|yes| H[Stop movement]
-    H --> I[Sync/alignment mount to current PiFinder coordinate]
-    I --> J[Run INDI GoTo to final target]
-    J --> K[Wait for GoTo completion]
-    K --> L[Check position with PointingCoordinateService]
-    L --> M{Outside tolerance?}
-    M -->|yes| N[Correct with another GoTo command]
-    N --> K
-    M -->|no| O[Sync/alignment mount to final target coordinate]
-    O --> P[GoTo complete]
+    A[target selected] --> B[Sync/align mount to current PiFinder coordinate]
+    B --> C[INDI GoTo to target coordinate]
+    C --> D[Wait for GoTo completion]
+    D --> E[Read PointingCoordinateService current coordinate]
+    E --> F[Calculate target error]
+    F --> G{error >= 1 degree?}
+    G -->|yes| B
+    G -->|no| H{error >= 0.1 degree?}
+    H -->|yes| I[pulse-guide fine correction]
+    I --> J[Wait for coordinate update]
+    J --> E
+    H -->|no| K[Sync/align mount to final target coordinate]
+    K --> L[GoTo complete]
 ```
 
 Detailed procedure:
 
 - **At GoTo start, auto-align: sync the mount to the current PiFinder
-  coordinate.** This makes the mount aligned so the approach navigates with
+  coordinate.** This makes the mount aligned so the later error check uses a
   reliable mount readback (`current.source = mount`). Without this initial sync
   the mount stays unaligned and `current` falls back to the raw IMU
-  (`source = imu_fallback`), which cannot navigate reliably indoors/without a
-  solve.
-- Current coordinates needed for movement calculation come from
+  (`source = imu_fallback`), making the error calculation inaccurate
+  indoors/without a solve.
+- Current coordinates for the error calculation come from
   `PointingCoordinateService.CoordinateState.current`.
-- Calculate distance and direction to the target, then choose manual movement
-  direction and speed.
-- Use higher speed when far from the target and lower speed as the target gets
-  closer.
-- The default near-target threshold is 1 degree.
-- When inside the near threshold, stop manual movement.
-- Sync/alignment the mount to the current coordinate PiFinder is reporting.
-  This is the coarse sync step that aligns the mount coordinate system with
-  PiFinder.
-- Then run a normal INDI GoTo to the final target coordinate.
-- After GoTo completion, use `PointingCoordinateService` to check target error.
-- If the error is still outside tolerance, repeat corrective GoTo commands.
-- When inside the target range, sync/alignment the mount to the final target
-  coordinate. This final sync improves tracking precision after acquisition.
+- Right after the initial sync, run a normal INDI GoTo to the final target
+  coordinate. The approach uses no manual movement and leaves all motion to the
+  mount GoTo.
+- After GoTo completion, use `PointingCoordinateService` to measure the error
+  between the target and the current position.
+- **error >= near threshold (default 1 degree)**: the mount readback is still far
+  from the target, so sync the mount again to the current PiFinder coordinate and
+  run another INDI GoTo to the final target. Repeat this sync + GoTo until the
+  error falls below 1 degree, bounded by `indi_pifinder_goto_max_gotos`
+  (default 10, including the initial GoTo). Because the sync re-aligns the mount
+  frame to PiFinder's, each following GoTo only moves the remaining error.
+- **error < 1 degree**: switch from mount slew to pulse guide, correcting until
+  the error is below the target accuracy (`indi_goto_refine_accuracy_arcmin`,
+  0.1 deg = 6 arcmin). This pulse-guide correction reuses the same correction
+  logic as Tracking Guide.
+- **error < target accuracy (0.1 deg)**: sync/align the mount once more to the
+  final target coordinate and advance to `complete`. This final sync improves
+  tracking precision afterward.
+- At the start of every GoTo, reset the per-GoTo progress flags
+  (`final_sync_sent`, `correction_count`, etc.). This prevents a stale flag left
+  by the previous GoTo or a disturbance recovery from making the final sync a
+  no-op, which would keep the state machine from reaching `complete`.
 
-Speed policy (tuned on hardware, 2026-07-12):
+### GoTo completion detection (wait logic)
 
-```text
-error >= 10 deg  -> rate 9 (Max)
-error >=  3 deg  -> rate 8 (1/2 Max)
-error >=  1 deg  -> rate 7 (48x)   # last leg before the 1-deg threshold
-error <   1 deg  -> rate 6 (20x)   # only used if the threshold is lowered
-```
+For each sync + GoTo step, "wait for GoTo completion" does not look at whether the
+coordinate has reached the target; it **polls the mount motion-status flags to
+decide whether the mount has finished slewing and stopped** (arrival accuracy is
+checked in the separate error-measurement step afterward). The implementation is
+`_tick_final_goto`, and the same logic serves the initial GoTo, corrective GoTos,
+and the Tracking Guide recovery GoTo.
 
-The earlier draft ended the approach at 20x (~5'/s), which made the final degree
-crawl (~17 s); the 48x last leg covers it in ~6 s and the final INDI GoTo still
-lands at 0' reported error.
+Procedure:
 
-Resolved 2026-07-12 (was previously misdiagnosed as an OnStep no-move
-completion lag): the second and later pifinder GoTo in a session appeared to
-"hang" in `final_indi_goto` for minutes. Root cause was in the guide, not mount
-control (mount control finishes the GoTo in ~7 s). `_handle_goto_target` did not
-reset the per-GoTo approach flags, so a stale `final_sync_sent = True` from the
-previous GoTo (or a disturbance recovery) made `_send_final_sync_once()` no-op,
-and the state machine never advanced to `complete`. Fixes:
+1. **Record the command time**: when a GoTo is sent, record `final_goto_sent_at`
+   as now and reset the idle timer (`final_goto_idle_since`) to 0.
+2. **Minimum wait**: for `PIFINDER_FINAL_GOTO_SETTLE_SECONDS` (currently 2.0 s)
+   after the command, completion is not evaluated — a minimum window so the brief
+   idle just before the mount starts slewing is not misread as "complete".
+3. **Motion poll**: each tick, read the mount status summary; if any of the
+   following is true the mount is "moving", so keep the idle timer reset and keep
+   waiting (`last_action = "waiting for final INDI GoTo"`):
+   - `mount_motion_active`
+   - `goto_motion_active`
+   - `manual_motion_direction` is set
+   - the state string contains `slew` / `goto` / `moving` / `motion`
+4. **Idle settle window**: when the mount looks stopped (all of the above false),
+   start the idle timer on the first idle sample and accept completion only when
+   the idle state holds for `PIFINDER_FINAL_GOTO_SETTLE_SECONDS` (2.0 s)
+   continuously. If motion is detected again, reset the timer — this avoids
+   misreading a mount like OnStepX (which pauses briefly between the near move and
+   its fine adjustment) as complete.
+5. **Error measurement after completion**: once idle has settled, re-read
+   `PointingCoordinateService`, confirm `usable_for_goto` (error out if not), and
+   measure the error to the target. That error drives the sync + GoTo repeat /
+   pulse guide / complete branch.
 
-1. Reset `final_sync_sent`, `correction_count`, `previous_goto_error_arcmin`,
-   `final_goto_idle_since`, `final_goto_sent_at` at the start of every
-   `_handle_goto_target`.
-2. In `_tick_manual_approach`, evaluate the near-threshold hand-off *before* the
-   coordinate-stall guard. An on-target GoTo (error already within the near
-   threshold) hands off to the final INDI GoTo immediately; a stationary
-   on-target coordinate legitimately stops changing and must not be read as a
-   stalled approach.
+Safety guards during the wait (each stops immediately in error):
 
-Verified on hardware: consecutive GoTos in one session both reach `complete`
-(previously the 2nd+ hung), and an on-target GoTo completes in ~0 s.
+- Mount status unavailable.
+- Mount parked.
+- Stop/Abort takes priority during this wait too.
 
-Two motion-continuity rules found on hardware (both required):
-
-- **OnStepX halts motion on a slew-rate change**, and a keepalive alone never
-  restarts it — after `set_slew_rate` the service must re-send a fresh
-  `manual_movement` (observed: readback froze right at a 9->8 transition and the
-  stall guard aborted the approach).
-- mount-control refuses keepalives after 10 s of continuous hold
-  (`MANUAL_MOTION_MAX_CONTINUOUS_SECONDS`), so the approach re-sends a fresh
-  `manual_movement` every `PIFINDER_MANUAL_RESTART_SECONDS = 8.0` s, mirroring
-  the UI hold-to-move restart.
+`PIFINDER_FINAL_GOTO_SETTLE_SECONDS` is the settle time shared by the final and
+corrective GoTo waits and the Tracking Guide sync + GoTo recovery wait.
 
 Safety notes:
 
@@ -454,94 +485,8 @@ Safety notes:
 - Without solving, IMU/mount fused coordinates can be used for coarse approach,
   but error may be larger.
 - Do not start when the mount is parked or location/time is invalid.
-- Stop/Abort must take priority during manual approach, final GoTo, and
-  corrective GoTo.
-
-### Hardware test finding: manual-approach motion dies between ticks (2026-07-12)
-
-Symptom: with `indi_goto_method = pifinder`, the mount moves a little then stops,
-and the approach never converges (it ends in `error`, `wait_reason = "pointing
-coordinate stopped updating"`).
-
-Root cause — the manual-approach **motion lease is shorter than the service tick
-interval**, so the mount motion expires between commands:
-
-- `_tick_manual_approach` sends `manual_movement` with
-  `PIFINDER_MANUAL_LEASE_SECONDS = 0.8`.
-- The service loop is bounded by `service_queue.get(timeout = HEARTBEAT_SECONDS =
-  1.0)`, so the tick (and the next keepalive) only fires about **once per
-  second**.
-- 0.8 s lease < ~1.0 s tick, so mount-control's manual-motion deadline expires and
-  it stops the mount before the next command. State drops back to `connected`.
-
-Consequence in the coordinate chain (validated on hardware):
-
-- While the mount is actually moving, everything works: mount-control reports
-  `state = manual_motion`, `mount_motion_active = true`, and
-  `PointingCoordinateService.current.source = mount` tracking the live driver
-  `EQUATORIAL_EOD_COORD` smoothly.
-- But because the lease keeps expiring, the mount is mostly stopped, so
-  `mount_motion_active` reads `false` and `current` falls back to the
-  **stopped-only** `mount_imu_delta` fusion (see
-  `mf_coordinate_helper_plan`, "Mount + IMU Delta"). That coordinate does not
-  track the motion (Dec effectively frozen), so the approach stalls and stops.
-
-The coordinate side is **not** at fault — a direct hold-to-move (`_guide_move`,
-lease 2.5 s, keepalive every ~0.25 s pumped by the UI loop) drives the mount
-continuously with `state = manual_motion` and `current.source = mount` throughout.
-
-Fix direction:
-
-- Raise `PIFINDER_MANUAL_LEASE_SECONDS` comfortably above the tick interval (e.g.
-  ~2.0–2.5 s, matching the working hold-to-move), and/or shorten the approach tick
-  (a smaller wait than `HEARTBEAT_SECONDS` while an approach is active) so motion
-  stays continuous and mount-control keeps `state = manual_motion`.
-- With motion sustained, `PointingCoordinateService` stays on the `mount` source
-  and the approach can converge.
-
-### Hardware test finding: manual approach jogs in RA/Dec on an Alt/Az mount (2026-07-12)
-
-Symptom (after the lease fix): the mount no longer stops, but the manual approach
-goes the wrong way. It converges toward the target for a moment, then overshoots
-and diverges — the error grows and the mount moves opposite to the intended
-direction. Example run: target Dec 42.5 deg; the approach reached Dec ~42 deg,
-then (commanding "southeast") ran Dec up to ~47 deg with RA moving the wrong way,
-so the error climbed from ~274' back to ~432'.
-
-Root cause — `_manual_direction_to_target` computes the jog direction in **RA/Dec**
-(north/south from the Dec error, east/west from the RA error) and sends it as
-`manual_movement` (`TELESCOPE_MOTION_NS` / `TELESCOPE_MOTION_WE`). On an **Alt/Az
-mount** those motion buttons move in **Altitude / Azimuth**, not RA/Dec. The two
-frames coincide only at special positions and otherwise rotate/invert as the scope
-moves, so a fixed RA/Dec direction sends the mount the wrong way.
-
-Verified: during the motion `current.source = mount` (IMU correctly held), so this
-is not an IMU problem — it is a manual-jog **frame mismatch**.
-
-Fix — make the manual approach mount-type aware, using the existing config
-`mount_type` (`Alt/Az` | `EQ`):
-
-- `EQ`: keep the RA/Dec direction logic (`north`/`south` from Dec, `east`/`west`
-  from RA).
-- `Alt/Az`: convert current and target RA/Dec to Alt/Az (`FastAltAz(lat, lon, dt)
-  .radec_to_altaz`) and jog in Alt/Az:
-  - altitude error -> `north` (Alt up) / `south` (Alt down). Verified on hardware:
-    the `north` command (`MOTION_NORTH`) raises altitude.
-  - azimuth error (shortest wrap) -> `east` / `west`. Confirmed on hardware:
-    `east` increases azimuth, `west` decreases it.
-- Needs the observer location and time for the conversion. Two fallbacks were
-  required in practice (both hit during indoor testing):
-  - `shared_state.datetime()` is `None` until a GPS/manual time is set -> fall
-    back to the **system UTC clock** (kept synced by the time-sync helper).
-  - `shared_state.location()` without a `lock` is the zeroed default
-    (lat=lon=0), which flips the computed directions -> fall back to the **saved
-    default location** from config (`locations` list, `is_default`).
-  The converter's inputs are surfaced in the status file as `altaz_debug`.
-- Only if no usable location exists at all, fall back to the RA/Dec logic.
-- End-to-end verified indoors without solving (2026-07-12): auto-align sync at
-  start, Alt/Az approach with matching commanded/correct directions, error
-  799' -> 63' monotonically, near threshold -> sync + final INDI GoTo ->
-  `complete` with 0' reported error.
+- Stop/Abort must take priority during the approach sync/GoTo, the repeated
+  GoTos, and the final pulse guide.
 
 ## Tracking Guide
 
@@ -581,15 +526,39 @@ Coordinate priority:
 Correction method:
 
 ```text
-calculate error direction
-  -> choose correction direction in RA/Dec or Alt/Az frame
-  -> calculate pulse guide duration
-  -> send INDI pulse guide or short manual motion command
+calculate per-axis (NS, WE) RA/Dec error
+  -> calculate per-axis pulse-guide duration (error angle / guide rate)
+  -> send INDI timed guide pulses (TELESCOPE_TIMED_GUIDE_NS/WE)
   -> verify effect on next coordinate update
 ```
 
-If a driver does not support pulse guide reliably, short manual movement leases
-can be used as a fallback.
+### Pulse-guide implementation
+
+Tracking correction uses **INDI standard timed guide pulses**. This is a separate
+command from manual movement (`manual_move`, which is driven start/stop like a
+button); a timed guide pulse moves at the guide rate for a specified **duration
+(ms)**.
+
+- **Command**: send a duration number to `TELESCOPE_TIMED_GUIDE_NS`
+  (`TIMED_GUIDE_N` / `TIMED_GUIDE_S`) and `TELESCOPE_TIMED_GUIDE_WE`
+  (`TIMED_GUIDE_W` / `TIMED_GUIDE_E`). The two axes are corrected independently.
+- **Duration**: the time to move the axis error at that axis's guide rate.
+  `duration_ms = |error_arcsec| / (guide_rate_x × 15.041 arcsec/s) × aggressiveness`.
+  Only a fraction of the error (e.g. 70%) is closed per pulse and the 10 s loop
+  converges; clamped to a min/max ms.
+- **Guide rate**: read the driver's `GUIDE_RATE` (multiples of sidereal); fall
+  back to a default (0.5×) if it is not reported.
+- **Capability detection**: if the driver exposes `TELESCOPE_TIMED_GUIDE_*`, use
+  timed guide pulses; otherwise fall back to the **short manual-movement lease**
+  as before (result is cached).
+- **Direction sign**: NS from the dec-error sign (positive → N), WE from the
+  RA-error sign. The RA (WE) sign can be reversed per driver, so the element
+  mapping is a single swappable constant to hardware-validate once.
+
+This (1) keeps the tracking correction pulses from showing up as `manual_motion`
+in mount status, so the [Manual Re-target] discrimination stays clean, and (2) is
+more precise than the fixed-lease nudge because it moves only the time
+proportional to the error angle.
 
 Off conditions:
 
@@ -655,7 +624,8 @@ Tracking Guide gains a small internal state machine (states surfaced in
 ```text
 off             tracking guide disabled in config
 waiting_target  no tracking target yet
-paused          suspended for GoTo/manual/backlash/multi-align or mount motion
+paused          suspended for GoTo/backlash/multi-align or (non-manual) mount motion
+manual_move     user is driving the mount with a manual-movement command; correction suspended
 waiting_mount   mount status unavailable / parked
 waiting_coordinate  pointing coordinate unavailable or stale
 disturbed       current coordinate is moving; all correction suspended
@@ -680,9 +650,8 @@ failed          recovery could not converge / pulse-guide reported failure
 - **Settled**: the coordinate delta stays below the motion threshold continuously
   for `indi_tracking_guide_settle_seconds` (default 4 s). The error to the target
   is then measured from the same `current` coordinate.
-- This reuses the coordinate-progress idea already used by the PiFinder manual
-  approach (`_update_coordinate_progress_tracking`), but with its own last-stable
-  coordinate and timers so it does not clash with the manual-approach state.
+- Disturbance/settle detection keeps its own last-stable coordinate and timers so
+  it does not clash with the PiFinder GoTo sync + GoTo loop state.
 
 ### Recovery decision (after settle)
 
@@ -730,9 +699,12 @@ to pulse-guide near the target.
 - `indi_tracking_guide_goto_recovery_enabled` Off -> never sync/GoTo from Tracking
   Guide; large errors are still corrected with pulse-guide only and reported in
   status. This is the "설정에 따라 On/Off" safety the user called out.
-- Recovery never runs during user manual movement, GoTo, backlash test, or
-  multi-point alignment (existing `paused` guard), nor while the mount reports
-  motion or parked.
+- `indi_tracking_guide_manual_retarget_enabled` On (default) -> after a mount
+  manual move ends and settles, adopt the current coordinate as the new target
+  (see "Manual Re-target" below). When Off, a manual move is treated like a
+  physical disturbance and recovers to the original target.
+- Recovery never runs during GoTo, backlash test, or multi-point alignment
+  (existing `paused` guard), nor while the mount reports motion or parked.
 - Stop/Abort takes priority in every state and clears the recovery sub-state.
 
 ### New status fields
@@ -782,6 +754,92 @@ python/PiFinder/ui/menu_structure.py   [done]
 - Coordinate usability comes only from `usable_for_goto`; Tracking Guide makes no
   independent solve/IMU decision.
 - Turning Tracking Guide Off mid-recovery stops motion immediately.
+
+## Tracking Guide Enhancement: Manual Re-target
+
+Baseline addition: 2026-07-15.
+
+### Purpose
+
+While tracking after arrival, when the user moves the scope to a new position
+with a **mount manual-movement command** (keypad / UI hold-to-move) and lets go,
+adopt the **stopped position (current coordinate) as the new target** and keep
+tracking there, instead of recovering back to the original target. It is the
+"lock onto wherever you pushed it" behavior.
+
+This is the opposite direction from disturbance recovery:
+
+- **Physical hand-push (disturbance)**: recover to the original target as before
+  (pulse guide or sync + GoTo).
+- **Mount manual-movement command**: adopt the stopped position as the new target
+  (re-target).
+
+The two are distinguished by signal. A mount manual move is reported by
+mount-control as `manual_motion_direction` (state = `manual_motion`), so Tracking
+Guide marks that interval as `manual_move` (correction suspended); a physical
+hand-push shows up only through IMU/coordinate change as `disturbed`.
+
+### Behavior
+
+With Tracking Guide On, a target held, and
+`indi_tracking_guide_manual_retarget_enabled` On:
+
+1. While the mount reports manual motion, suspend all correction in the
+   `manual_move` state (splitting the existing mount-motion pause by whether it
+   is a manual move).
+2. When the manual move ends (the mount no longer reports motion), wait for the
+   coordinate to settle for `settle_seconds` so a wobble right after release does
+   not re-target.
+3. Once settled, **set the current coordinate as the new tracking target** and
+   return to `enabled`, holding that position with pulse guide. There is no
+   recovery slew/GoTo back to the mount.
+4. After re-targeting the previous target is dropped; a later GoTo / Stop / new
+   target set changes the target accordingly.
+
+When the gate is Off, a manual move flows through the existing disturbance
+recovery path and returns to the original target.
+
+```mermaid
+flowchart TD
+    A[Tracking Guide On, has target] --> B{Mount reports manual motion?}
+    B -->|no| I[Existing disturbance/settle/recovery path]
+    B -->|yes| C[state=manual_move: suspend correction]
+    C --> D{Manual move ended + settled settle_seconds?}
+    D -->|no| C
+    D -->|yes| E{manual_retarget_enabled?}
+    E -->|yes| F[Set current coordinate as new target]
+    F --> G[state=enabled: hold new target with pulse guide]
+    E -->|no| H[Existing disturbance recovery to original target]
+```
+
+### On/Off gating
+
+- `indi_tracking_guide_manual_retarget_enabled` On (default) -> after a manual
+  move ends and settles, adopt the current coordinate as the new target.
+- Off -> a manual move is treated like a physical disturbance and recovers to the
+  original target.
+- Re-target does not slew the mount (it only syncs the current position and holds
+  it with pulse guide). Stop/Abort still takes priority in this state.
+
+### New status fields
+
+```text
+tracking_guide_state              adds the manual_move value
+tracking_guide_manual_retarget    (new) whether/when the last re-target happened
+```
+
+### Checklist
+
+- No correction is sent while `tracking_guide_state = manual_move`.
+- Do not re-target before `settle_seconds` of stable coordinate after the manual
+  move ends.
+- Re-target only when the gate is On; it adopts the current coordinate as the
+  target with no mount slew/GoTo.
+- With the gate Off, a manual move recovers to the original target via the
+  existing disturbance recovery.
+- A physical hand-push (`disturbed`) is not re-targeted and keeps the existing
+  recovery path.
+- The tracking guide target is updated to the new coordinate after re-target.
 
 ## Relationship to Existing Settings
 
@@ -898,50 +956,60 @@ Checklist:
 - Stop/Abort changes any phase to `idle/stopped`.
 - No unintended manual movement is sent yet.
 
-### Stage 6: PiFinder Manual Approach
+### Stage 6: PiFinder Sync + GoTo Loop Approach
 
 Goal:
 
-- Select manual movement direction and speed by target distance.
-- Manage lease/keepalive/stop explicitly.
+- After the start sync, GoTo the target; if the post-completion error is at or
+  above the near threshold (default 1 degree), repeat sync + GoTo for a bounded
+  count.
+- Manage the repeat limit and stop explicitly.
 
 Checklist:
 
-- Far targets use faster movement and near targets use slower movement.
-- No single lease runs too long.
-- If coordinates stop updating, motion stops and the service enters error state.
-- Motion stops inside the 1-degree near threshold.
-- User Stop immediately forwards `stop_movement` to mountcontrol.
+- A single mount sync to the current PiFinder coordinate runs at the start.
+- The initial GoTo uses the existing `goto_target()` primitive.
+- After GoTo completion, if the error is >= 1 degree, sync + GoTo runs again.
+- The sync + GoTo repeat count is bounded by `indi_pifinder_goto_max_gotos`
+  (default 10).
+- If the error does not improve (no-improvement guard), it stops in error even
+  before the limit.
+- Once the error is below 1 degree, the loop stops and hands off to the pulse
+  guide stage.
+- User Stop immediately forwards a mount stop/abort to mountcontrol.
 
-### Stage 7: Coarse Sync and Final INDI GoTo
+### Stage 7: Pulse-Guide Fine Alignment
 
 Goal:
 
-- After near-target arrival, sync/alignment the mount to the current PiFinder
-  coordinate.
-- Run existing INDI GoTo to the final target.
+- After the error is below 1 degree, use pulse guide to align to below the target
+  accuracy (0.1 deg = 6 arcmin).
+- The pulse-guide correction reuses the same logic as Tracking Guide.
 
 Checklist:
 
-- Mount coordinate sync state is recorded before and after sync.
-- Final GoTo uses the existing `goto_target()` primitive.
-- Completion detection includes settle time for OnStepX fine adjustment.
-- Tracking Guide does not intervene during GoTo.
+- Below 1 degree, control switches from mount slew (GoTo) to pulse guide.
+- Pulse-guide direction/duration is computed from the error direction and size.
+- The loop stops once the error is below the target accuracy (0.1 deg).
+- Pulse-guide failure/fallback is visible in status.
+- No GoTo intervenes during fine alignment (no slew within 1 degree).
 
-### Stage 8: Corrective GoTo and Final Sync
+### Stage 8: Final Sync and Completion
 
 Goal:
 
-- Check target error after final GoTo.
-- Repeat corrective GoTo with a bounded retry count when needed.
-- Final sync/alignment to the target once inside tolerance.
+- Once the error is below the target accuracy (0.1 deg), run a single
+  sync/alignment to the final target coordinate and advance to `complete`.
+- Reset the per-GoTo progress flags at the start of every GoTo so the final sync
+  is not a no-op.
 
 Checklist:
 
-- Correction retry count has a hard limit.
-- If error does not improve, the service stops in failed state.
-- Final sync runs only once after entering target range.
+- Final sync runs only once after entering the target accuracy.
+- The per-GoTo flags (`final_sync_sent`, etc.) are reset at each GoTo start so the
+  state machine reaches `complete`.
 - Tracking guide target is updated to the latest target after final sync.
+- The whole state machine terminates cleanly at `complete`.
 
 ### Stage 9: Tracking Guide
 

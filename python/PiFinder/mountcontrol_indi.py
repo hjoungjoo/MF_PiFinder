@@ -85,7 +85,28 @@ GOTO_REFINE_DELAY_SECONDS = 8.0
 GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
 DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 10.0
 GUIDE_CORRECTION_INTERVAL_SECONDS = 10.0
+# Manual-move fallback lease used only when the driver does not expose the INDI
+# timed guide-pulse interface.
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4
+# Real INDI timed guide pulse (TELESCOPE_TIMED_GUIDE_*): the pulse duration is
+# computed from the axis error and the mount's guide rate, so the mount moves
+# exactly the time proportional to the correction angle.
+SIDEREAL_ARCSEC_PER_SEC = 15.041
+# Fraction of sidereal used when the driver does not report GUIDE_RATE.
+DEFAULT_GUIDE_RATE_X = 0.5
+# Close this fraction of the error per pulse; the periodic loop converges the rest.
+GUIDE_PULSE_AGGRESSIVENESS = 0.7
+GUIDE_PULSE_MIN_MS = 20
+GUIDE_PULSE_MAX_MS = 2500
+# INDI timed-guide (property, element) per computed direction. If a mount guides
+# the wrong way in RA, swap the "east"/"west" elements here (hardware-validate
+# once, like the manual-motion mapping's E/W handling).
+GUIDE_PULSE_ELEMENTS: dict[str, tuple[str, str]] = {
+    "north": ("TELESCOPE_TIMED_GUIDE_NS", "TIMED_GUIDE_N"),
+    "south": ("TELESCOPE_TIMED_GUIDE_NS", "TIMED_GUIDE_S"),
+    "east": ("TELESCOPE_TIMED_GUIDE_WE", "TIMED_GUIDE_E"),
+    "west": ("TELESCOPE_TIMED_GUIDE_WE", "TIMED_GUIDE_W"),
+}
 GOTO_COMPLETE_MIN_SECONDS = 1.0
 GOTO_COMPLETE_STABLE_SECONDS = 4.0
 GOTO_COMPLETE_POSITION_STABLE_DEG = 0.02
@@ -379,6 +400,10 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._guide_correction_accuracy_arcmin = DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN
         self._guide_correction_next_at = 0.0
         self._guide_correction_last_solve_time = 0.0
+        # Cached result of INDI timed-guide-pulse capability detection (None =
+        # not yet probed). When False, guide correction uses the manual-move
+        # fallback.
+        self._pulse_guide_supported: Optional[bool] = None
         self._last_goto_progress_status_at = 0.0
         self._last_manual_motion_status_at = 0.0
         self.backlash_ra: Optional[int] = None
@@ -1813,6 +1838,17 @@ class MountControlIndi(BacklashCalibrationMixin):
             )
             return
 
+        # Preferred: real INDI timed guide pulses (moves the mount for a time
+        # computed from the axis error and guide rate; NOT a manual move, so it
+        # does not show up as manual_motion in status).
+        if self._guide_pulse_supported():
+            self._apply_guide_pulse(
+                current_ra, current_dec, target_ra, target_dec, separation
+            )
+            return
+
+        # Fallback: short manual-movement nudge for drivers without a timed
+        # guide-pulse interface.
         direction = self._guide_direction_for_error(
             current_ra,
             current_dec,
@@ -1829,6 +1865,100 @@ class MountControlIndi(BacklashCalibrationMixin):
                 f"Guide correction pulse {direction}; error {separation:.1f} arcmin",
                 guide_error_arcmin=separation,
                 guide_direction=direction,
+            )
+
+    def _guide_pulse_supported(self) -> bool:
+        if self._pulse_guide_supported is not None:
+            return self._pulse_guide_supported
+        if self.device is None:
+            # Do not cache a negative result before the device is available;
+            # re-probe once it connects.
+            return False
+        try:
+            ns = self.device.getNumber("TELESCOPE_TIMED_GUIDE_NS")
+            we = self.device.getNumber("TELESCOPE_TIMED_GUIDE_WE")
+            supported = bool(ns) and bool(we)
+        except Exception:
+            logger.debug("Timed guide capability probe failed", exc_info=True)
+            supported = False
+        self._pulse_guide_supported = supported
+        logger.info("INDI timed guide pulse supported: %s", supported)
+        return supported
+
+    def _current_guide_rate_x(self) -> tuple[float, float]:
+        """Guide rate (WE, NS) as a fraction of sidereal, with a safe fallback."""
+        if self.device is not None:
+            try:
+                guide_rate = self.device.getNumber("GUIDE_RATE")
+                if guide_rate:
+                    we = ns = None
+                    for i in range(len(guide_rate)):
+                        if guide_rate[i].name == "GUIDE_RATE_WE":
+                            we = float(guide_rate[i].value)
+                        elif guide_rate[i].name == "GUIDE_RATE_NS":
+                            ns = float(guide_rate[i].value)
+                    if we and ns and we > 0.0 and ns > 0.0:
+                        return we, ns
+            except Exception:
+                logger.debug("GUIDE_RATE read failed", exc_info=True)
+        driver = self._read_driver_guide_rate()
+        if driver is not None and driver[0] > 0.0 and driver[1] > 0.0:
+            return driver
+        return DEFAULT_GUIDE_RATE_X, DEFAULT_GUIDE_RATE_X
+
+    def _guide_pulse_ms(self, error_arcsec: float, guide_rate_x: float) -> int:
+        rate_arcsec_per_sec = max(0.01, guide_rate_x) * SIDEREAL_ARCSEC_PER_SEC
+        ms = (
+            abs(error_arcsec)
+            / rate_arcsec_per_sec
+            * 1000.0
+            * GUIDE_PULSE_AGGRESSIVENESS
+        )
+        return int(max(GUIDE_PULSE_MIN_MS, min(GUIDE_PULSE_MAX_MS, ms)))
+
+    def _send_guide_pulse(self, direction: str, duration_ms: int) -> bool:
+        if self.client is None or self.device is None:
+            return False
+        prop_name, element = GUIDE_PULSE_ELEMENTS[direction]
+        return self.client.set_number(
+            self.device, prop_name, {element: float(duration_ms)}
+        )
+
+    def _apply_guide_pulse(
+        self,
+        current_ra: float,
+        current_dec: float,
+        target_ra: float,
+        target_dec: float,
+        separation: float,
+    ) -> None:
+        ra_delta_deg = shortest_ra_delta_deg(target_ra, current_ra)
+        dec_delta_deg = target_dec - current_dec
+        ra_arcsec = ra_delta_deg * 3600.0 * math.cos(math.radians(current_dec))
+        dec_arcsec = dec_delta_deg * 3600.0
+        guide_we_x, guide_ns_x = self._current_guide_rate_x()
+        threshold_arcsec = (
+            max(0.5, self._guide_correction_accuracy_arcmin / 2.0) * 60.0
+        )
+
+        pulses: list[str] = []
+        if abs(dec_arcsec) > threshold_arcsec:
+            ns_dir = "north" if dec_arcsec > 0 else "south"
+            ns_ms = self._guide_pulse_ms(dec_arcsec, guide_ns_x)
+            if self._send_guide_pulse(ns_dir, ns_ms):
+                pulses.append(f"{ns_dir} {ns_ms}ms")
+        if abs(ra_arcsec) > threshold_arcsec:
+            we_dir = "east" if ra_arcsec > 0 else "west"
+            we_ms = self._guide_pulse_ms(ra_arcsec, guide_we_x)
+            if self._send_guide_pulse(we_dir, we_ms):
+                pulses.append(f"{we_dir} {we_ms}ms")
+
+        if pulses:
+            self._write_controller_status(
+                "guide_correction",
+                f"Guide pulse {', '.join(pulses)}; error {separation:.1f} arcmin",
+                guide_error_arcmin=separation,
+                guide_direction=",".join(p.split()[0] for p in pulses),
             )
 
     def sync_mount(self, ra_deg: float, dec_deg: float) -> bool:

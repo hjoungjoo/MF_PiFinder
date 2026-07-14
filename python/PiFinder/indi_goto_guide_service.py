@@ -10,9 +10,10 @@ Responsibilities:
 
 - ``indi_goto_method = indi_mount``: forward accepted GoTo/abort requests
   straight to the mount-control executor.
-- ``indi_goto_method = pifinder``: run the manual-approach loop against
-  ``PointingCoordinateService`` coordinates, then sync + final INDI GoTo with a
-  bounded correction pass.
+- ``indi_goto_method = pifinder``: sync the mount to the current
+  ``PointingCoordinateService`` coordinate, GoTo the target, and repeat sync +
+  GoTo (bounded by ``indi_pifinder_goto_max_gotos``) until within the near
+  threshold, then pulse-guide to the final accuracy and do a final sync.
 - Tracking Guide: when enabled, hold a target with pulse-guide correction, and
   recover from an external disturbance by settling first, then either
   pulse-guiding (small error) or sync + GoTo re-acquisition (large error, gated
@@ -30,12 +31,10 @@ import math
 import os
 import queue
 import time
-from datetime import datetime, timezone
 from multiprocessing import Queue
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 from PiFinder import config, utils
-from PiFinder.calc_utils import FastAltAz
 from PiFinder.multiproclogging import MultiprocLogging
 
 
@@ -46,36 +45,24 @@ MOUNT_STATUS_FILE = utils.data_dir / "mount_control_status.json"
 POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
 
 HEARTBEAT_SECONDS = 1.0
-# While a PiFinder manual approach / final GoTo is active, tick the service loop
-# faster than the idle heartbeat so manual-motion keepalives keep the mount moving
-# (the motion lease must not expire between commands). See the "manual-approach
-# motion dies between ticks" finding in mf_indi_goto_guide_plan.
-PIFINDER_ACTIVE_LOOP_SECONDS = 0.25
 CONFIG_RELOAD_SECONDS = 5.0
 POINTING_STATUS_MAX_AGE_SECONDS = 5.0
-# Motion lease must be comfortably larger than the command interval so the mount
-# keeps moving (mount-control stays in state=manual_motion) between keepalives.
-PIFINDER_MANUAL_LEASE_SECONDS = 2.5
-PIFINDER_MANUAL_TICK_SECONDS = 0.25
-# Re-send a fresh manual_movement before mount-control's 10 s continuous-hold
-# guard starts refusing keepalives (same idea as the UI hold-to-move restart).
-PIFINDER_MANUAL_RESTART_SECONDS = 8.0
-PIFINDER_MANUAL_STALL_SECONDS = 5.0
-PIFINDER_MANUAL_MIN_COORDINATE_DELTA_DEGREES = 0.01
+# A GoTo is "complete" once the mount reports no motion continuously for this
+# long, and only after the same minimum settle since the command was sent. This
+# keeps a brief mid-slew idle -- or an OnStepX near-move/fine-adjust pause --
+# from being misread as arrival. Shared by the PiFinder sync + GoTo waits and the
+# tracking-guide recovery GoTo wait.
 PIFINDER_FINAL_GOTO_SETTLE_SECONDS = 2.0
-PIFINDER_MAX_CORRECTION_GOTOS = 2
+# Fallback cap on sync + GoTo iterations when indi_pifinder_goto_max_gotos is
+# missing from config.
+PIFINDER_DEFAULT_MAX_GOTOS = 10
+# A sync + GoTo step must cut the error by at least this much versus the previous
+# step, otherwise the loop stops rather than slewing without converging.
 PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
+# Give the pulse-guide fine-alignment stage this long to reach the final accuracy
+# before giving up (mount-control pulses about every 10 s off a fresh solve).
+PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
 TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 2
-
-# Alt/Az manual approach: jog directions that move altitude and azimuth. On an
-# Alt/Az mount TELESCOPE_MOTION_NS/WE move altitude/azimuth, so the approach jogs
-# in Alt/Az (not RA/Dec). Confirmed on hardware: "north" raises altitude, and
-# "east" increases azimuth. Flip the azimuth pair if a different mount turns the
-# wrong way in azimuth.
-ALTAZ_ALT_UP_DIRECTION = "north"
-ALTAZ_ALT_DOWN_DIRECTION = "south"
-ALTAZ_AZ_INCREASE_DIRECTION = "east"
-ALTAZ_AZ_DECREASE_DIRECTION = "west"
 
 
 class IndiGotoGuideService:
@@ -104,18 +91,15 @@ class IndiGotoGuideService:
         self.current_dec: Optional[float] = None
         self.last_error_arcmin: Optional[float] = None
         self.goto_plan: Optional[dict[str, Any]] = None
-        self.manual_direction: Optional[str] = None
-        self.manual_slew_rate: Optional[int] = None
-        self.last_manual_command_at = 0.0
-        self.last_fresh_motion_at = 0.0
-        self.last_coordinate_change_at = 0.0
-        self.last_coordinate_ra: Optional[float] = None
-        self.last_coordinate_dec: Optional[float] = None
         self.final_goto_sent_at = 0.0
         self.final_goto_idle_since = 0.0
+        # Total sync + GoTo iterations issued for the active target (initial
+        # GoTo is attempt 1), compared against indi_pifinder_goto_max_gotos.
         self.correction_count = 0
         self.previous_goto_error_arcmin: Optional[float] = None
         self.final_sync_sent = False
+        self.pulse_align_sent = False
+        self.pulse_align_started_at = 0.0
         self.tracking_target_ra: Optional[float] = None
         self.tracking_target_dec: Optional[float] = None
         self.tracking_guide_active_sent = False
@@ -133,8 +117,11 @@ class IndiGotoGuideService:
         self.tracking_recovery_goto_sent_at = 0.0
         self.tracking_recovery_goto_idle_since = 0.0
         self.tracking_recovery_attempts = 0
+        # Manual re-target: a user mount manual-move during tracking, once ended
+        # and settled, adopts the stopped position as the new target.
+        self.manual_retarget_pending = False
+        self.manual_retarget_count = 0
         self.last_action = "startup"
-        self._altaz_debug = ""
         self.pointing_status: dict[str, Any] = {"available": False}
 
     def run(self) -> None:
@@ -166,14 +153,9 @@ class IndiGotoGuideService:
         logger.info("INDI GoTo/Guide service stopped")
 
     def _loop_timeout(self) -> float:
-        # Tick fast while actively driving the mount so manual-motion keepalives
-        # keep the lease alive; idle otherwise.
-        if self.phase in {
-            "manual_approach",
-            "final_indi_goto",
-            "corrective_indi_goto",
-        }:
-            return PIFINDER_ACTIVE_LOOP_SECONDS
+        # A queued command (e.g. Stop) interrupts the wait immediately, so the
+        # single heartbeat cadence is enough for the sync + GoTo and pulse-align
+        # waits (both driven by the mount, not by keepalives from here).
         return HEARTBEAT_SECONDS
 
     def handle_command(self, command: Any) -> bool:
@@ -214,15 +196,12 @@ class IndiGotoGuideService:
             self.current_dec = None
             self.last_error_arcmin = None
             self.goto_plan = None
-            self.manual_direction = None
-            self.manual_slew_rate = None
-            self.last_manual_command_at = 0.0
-            self.last_fresh_motion_at = 0.0
             self.final_goto_sent_at = 0.0
             self.final_goto_idle_since = 0.0
             self.correction_count = 0
             self.previous_goto_error_arcmin = None
             self.final_sync_sent = False
+            self._disable_pulse_align()
             self._disable_tracking_guide("stop command")
             self._reset_tracking_recovery()
             # Clear the tracking target so auto-correction stays off until the
@@ -259,19 +238,19 @@ class IndiGotoGuideService:
         self.active_target_ra = target_ra
         self.active_target_dec = target_dec
 
-        # Reset per-GoTo approach state. Without this a second GoTo in the same
-        # session (e.g. a fresh SkySafari GoTo after one already completed, or a
+        # Reset per-GoTo state. Without this a second GoTo in the same session
+        # (e.g. a fresh SkySafari GoTo after one already completed, or a
         # disturbance recovery) inherits a stale final_sync_sent=True, so
-        # _send_final_sync_once() no-ops and the pifinder state machine hangs in
-        # final_indi_goto forever (mount control finishes in ~7s but the guide
-        # never advances to "complete"). Stale correction_count /
-        # previous_goto_error_arcmin would likewise mis-fire the correction
-        # limit and the "error did not improve" guard.
+        # _send_final_sync_once() no-ops and the state machine never advances to
+        # "complete". Stale correction_count / previous_goto_error_arcmin would
+        # likewise mis-fire the GoTo limit and the "error did not improve" guard.
         self.correction_count = 0
         self.previous_goto_error_arcmin = None
         self.final_sync_sent = False
         self.final_goto_idle_since = 0.0
         self.final_goto_sent_at = 0.0
+        self.manual_retarget_pending = False
+        self._disable_pulse_align()
 
         goto_method = self.config_values.get("indi_goto_method", "indi_mount")
 
@@ -335,40 +314,15 @@ class IndiGotoGuideService:
             "near_threshold_degrees": self.config_values.get(
                 "indi_pifinder_goto_near_threshold_deg", 1.0
             ),
-            "movement_enabled": True,
-            "stage": "manual_approach",
-            "manual_direction": None,
-            "manual_slew_rate": None,
-            "lease_seconds": PIFINDER_MANUAL_LEASE_SECONDS,
+            "max_gotos": self._max_gotos(),
+            "stage": "pifinder_goto",
         }
 
-        # Auto-align at GoTo start: sync the mount to the current PiFinder
-        # coordinate so the manual approach navigates with reliable mount readback
-        # (PointingCoordinateService current.source = mount) instead of the raw
-        # IMU fallback. Without this the mount stays unaligned (source =
-        # imu_fallback) and the approach cannot converge.
-        if self.current_ra is not None and self.current_dec is not None:
-            self._forward_to_mountcontrol(
-                {"type": "sync", "ra": self.current_ra, "dec": self.current_dec}
-            )
-            if self.goto_plan is not None:
-                self.goto_plan["start_sync_ra"] = self.current_ra
-                self.goto_plan["start_sync_dec"] = self.current_dec
-
-        self.service_state = "running"
-        self.phase = "manual_approach"
-        self.wait_reason = ""
-        self.last_action = "pifinder manual approach planned"
-        self._reset_coordinate_progress_tracking()
-        logger.info(
-            "PiFinder manual approach planned: target RA %.4f Dec %.4f current RA %s "
-            "Dec %s error %.2f arcmin",
-            target_ra,
-            target_dec,
-            f"{self.current_ra:.4f}" if self.current_ra is not None else "-",
-            f"{self.current_dec:.4f}" if self.current_dec is not None else "-",
-            self.last_error_arcmin if self.last_error_arcmin is not None else -1.0,
-        )
+        # Sync + GoTo loop, starting with the first iteration: sync the mount to
+        # the current PiFinder coordinate (so the readback aligns to PiFinder,
+        # current.source = mount, instead of the raw IMU fallback) and GoTo the
+        # target. Completion and the error branch are handled in _tick_goto_wait.
+        self._send_sync_and_goto(first=True)
 
     def _forward_to_mountcontrol(self, command: dict[str, Any]) -> bool:
         if self.mountcontrol_queue is None:
@@ -383,136 +337,57 @@ class IndiGotoGuideService:
         return True
 
     def _tick_state_machine(self) -> None:
-        if self.phase == "manual_approach":
-            self._tick_manual_approach()
+        if self.phase == "pifinder_goto":
+            self._tick_goto_wait()
             return
-        if self.phase in {"final_indi_goto", "corrective_indi_goto"}:
-            self._tick_final_goto()
+        if self.phase == "pifinder_pulse_align":
+            self._tick_pulse_align()
             return
-
-    def _tick_manual_approach(self) -> None:
-        if self.active_target_ra is None or self.active_target_dec is None:
-            self._stop_with_error("manual approach target unavailable")
-            return
-
-        block_reason = self._pifinder_goto_block_reason()
-        if block_reason:
-            self._stop_with_error(block_reason)
-            return
-
-        current = self.pointing_status.get("current") or {}
-        self.current_ra = self._finite_float(current.get("ra"))
-        self.current_dec = self._finite_float(current.get("dec"))
-        self.last_error_arcmin = self._angular_error_arcmin(
-            self.current_ra,
-            self.current_dec,
-            self.active_target_ra,
-            self.active_target_dec,
-        )
-        if self.last_error_arcmin is None:
-            self._stop_with_error("manual approach error unavailable")
-            return
-
-        near_threshold_arcmin = (
-            float(self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0))
-            * 60.0
-        )
-        self._update_goto_plan()
-        if self.last_error_arcmin <= near_threshold_arcmin:
-            # Already within the hand-off threshold (includes a GoTo issued while
-            # on target): go straight to the final INDI GoTo. The stall guard
-            # must NOT run first here -- a stationary on-target coordinate
-            # legitimately stops changing and would otherwise be misread as a
-            # stalled approach and error out.
-            self._forward_to_mountcontrol({"type": "stop_movement"})
-            self.manual_direction = None
-            self._begin_final_indi_goto()
-            return
-
-        # Actively jogging toward the target: from here the coordinate must keep
-        # updating, otherwise the manual approach has stalled.
-        self._update_coordinate_progress_tracking()
-        now = time.monotonic()
-        if (
-            self.last_coordinate_change_at > 0.0
-            and now - self.last_coordinate_change_at > PIFINDER_MANUAL_STALL_SECONDS
-        ):
-            self._stop_with_error("pointing coordinate stopped updating")
-            return
-
-        if now - self.last_manual_command_at < PIFINDER_MANUAL_TICK_SECONDS:
-            return
-
-        direction = self._manual_direction_to_target(
-            self.current_ra,
-            self.current_dec,
-            self.active_target_ra,
-            self.active_target_dec,
-        )
-        if not direction:
-            self._stop_with_error("manual approach direction unavailable")
-            return
-        slew_rate = self._manual_slew_rate_for_error(self.last_error_arcmin)
-
-        rate_changed = self.manual_slew_rate != slew_rate
-        if rate_changed:
-            self._forward_to_mountcontrol({"type": "set_slew_rate", "rate": slew_rate})
-            self.manual_slew_rate = slew_rate
-
-        if self.manual_direction and self.manual_direction != direction:
-            self._forward_to_mountcontrol({"type": "stop_movement"})
-
-        # A fresh manual_movement (not a keepalive) is needed when:
-        # - the direction changed (motion was stopped above),
-        # - the slew rate changed — OnStepX halts motion on a rate change, and a
-        #   keepalive alone never restarts it (observed on hardware: readback
-        #   froze right at the 9->8 transition, tripping the stall guard),
-        # - or periodically, because mount-control refuses keepalives after 10 s
-        #   of continuous hold (MANUAL_MOTION_MAX_CONTINUOUS_SECONDS); re-send
-        #   before that window closes, like the UI hold-to-move restart.
-        needs_fresh = (
-            self.manual_direction != direction
-            or rate_changed
-            or now - self.last_fresh_motion_at >= PIFINDER_MANUAL_RESTART_SECONDS
-        )
-        self._forward_to_mountcontrol(
-            {
-                "type": "manual_movement" if needs_fresh else "manual_movement_keepalive",
-                "direction": direction,
-                "lease_seconds": PIFINDER_MANUAL_LEASE_SECONDS,
-            }
-        )
-        if needs_fresh:
-            self.last_fresh_motion_at = now
-        self.manual_direction = direction
-        self.last_manual_command_at = now
-        self.last_action = f"pifinder manual approach {direction}"
-        self._update_goto_plan()
-        logger.debug(
-            "PiFinder manual approach %s rate=%s error=%.2f arcmin",
-            direction,
-            slew_rate,
-            self.last_error_arcmin,
-        )
 
     def _stop_with_error(self, reason: str) -> None:
         self._forward_to_mountcontrol({"type": "stop_movement"})
-        self.manual_direction = None
+        self._disable_pulse_align()
         self.service_state = "error"
         self.phase = "error"
         self.wait_reason = reason
-        self.last_action = "pifinder manual approach stopped"
+        self.last_action = "pifinder goto stopped"
         self._update_goto_plan()
-        logger.warning("PiFinder manual approach stopped: %s", reason)
+        logger.warning("PiFinder GoTo stopped: %s", reason)
 
-    def _begin_final_indi_goto(self) -> None:
+    def _max_gotos(self) -> int:
+        try:
+            value = int(
+                self.config_values.get(
+                    "indi_pifinder_goto_max_gotos", PIFINDER_DEFAULT_MAX_GOTOS
+                )
+            )
+        except (TypeError, ValueError):
+            value = PIFINDER_DEFAULT_MAX_GOTOS
+        return max(1, value)
+
+    def _final_accuracy_arcmin(self) -> float:
+        try:
+            value = float(
+                self.config_values.get("indi_goto_refine_accuracy_arcmin", 10.0)
+            )
+        except (TypeError, ValueError):
+            value = 10.0
+        return max(0.1, value)
+
+    def _send_sync_and_goto(self, *, first: bool) -> None:
+        """Sync the mount to the current PiFinder coordinate, then GoTo target.
+
+        Used for both the initial iteration and every corrective one; the sync
+        re-aligns the mount frame to PiFinder so each GoTo only closes the
+        remaining error. Advances to the pifinder_goto wait phase.
+        """
         if (
             self.current_ra is None
             or self.current_dec is None
             or self.active_target_ra is None
             or self.active_target_dec is None
         ):
-            self._stop_with_error("final INDI GoTo coordinates unavailable")
+            self._stop_with_error("pifinder GoTo coordinates unavailable")
             return
 
         self._forward_to_mountcontrol(
@@ -526,47 +401,175 @@ class IndiGotoGuideService:
                 "refine_after_goto": False,
             }
         )
+        self.correction_count = 1 if first else self.correction_count + 1
+        self.previous_goto_error_arcmin = self.last_error_arcmin
+        self.final_goto_sent_at = time.monotonic()
+        self.final_goto_idle_since = 0.0
         self.service_state = "running"
-        self.phase = "final_indi_goto"
+        self.phase = "pifinder_goto"
         self.wait_reason = ""
-        self.last_action = "pifinder final indi goto sent"
+        self.last_action = (
+            "pifinder sync + goto sent"
+            if first
+            else f"pifinder sync + goto {self.correction_count}/{self._max_gotos()}"
+        )
         self._update_goto_plan()
         if self.goto_plan is not None:
             self.goto_plan.update(
                 {
-                    "stage": "final_indi_goto",
+                    "stage": "pifinder_goto",
                     "sync_ra": self.current_ra,
                     "sync_dec": self.current_dec,
-                    "final_goto_ra": self.active_target_ra,
-                    "final_goto_dec": self.active_target_dec,
-                    "correction_count": self.correction_count,
-                    "final_sync_sent": self.final_sync_sent,
+                    "goto_ra": self.active_target_ra,
+                    "goto_dec": self.active_target_dec,
+                    "goto_attempt": self.correction_count,
                 }
             )
-        self.final_goto_sent_at = time.monotonic()
-        self.final_goto_idle_since = 0.0
-        self.previous_goto_error_arcmin = self.last_error_arcmin
         logger.info(
-            "PiFinder manual approach reached %.2f arcmin; sync RA %.4f Dec %.4f "
-            "then final GoTo RA %.4f Dec %.4f",
+            "PiFinder sync + GoTo %s/%s: sync RA %.4f Dec %.4f -> target "
+            "RA %.4f Dec %.4f (error %.2f arcmin)",
+            self.correction_count,
+            self._max_gotos(),
+            self.current_ra,
+            self.current_dec,
+            self.active_target_ra,
+            self.active_target_dec,
             self.last_error_arcmin if self.last_error_arcmin is not None else -1.0,
+        )
+
+    def _begin_pulse_align(self) -> None:
+        """Hand off to pulse-guide fine alignment within the near threshold.
+
+        Reuses mount-control's guide-correction loop (the same pulse-guide path
+        the tracking guide uses): it pulses the mount toward the target off each
+        fresh plate solve until within the accuracy. The service monitors the
+        error and finishes with a final sync once inside it.
+        """
+        if self.active_target_ra is None or self.active_target_dec is None:
+            self._stop_with_error("pulse align target unavailable")
+            return
+        accuracy = self._final_accuracy_arcmin()
+        self.tracking_target_ra = self.active_target_ra
+        self.tracking_target_dec = self.active_target_dec
+        self._forward_to_mountcontrol(
+            {
+                "type": "toggle_guide_correction",
+                "enabled": True,
+                "target_ra": self.active_target_ra,
+                "target_dec": self.active_target_dec,
+                "accuracy_arcmin": accuracy,
+            }
+        )
+        self.pulse_align_sent = True
+        self.pulse_align_started_at = time.monotonic()
+        self.service_state = "running"
+        self.phase = "pifinder_pulse_align"
+        self.wait_reason = ""
+        self.last_action = "pifinder pulse align started"
+        self._update_goto_plan()
+        if self.goto_plan is not None:
+            self.goto_plan.update(
+                {
+                    "stage": "pifinder_pulse_align",
+                    "pulse_accuracy_arcmin": accuracy,
+                }
+            )
+        logger.info(
+            "PiFinder pulse align: target RA %.4f Dec %.4f accuracy %.2f arcmin "
+            "(error %.2f arcmin)",
+            self.active_target_ra,
+            self.active_target_dec,
+            accuracy,
+            self.last_error_arcmin if self.last_error_arcmin is not None else -1.0,
+        )
+
+    def _tick_pulse_align(self) -> None:
+        if self.active_target_ra is None or self.active_target_dec is None:
+            self._stop_with_error("pulse align target unavailable")
+            return
+
+        mount_status = self._mount_status_summary()
+        if not mount_status.get("available"):
+            self._stop_with_error("mount status unavailable during pulse align")
+            return
+        if self._mount_summary_reports_parked(mount_status):
+            self._stop_with_error("mount parked during pulse align")
+            return
+        if (
+            str(mount_status.get("state", "")).strip().lower()
+            == "guide_correction_failed"
+        ):
+            self._stop_with_error(
+                str(mount_status.get("message") or "pulse align failed")
+            )
+            return
+
+        pointing = self._refresh_pointing_status()
+        if not pointing.get("usable_for_goto"):
+            self._stop_with_error(
+                str(pointing.get("reason") or "pointing unavailable during pulse align")
+            )
+            return
+
+        current = pointing.get("current") or {}
+        self.current_ra = self._finite_float(current.get("ra"))
+        self.current_dec = self._finite_float(current.get("dec"))
+        self.last_error_arcmin = self._angular_error_arcmin(
             self.current_ra,
             self.current_dec,
             self.active_target_ra,
             self.active_target_dec,
         )
+        self._update_goto_plan()
 
-    def _tick_final_goto(self) -> None:
+        accuracy = self._final_accuracy_arcmin()
+        if self.last_error_arcmin is not None and self.last_error_arcmin <= accuracy:
+            self._disable_pulse_align()
+            self._send_final_sync_once()
+            return
+
+        if (
+            time.monotonic() - self.pulse_align_started_at
+            > PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS
+        ):
+            self._stop_with_error("pulse align did not converge")
+            return
+
+        self.last_action = (
+            f"pifinder pulse align {self.last_error_arcmin:.1f} arcmin"
+            if self.last_error_arcmin is not None
+            else "pifinder pulse align"
+        )
+
+    def _disable_pulse_align(self) -> None:
+        if self.pulse_align_sent:
+            self._forward_to_mountcontrol(
+                {"type": "toggle_guide_correction", "enabled": False}
+            )
+        self.pulse_align_sent = False
+        self.pulse_align_started_at = 0.0
+
+    def _tick_goto_wait(self) -> None:
+        """Wait for the active sync + GoTo to finish, then branch on the error.
+
+        Completion is decided by the mount motion flags plus a settle window
+        (see _mount_summary_reports_motion): the GoTo is done once the mount
+        reports no motion for PIFINDER_FINAL_GOTO_SETTLE_SECONDS, and only after
+        the same minimum settle since the command was sent. The arrival error is
+        then measured from PointingCoordinateService and drives the branch:
+        below the final accuracy -> final sync; within the near threshold ->
+        pulse-guide fine alignment; otherwise -> another sync + GoTo (bounded).
+        """
         if self.active_target_ra is None or self.active_target_dec is None:
-            self._stop_with_error("final GoTo target unavailable")
+            self._stop_with_error("pifinder GoTo target unavailable")
             return
 
         mount_status = self._mount_status_summary()
         if not mount_status.get("available"):
-            self._stop_with_error("mount status unavailable during final GoTo")
+            self._stop_with_error("mount status unavailable during GoTo")
             return
         if self._mount_summary_reports_parked(mount_status):
-            self._stop_with_error("mount parked during final GoTo")
+            self._stop_with_error("mount parked during GoTo")
             return
 
         now = time.monotonic()
@@ -575,7 +578,7 @@ class IndiGotoGuideService:
 
         if self._mount_summary_reports_motion(mount_status):
             self.final_goto_idle_since = 0.0
-            self.last_action = "waiting for final INDI GoTo"
+            self.last_action = "waiting for INDI GoTo"
             return
         if self.final_goto_idle_since == 0.0:
             self.final_goto_idle_since = now
@@ -586,7 +589,7 @@ class IndiGotoGuideService:
         pointing = self._refresh_pointing_status()
         if not pointing.get("usable_for_goto"):
             self._stop_with_error(
-                str(pointing.get("reason") or "pointing unavailable after final GoTo")
+                str(pointing.get("reason") or "pointing unavailable after GoTo")
             )
             return
 
@@ -600,52 +603,40 @@ class IndiGotoGuideService:
             self.active_target_dec,
         )
         if self.last_error_arcmin is None:
-            self._stop_with_error("final GoTo error unavailable")
+            self._stop_with_error("GoTo error unavailable")
             return
 
+        self._update_goto_plan()
         near_threshold_arcmin = (
             float(self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0))
             * 60.0
         )
-        self._update_goto_plan()
-        if self.last_error_arcmin <= near_threshold_arcmin:
+        final_accuracy_arcmin = self._final_accuracy_arcmin()
+
+        if self.last_error_arcmin <= final_accuracy_arcmin:
+            # Already at final accuracy straight off the slew: skip pulse guide.
             self._send_final_sync_once()
             return
+        if self.last_error_arcmin <= near_threshold_arcmin:
+            # Within the near threshold: hand off to pulse-guide fine alignment.
+            self._begin_pulse_align()
+            return
 
-        if self.correction_count >= PIFINDER_MAX_CORRECTION_GOTOS:
-            self._stop_with_error("final GoTo correction limit reached")
+        # Still outside the near threshold: sync + GoTo again, bounded by the
+        # attempt limit and the no-improvement guard.
+        max_gotos = self._max_gotos()
+        if self.correction_count >= max_gotos:
+            self._stop_with_error(f"GoTo limit reached ({max_gotos})")
             return
         if (
             self.previous_goto_error_arcmin is not None
-            and self.correction_count > 0
             and self.last_error_arcmin
             >= self.previous_goto_error_arcmin - PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN
         ):
-            self._stop_with_error("final GoTo error did not improve")
+            self._stop_with_error("GoTo error did not improve")
             return
 
-        self.previous_goto_error_arcmin = self.last_error_arcmin
-        self.correction_count += 1
-        self._forward_to_mountcontrol(
-            {
-                "type": "goto_target",
-                "ra": self.active_target_ra,
-                "dec": self.active_target_dec,
-                "refine_after_goto": False,
-            }
-        )
-        self.phase = "corrective_indi_goto"
-        self.service_state = "running"
-        self.final_goto_sent_at = now
-        self.final_goto_idle_since = 0.0
-        self.last_action = "pifinder corrective indi goto sent"
-        self._update_goto_plan()
-        logger.info(
-            "PiFinder corrective GoTo %s/%s sent; error %.2f arcmin",
-            self.correction_count,
-            PIFINDER_MAX_CORRECTION_GOTOS,
-            self.last_error_arcmin,
-        )
+        self._send_sync_and_goto(first=False)
 
     def _send_final_sync_once(self) -> None:
         if self.final_sync_sent:
@@ -699,11 +690,7 @@ class IndiGotoGuideService:
             self.tracking_guide_last_action = "waiting for tracking target"
             return
 
-        if self.phase in {
-            "manual_approach",
-            "final_indi_goto",
-            "corrective_indi_goto",
-        }:
+        if self.phase in {"pifinder_goto", "pifinder_pulse_align"}:
             self._disable_tracking_guide(f"paused during {self.phase}")
             self._reset_tracking_recovery()
             self.tracking_guide_state = "paused"
@@ -730,12 +717,26 @@ class IndiGotoGuideService:
 
         # Any other slew/manual motion (not our recovery) suspends correction.
         if self._mount_summary_reports_motion(mount_status):
+            # A guide-correction pulse also shows up as manual motion, so only a
+            # USER manual move (mount reports manual motion while OUR guide
+            # correction was NOT the one driving it) arms a re-target. A real
+            # pulse is sub-tick and clears before the next tick, so it never
+            # persists across ticks the way a held/nudged manual move does.
+            guide_was_active = self.tracking_guide_active_sent
             self._disable_tracking_guide("mount motion")
             self.tracking_motion_ra = None
             self.tracking_motion_dec = None
             self.tracking_last_motion_at = time.monotonic()
-            self.tracking_guide_state = "paused"
-            self.tracking_guide_last_action = "paused during mount motion"
+            if (
+                self._mount_summary_reports_manual_motion(mount_status)
+                and not guide_was_active
+            ):
+                self.manual_retarget_pending = True
+                self.tracking_guide_state = "manual_move"
+                self.tracking_guide_last_action = "manual move in progress"
+            else:
+                self.tracking_guide_state = "paused"
+                self.tracking_guide_last_action = "paused during mount motion"
             return
 
         # Coordinate and its usability are decided by PointingCoordinateService;
@@ -811,6 +812,46 @@ class IndiGotoGuideService:
                 f"settling {self.tracking_guide_settle_remaining:.1f}s"
             )
             return
+
+        # Manual re-target: a USER manual move ended and the coordinate settled.
+        # Adopt the current coordinate as the new tracking target and hold it,
+        # instead of recovering to the old target. Gated by config; when off,
+        # clear the flag and fall through to the disturbance recovery bands
+        # (which return to the original target).
+        if self.manual_retarget_pending:
+            self.manual_retarget_pending = False
+            manual_retarget_enabled = bool(
+                self.config_values.get(
+                    "indi_tracking_guide_manual_retarget_enabled", True
+                )
+            )
+            if manual_retarget_enabled:
+                self.manual_retarget_count += 1
+                self.tracking_target_ra = current_ra
+                self.tracking_target_dec = current_dec
+                self.tracking_guide_error_arcmin = 0.0
+                self.tracking_recovery_attempts = 0
+                self.tracking_guide_recovery_mode = "none"
+                # Re-arm mount-control guide correction on the NEW target (disable
+                # first forces _enable_pulse_correction to re-send with it).
+                self._disable_tracking_guide("manual re-target")
+                accuracy = float(
+                    self.config_values.get(
+                        "indi_tracking_guide_threshold_arcmin", 10.0
+                    )
+                )
+                self._enable_pulse_correction(accuracy)
+                self.tracking_guide_state = "enabled"
+                self.tracking_guide_last_action = (
+                    f"re-targeted to manual position (#{self.manual_retarget_count})"
+                )
+                logger.info(
+                    "Tracking guide manual re-target #%s: new target RA %.4f Dec %.4f",
+                    self.manual_retarget_count,
+                    current_ra,
+                    current_dec,
+                )
+                return
 
         if self.tracking_guide_error_arcmin is None:
             self.tracking_guide_state = "waiting_coordinate"
@@ -983,6 +1024,8 @@ class IndiGotoGuideService:
         self.tracking_guide_recovery_count = 0
         self.tracking_guide_settle_remaining = None
         self.tracking_guide_error_arcmin = None
+        self.manual_retarget_pending = False
+        self.manual_retarget_count = 0
 
     def _disable_tracking_guide(self, reason: str) -> None:
         if self.tracking_guide_active_sent:
@@ -993,31 +1036,6 @@ class IndiGotoGuideService:
         self.tracking_guide_accuracy_arcmin = None
         self.tracking_guide_last_action = reason
 
-    def _reset_coordinate_progress_tracking(self) -> None:
-        self.last_coordinate_ra = self.current_ra
-        self.last_coordinate_dec = self.current_dec
-        self.last_coordinate_change_at = time.monotonic()
-
-    def _update_coordinate_progress_tracking(self) -> None:
-        if self.current_ra is None or self.current_dec is None:
-            return
-        if self.last_coordinate_ra is None or self.last_coordinate_dec is None:
-            self._reset_coordinate_progress_tracking()
-            return
-        delta = self._angular_error_arcmin(
-            self.last_coordinate_ra,
-            self.last_coordinate_dec,
-            self.current_ra,
-            self.current_dec,
-        )
-        if (
-            delta is not None
-            and delta / 60.0 >= PIFINDER_MANUAL_MIN_COORDINATE_DELTA_DEGREES
-        ):
-            self.last_coordinate_ra = self.current_ra
-            self.last_coordinate_dec = self.current_dec
-            self.last_coordinate_change_at = time.monotonic()
-
     def _update_goto_plan(self) -> None:
         if self.goto_plan is None:
             return
@@ -1026,169 +1044,10 @@ class IndiGotoGuideService:
                 "current_ra": self.current_ra,
                 "current_dec": self.current_dec,
                 "error_arcmin": self.last_error_arcmin,
-                "manual_direction": self.manual_direction,
-                "manual_slew_rate": self.manual_slew_rate,
+                "correction_count": self.correction_count,
                 "phase": self.phase,
-                "last_coordinate_change_age_seconds": (
-                    time.monotonic() - self.last_coordinate_change_at
-                    if self.last_coordinate_change_at
-                    else None
-                ),
             }
         )
-
-    def _manual_direction_to_target(
-        self,
-        current_ra: Optional[float],
-        current_dec: Optional[float],
-        target_ra: Optional[float],
-        target_dec: Optional[float],
-    ) -> Optional[str]:
-        if (
-            current_ra is None
-            or current_dec is None
-            or target_ra is None
-            or target_dec is None
-        ):
-            return None
-
-        component_threshold = 0.15
-
-        # On an Alt/Az mount the manual-motion buttons move altitude/azimuth, so
-        # jog in Alt/Az. Fall back to RA/Dec if the conversion is unavailable
-        # (no location/time) or for EQ mounts.
-        if self._is_altaz_mount():
-            errors = self._altaz_errors(
-                current_ra, current_dec, target_ra, target_dec
-            )
-            if errors is not None:
-                alt_error, az_error = errors
-                ns = ""
-                ew = ""
-                if alt_error > component_threshold:
-                    ns = ALTAZ_ALT_UP_DIRECTION
-                elif alt_error < -component_threshold:
-                    ns = ALTAZ_ALT_DOWN_DIRECTION
-                if az_error > component_threshold:
-                    ew = ALTAZ_AZ_INCREASE_DIRECTION
-                elif az_error < -component_threshold:
-                    ew = ALTAZ_AZ_DECREASE_DIRECTION
-                if ns and ew:
-                    return ns + ew
-                return ns or ew or None
-
-        ra_delta = self._wrap_angle_delta_degrees(target_ra - current_ra)
-        east_west_error = ra_delta * math.cos(math.radians(current_dec))
-        north_south_error = target_dec - current_dec
-
-        ns = ""
-        ew = ""
-        if north_south_error > component_threshold:
-            ns = "north"
-        elif north_south_error < -component_threshold:
-            ns = "south"
-        if east_west_error > component_threshold:
-            ew = "east"
-        elif east_west_error < -component_threshold:
-            ew = "west"
-
-        if ns and ew:
-            return ns + ew
-        return ns or ew or None
-
-    def _is_altaz_mount(self) -> bool:
-        mount_type = str(self.config_values.get("mount_type", "Alt/Az")).strip().lower()
-        return "alt" in mount_type and "az" in mount_type
-
-    def _altaz_converter(self) -> Optional[FastAltAz]:
-        try:
-            location = self.shared_state.location()
-            dt = self.shared_state.datetime()
-        except Exception as exc:
-            self._altaz_debug = f"shared_state error: {exc!r}"
-            return None
-        dt_source = "shared"
-        if dt is None:
-            # No GPS/manual time in shared state yet. The device keeps its
-            # system clock synced (gps_time_sync helper / NTP), so fall back to
-            # system UTC rather than dropping to the RA/Dec jog logic, which is
-            # plain wrong on an Alt/Az mount.
-            dt = datetime.now(timezone.utc)
-            dt_source = "system_utc"
-
-        # A shared-state Location without a lock is the zeroed default
-        # (lat=lon=0), which would flip the computed jog directions. Prefer a
-        # locked shared location; otherwise fall back to the saved default
-        # location from config.
-        lat = lon = None
-        loc_source = "shared"
-        if location is not None and bool(getattr(location, "lock", False)):
-            lat = getattr(location, "lat", None)
-            lon = getattr(location, "lon", None)
-        if lat is None or lon is None:
-            default_loc = self.config_values.get("default_location")
-            if isinstance(default_loc, dict):
-                lat = self._finite_float(default_loc.get("latitude"))
-                lon = self._finite_float(default_loc.get("longitude"))
-                loc_source = "config_default"
-        if lat is None or lon is None:
-            self._altaz_debug = "no usable location (no lock, no default)"
-            return None
-        try:
-            conv = FastAltAz(lat, lon, dt)
-            self._altaz_debug = (
-                f"ok lat={lat:.3f} lon={lon:.3f} ({loc_source}) "
-                f"dt={dt.isoformat()} ({dt_source})"
-            )
-            return conv
-        except Exception as exc:
-            self._altaz_debug = f"FastAltAz error: {exc!r}"
-            return None
-
-    def _altaz_errors(
-        self,
-        current_ra: float,
-        current_dec: float,
-        target_ra: float,
-        target_dec: float,
-    ) -> Optional[Tuple[float, float]]:
-        """Altitude/azimuth error (target - current) for Alt/Az jogging.
-
-        Both points use the same location/time, so the relative alt/az direction
-        is robust even if the absolute location is only approximate. Returns None
-        if the conversion is unavailable (caller falls back to RA/Dec).
-        """
-        converter = self._altaz_converter()
-        if converter is None:
-            return None
-        try:
-            cur_alt, cur_az = converter.radec_to_altaz(
-                current_ra, current_dec, alt_only=False
-            )
-            tgt_alt, tgt_az = converter.radec_to_altaz(
-                target_ra, target_dec, alt_only=False
-            )
-        except Exception:
-            logger.debug("Alt/Az conversion failed", exc_info=True)
-            return None
-        if None in (cur_alt, cur_az, tgt_alt, tgt_az):
-            return None
-        alt_error = tgt_alt - cur_alt
-        az_error = self._wrap_angle_delta_degrees(tgt_az - cur_az)
-        return alt_error, az_error
-
-    def _manual_slew_rate_for_error(self, error_arcmin: float) -> int:
-        # The approach only needs to get inside the ~1 deg near threshold; the
-        # final INDI GoTo handles precision. Keep the last leg fast (48x) — the
-        # earlier 20x leg made the final degree crawl (~5'/s).
-        error_degrees = error_arcmin / 60.0
-        if error_degrees >= 10.0:
-            return 9
-        if error_degrees >= 3.0:
-            return 8
-        if error_degrees >= 1.0:
-            return 7
-        return 6
 
     def _refresh_pointing_status(self) -> dict[str, Any]:
         self.pointing_status = self._load_pointing_status()
@@ -1307,9 +1166,6 @@ class IndiGotoGuideService:
         raw_mount_status = str(metadata.get("raw_mount_status", ""))
         return raw_mount_status.startswith("P")
 
-    def _wrap_angle_delta_degrees(self, delta: float) -> float:
-        return ((delta + 180.0) % 360.0) - 180.0
-
     def _mount_summary_reports_parked(self, status: dict[str, Any]) -> bool:
         for key in ("park_state", "driver_mount_status"):
             raw = str(status.get(key, "")).strip().lower()
@@ -1327,6 +1183,11 @@ class IndiGotoGuideService:
             return True
         state = str(status.get("state", "")).strip().lower()
         return any(token in state for token in ("slew", "goto", "moving", "motion"))
+
+    def _mount_summary_reports_manual_motion(self, status: dict[str, Any]) -> bool:
+        if status.get("manual_motion_direction"):
+            return True
+        return "manual_motion" in str(status.get("state", "")).strip().lower()
 
     def _angular_error_arcmin(
         self,
@@ -1378,6 +1239,14 @@ class IndiGotoGuideService:
             "indi_pifinder_goto_near_threshold_deg": float(
                 cfg.get_option("indi_pifinder_goto_near_threshold_deg", 1.0)
             ),
+            "indi_pifinder_goto_max_gotos": int(
+                cfg.get_option(
+                    "indi_pifinder_goto_max_gotos", PIFINDER_DEFAULT_MAX_GOTOS
+                )
+            ),
+            "indi_goto_refine_accuracy_arcmin": float(
+                cfg.get_option("indi_goto_refine_accuracy_arcmin", 10.0)
+            ),
             "indi_tracking_guide_threshold_arcmin": float(
                 cfg.get_option("indi_tracking_guide_threshold_arcmin", 10.0)
             ),
@@ -1393,16 +1262,10 @@ class IndiGotoGuideService:
             "indi_tracking_guide_goto_threshold_deg": float(
                 cfg.get_option("indi_tracking_guide_goto_threshold_deg", 3.0)
             ),
-            "mount_type": str(cfg.get_option("mount_type", "Alt/Az")),
+            "indi_tracking_guide_manual_retarget_enabled": bool(
+                cfg.get_option("indi_tracking_guide_manual_retarget_enabled", True)
+            ),
         }
-        locations = cfg.get_option("locations", {}) or {}
-        loc_list = (
-            locations.get("locations", []) if isinstance(locations, dict) else []
-        )
-        self.config_values["default_location"] = next(
-            (loc for loc in loc_list if loc.get("is_default")),
-            loc_list[0] if loc_list else None,
-        )
         self.last_config_load = now
 
     def _mount_status_summary(self) -> dict[str, Any]:
@@ -1438,8 +1301,6 @@ class IndiGotoGuideService:
             "active_target_dec": self.active_target_dec,
             "current_ra": self.current_ra,
             "current_dec": self.current_dec,
-            "manual_direction": self.manual_direction,
-            "manual_slew_rate": self.manual_slew_rate,
             "correction_count": self.correction_count,
             "final_sync_sent": self.final_sync_sent,
             "tracking_target_ra": self.tracking_target_ra,
@@ -1451,6 +1312,7 @@ class IndiGotoGuideService:
             "tracking_guide_accuracy_arcmin": self.tracking_guide_accuracy_arcmin,
             "tracking_guide_recovery_mode": self.tracking_guide_recovery_mode,
             "tracking_guide_recovery_count": self.tracking_guide_recovery_count,
+            "tracking_guide_manual_retarget_count": self.manual_retarget_count,
             "tracking_guide_settle_remaining": self.tracking_guide_settle_remaining,
             "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
             "tracking_guide_enabled": self.config_values.get(
@@ -1459,7 +1321,6 @@ class IndiGotoGuideService:
             "last_error_arcmin": self.last_error_arcmin,
             "goto_plan": self.goto_plan,
             "last_action": self.last_action,
-            "altaz_debug": self._altaz_debug,
             "mountcontrol_queue_available": self.mountcontrol_queue is not None,
             "pointing": self._refresh_pointing_status(),
             "mount_status": self._mount_status_summary(),

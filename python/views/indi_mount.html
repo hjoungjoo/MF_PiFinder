@@ -496,6 +496,24 @@
         </div>
       </div>
       <div class="row">
+        <div class="col s12">
+          <label>
+            <input type="checkbox" name="indi_tracking_guide_manual_retarget_enabled" {% if indi_tracking_guide_manual_retarget_enabled %}checked{% endif %}>
+            <span>{{ _('Manual Re-target (after a manual move, track the new position instead of returning)') }}</span>
+          </label>
+        </div>
+      </div>
+      <div class="row">
+        <div class="input-field col s12 m6">
+          <select id="indi_pifinder_goto_max_gotos" name="indi_pifinder_goto_max_gotos">
+            {% for n in [3, 5, 10, 15, 20] %}
+            <option value="{{ n }}" {% if indi_pifinder_goto_max_gotos == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+          <label>{{ _('PiFinder GoTo: Max sync + GoTo iterations') }}</label>
+        </div>
+      </div>
+      <div class="row">
         <button type="submit" class="btn">{{ _('Apply GoTo / Guide Settings') }}</button>
       </div>
     </form>

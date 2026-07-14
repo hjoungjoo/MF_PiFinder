@@ -1180,6 +1180,37 @@ pifinder_menu = {
                                         },
                                     ],
                                 },
+                                {
+                                    "name": _("Manual Re-target"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "config_option": "indi_tracking_guide_manual_retarget_enabled",
+                                    "post_callback": callbacks.reload_config,
+                                    "items": [
+                                        {
+                                            "name": _("Off"),
+                                            "value": False,
+                                        },
+                                        {
+                                            "name": _("On"),
+                                            "value": True,
+                                        },
+                                    ],
+                                },
+                                {
+                                    "name": _("Max GoTos"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "config_option": "indi_pifinder_goto_max_gotos",
+                                    "post_callback": callbacks.reload_config,
+                                    "items": [
+                                        {"name": "3", "value": 3},
+                                        {"name": "5", "value": 5},
+                                        {"name": "10", "value": 10},
+                                        {"name": "15", "value": 15},
+                                        {"name": "20", "value": 20},
+                                    ],
+                                },
                             ],
                         },
                     ],

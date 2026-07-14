@@ -1095,6 +1095,14 @@ class Server:
                 "indi_tracking_guide_goto_recovery_enabled": bool(
                     cfg.get_option("indi_tracking_guide_goto_recovery_enabled", False)
                 ),
+                "indi_tracking_guide_manual_retarget_enabled": bool(
+                    cfg.get_option(
+                        "indi_tracking_guide_manual_retarget_enabled", True
+                    )
+                ),
+                "indi_pifinder_goto_max_gotos": int(
+                    cfg.get_option("indi_pifinder_goto_max_gotos", 10)
+                ),
             }
 
         def _onstep_property_name(property_name, indi_cfg=None):
@@ -1615,6 +1623,17 @@ class Server:
             cfg.set_option(
                 "indi_tracking_guide_goto_recovery_enabled",
                 request.form.get("indi_tracking_guide_goto_recovery_enabled") == "on",
+            )
+            cfg.set_option(
+                "indi_tracking_guide_manual_retarget_enabled",
+                request.form.get("indi_tracking_guide_manual_retarget_enabled") == "on",
+            )
+            try:
+                max_gotos = int(request.form.get("indi_pifinder_goto_max_gotos") or 10)
+            except (TypeError, ValueError):
+                max_gotos = 10
+            cfg.set_option(
+                "indi_pifinder_goto_max_gotos", max(1, min(50, max_gotos))
             )
             self.ui_queue.put("reload_config")
             return _render_indi_page(_("INDI GoTo / Guide settings applied"))

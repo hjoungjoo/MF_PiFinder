@@ -168,8 +168,8 @@ updated
   `indi_goto_method`는 전달된 GoTo를 어떤 방식으로 실행할지 결정하는 설정이다.
 - `PointingCoordinateService`는 좌표 계산의 단일 기준으로 사용한다.
 - PiFinder GoTo는 mount가 Park 상태이거나 위치/시간이 유효하지 않으면 시작하지 않는다.
-- 수동 접근 중에는 lease 기반 manual movement를 사용하고, 주기적으로 keepalive 또는
-  stop을 명확히 보낸다.
+- PiFinder GoTo 접근은 mount sync + `goto_target()` primitive를 반복 사용하고,
+  마지막 1도 이내에서는 pulse guide로 넘긴다. 접근에 수동 이동은 사용하지 않는다.
 - Tracking Guide는 사용자의 manual movement, GoTo, backlash test, multi align 중에는
   끼어들지 않는다.
 - pulse guide가 driver별로 불안정하면 짧은 manual movement fallback을 사용하되,
@@ -189,11 +189,21 @@ indi_tracking_guide_enabled = false | true
   기본값: false
 
 indi_goto_refine_accuracy_arcmin
-  기존 설정 유지.
-  PiFinder GoTo와 추적 가이드의 목표 정확도 후보로 사용한다.
+  기존 설정 유지. PiFinder GoTo 최종 pulse guide 정렬의 목표 정확도로 사용한다
+  (0.1도 = 6분각). 추적 가이드의 목표 정확도로도 공유한다.
 
 indi_pifinder_goto_near_threshold_deg = 1.0
-  PiFinder GoTo에서 "근처 도달"로 판단하는 기본 범위.
+  PiFinder GoTo에서 sync + 마운트 GoTo 반복을 끝내고 pulse guide 미세 보정으로
+  전환하는 경계. 오차가 이 값 이상이면 sync + GoTo를 반복하고, 미만이면 pulse
+  guide로 넘어가 목표 정확도(0.1도)까지 정렬한다.
+
+indi_pifinder_goto_max_gotos = 10
+  PiFinder GoTo에서 sync + 마운트 GoTo 반복(초기 GoTo 포함)의 최대 횟수. 이 횟수
+  안에 오차가 근처 도달 범위(1도) 미만으로 들어오지 못하면 error로 중단한다.
+  기본 10. (이전 구현의 `PIFINDER_MAX_CORRECTION_GOTOS = 2` 고정값을 대체한다.)
+  이와 별개로, 한 스텝의 오차가 직전보다 `PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN`
+  (1분각) 이상 줄지 않으면 상한 도달 전이라도 조기 중단해 마운트가 수렴하지 못하는
+  채로 계속 슬루하는 것을 막는다.
 
 indi_tracking_guide_threshold_arcmin = 10.0
   추적 가이드가 pulse guide 보정을 시작할 오차 기준.
@@ -247,6 +257,13 @@ indi_tracking_guide_goto_threshold_deg = 3.0
   이 값을 "초과"하는 오차는 (복구가 켜져 있을 때) pulse guide 대신
   sync + GoTo 복구를 사용하고, 이하이면 pulse guide로 직접 보정한다.
   이 단일 경계가 곧 pulse guide의 실용 한계이기도 하다.
+
+indi_tracking_guide_manual_retarget_enabled = true | false
+  기본값: true
+  트래킹 중 마운트 수동이동 명령으로 스코프를 옮겼다가 멈추면, 원래 타겟으로
+  복귀하는 대신 멈춘 위치(현재 좌표)를 새 타겟으로 삼아 그 자리에서 추적을
+  이어간다. 물리적 손밀기(외란)에는 적용하지 않고 기존 disturbance recovery를
+  유지한다. Off이면 수동이동도 외란처럼 취급해 원래 타겟으로 복귀한다.
 ```
 
 이름은 구현 시 바뀔 수 있지만, 문서에서는 위 이름을 기준으로 설명한다.
@@ -339,90 +356,98 @@ flowchart TD
 
 ## GoTo Method: PiFinder
 
-PiFinder가 `PointingCoordinateService` 좌표를 기준으로 target 근처까지 수동 이동
-명령으로 접근한 뒤, mount 좌표 동기화와 INDI GoTo를 조합해 최종 target에
-맞추는 모드다.
+PiFinder가 `PointingCoordinateService` 좌표를 기준으로, mount sync와 INDI GoTo를
+반복해 target에 접근하고, 마지막 1도 이내에서는 pulse guide로 0.1도 미만까지
+정밀 정렬하는 모드다.
+
+이전 초안은 target이 멀 때 "거리별 수동 이동(manual approach)"으로 접근했으나,
+실장비 테스트에서 여러 불편(좌표계 프레임 불일치, 모션 lease 관리, 저속 구간 소요
+시간 등)이 있어 제거하고, 아래의 sync + GoTo 반복 방식으로 대체했다.
 
 ```mermaid
 flowchart TD
-    A[target 선택] --> B[PointingCoordinateService 현재 좌표 읽기]
-    B --> C[target과 현재 좌표 오차 계산]
-    C --> D{1도 근처 범위 안인가?}
-    D -->|no| E[거리별 manual 이동 속도 선택]
-    E --> F[manual movement command로 접근]
-    F --> G[좌표 갱신 대기]
-    G --> B
-    D -->|yes| H[정지]
-    H --> I[PiFinder 현재 좌표로 mount sync/alignment]
-    I --> J[최종 target으로 INDI GoTo]
-    J --> K[GoTo 완료 대기]
-    K --> L[PointingCoordinateService로 위치 확인]
-    L --> M{허용 범위 밖인가?}
-    M -->|yes| N[GoTo 명령으로 위치 보정]
-    N --> K
-    M -->|no| O[최종 target 좌표로 mount sync/alignment]
-    O --> P[GoTo complete]
+    A[target 선택] --> B[PiFinder 현재 좌표로 mount sync/align]
+    B --> C[target 좌표로 INDI GoTo]
+    C --> D[GoTo 완료 대기]
+    D --> E[PointingCoordinateService 현재 좌표 읽기]
+    E --> F[target과 현재 좌표 오차 계산]
+    F --> G{오차 >= 1도?}
+    G -->|yes| B
+    G -->|no| H{오차 >= 0.1도?}
+    H -->|yes| I[pulse guide 미세 보정]
+    I --> J[좌표 갱신 대기]
+    J --> E
+    H -->|no| K[최종 target 좌표로 mount sync/align]
+    K --> L[GoTo complete]
 ```
 
 세부 절차:
 
 - **GoTo 시작 시 자동 align: 현재 PiFinder 좌표로 mount를 sync한다.** 이렇게 하면
-  mount가 aligned 되어 접근이 신뢰할 수 있는 mount readback(`current.source = mount`)
-  으로 navigate한다. 이 초기 sync가 없으면 mount가 미정렬 상태로 남아 `current`가 원시
-  IMU(`source = imu_fallback`)로 폴백되어, 실내/무솔빙에서 제대로 navigate하지 못한다.
-- 이동량 계산에 필요한 현재 좌표는 `PointingCoordinateService`의
+  mount가 aligned 되어 이후 오차 확인이 신뢰할 수 있는 mount
+  readback(`current.source = mount`)을 사용한다. 이 초기 sync가 없으면 mount가
+  미정렬 상태로 남아 `current`가 원시 IMU(`source = imu_fallback`)로 폴백되어,
+  실내/무솔빙에서 오차 계산이 부정확해진다.
+- 오차 계산에 필요한 현재 좌표는 `PointingCoordinateService`의
   `CoordinateState.current`를 사용한다.
-- target까지의 거리와 방향을 계산해 manual movement 방향과 속도를 정한다.
-- target과 멀 때는 고속으로 이동하고, 가까워질수록 속도를 낮춘다.
-- 기본 근처 도달 범위는 1도이다.
-- 근처 범위에 들어오면 manual movement를 정지한다.
-- 정지 후 PiFinder가 보고 있는 현재 좌표로 mount를 sync/alignment한다.
-  이 단계는 mount 좌표계를 PiFinder 좌표계와 맞추기 위한 coarse sync다.
-- 그 다음 최종 target 좌표로 일반 INDI GoTo를 실행한다.
-- GoTo 종료 후 `PointingCoordinateService` 좌표로 target과 현재 위치 차이를 확인한다.
-- 오차가 일정 범위 이상이면 GoTo 명령을 사용해 위치 보정을 반복한다.
-- 목표 위치 범위 안에 들어오면 최종 target 좌표로 다시 sync/alignment한다.
-  이 마지막 동기화는 이후 tracking 정밀도를 높이기 위한 절차다.
+- 초기 sync 직후 최종 target 좌표로 일반 INDI GoTo를 실행한다. 접근에 수동 이동은
+  전혀 사용하지 않고 마운트 GoTo에 맡긴다.
+- GoTo 완료 후 `PointingCoordinateService` 좌표로 target과 현재 위치의 오차를
+  확인한다.
+- **오차 >= 근처 도달 범위(기본 1도)**: mount readback이 아직 target과 크게 어긋난
+  상태이므로, 현재 PiFinder 좌표로 mount를 다시 sync한 뒤 최종 target으로 다시
+  INDI GoTo한다. 이 sync + GoTo를 오차가 1도 미만으로 들어올 때까지 반복하되,
+  초기 GoTo를 포함한 최대 반복 횟수는 `indi_pifinder_goto_max_gotos`(기본 10)로
+  제한한다. sync가 mount 좌표계를 PiFinder 좌표계에 다시 맞추므로, 다음 GoTo가 남은
+  오차만큼만 이동한다.
+- **오차 < 1도**: 마운트 슬루 대신 pulse guide로 전환해, 목표 정확도
+  (`indi_goto_refine_accuracy_arcmin`, 0.1도 = 6분각) 미만이 될 때까지 미세
+  보정한다. 이 pulse guide 보정은 추적 가이드와 같은 보정 로직을 재사용한다.
+- **오차 < 목표 정확도(0.1도)**: 최종 target 좌표로 다시 sync/alignment하고
+  `complete`로 넘어간다. 이 마지막 동기화는 이후 tracking 정밀도를 높이기 위한
+  절차다.
+- 각 GoTo를 시작할 때 per-GoTo 진행 플래그(`final_sync_sent`, `correction_count`
+  등)를 반드시 리셋한다. 직전 GoTo나 외란 복구가 남긴 플래그 때문에 최종 sync가
+  no-op이 되어 상태기계가 `complete`로 넘어가지 못하는 문제를 막는다.
 
-속도 정책 (실장비 튜닝, 2026-07-12):
+### GoTo 완료 판정 (대기 로직)
 
-```text
-오차 >= 10도  -> rate 9 (Max)
-오차 >=  3도  -> rate 8 (1/2 Max)
-오차 >=  1도  -> rate 7 (48x)   # 1도 threshold 직전 마지막 구간
-오차 <   1도  -> rate 6 (20x)   # threshold를 낮출 때만 사용
-```
+각 sync + GoTo 스텝에서 "GoTo 완료 대기"는 좌표가 target에 도달했는지를 직접 보지
+않고, **마운트가 슬루를 끝내고 정지했는지를 모션 상태 플래그로 폴링**해 판정한다
+(도착 정확도는 완료 후 별도 오차 측정 단계에서 확인). 구현은 `_tick_final_goto`이며
+초기 GoTo·보정 GoTo·추적 가이드 복구 GoTo에 모두 같은 로직이 쓰인다.
 
-기존 초안은 접근 마지막을 20x(~5'/s)로 끝내 마지막 1도에 ~17초가 걸렸다. 48x
-마지막 구간은 ~6초에 통과하며, 최종 INDI GoTo는 여전히 보고 오차 0'으로 도달한다.
+절차:
 
-해결됨 2026-07-12 (이전에 OnStep no-move 완료 지연으로 오진했던 건): 한 세션에서
-두 번째 이후 pifinder GoTo가 `final_indi_goto`에서 수 분간 "멈춘 것처럼" 보였다.
-원인은 mount control이 아니라 guide였다(mount control은 ~7초에 GoTo 완료).
-`_handle_goto_target`가 GoTo별 approach 플래그를 리셋하지 않아, 직전 GoTo(또는 외란
-복구)가 남긴 `final_sync_sent = True` 때문에 `_send_final_sync_once()`가 no-op이
-되고 상태기계가 `complete`로 넘어가지 못했다. 수정:
+1. **명령 시점 기록**: GoTo를 보낼 때 `final_goto_sent_at`을 현재 시각으로 기록하고
+   idle 타이머(`final_goto_idle_since`)를 0으로 리셋한다.
+2. **최소 대기**: 명령 후 `PIFINDER_FINAL_GOTO_SETTLE_SECONDS`(현재 2.0초) 동안은
+   완료 판정을 보류한다. 마운트가 슬루를 시작하기 직전의 잠깐 idle 상태를 "완료"로
+   오판하지 않기 위한 최소 창이다.
+3. **모션 폴링**: 매 tick마다 마운트 상태 요약을 읽어 아래 중 하나라도 참이면
+   "움직이는 중"으로 보고 idle 타이머를 리셋한 채 대기를 계속한다
+   (`last_action = "waiting for final INDI GoTo"`):
+   - `mount_motion_active`
+   - `goto_motion_active`
+   - `manual_motion_direction`가 설정됨
+   - 상태 문자열에 `slew` / `goto` / `moving` / `motion` 포함
+4. **idle 정착 창(settle window)**: 마운트가 정지(위 조건 모두 거짓)로 보이면 첫
+   idle 샘플에서 idle 타이머를 시작하고, idle 상태가
+   `PIFINDER_FINAL_GOTO_SETTLE_SECONDS`(2.0초) 연속 유지될 때만 완료로 인정한다.
+   중간에 다시 모션이 감지되면 타이머를 리셋한다 — OnStepX처럼 "근처 이동 후
+   미세조정"으로 모션이 잠깐 멈췄다 재개하는 마운트를 완료로 오판하지 않는다.
+5. **완료 후 오차 측정**: idle이 정착하면 `PointingCoordinateService`를 다시 읽어
+   `usable_for_goto`를 확인하고(불가하면 error), target과의 오차를 측정한다. 이
+   오차로 sync + GoTo 반복 / pulse guide / complete 분기를 결정한다.
 
-1. 모든 `_handle_goto_target` 시작 시 `final_sync_sent`, `correction_count`,
-   `previous_goto_error_arcmin`, `final_goto_idle_since`, `final_goto_sent_at`를
-   리셋.
-2. `_tick_manual_approach`에서 near-threshold 핸드오프를 좌표 stall 가드보다
-   *먼저* 평가. 이미 near threshold 이내(on-target)인 GoTo는 즉시 final INDI
-   GoTo로 넘어간다 — 정지한 on-target 좌표는 원래 안 변하므로 stall로 오판하면
-   안 된다.
+대기 중 안전 가드(해당 시 즉시 error로 중단):
 
-실장비 검증: 한 세션 내 연속 GoTo가 모두 `complete`에 도달(이전엔 2번째부터 멈춤),
-on-target GoTo는 ~0초에 완료.
+- 마운트 상태 unavailable.
+- 마운트 parked.
+- Stop/Abort는 이 대기 중에도 최우선으로 처리한다.
 
-실장비에서 발견한 모션 연속성 규칙 두 가지(둘 다 필수):
-
-- **OnStepX는 슬루 레이트 변경 시 모션을 정지**하며, keepalive만으로는 재시동되지
-  않는다 — `set_slew_rate` 후 서비스는 fresh `manual_movement`를 재전송해야 한다
-  (관측: 9->8 전환 순간 readback이 얼어붙어 stall 가드가 접근을 중단시켰다).
-- mount-control은 10초 연속 유지 후 keepalive를 거부하므로
-  (`MANUAL_MOTION_MAX_CONTINUOUS_SECONDS`), 접근은 UI 홀드 이동 재시동과 같은
-  패턴으로 `PIFINDER_MANUAL_RESTART_SECONDS = 8.0`초마다 fresh
-  `manual_movement`를 재전송한다.
+`PIFINDER_FINAL_GOTO_SETTLE_SECONDS`는 최종·보정 GoTo 대기와 추적 가이드의
+sync + GoTo 복구 대기가 공유하는 정착 시간이다.
 
 주의 사항:
 
@@ -430,84 +455,8 @@ on-target GoTo는 ~0초에 완료.
 - plate solve 좌표가 있으면 가장 신뢰도가 높다.
 - solve가 없으면 IMU/mount 융합 좌표로 coarse 접근은 가능하지만 오차가 커질 수 있다.
 - 마운트가 Park 상태이거나 위치/시간이 유효하지 않으면 시작하지 않는다.
-- Stop/Abort는 manual 접근, 최종 GoTo, 보정 GoTo 어느 단계에서도 최우선 처리한다.
-
-### 실장비 테스트 발견: 수동 접근 모션이 tick 사이에 끊김 (2026-07-12)
-
-증상: `indi_goto_method = pifinder`에서 마운트가 조금 이동하다 멈추고, 접근이
-수렴하지 못한 채 `error`(`wait_reason = "pointing coordinate stopped updating"`)로
-끝난다.
-
-근본 원인 — 수동 접근의 **모션 lease가 서비스 tick 간격보다 짧아** 명령 사이에
-모션이 만료된다:
-
-- `_tick_manual_approach`는 `manual_movement`를 `PIFINDER_MANUAL_LEASE_SECONDS =
-  0.8`로 보낸다.
-- 서비스 루프는 `service_queue.get(timeout = HEARTBEAT_SECONDS = 1.0)`에 묶여
-  tick(및 다음 keepalive)이 **약 1초에 한 번**만 발생한다.
-- lease 0.8초 < tick ~1.0초 → 다음 명령 전에 mount-control의 수동 모션 deadline이
-  만료되어 마운트를 정지시킨다. state가 다시 `connected`로 떨어진다.
-
-좌표 체인에서의 결과(실장비 검증):
-
-- 마운트가 실제로 움직이는 동안은 모두 정상: mount-control이 `state =
-  manual_motion`, `mount_motion_active = true`를 보고하고,
-  `PointingCoordinateService.current.source = mount`로 드라이버
-  `EQUATORIAL_EOD_COORD`를 부드럽게 추종한다.
-- 그러나 lease가 계속 만료되어 마운트가 대부분 정지 상태라, `mount_motion_active`가
-  `false`로 읽히고 `current`가 **정지 전용**인 `mount_imu_delta` 융합으로 폴백한다
-  (`mf_coordinate_helper_plan`의 "Mount + IMU Delta" 참고). 이 좌표는 이동을 추종하지
-  못해(Dec 사실상 고정) 접근이 stall→정지한다.
-
-좌표 쪽은 **문제가 아니다** — 직접 홀드 이동(`_guide_move`, lease 2.5초, UI 루프가
-~0.25초마다 keepalive 펌핑)은 `state = manual_motion`과 `current.source = mount`를
-유지하며 마운트를 연속 구동한다.
-
-수정 방향:
-
-- `PIFINDER_MANUAL_LEASE_SECONDS`를 tick 간격(~1초)보다 충분히 크게(예: ~2.0~2.5초,
-  동작하는 홀드 이동과 동일) 올리고, 그리고/또는 접근 중 tick을 더 빠르게(접근이 진행
-  중일 때 `HEARTBEAT_SECONDS`보다 짧은 대기)해서 모션을 연속으로 유지하고 mount-control이
-  `state = manual_motion`을 유지하게 한다.
-- 모션이 유지되면 `PointingCoordinateService`가 `mount` source에 머물러 접근이
-  수렴할 수 있다.
-
-### 실장비 테스트 발견: Alt/Az 마운트인데 수동 접근이 RA/Dec 방향으로 조그 (2026-07-12)
-
-증상(lease 수정 후): 마운트가 더는 멈추지 않지만 수동 접근이 엉뚱한 방향으로 간다.
-잠깐 타겟으로 수렴하다가 오버슛하며 발산한다 — error가 커지고 마운트가 의도한 방향의
-반대로 움직인다. 실제 예: 타겟 Dec 42.5도, 접근이 Dec ~42도까지 갔다가("southeast"
-명령) Dec가 ~47도까지 올라가고 RA도 반대로 움직여 error가 274'→432'로 증가.
-
-근본 원인 — `_manual_direction_to_target`는 조그 방향을 **RA/Dec**(Dec 오차=남북, RA
-오차=동서)로 계산해 `manual_movement`(`TELESCOPE_MOTION_NS`/`TELESCOPE_MOTION_WE`)로
-보낸다. **Alt/Az 마운트에서 이 버튼들은 고도(Alt)/방위(Az)로 움직이지** RA/Dec가
-아니다. 두 좌표계는 특정 위치에서만 일치하고 스코프가 움직이면 회전/반전하므로, 고정된
-RA/Dec 방향 가정이 마운트를 반대로 보낸다.
-
-검증: 이동 중 `current.source = mount`(IMU 정확히 보류) → IMU 문제가 아니라 수동 조그의
-**프레임 불일치**다.
-
-수정 — 수동 접근을 기존 config `mount_type`(`Alt/Az` | `EQ`)에 맞춰 분기:
-
-- `EQ`: 기존 RA/Dec 방향 로직 유지(Dec=남북, RA=동서).
-- `Alt/Az`: 현재·타겟 RA/Dec를 Alt/Az로 변환(`FastAltAz(lat, lon, dt).radec_to_altaz`)해
-  Alt/Az 공간에서 조그:
-  - 고도 오차 -> `north`(Alt↑) / `south`(Alt↓). 실장비 검증: `north` 명령
-    (`MOTION_NORTH`)이 고도를 올린다.
-  - 방위 오차(최단 wrap) -> `east` / `west`. 실장비 확인: `east`가 방위를 증가,
-    `west`가 감소시킨다.
-- 변환에 관측 위치·시간이 필요. 실내 테스트에서 실제로 두 가지 폴백이 필요했다:
-  - `shared_state.datetime()`은 GPS/수동 시간 설정 전까지 `None` -> **시스템 UTC
-    시계**로 폴백(시간 동기 헬퍼가 동기 유지).
-  - `lock` 없는 `shared_state.location()`은 0으로 초기화된 기본값(lat=lon=0)이라
-    계산된 방향이 뒤집힘 -> config의 **저장된 기본 위치**(`locations` 목록의
-    `is_default`)로 폴백.
-  변환기 입력은 status 파일의 `altaz_debug`로 노출된다.
-- 사용 가능한 위치가 전혀 없을 때만 RA/Dec 로직으로 폴백.
-- 무솔빙 실내에서 end-to-end 검증 완료(2026-07-12): 시작 시 자동 align sync,
-  명령/정답 방향이 일치하는 Alt/Az 접근, 오차 799' -> 63' 단조 감소, near
-  threshold 진입 -> sync + 최종 INDI GoTo -> 보고 오차 0'으로 `complete`.
+- Stop/Abort는 접근 sync/GoTo, 반복 GoTo, 최종 pulse guide 어느 단계에서도 최우선
+  처리한다.
 
 ## 추적 가이드
 
@@ -545,14 +494,38 @@ flowchart TD
 
 ```text
 오차 방향 계산
-  -> RA/Dec 또는 Alt/Az 기준 correction 방향 결정
-  -> pulse guide duration 계산
-  -> INDI pulse guide 또는 짧은 manual motion command 전송
+  -> RA/Dec 기준 축별(NS, WE) 오차 계산
+  -> 축별 pulse guide duration 계산 (오차 각도 / 가이드레이트)
+  -> INDI 표준 timed guide pulse(TELESCOPE_TIMED_GUIDE_NS/WE) 전송
   -> 다음 좌표 갱신에서 효과 확인
 ```
 
-pulse guide가 driver에서 안정적으로 지원되지 않는 경우에는 짧은 manual movement
-lease를 fallback으로 사용할 수 있다.
+### 펄스가이드 구현
+
+트래킹 보정은 **INDI 표준 timed guide pulse**로 수행한다. 이는 수동이동
+(`manual_move`, 버튼처럼 start/stop으로 구동)과는 다른 별도 명령으로, 지정한
+**시간(ms)만큼** 가이드레이트로 이동한다.
+
+- **명령**: `TELESCOPE_TIMED_GUIDE_NS`(`TIMED_GUIDE_N`/`TIMED_GUIDE_S`),
+  `TELESCOPE_TIMED_GUIDE_WE`(`TIMED_GUIDE_W`/`TIMED_GUIDE_E`)에 각각 pulse
+  시간을 number로 보낸다. NS/WE 두 축을 독립적으로 보정한다.
+- **지속시간 계산**: 축 오차를 그 축의 가이드레이트로 이동하는 데 필요한 시간으로
+  계산한다.
+  `duration_ms = |오차_arcsec| / (guide_rate_x × 15.041 arcsec/s) × aggressiveness`.
+  한 번에 오차의 일부(예: 70%)만 닫고 10초 주기 루프로 수렴시키며, 최소·최대
+  ms로 clamp한다.
+- **가이드레이트**: 드라이버의 `GUIDE_RATE`(sidereal 배수)를 읽어 사용하고,
+  못 읽으면 기본값(0.5×)으로 폴백한다.
+- **capability 감지**: 드라이버에 `TELESCOPE_TIMED_GUIDE_*` 프로퍼티가 있으면
+  timed guide pulse를 쓰고, 없으면 기존처럼 **짧은 manual movement lease를
+  fallback**으로 사용한다(감지 결과는 캐시).
+- **방향 부호 검증**: NS는 dec 오차 부호(양수→N), WE는 RA 오차 부호로 정한다.
+  RA(WE) 부호는 드라이버마다 반대일 수 있어, 요소 매핑을 한 곳(상수)에서 교체
+  가능하게 두고 실장비에서 1회 검증한다.
+
+이 방식은 (1) 수동이동과 명령이 달라 트래킹 보정 펄스가 마운트 상태에
+`manual_motion`으로 찍히지 않으므로 [수동 재타겟] 구분이 깔끔해지고, (2) 오차
+각도에 비례한 시간만큼만 이동해 고정 lease 방식보다 정밀하다.
 
 Off 조건:
 
@@ -612,7 +585,8 @@ guide_correction_threshold_arcmin
 ```text
 off             config에서 트래킹 가이드 비활성
 waiting_target  아직 추적 target 없음
-paused          GoTo/manual/backlash/multi-align 또는 마운트 모션으로 일시중지
+paused          GoTo/backlash/multi-align 또는 (수동이동이 아닌) 마운트 모션으로 일시중지
+manual_move     사용자가 마운트 수동이동 명령으로 스코프를 움직이는 중; 보정 중단
 waiting_mount   마운트 상태 unavailable / parked
 waiting_coordinate  포인팅 좌표 unavailable/stale
 disturbed       현재 좌표가 움직이는 중; 모든 보정 중단
@@ -636,9 +610,8 @@ failed          복구 수렴 실패 / pulse guide 실패 보고
 - **settled**: 좌표 변화량이 임계값 아래로 `indi_tracking_guide_settle_seconds`
   (기본 4초) 동안 연속 유지되면 정착으로 본다. 정착 후 target 오차는 같은
   `current` 좌표로 측정한다.
-- PiFinder 수동 접근이 쓰는 좌표-진행 추적(`_update_coordinate_progress_tracking`)
-  아이디어를 재사용하되, 수동 접근 상태와 충돌하지 않도록 자체 last-stable 좌표와
-  타이머를 별도로 둔다.
+- 외란·정착 판정은 자체 last-stable 좌표와 타이머를 별도로 두어, PiFinder GoTo의
+  sync + GoTo 반복 상태와 충돌하지 않게 한다.
 
 ### 복구 결정 (정착 후)
 
@@ -683,8 +656,11 @@ target 근처에서 pulse guide로 넘긴다.
   `toggle_guide_correction(false)`를 한 번 보내고 `off`로 간다.
 - `indi_tracking_guide_goto_recovery_enabled` Off → 트래킹 가이드가 절대
   sync/GoTo하지 않는다; 큰 오차도 pulse guide로만 보정하고 상태에 표시한다.
-- 복구는 사용자 수동 이동, GoTo, backlash 테스트, multi-point align 중에는 실행
-  안 함 (기존 `paused` 가드), 마운트 모션/parked 중에도 안 함.
+- `indi_tracking_guide_manual_retarget_enabled` On(기본) → 마운트 수동이동 종료·정착
+  후 현재 좌표를 새 타겟으로 채택한다(아래 "수동 재타겟" 참고). Off이면 수동이동도
+  물리적 외란처럼 취급해 원래 타겟으로 복귀한다.
+- 복구는 GoTo, backlash 테스트, multi-point align 중에는 실행 안 함 (기존 `paused`
+  가드), 마운트 모션/parked 중에도 안 함.
 - Stop/Abort는 모든 상태에서 최우선이며 복구 하위 상태를 초기화한다.
 
 ### 신규 상태 필드
@@ -733,6 +709,81 @@ python/PiFinder/ui/menu_structure.py   [완료]
 - 좌표 usable 판단은 `usable_for_goto`에만 의존하고, 트래킹 가이드가 독자적으로
   solve/IMU를 판단하지 않는다.
 - 복구 중 트래킹 가이드를 Off하면 즉시 모션이 멈춘다.
+
+## 트래킹 가이드 보강: 수동 재타겟 (Manual Re-target)
+
+추가 기준일: 2026-07-15.
+
+### 목적
+
+타겟 도달 후 트래킹 중, 사용자가 **마운트 수동이동 명령**(키패드/UI hold-to-move
+등)으로 스코프를 새 위치로 옮기고 손을 떼면, 원래 타겟으로 되돌리는 대신 **멈춘
+위치(현재 좌표)를 새 타겟으로 삼아** 그 자리에서 추적을 이어간다. "밀어서 옮긴 곳을
+그대로 잡아주는" 동작이다.
+
+기존 외란 복구(disturbance recovery)와는 방향이 반대다:
+
+- **물리적 손밀기(외란)**: 기존대로 원래 타겟으로 복귀(pulse guide 또는 sync + GoTo).
+- **마운트 수동이동 명령**: 멈춘 위치를 새 타겟으로 채택(재타겟).
+
+두 경우는 신호로 구분된다. 마운트 수동이동은 mount-control이
+`manual_motion_direction`(state=`manual_motion`)로 보고하므로, 트래킹 가이드는 그
+동안을 `manual_move` 상태로 표시하고(보정 중단), 이는 IMU/좌표 변화로만 잡히는
+`disturbed`(물리적 손밀기)와 구분된다.
+
+### 동작
+
+트래킹 가이드 On, 타겟 보유, `indi_tracking_guide_manual_retarget_enabled` On일 때:
+
+1. 마운트가 수동이동을 보고하는 동안 `manual_move` 상태로 모든 보정을 중단한다
+   (기존 mount-motion pause를 수동이동 여부로 세분화).
+2. 수동이동이 끝나면(마운트가 더 이상 모션을 보고하지 않음) 좌표가
+   `settle_seconds` 동안 정착할 때까지 기다린다. 스코프가 멈춘 직후의 흔들림에
+   재타겟하지 않기 위함이다.
+3. 정착하면 **현재 좌표를 새 트래킹 타겟으로 설정**하고 `enabled`로 돌아가 그
+   위치를 pulse guide로 유지한다. 마운트로의 복귀 슬루/GoTo는 없다.
+4. 재타겟 후 이전 타겟은 버린다. 이후 GoTo/Stop/새 타겟 설정이 오면 그에 따라 다시
+   타겟이 바뀐다.
+
+게이트가 Off면 수동이동도 기존 외란 복구 경로로 처리되어 원래 타겟으로 복귀한다.
+
+```mermaid
+flowchart TD
+    A[트래킹 가이드 On, target 보유] --> B{마운트 수동이동 보고?}
+    B -->|no| I[기존 외란/정착/복구 경로]
+    B -->|yes| C[state=manual_move: 보정 중단]
+    C --> D{수동이동 종료 + settle_seconds 정착?}
+    D -->|no| C
+    D -->|yes| E{manual_retarget_enabled?}
+    E -->|yes| F[현재 좌표를 새 타겟으로 설정]
+    F --> G[state=enabled: 새 타겟 pulse guide 유지]
+    E -->|no| H[기존 외란 복구로 원래 타겟 복귀]
+```
+
+### On/Off 게이트
+
+- `indi_tracking_guide_manual_retarget_enabled` On(기본) → 수동이동 종료·정착 후
+  현재 좌표를 새 타겟으로 채택.
+- Off → 수동이동도 물리적 외란처럼 취급해 원래 타겟으로 복귀(기존 disturbance
+  recovery).
+- 재타겟은 마운트를 슬루하지 않는다(현재 위치를 sync만 하고 그 자리를 pulse guide로
+  유지). Stop/Abort는 이 상태에서도 최우선.
+
+### 신규 상태 필드
+
+```text
+tracking_guide_state              manual_move 값 추가
+tracking_guide_manual_retarget    (신규) 마지막 재타겟 발생 여부/시각 표시용
+```
+
+### 체크리스트
+
+- 마운트 수동이동 중에는 `tracking_guide_state = manual_move`로 보정을 보내지 않는다.
+- 수동이동 종료 후 `settle_seconds` 정착 전에는 재타겟하지 않는다.
+- 재타겟은 게이트 On일 때만; 마운트 슬루/GoTo 없이 현재 좌표를 타겟으로 채택한다.
+- 게이트 Off면 수동이동도 기존 외란 복구로 원래 타겟에 복귀한다.
+- 물리적 손밀기(`disturbed`)는 재타겟 대상이 아니며 기존 복구 경로를 유지한다.
+- 재타겟 이후 tracking guide target이 새 좌표로 갱신된다.
 
 ## 기존 설정과의 관계
 
@@ -849,49 +900,55 @@ indi_goto_refine_accuracy_arcmin
 - Stop/Abort가 어느 phase에서도 `idle/stopped`로 전환되는가.
 - 아직 의도하지 않은 manual movement가 발생하지 않는가.
 
-### Stage 6: PiFinder manual approach
+### Stage 6: PiFinder sync + GoTo 반복 접근
 
 목표:
 
-- target과의 거리별로 manual movement 방향과 속도를 선택한다.
-- lease/keepalive/stop을 명확히 관리한다.
+- 시작 sync 후 target으로 INDI GoTo하고, 완료 후 오차가 근처 도달 범위(기본 1도)
+  이상이면 sync + GoTo를 제한 횟수만큼 반복한다.
+- 반복 상한과 stop을 명확히 관리한다.
 
 체크리스트:
 
-- 큰 오차에서 고속 이동, 작은 오차에서 저속 이동으로 전환되는가.
-- 한 번에 너무 긴 lease를 걸지 않는가.
-- 좌표가 갱신되지 않으면 자동으로 stop하고 error 상태가 되는가.
-- 1도 근처 범위에 들어오면 manual movement가 멈추는가.
-- 사용자가 Stop을 누르면 즉시 `stop_movement`가 mountcontrol로 전달되는가.
+- 시작 시 현재 PiFinder 좌표로 mount sync가 한 번 수행되는가.
+- 초기 GoTo가 기존 `goto_target()` primitive를 사용하는가.
+- GoTo 완료 후 오차가 1도 이상이면 sync + GoTo가 다시 수행되는가.
+- sync + GoTo 반복 횟수가 `indi_pifinder_goto_max_gotos`(기본 10)로 제한되는가.
+- 오차가 줄지 않으면(개선 없음 가드) 상한 도달 전이라도 error 상태로 멈추는가.
+- 오차가 1도 미만이 되면 반복을 멈추고 pulse guide 단계로 넘어가는가.
+- 사용자가 Stop을 누르면 즉시 mount stop/abort가 mountcontrol로 전달되는가.
 
-### Stage 7: coarse sync와 final INDI GoTo
+### Stage 7: pulse guide 미세 정렬
 
 목표:
 
-- 근처 도달 후 PiFinder 현재 좌표로 mount sync/alignment를 수행한다.
-- 최종 target으로 기존 INDI GoTo를 실행한다.
+- 오차가 1도 미만이 된 뒤, pulse guide로 목표 정확도(0.1도 = 6분각) 미만까지
+  미세 정렬한다.
+- pulse guide 보정은 추적 가이드와 같은 보정 로직을 재사용한다.
 
 체크리스트:
 
-- sync 전/후 mount coordinate sync 상태가 status에 기록되는가.
-- final GoTo는 기존 `goto_target()` primitive를 사용하므로 기존 안정성을 유지하는가.
-- OnStepX의 근처 이동 후 미세조정 구간을 고려해 완료 판정에 settle time을 두는가.
-- GoTo 중 Tracking Guide가 끼어들지 않는가.
+- 오차 < 1도에서 마운트 슬루(GoTo) 대신 pulse guide로 전환되는가.
+- pulse guide 보정 방향/duration이 오차 방향과 크기에 맞게 계산되는가.
+- 목표 정확도(0.1도) 미만이 되면 반복을 멈추는가.
+- pulse guide 실패 시 fallback 여부가 status에 표시되는가.
+- 미세 정렬 중 GoTo가 다시 끼어들지 않는가(1도 이내에서는 슬루 없음).
 
-### Stage 8: corrective GoTo와 final sync
+### Stage 8: final sync와 완료
 
 목표:
 
-- final GoTo 후 목표 오차를 확인한다.
-- 오차가 크면 보정 GoTo를 제한 횟수만 반복한다.
-- 목표 범위 안이면 최종 target sync/alignment를 수행한다.
+- 오차가 목표 정확도(0.1도) 미만이 되면 최종 target 좌표로 mount sync/alignment를
+  한 번 수행하고 `complete`로 넘어간다.
+- 각 GoTo 시작 시 per-GoTo 진행 플래그를 리셋해 최종 sync가 no-op이 되지 않게 한다.
 
 체크리스트:
 
-- correction 반복 횟수 상한이 있는가.
-- 오차가 줄지 않으면 실패 상태로 멈추는가.
-- 목표 범위 진입 후 final sync가 한 번만 수행되는가.
+- 목표 정확도 진입 후 final sync가 한 번만 수행되는가.
+- 각 GoTo 시작 시 `final_sync_sent` 등 진행 플래그가 리셋되어 상태기계가 `complete`에
+  도달하는가.
 - final sync 이후 tracking guide target이 최신 target으로 설정되는가.
+- 전체 상태기계가 `complete`로 안정적으로 종료되는가.
 
 ### Stage 9: Tracking Guide
 
