@@ -165,10 +165,19 @@ flowchart TD
     J --> K[status: source online/cache,<br/>message count, cache age]
 ```
 
-- Fetch URL: `offline-live1.services.u-blox.com/GetOfflineData.ashx`
-  (`token`, `gnss=gps,glo,gal,bds`, `period=4` weeks, `resolution=1` day).
-  The token is a free u-blox Thingstream registration, entered in the Web
-  settings.
+- The token is an API key string for u-blox's assistance-data servers,
+  issued through a Thingstream (u-blox service platform) account and
+  entered in the Web settings.
+- **Service transition note (as of 2026-07)**: classic AssistNow
+  Online/Offline (`offline-live1.services.u-blox.com/GetOfflineData.ashx`
+  `?token=...`) entered EOM/EOS on 2026-05-31 and **new classic tokens are
+  no longer issued** (existing developer tokens keep working until
+  mid-2028). The replacement, **AssistNow Predictive Orbits**, is **free**
+  for M9/M10/F9/F10 receivers and delivers the data as the **same
+  UBX-MGA-ANO messages**, so the injection/cache/filter logic in this
+  document stays valid — only the acquisition path changes (Thingstream
+  device-registration based auth). Pin down the current endpoint/auth when
+  Stage 4 starts.
 - Never inject the whole multi-week file (hundreds of KB). **Filter to
   today ±1 day** (each ANO message carries a date field).
 - A failed fetch never deletes the existing cache; only a validated new
@@ -349,11 +358,14 @@ already yields the cold → warm improvement.
 
 ## Open questions (to settle before implementing)
 
-1. ANO gnss combination — match the receiver defaults (GPS/GLO/GAL/BDS)
+1. Settle the ② data source — classic AssistNow Offline (for users who
+   already hold a token) vs the new Predictive Orbits (Thingstream device
+   registration). Both output MGA-ANO, so the injection logic is shared.
+2. ANO gnss combination — match the receiver defaults (GPS/GLO/GAL/BDS)
    but decide on GAL/BDS inclusion after looking at file size and
    injection time.
-2. Where the shutdown DBD backup hook lives — PiFinder's normal shutdown
+3. Where the shutdown DBD backup hook lives — PiFinder's normal shutdown
    path is short; a systemd `ExecStop` script may be more reliable.
-3. gpsd 3.22 ubxtool compatibility with the M10 (PROTVER 34) — the raw
+4. gpsd 3.22 ubxtool compatibility with the M10 (PROTVER 34) — the raw
    `-c` send should be fine, but verifying this on hardware is the first
    task of Stage 1.
