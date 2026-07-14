@@ -3,6 +3,7 @@
     "keypad_brightness": "0",
     "camera_exp": "auto",
     "camera_gain": 20,
+    "display_spi_speed_mhz": 0,
     "livecam_input_frame_source": "original_raw",
     "livecam_output_source": "latest_selected_raw",
     "livecam_stack_enabled": false,

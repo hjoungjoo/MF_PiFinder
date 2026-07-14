@@ -436,7 +436,13 @@ def main(
     # Start log consolidation process first.
     log_helper.start()
 
-    display_device = get_display(display_hardware)
+    cfg = config.Config()
+    # Optional SPI clock override (MHz). Lower values reduce display-bus EMI
+    # into the GPS band; 0 keeps the per-driver default.
+    display_spi_mhz = int(cfg.get_option("display_spi_speed_mhz", 0) or 0)
+    display_device = get_display(
+        display_hardware, spi_speed_hz=display_spi_mhz * 1_000_000
+    )
     init_keypad_pwm()
     setup_dirs()
 
@@ -461,7 +467,6 @@ def main(
         "mountcontrol": mountcontrol_queue,
         "goto_guide": goto_guide_queue,
     }
-    cfg = config.Config()
     gps_time_monitor = gps_time_sync.GpsTimeSyncMonitor.from_config(cfg)
     gps_time_monitor.write_startup_status()
 
@@ -902,9 +907,7 @@ def main(
                     location.error_in_m = 5
                     location.lock = True
                     location.lock_type = 3
-                    location.last_gps_lock = (
-                        timez.local_now().time().isoformat()[:8]
-                    )
+                    location.last_gps_lock = timez.local_now().time().isoformat()[:8]
                     console.write(
                         f"GPS: Location {location.lat} {location.lon} {location.altitude}"
                     )
@@ -1350,7 +1353,9 @@ if __name__ == "__main__":
             )  # Default to 9600 if not set
             gps_port = cfg.get_option("gps_port", sys_utils.DEFAULT_GPSD_DEVICE)
             if sys_utils.check_and_sync_gpsd_config(baud_rate, gps_port):
-                logger.info(f"GPSD configuration updated to {gps_port} @ {baud_rate} baud")
+                logger.info(
+                    f"GPSD configuration updated to {gps_port} @ {baud_rate} baud"
+                )
         except Exception as e:
             logger.warning(f"Could not check/sync GPSD configuration: {e}")
 

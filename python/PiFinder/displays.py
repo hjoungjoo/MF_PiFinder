@@ -192,9 +192,9 @@ class Layout176:
 
 
 class DisplaySSD1333(Layout176, DisplayBase):
-    def __init__(self):
+    def __init__(self, bus_speed_hz=40000000):
         # init display  (SPI hardware)
-        serial = display_spi(bus_speed_hz=40000000)
+        serial = display_spi(bus_speed_hz=bus_speed_hz)
         device_serial = ssd1333(serial, width=176, height=176, rotate=0, bgr=True)
         self.device = device_serial
         super().__init__()
@@ -244,9 +244,9 @@ class DisplayPygame_176(Layout176, DisplayBase):
 class DisplayST7789_128(DisplayBase):
     resolution = (128, 128)
 
-    def __init__(self):
+    def __init__(self, bus_speed_hz=52000000):
         # init display  (SPI hardware)
-        serial = display_spi(bus_speed_hz=52000000)
+        serial = display_spi(bus_speed_hz=bus_speed_hz)
         device_serial = st7789(serial, bgr=True)
 
         device_serial.capabilities(
@@ -257,9 +257,9 @@ class DisplayST7789_128(DisplayBase):
 
 
 class DisplayST7789(Layout320, DisplayBase):
-    def __init__(self):
+    def __init__(self, bus_speed_hz=52000000):
         # init display  (SPI hardware)
-        serial = display_spi(bus_speed_hz=52000000)
+        serial = display_spi(bus_speed_hz=bus_speed_hz)
         device_serial = st7789(serial, bgr=True)
 
         device_serial.capabilities(
@@ -317,7 +317,24 @@ class DisplayHeadless320(Layout320, DisplayHeadless):
     """
 
 
-def get_display(display_hardware: str) -> DisplayBase:
+def get_display(display_hardware: str, spi_speed_hz: int = 0) -> DisplayBase:
+    """Build the display for ``display_hardware``.
+
+    ``spi_speed_hz`` overrides the per-driver default SPI clock when > 0.
+    Lowering it reduces EMI from the display bus into the GPS L1 band; the
+    floor is set by the UI update rate: a full 128x128 16-bit frame is
+    ~262 kbit, so the 30 fps main loop needs ~8 MHz worst-case. Emulator and
+    headless targets ignore the override (no SPI bus).
+    """
+    if spi_speed_hz:
+        # Below ~8 MHz a full-frame redraw no longer fits one 30 fps frame
+        # period; above 52 MHz exceeds every supported panel's rating.
+        # Avoid exactly 8 MHz when tuning for GPS: its 197th harmonic
+        # (1576 MHz) lands on GPS L1 (1575.42 MHz). 16 MHz keeps its
+        # harmonics >7 MHz away from L1 while still fitting a full frame
+        # in half a frame period.
+        spi_speed_hz = max(8_000_000, min(52_000_000, int(spi_speed_hz)))
+
     if display_hardware == "headless":
         return DisplayHeadless()
 
@@ -337,14 +354,14 @@ def get_display(display_hardware: str) -> DisplayBase:
         return DisplayPygame_320()
 
     if display_hardware == "ssd1351":
-        return DisplaySSD1351()
+        return DisplaySSD1351(bus_speed_hz=spi_speed_hz or 32000000)
 
     if display_hardware == "ssd1333":
-        return DisplaySSD1333()
+        return DisplaySSD1333(bus_speed_hz=spi_speed_hz or 40000000)
 
     if display_hardware == "st7789":
-        return DisplayST7789()
+        return DisplayST7789(bus_speed_hz=spi_speed_hz or 52000000)
 
     else:
         print("Hardware platform not recognized")
-        return DisplaySSD1351()
+        return DisplaySSD1351(bus_speed_hz=spi_speed_hz or 32000000)
