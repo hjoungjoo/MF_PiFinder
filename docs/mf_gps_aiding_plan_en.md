@@ -32,8 +32,8 @@ any implementation.
   possible) **when the user requests an injection** (Inject Now on
   LCD/Web). **There is no automatic injection at boot** — the user always
   decides when the receiver is written to.
-- Must work at observing sites with no internet. Online access is
-  "use it when available".
+- **Fully offline operation.** No internet, no external service signup,
+  no account of any kind.
 - The user can enable/disable each method and trigger inject/save manually.
 - Do not disturb the existing GPS flow (gpsd, gps_gpsd/gps_ubx, time sync
   helper).
@@ -53,39 +53,50 @@ any implementation.
   raw watch (`?WATCH raw:2`). No new serial access is created — gpsd keeps
   owning the port.
 - The ROM firmware (SPG 5.10) may not support `UBX-UPD-SOS` (flash
-  save/restore), so it is out of scope; host-side storage (③ MGA-DBD) is
+  save/restore), so it is out of scope; host-side storage (② MGA-DBD) is
   the single backup mechanism.
 
-## The three methods
+## The two methods
 
-| # | Method | Data | Effect | Internet | Default |
-| --- | --- | --- | --- | --- | --- |
-| ① | MGA-INI time+position | Pi clock (chrony/RTC), PiFinder location | cold → warm; shrinks the search space | not needed | On |
-| ② | AssistNow Offline (MGA-ANO) | u-blox orbit predictions (valid for weeks) | warm → near hot for days/weeks | only to refresh | Off (token needed) |
-| ③ | MGA-DBD backup/restore | nav DB the receiver actually collected (ephemeris/almanac) | near hot if recent, warm later | not needed | On |
+| # | Method | Data | Effect | Default |
+| --- | --- | --- | --- | --- |
+| ① | MGA-INI time+position | Pi clock (chrony/RTC), PiFinder location | cold → warm; shrinks the search space | On |
+| ② | MGA-DBD backup/restore | nav DB the receiver actually collected (ephemeris/almanac) | near hot if recent, warm later | On |
 
-- **All three methods are user-selectable.** ① is no exception — it has
-  its own toggle (`gps_aiding_ini_enabled`). No method injects anything
-  once the user turns it off.
+- **Both methods are user-selectable.** ① is no exception — it has its
+  own toggle (`gps_aiding_ini_enabled`). No method injects anything once
+  the user turns it off.
 - When ① is enabled it is always injected first (the receiver needs time
   to validate the data that follows).
-- ② fetches fresh data at injection time when the internet is reachable
-  (then stores + injects it); otherwise it injects the stored cache if that
-  is still valid.
-- ③ is stored and managed together with location metadata so the system
+- ② is stored and managed together with location metadata so the system
   can react immediately when the observing site changes (see "Reacting to
   location changes").
-- The methods are not exclusive. The receiver itself prefers the better
-  data among what is injected (measured ephemeris > predictions).
+- Neither method needs the internet.
+
+### Excluded method: AssistNow (MGA-ANO)
+
+u-blox AssistNow orbit predictions (legacy Online/Offline, successor
+Predictive Orbits) could use the same injection path, but they are
+**excluded from this plan because they require an external service
+signup**:
+
+- Legacy Online/Offline hit EOM/EOS on 2026-05-31; new classic tokens are
+  no longer issued.
+- The successor, Predictive Orbits, is free for the M10 but requires a
+  Thingstream account plus ZTP device registration (a chipcode credential
+  derived from the receiver's `UBX-SEC-UNIQID`).
+
+PiFinder's principle here is offline, account-free operation, so this is
+not adopted. The research notes on the data format (UBX-MGA-ANO) and the
+access procedure remain in git history (versions up to `fb86262`) for a
+future revisit if ever needed.
 
 ## Architecture
 
 ```text
 New module: python/PiFinder/gps_aiding.py
 Data:       ~/PiFinder_data/gps_aiding/
-              ano_cache.ubx          (② cache)
-              ano_cache_meta.json    (fetch time, gnss, validity)
-              dbd/  snapshot_*.ubx   (③ snapshots, rotated)
+              dbd/  snapshot_*.ubx   (② snapshots, rotated)
               dbd/  index.json       (snapshot meta: time, location, source)
 Status:     ~/PiFinder_data/gps_aiding_status.json
 ```
@@ -95,7 +106,7 @@ Execution:
 - **All injection is user-requested**: server.py routes and LCD callbacks
   call the module's inject functions directly. No new queue, and no
   boot-time injection path exists.
-- **The background worker only does ③ periodic DBD backups**: the GPS
+- **The background worker only does ② periodic DBD backups**: the GPS
   process starts a `gps_aiding.start_worker()` daemon thread, but this
   worker never injects aiding data — it only **reads and stores** DBD
   periodically while the fix is locked. It acts only after the gpsd
@@ -129,72 +140,15 @@ flowchart TD
     H --> J{dbd_enabled and snapshot exists?}
     I --> J
     J -->|yes| K[select snapshot and restore DBD]
-    J -->|no| L{ano_enabled?}
-    K --> M{DBD age < 2h?}
-    M -->|yes| N[skip ANO - measured ephemeris wins]
-    M -->|no| L
-    L -->|yes| O[obtain and inject ANO - see flow below]
-    L -->|no| P[done]
-    N --> P
-    O --> P
+    J -->|no| P[done]
+    K --> P
     P --> Q[write gps_aiding_status.json<br/>per-method result/time/ACK]
 ```
 
-Injection order principle: **time → position → DBD → ANO**. The receiver
-needs time first to judge the validity of the ephemeris/prediction data
-that follows.
+Injection order principle: **time → position → DBD**. The receiver needs
+time first to judge the validity of the ephemeris data that follows.
 
-## ② AssistNow Offline data management flow
-
-```mermaid
-flowchart TD
-    A[ANO inject request<br/>Inject Now or Refresh ANO] --> B{token configured?}
-    B -->|no| Z[skip - status token_missing]
-    B -->|yes| C{internet check<br/>HEAD to u-blox server, short timeout}
-    C -->|online| D{cache older than refresh period?<br/>default 3 days}
-    D -->|yes| E[fetch GetOfflineData.ashx<br/>gnss/period parameters]
-    D -->|no| G[use existing cache]
-    E -->|success| F[validate then store<br/>ano_cache.ubx + meta]
-    E -->|failure| H{stored cache valid?<br/>age < valid_days}
-    C -->|offline| H
-    F --> I[filter ANO messages for today]
-    G --> I
-    H -->|yes| I
-    H -->|no| Z2[skip - status no_valid_cache]
-    I --> J[inject MGA-ANO sequentially]
-    J --> K[status: source online/cache,<br/>message count, cache age]
-```
-
-- The token is an API key string for u-blox's assistance-data servers,
-  issued through a Thingstream (u-blox service platform) account and
-  entered in the Web settings.
-- **Service transition note (as of 2026-07)**: classic AssistNow
-  Online/Offline (`offline-live1.services.u-blox.com/GetOfflineData.ashx`
-  `?token=...`) entered EOM/EOS on 2026-05-31 and **new classic tokens are
-  no longer issued** (existing developer tokens keep working until
-  mid-2028). The replacement, **AssistNow Predictive Orbits**, is **free**
-  for M9/M10/F9/F10 receivers and delivers the data as the **same
-  UBX-MGA-ANO messages**, so the injection/cache/filter logic in this
-  document stays valid — only the acquisition path changes.
-  Predictive Orbits access procedure (as researched 2026-07):
-  1) free Thingstream account signup, 2) create a ZTP Device Profile in
-  the portal → obtain the **ZTP token** (registration-only), 3) the host
-  reads `UBX-SEC-UNIQID` (0x27 0x03) from the receiver and posts that raw
-  message with the ZTP token to the registration API → receives the
-  per-device **chipcode** credential (once per device, internet needed),
-  4) afterwards MGA-ANO data downloads from
-  `assistnow.services.u-blox.com` using the chipcode. The PiFinder
-  implementation needs a Web field for the ZTP token plus a one-time
-  "Register device" action, with the chipcode stored in the gps_aiding
-  data directory. u-blox's AssistNow C Client Toolkit is the reference
-  implementation. Re-verify the current endpoint/auth when Stage 4
-  starts.
-- Never inject the whole multi-week file (hundreds of KB). **Filter to
-  today ±1 day** (each ANO message carries a date field).
-- A failed fetch never deletes the existing cache; only a validated new
-  file replaces it.
-
-## ③ MGA-DBD save/restore flows
+## ② MGA-DBD save/restore flows
 
 Save (backup):
 
@@ -265,7 +219,6 @@ LCD:
 Settings > Advanced > GPS Settings > GPS Aiding
   Aiding        Off / On          (gps_aiding_enabled)
   Use INI       Off / On          (gps_aiding_ini_enabled, ① time+position)
-  Use ANO       Off / On          (gps_aiding_ano_enabled)
   Use DBD       Off / On          (gps_aiding_dbd_enabled)
   Inject Now    [action]          (re-inject all enabled methods)
   Save DBD      [action]          (back up DBD now)
@@ -273,11 +226,10 @@ Settings > Advanced > GPS Settings > GPS Aiding
 
 Web (a GPS card or Tools section):
 
-- Per-method toggles (including separate ① time/position toggles), ANO
-  token input field
-- Status: last inject time/result per method, ANO cache age/source, DBD
-  snapshot list (time, location, age)
-- Buttons: `Inject Now`, `Save DBD Now`, `Refresh ANO Now`
+- Per-method toggles (including separate ① time/position toggles)
+- Status: last inject time/result per method, DBD snapshot list (time,
+  location, age)
+- Buttons: `Inject Now`, `Save DBD Now`
 - Detailed knobs (intervals, thresholds) are Web-only
 
 ## Config keys (default_config.json)
@@ -287,11 +239,7 @@ gps_aiding_enabled            true    whole feature
 gps_aiding_ini_enabled        true    ① (user-selectable toggle, LCD/Web)
 gps_aiding_time               true    ① detail: time injection (Web only)
 gps_aiding_position           true    ① detail: position injection (Web only)
-gps_aiding_ano_enabled        false   ② (needs a token, so default Off)
-gps_aiding_ano_token          ""      u-blox AssistNow token
-gps_aiding_ano_refresh_days   3       re-fetch period while online
-gps_aiding_ano_valid_days     28      cache validity (matches fetch period)
-gps_aiding_dbd_enabled        true    ③
+gps_aiding_dbd_enabled        true    ②
 gps_aiding_dbd_interval_min   15      periodic backup interval
 gps_aiding_dbd_max_snapshots  5       rotation depth
 gps_aiding_dbd_match_km       100     hot-start-grade distance threshold
@@ -303,9 +251,9 @@ LiveCam processing case — aiding does not consume resources continuously).
 ## Safety rules
 
 - **Never block the UI or GPS reception**: injection runs only on user
-  request, every step has a timeout (sends a few seconds, ANO fetch
-  ~10 s), and failures log + record status and move on. The LCD/Web stay
-  responsive during an injection (background execution + status display).
+  request, every step has a timeout (sends a few seconds), and failures
+  log + record status and move on. The LCD/Web stay responsive during an
+  injection (background execution + status display).
 - **Never inject false data**:
   - Time: only when chrony is synced or the time sync helper trusts its
     source. Set `tAccS/Ns` honestly (hundreds of ms to seconds for NTP,
@@ -315,8 +263,6 @@ LiveCam processing case — aiding does not consume resources continuously).
     wrong injected position is worse than none.
 - All receiver writes serialize through flock across processes. If gpsd
   runs with `-b`, disable with a status notice.
-- The ANO cache is replaced only after the download validates (UBX frames
-  parse, minimum size).
 - Missing/broken ubxtool (package not installed) disables the feature with
   a status notice.
 
@@ -326,7 +272,6 @@ LiveCam processing case — aiding does not consume resources continuously).
 Send: ubxtool -P 34.10 -c <class,id,payload>
   MGA-INI-TIME_UTC   0x13 0x40 (type=0x10)  time + tAcc
   MGA-INI-POS_LLH    0x13 0x40 (type=0x01)  lat/lon/alt + posAcc
-  MGA-ANO            0x13 0x20              orbit predictions (from cache)
   MGA-DBD            0x13 0x80              poll (empty) / restore (replay dump)
 Receive: UBXParser raw watch
   MGA-ACK            0x13 0x60              only when ACKAIDING enabled
@@ -343,11 +288,9 @@ Stage 1  gps_aiding.py skeleton + ① time/position + Inject Now entry
          point (Web) + status file (u-blox detection, flock, ubxtool
          wrapper, gating rules)
 Stage 2  config keys + LCD menu + Web card/buttons (Inject Now)
-Stage 3  ③ DBD: UBXParser MGA passthrough, backup (periodic/manual/
+Stage 3  ② DBD: UBXParser MGA passthrough, backup (periodic/manual/
          shutdown), restore, index.json, location tagging/selection
-Stage 4  ② ANO: fetch/validate/cache, date-filtered injection, token UI,
-         Refresh Now
-Stage 5  location-change hook, add python3-gps to pifinder_setup.sh,
+Stage 4  location-change hook, add python3-gps to pifinder_setup.sh,
          docs, field measurements
 ```
 
@@ -359,7 +302,7 @@ already yields the cold → warm improvement.
 - Indoors: send success/timeout, status file fields, flock contention,
   disabled behavior under gpsd `-b` / missing ubxtool.
 - Outdoors A/B (reusing scripts/gps_acquisition_diag.py):
-  - TTFF of cold (no injection) vs ① vs ①+③ vs ①+②+③
+  - TTFF of cold (no injection) vs ① vs ①+②
     (each case measured from the user pressing Inject Now after boot)
   - hours powered off, then reboot, then Inject Now
   - moving between observing sites (location-change reaction)
@@ -369,14 +312,8 @@ already yields the cold → warm improvement.
 
 ## Open questions (to settle before implementing)
 
-1. Settle the ② data source — classic AssistNow Offline (for users who
-   already hold a token) vs the new Predictive Orbits (Thingstream device
-   registration). Both output MGA-ANO, so the injection logic is shared.
-2. ANO gnss combination — match the receiver defaults (GPS/GLO/GAL/BDS)
-   but decide on GAL/BDS inclusion after looking at file size and
-   injection time.
-3. Where the shutdown DBD backup hook lives — PiFinder's normal shutdown
+1. Where the shutdown DBD backup hook lives — PiFinder's normal shutdown
    path is short; a systemd `ExecStop` script may be more reliable.
-4. gpsd 3.22 ubxtool compatibility with the M10 (PROTVER 34) — the raw
+2. gpsd 3.22 ubxtool compatibility with the M10 (PROTVER 34) — the raw
    `-c` send should be fine, but verifying this on hardware is the first
    task of Stage 1.
