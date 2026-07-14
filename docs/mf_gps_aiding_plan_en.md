@@ -57,11 +57,15 @@ here are to be agreed on before any implementation.
 
 | # | Method | Data | Effect | Internet | Default |
 | --- | --- | --- | --- | --- | --- |
-| ① | MGA-INI time+position | Pi clock (chrony/RTC), PiFinder location | cold → warm; shrinks the search space | not needed | **On (baseline)** |
+| ① | MGA-INI time+position | Pi clock (chrony/RTC), PiFinder location | cold → warm; shrinks the search space | not needed | On |
 | ② | AssistNow Offline (MGA-ANO) | u-blox orbit predictions (valid for weeks) | warm → near hot for days/weeks | only to refresh | Off (token needed) |
 | ③ | MGA-DBD backup/restore | nav DB the receiver actually collected (ephemeris/almanac) | near hot if recent, warm later | not needed | On |
 
-- ① is the baseline and is always injected first.
+- **All three methods are user-selectable.** ① is no exception — it has
+  its own toggle (`gps_aiding_ini_enabled`). No method injects anything
+  once the user turns it off.
+- When ① is enabled it is always injected first (the receiver needs time
+  to validate the data that follows).
 - ② fetches fresh data at injection time when the internet is reachable
   (then stores + injects it); otherwise it injects the stored cache if that
   is still valid.
@@ -105,7 +109,9 @@ flowchart TD
     B -->|no| Z1[skip aiding - reason into status]
     B -->|yes| C{gps_aiding_enabled?}
     C -->|no| Z1
-    C -->|yes| D{time trustworthy?<br/>chrony synced or RTC valid}
+    C -->|yes| C2{ini_enabled?}
+    C2 -->|no| J
+    C2 -->|yes| D{time trustworthy?<br/>chrony synced or RTC valid}
     D -->|yes| E[inject MGA-INI-TIME_UTC<br/>honest tAcc]
     D -->|no| F[skip time]
     E --> G{position trustworthy?<br/>locked location or recent fix}
@@ -209,7 +215,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[user changes location<br/>locations pick / GPS lock / Web entry] --> B{aiding enabled and u-blox?}
+    A[user changes location<br/>locations pick / GPS lock / Web entry] --> B{aiding + ini + position<br/>all enabled and u-blox?}
     B -->|no| Z[do nothing]
     B -->|yes| C[re-inject MGA-INI-POS_LLH immediately<br/>new position + posAcc]
     C --> D[status: last_pos_inject]
@@ -227,9 +233,10 @@ LCD:
 ```text
 Settings > Advanced > GPS Settings > GPS Aiding
   Aiding        Off / On          (gps_aiding_enabled)
+  Use INI       Off / On          (gps_aiding_ini_enabled, ① time+position)
   Use ANO       Off / On          (gps_aiding_ano_enabled)
   Use DBD       Off / On          (gps_aiding_dbd_enabled)
-  Inject Now    [action]          (re-inject ① plus enabled ②③)
+  Inject Now    [action]          (re-inject all enabled methods)
   Save DBD      [action]          (back up DBD now)
 ```
 
@@ -246,8 +253,9 @@ Web (a GPS card or Tools section):
 
 ```text
 gps_aiding_enabled            true    whole feature
-gps_aiding_time               true    ① time injection
-gps_aiding_position           true    ① position injection
+gps_aiding_ini_enabled        true    ① (user-selectable toggle, LCD/Web)
+gps_aiding_time               true    ① detail: time injection (Web only)
+gps_aiding_position           true    ① detail: position injection (Web only)
 gps_aiding_ano_enabled        false   ② (needs a token, so default Off)
 gps_aiding_ano_token          ""      u-blox AssistNow token
 gps_aiding_ano_refresh_days   3       re-fetch period while online

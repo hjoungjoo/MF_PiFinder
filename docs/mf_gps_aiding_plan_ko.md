@@ -51,11 +51,14 @@
 
 | # | 방식 | 데이터 | 효과 | 인터넷 | 기본값 |
 | --- | --- | --- | --- | --- | --- |
-| ① | MGA-INI 시각+위치 | Pi 시계(chrony/RTC), PiFinder 위치 | 콜드 → 웜. 탐색 공간 대폭 축소 | 불필요 | **On (기본)** |
+| ① | MGA-INI 시각+위치 | Pi 시계(chrony/RTC), PiFinder 위치 | 콜드 → 웜. 탐색 공간 대폭 축소 | 불필요 | On |
 | ② | AssistNow Offline (MGA-ANO) | u-blox 서버의 궤도 예측(수 주 유효) | 웜 → 핫 근접. 며칠~몇 주 커버 | 갱신 시에만 | Off (토큰 필요) |
 | ③ | MGA-DBD 백업/복원 | 수신기가 실제 수집한 nav DB(궤도력/알마낙) | 최근 사용 시 핫 근접, 이후 웜 | 불필요 | On |
 
-- ①이 기본 축이다. 항상 먼저 주입한다.
+- **세 방식 모두 사용자 선택 항목이다.** ①도 예외 없이 토글로 켜고 끈다
+  (`gps_aiding_ini_enabled`). 어떤 방식도 사용자가 끄면 주입하지 않는다.
+- ①이 활성화되어 있으면 항상 가장 먼저 주입한다 (시각이 있어야 뒤의
+  데이터를 수신기가 검증할 수 있으므로).
 - ②는 주입 시점에 인터넷이 되면 새로 받아서 저장+주입하고, 안 되면
   저장된 캐시가 유효할 때 캐시를 주입한다.
 - ③은 위치 정보와 함께 저장·관리한다. 장소가 바뀌면 즉시 반응한다
@@ -97,7 +100,9 @@ flowchart TD
     B -->|no| Z1[aiding skip - status에 사유 기록]
     B -->|yes| C{gps_aiding_enabled?}
     C -->|no| Z1
-    C -->|yes| D{시각 신뢰 가능?<br/>chrony synced 또는 RTC valid}
+    C -->|yes| C2{ini_enabled?}
+    C2 -->|no| J
+    C2 -->|yes| D{시각 신뢰 가능?<br/>chrony synced 또는 RTC valid}
     D -->|yes| E[MGA-INI-TIME_UTC 주입<br/>tAcc 정직하게 설정]
     D -->|no| F[시각 주입 생략]
     E --> G{위치 신뢰 가능?<br/>lock된 위치 또는 최근 fix}
@@ -197,7 +202,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[사용자가 위치 변경<br/>locations 선택/GPS lock/Web 입력] --> B{aiding enabled and u-blox?}
+    A[사용자가 위치 변경<br/>locations 선택/GPS lock/Web 입력] --> B{aiding + ini + position<br/>모두 enabled and u-blox?}
     B -->|no| Z[아무것도 안 함]
     B -->|yes| C[MGA-INI-POS_LLH 즉시 재주입<br/>새 위치 + posAcc]
     C --> D[status 기록: last_pos_inject]
@@ -214,9 +219,10 @@ LCD:
 ```text
 Settings > Advanced > GPS Settings > GPS Aiding
   Aiding        Off / On          (gps_aiding_enabled)
+  Use INI       Off / On          (gps_aiding_ini_enabled, ① 시각+위치)
   Use ANO       Off / On          (gps_aiding_ano_enabled)
   Use DBD       Off / On          (gps_aiding_dbd_enabled)
-  Inject Now    [action]          (① + 활성화된 ②③ 전체 재주입)
+  Inject Now    [action]          (활성화된 방식 전체 재주입)
   Save DBD      [action]          (지금 DBD 백업)
 ```
 
@@ -232,8 +238,9 @@ Web (GPS 관련 카드 또는 Tools):
 
 ```text
 gps_aiding_enabled            true    기능 전체
-gps_aiding_time               true    ① 시각 주입
-gps_aiding_position           true    ① 위치 주입
+gps_aiding_ini_enabled        true    ① (사용자 선택 토글, LCD/Web)
+gps_aiding_time               true    ① 세부: 시각 주입 (Web 전용)
+gps_aiding_position           true    ① 세부: 위치 주입 (Web 전용)
 gps_aiding_ano_enabled        false   ② (토큰 필요해서 기본 Off)
 gps_aiding_ano_token          ""      u-blox AssistNow 토큰
 gps_aiding_ano_refresh_days   3       온라인일 때 재fetch 주기
