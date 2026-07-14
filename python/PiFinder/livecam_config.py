@@ -13,6 +13,14 @@ from typing import Any
 
 CONFIG_PREFIX = "livecam_"
 STACK_FRAME_LIMIT_MAX = 500
+
+# ``processing_enabled`` is intentionally session-only: it is never read from or
+# written to the persisted config. The RAW LiveCam pipeline is resource-heavy
+# (it processes every camera frame), so it must always start OFF and only run
+# when the user explicitly turns it on for the current session. Persisting it
+# would silently re-enable the pipeline on every restart. All other LiveCam
+# settings persist normally.
+SESSION_ONLY_KEYS = {"processing_enabled"}
 SOURCE_ORIGINAL = "original_raw"
 SOURCE_CROPPED = "cropped_raw"
 OUTPUT_LATEST = "latest_selected_raw"
@@ -80,7 +88,11 @@ def normalize_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]
 def settings_from_config(cfg) -> dict[str, Any]:
     values = {}
     for key, default in DEFAULT_SETTINGS.items():
-        values[key] = cfg.get_option(f"{CONFIG_PREFIX}{key}", default)
+        if key in SESSION_ONLY_KEYS:
+            # Never read the persisted value; a fresh session always starts off.
+            values[key] = default
+        else:
+            values[key] = cfg.get_option(f"{CONFIG_PREFIX}{key}", default)
     values["display_rotation_degrees"] = display_rotation_degrees(cfg)
     return normalize_settings(values)
 
@@ -94,8 +106,11 @@ def default_settings_for_config(cfg) -> dict[str, Any]:
 def save_settings_to_config(cfg, settings: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_settings(settings)
     for key in DEFAULT_SETTINGS:
-        value = normalized[key]
-        cfg.set_option(f"{CONFIG_PREFIX}{key}", value)
+        if key in SESSION_ONLY_KEYS:
+            # Session-only switch: keep it in the returned/live settings but do
+            # not persist it, so it cannot auto-resume on the next restart.
+            continue
+        cfg.set_option(f"{CONFIG_PREFIX}{key}", normalized[key])
     return normalized
 
 

@@ -166,6 +166,13 @@ def register_api_routes(app, server_instance, require_auth=False):
 
     def _raw_stack_settings() -> dict:
         settings = settings_from_config(config.Config())
+        # processing_enabled is session-only (never persisted). settings_from_config
+        # always returns it off, so carry forward the live value the user toggled
+        # for this session; otherwise a status poll would immediately disable it.
+        if hasattr(server_instance.shared_state, "livecam_settings"):
+            live = server_instance.shared_state.livecam_settings()
+            if live:
+                settings["processing_enabled"] = bool(live.get("processing_enabled"))
         if hasattr(server_instance.shared_state, "set_livecam_settings"):
             server_instance.shared_state.set_livecam_settings(settings)
         return settings

@@ -14,7 +14,13 @@ from PiFinder.raw_live_stack import (
     publish_selected_frame,
 )
 from PiFinder.livecam_config import processing_enabled
-from PiFinder.livecam_config import DEFAULT_SETTINGS, default_settings_for_config
+from PiFinder.livecam_config import (
+    CONFIG_PREFIX,
+    DEFAULT_SETTINGS,
+    default_settings_for_config,
+    save_settings_to_config,
+    settings_from_config,
+)
 from PiFinder.sqm.camera_profiles import CameraProfile
 
 
@@ -90,6 +96,41 @@ def test_default_settings_for_config_restores_livecam_defaults():
     for key, value in DEFAULT_SETTINGS.items():
         assert defaults[key] == value
     assert defaults["display_rotation_degrees"] == 270
+
+
+class WritableConfig:
+    """Config double that records set_option writes."""
+
+    def __init__(self, options=None):
+        self.options = dict(options or {})
+
+    def get_option(self, key, default=None):
+        return self.options.get(key, default)
+
+    def set_option(self, key, value):
+        self.options[key] = value
+
+
+def test_processing_enabled_is_never_read_from_config():
+    # Even if a stale persisted value says on, a fresh session must start off.
+    cfg = WritableConfig({f"{CONFIG_PREFIX}processing_enabled": True})
+
+    settings = settings_from_config(cfg)
+
+    assert settings["processing_enabled"] is False
+
+
+def test_processing_enabled_is_not_persisted():
+    cfg = WritableConfig()
+
+    returned = save_settings_to_config(cfg, {"processing_enabled": True})
+
+    # Returned/live settings keep the toggle for the running session ...
+    assert returned["processing_enabled"] is True
+    # ... but it is never written to the persisted config.
+    assert f"{CONFIG_PREFIX}processing_enabled" not in cfg.options
+    # Other settings still persist normally.
+    assert cfg.options[f"{CONFIG_PREFIX}stack_mode"] == "mean"
 
 
 def test_publish_original_rotates_without_crop():
