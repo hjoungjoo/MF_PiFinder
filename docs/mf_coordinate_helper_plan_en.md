@@ -211,12 +211,16 @@ They are not averaged.
 After PiFinder and the mount are synced/aligned, the service uses:
 
 ```text
-anchor_mount = mount RA/Dec at sync time
-anchor_imu   = IMU fallback RA/Dec at the same time
+anchor_imu    = IMU fallback RA/Dec at sync time (delta reference)
 
-current_imu_delta = current_imu - anchor_imu
-current = anchor_mount + current_imu_delta
+applied_delta = IMU delta accumulated through the rate gate (see below)
+current       = live mount readback + applied_delta
 ```
+
+(Changed 2026-07-16: the base moved from the anchor-time mount snapshot to the
+**live mount readback**. Pulses/slews move the fused coordinate directly through
+the base, no re-anchor is needed, and the disturbance offset can no longer be
+silently erased by a re-anchor.)
 
 Intent:
 
@@ -224,8 +228,9 @@ Intent:
 - The IMU contributes fast local delta only after sync.
 - Absolute mount and IMU coordinates are not blended.
 
-The anchor is reset when no anchor exists, the sync key changes, or mount
-readback moves meaningfully away from the anchor.
+The anchor (and with it the applied disturbance offset) is reset only when no
+anchor exists or the sync key changes — i.e. a sync re-established the mount
+frame. Mount readback movement alone no longer resets it.
 
 ### IMU-delta rate gate (added 2026-07-12)
 
@@ -241,34 +246,64 @@ Fix: `_mount_with_imu_delta` applies a **rate-gated delta** (`_gated_imu_delta`)
 instead of the raw delta.
 
 ```text
-IMU_DELTA_FAST_RATE_DEG_PER_SEC = 0.05
-  Delta increments are applied only when the per-tick IMU motion rate is at
-  least this fast (a real push/bump). 10x margin above the tracking artifact
-  (~0.005 deg/s).
-
-IMU_DELTA_DECAY_TAU_SECONDS = 120.0
-  In slow intervals the applied delta decays toward zero with this time
-  constant; after a bump the offset stays visible much longer than the
-  disturbance-recovery window.
+IMU_DELTA_ENTER_RATE_DEG_PER_SEC = 0.03   (episode entry)
+IMU_DELTA_EXIT_RATE_DEG_PER_SEC  = 0.015  (episode sustain/exit)
 ```
 
-- Bump / manual push (fast) -> `fast_follow`: the offset enters the fused
+**Hysteresis gate (changed 2026-07-16)**: a single threshold (formerly 0.05)
+chopped weak stall-slip events (measured head/tail rates 0.02–0.06 deg/s) into
+fragments, capturing only ~1/3 of the displacement (hardware capture: in a
+0.033→0.06→0.02 event only the 3 ticks above 0.05 accumulated). An
+accumulation episode now starts above the enter rate (0.03 — ~7x the artifact
+floor of 0.004–0.005 measured indoors with no wind, enough margin that outdoor
+wind rumble cannot start an episode) and, once underway, keeps accumulating
+until the rate drops below the exit rate (0.015, ~4x), capturing the slow
+head/tail of a real event. Slips creeping entirely below 0.03 remain invisible
+(rate is the only discriminator; at night the plate solve is the arbiter).
+
+- Bump / manual push / stall slip -> `fast_follow`: the offset enters the fused
   coordinate, so disturbance detection and recovery act on the true error.
-- Tracking artifact / sensor drift (slow) -> `slow_decay`: increments are
-  discarded and the applied delta decays, keeping the fused coordinate anchored
-  to the mount readback (= the target).
-- An anchor reset (mount move / sync) also resets the tracker and applied delta.
+- Tracking artifact / sensor drift (slow) -> `hold`: increments are discarded
+  but the already-applied offset is KEPT. A stopped scope must stay at its
+  disturbed coordinate, not creep back to the mount readback.
+- Mount moving itself (GoTo/manual/pulse) -> `suspended_mount_motion`: the
+  readback is shown, and only the IMU reference advances (no accumulation) so
+  the mount's own motion is never counted as a disturbance. The offset
+  survives the motion.
+- Only a sync (sync-key change) resets the tracker and the applied delta.
 - Diagnostics in metadata: `imu_delta_applied_ra/dec`, `imu_delta_gate`,
   `imu_delta_rate_deg_per_sec`.
 - Limitation: a real external force slower than the gate (0.05 deg/s) is
   invisible without a solve. At night SOLVED_PRIMARY takes precedence anyway.
 - End-to-end hardware validation (2026-07-12, user physically pushed the tube):
   push detected (0.99 deg/s, err 1488') -> disturbed -> sync+GoTo recovery ->
-  settling 2.9' -> enabled 0.0', re-acquiring the pre-push position. During
-  stable tracking the false drift is gone (slow_decay).
+  settling 2.9' -> enabled 0.0', re-acquiring the pre-push position.
 - Note: during GoTo phases mount readback has priority, so a push mid-GoTo is
   not immediately visible in the displayed coordinate; the corrective pass /
   tracking guide handles it after the GoTo ends.
+
+### Disturbance offset retention (fixed 2026-07-16)
+
+Found during hardware disturbance-recovery testing: after pushing the tube and
+stopping, the fused coordinate did not stay put — it (1) crawled back to the
+previous GoTo coordinate, and (2) sometimes jumped back at once.
+
+Two causes:
+
+1. The applied delta decayed with tau 120 s in slow intervals (`slow_decay`).
+   A 3-degree offset crawls back to the readback (= the old target) at ~1.5'/s.
+   The decay's original purpose (killing tracking-artifact drift) is already
+   achieved by the rate gate never letting slow increments in, so the decay
+   only ate legitimate disturbance offsets.
+2. Any meaningful readback move (even 18" of jitter) or a motion/priority flag
+   deleted the anchor outright and returned the raw readback, instantly losing
+   the offset (= the jump).
+
+Fixes (all in `pointing_coordinate_service.py`): `slow_decay` became `hold`;
+the fused base became the live mount readback (no re-anchor needed); mount
+motion now only suspends accumulation instead of deleting the anchor; the
+offset clears only on a sync. Since GoTo recovery starts with a sync, a
+completed recovery still resets the offset naturally.
 
 ## GoTo Handling
 

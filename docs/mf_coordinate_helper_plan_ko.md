@@ -215,12 +215,15 @@ mount readback은 PiFinder와 sync된 뒤에만 current 좌표 후보가 된다.
 mount가 PiFinder와 sync/alignment 된 뒤에는 다음 방식으로 보정한다.
 
 ```text
-anchor_mount = sync 시점 mount RA/Dec
-anchor_imu   = 같은 시점 IMU fallback RA/Dec
+anchor_imu   = sync 시점 IMU fallback RA/Dec (delta 기준점)
 
-current_imu_delta = current_imu - anchor_imu
-current = anchor_mount + current_imu_delta
+applied_delta = 속도 게이트를 통과해 누적된 IMU delta (아래 참조)
+current = 실시간 mount readback + applied_delta
 ```
+
+(2026-07-16 수정: base가 anchor 시점의 mount 좌표 스냅숏에서 **실시간 mount
+readback**으로 바뀌었다. 펄스/슬루로 readback이 움직이면 fused가 즉시 따라가고,
+re-anchor가 필요 없어져 re-anchor로 인한 외란 오프셋 소실이 사라졌다.)
 
 의도:
 
@@ -229,11 +232,15 @@ current = anchor_mount + current_imu_delta
 - IMU는 mount 정지 상태에서 사람이 강제로 움직였거나 충격을 준 경우처럼 빠른 변화량을
   감지하는 보조 입력으로 사용한다.
 
-anchor reset 조건:
+anchor reset 조건 (reset 시 applied 외란 오프셋도 함께 초기화):
 
 - anchor 없음
-- `coordinate_sync` 또는 `multipoint_align` sync key 변경
-- mount readback이 anchor 기준으로 의미 있게 이동
+- `coordinate_sync` 또는 `multipoint_align` sync key 변경 (= sync로 마운트
+  좌표계가 재정립된 경우)
+
+mount readback 이동은 더 이상 reset 사유가 아니다. fused의 base가 실시간
+readback이므로(아래 2026-07-16 수정) 펄스/슬루는 base를 통해 바로 반영되고,
+readback 이동으로 reset하면 실제 물리 외란 오프셋이 소리 없이 지워진다.
 
 ### IMU delta 속도 게이트 (2026-07-12 추가)
 
@@ -247,30 +254,66 @@ anchor reset 조건:
 delta**를 사용한다 (`_gated_imu_delta`).
 
 ```text
-IMU_DELTA_FAST_RATE_DEG_PER_SEC = 0.05
-  tick당 IMU 이동 속도가 이 값 이상일 때만(실제 충격/밀림) delta 증분을
-  applied에 반영한다. 추적 아티팩트(~0.005 deg/s)의 10배 마진.
-
-IMU_DELTA_DECAY_TAU_SECONDS = 120.0
-  느린 구간에서 applied delta는 이 시간상수로 0으로 감쇠한다. 충격 후 정지
-  상태에서는 오프셋이 충분히 오래(외란 복구 창보다 길게) 유지된다.
+IMU_DELTA_ENTER_RATE_DEG_PER_SEC = 0.03   (진입)
+IMU_DELTA_EXIT_RATE_DEG_PER_SEC  = 0.015  (유지/탈출)
 ```
 
-- 충격/수동 이동(빠름) -> `fast_follow`: 오프셋이 fused 좌표에 그대로 반영되어
-  외란 감지와 복구가 정확한 오차로 동작한다.
-- 추적 아티팩트/센서 드리프트(느림) -> `slow_decay`: 증분이 버려지고 applied가
-  감쇠해 fused 좌표가 mount readback(=target)에 고정된다.
-- anchor reset(마운트 이동/sync) 시 tracker와 applied가 함께 초기화된다.
+**히스테리시스 게이트 (2026-07-16 수정)**: 단일 임계값(구 0.05)은 미약한 탈조
+슬립(실측 head/tail 속도 0.02~0.06 deg/s)을 조각내서 변위의 ~1/3만 계측했다
+(실장비 캡처: 0.033→0.06→0.02 이벤트에서 0.05 초과 3틱만 누적). 누적 에피소드는
+진입 속도(0.03, 실내 무진동에서 실측한 아티팩트 바닥 0.004~0.005의 ~7배 —
+야외 바람 잔진동도 에피소드를 시작시키지 못하는 마진) 이상에서 시작하고, 일단
+시작되면 탈출 속도(0.015, ~4배) 아래로 떨어질 때까지 계속 누적해 슬립의 느린
+head/tail까지 포착한다. 0.03 미만으로만 기어가는 극미세 슬립은 여전히 보이지
+않는다(rate가 유일한 판별자; 야간에는 solve가 절대 기준).
+
+- 충격/수동 이동/탈조 슬립 -> `fast_follow`: 오프셋이 fused 좌표에 그대로
+  반영되어 외란 감지와 복구가 정확한 오차로 동작한다.
+- 추적 아티팩트/센서 드리프트(느림) -> `hold`: 증분은 버려지지만 이미 적용된
+  오프셋은 그대로 **유지**된다. 정지한 경통의 좌표는 흐트러진 자리에 머물러야
+  하며, mount readback으로 기어 돌아가면 안 된다.
+- 마운트 자체 이동(GoTo/manual/펄스) 중 -> `suspended_mount_motion`: readback이
+  우선 표시되고 IMU 기준점만 전진시켜(누적 없음) 마운트 스스로의 이동이 외란으로
+  잘못 집계되지 않게 한다. 오프셋은 이동이 끝난 뒤에도 살아남는다.
+- sync(sync key 변경) 시에만 tracker와 applied가 초기화된다.
 - 진단 metadata: `imu_delta_applied_ra/dec`, `imu_delta_gate`,
   `imu_delta_rate_deg_per_sec`.
 - 한계: 게이트(0.05 deg/s)보다 느린 실제 외력은 solve 없이는 보이지 않는다.
   야간에는 solve(SOLVED_PRIMARY)가 우선되므로 영향 없다.
 - 실장비 end-to-end 검증(2026-07-12, 사용자가 경통을 실제로 밀어 테스트): 밀기
   감지(0.99 deg/s, err 1488') -> disturbed -> sync+GoTo 복구 -> settling 2.9' ->
-  enabled 0.0'으로 밀기 전 위치 재획득. 안정 추적 구간에서는 slow_decay로 가짜
-  드리프트가 소멸함을 확인.
+  enabled 0.0'으로 밀기 전 위치 재획득.
 - 참고: GoTo 단계 중에는 mount readback이 우선이므로 GoTo 도중의 밀림은 표시
   좌표에 즉시 반영되지 않고, GoTo 종료 후 corrective/트래킹 가이드가 처리한다.
+
+### 외란 오프셋 유지 (2026-07-16 수정)
+
+실장비 외란 복구 테스트에서 발견: 경통을 밀고 멈추면 fused 좌표가 그 자리에
+머물지 않고 (1) **이전 GoTo 좌표로 천천히 되돌아가거나** (2) **한번에 점프**했다.
+
+원인 두 가지:
+
+1. applied delta가 느린 구간에서 tau 120 s로 지수 감쇠(`slow_decay`)했다.
+   3도 오프셋이면 초당 ~1.5' 속도로 readback(=이전 target)으로 기어 돌아간다.
+   감쇠의 원래 목적(추적 아티팩트 드리프트 소멸)은 속도 게이트가 증분을 아예
+   applied에 넣지 않는 것으로 이미 달성되므로, 감쇠는 정상 외란 오프셋만
+   갉아먹는 부작용이었다.
+2. mount readback이 조금만 움직이거나(18" 지터로도) motion/priority 플래그가
+   서면 anchor를 통째로 삭제하고 raw readback을 반환해, 오프셋이 즉시
+   소실(=점프)됐다.
+
+수정 (모두 `pointing_coordinate_service.py`):
+
+- `slow_decay` -> `hold`: 느린 구간에서 applied를 유지한다. 오프셋은 sync
+  (sync key 변경)로만 지워진다. 복구 경로가 sync + GoTo로 시작하므로 복구가
+  일어나면 자연히 초기화된다.
+- fused base를 anchor 스냅숏 -> 실시간 mount readback으로 변경. re-anchor가
+  불필요해져 readback 이동으로 인한 오프셋 소실이 사라졌다.
+- 마운트 자체 이동 중에는 anchor를 지우지 않고 IMU 기준점만 전진
+  (`suspended_mount_motion`). 이동 종료 후 fused = 새 readback + 보존된 오프셋.
+- 검증: 밀기 후 5분 정지에도 오프셋 유지, 마운트 슬루 통과 후 오프셋 생존,
+  미세 readback 이동 시 base 즉시 추종, sync 후 오프셋 초기화 (단위 테스트
+  4건 추가).
 
 ## GoTo 중 좌표 처리
 

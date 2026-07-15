@@ -60,14 +60,25 @@ IMU_SMOOTH_MODERATE_ALPHA = 0.25
 IMU_SMOOTH_LARGE_ALPHA = 0.65
 MOUNT_IMU_DELTA_HOLD_SECONDS = 1.5
 MOUNT_READBACK_MOVING_DELTA_DEGREES = 0.005
-# Rate gate for the mount+IMU-delta fusion. The IMU delta exists to catch fast
-# physical disturbances (a bump, a manual push). While the mount is tracking, the
-# smoothed IMU lags the slow (~15"/s) tracking motion, so the raw delta drifts at
-# near-sidereal rate and would drag the fused coordinate off target without
-# bound. Only IMU steps faster than this rate are applied to the fused
-# coordinate; slower accumulation is discarded and any applied offset decays.
-IMU_DELTA_FAST_RATE_DEG_PER_SEC = 0.05
-IMU_DELTA_DECAY_TAU_SECONDS = 120.0
+# Hysteresis rate gate for the mount+IMU-delta fusion. The IMU delta exists to
+# catch physical disturbances (a bump, a push, a motor stall slip). While the
+# mount is tracking, the smoothed IMU lags the slow (~15"/s) tracking motion,
+# so the raw delta drifts at near-sidereal rate and would drag the fused
+# coordinate off target without bound — that artifact floor was measured at a
+# very stable 0.004-0.005 deg/s (indoors, no wind).
+#
+# A single threshold chops weak stall-slip events (measured head/tail rates
+# 0.02-0.06 deg/s) into fragments, capturing only ~1/3 of the displacement.
+# Hence hysteresis: an episode STARTS only above the enter rate (~7x the
+# artifact floor, so tracking artifact and outdoor wind rumble never start
+# one) and then keeps accumulating down to the exit rate (~4x, so a real
+# event's slow tail is captured but outdoor micro-sway cannot keep an episode
+# alive indefinitely). Outside an episode, steps are discarded while the
+# already-applied offset is HELD (a stopped scope must keep its disturbed
+# coordinate — it must not crawl back to the mount readback). The offset
+# clears only when the mount frame is re-established by a sync.
+IMU_DELTA_ENTER_RATE_DEG_PER_SEC = 0.03
+IMU_DELTA_EXIT_RATE_DEG_PER_SEC = 0.015
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -623,7 +634,13 @@ class PointingCoordinateService:
         if mount.valid and mount.aligned:
             if imu.valid:
                 if not self.mount_sample_allows_imu_delta(mount):
-                    self._mount_imu_anchor = None
+                    # The mount is moving itself (GoTo/manual/pulse): readback
+                    # is authoritative and IMU steps caused by that motion must
+                    # not count as a disturbance. Keep the anchor and the
+                    # accumulated disturbance offset — only suspend
+                    # accumulation — so an offset from an earlier physical
+                    # push survives the motion instead of vanishing.
+                    self._track_imu_reference_without_accumulation(mount, imu)
                     health.warnings.append(
                         "mount motion/settle active; using mount readback until stationary"
                     )
@@ -720,14 +737,17 @@ class PointingCoordinateService:
         # Rate-gate the delta: only fast IMU motion (a real push/bump) is applied
         # to the fused coordinate. Slow accumulation — the smoothed IMU lagging
         # sidereal tracking, or sensor drift — is discarded, so the fused
-        # coordinate stays anchored to the mount readback while tracking.
+        # coordinate stays anchored to the mount readback while tracking. The
+        # base is the LIVE mount readback (not the anchor snapshot), so guide
+        # pulses and slews move the fused coordinate directly and never need a
+        # re-anchor that would wipe the disturbance offset.
         applied_ra, applied_dec, gate_state, imu_rate = self._gated_imu_delta(
             imu_radec
         )
-        east_delta = applied_ra * math.cos(math.radians(anchor["imu_dec"]))
-        dec_deg = max(-89.9, min(89.9, anchor["mount_dec"] + applied_dec))
+        east_delta = applied_ra * math.cos(math.radians(imu_radec[1]))
+        dec_deg = max(-89.9, min(89.9, mount_radec[1] + applied_dec))
         cos_dec = max(0.05, abs(math.cos(math.radians(dec_deg))))
-        ra_deg = (anchor["mount_ra"] + east_delta / cos_dec) % 360.0
+        ra_deg = (mount_radec[0] + east_delta / cos_dec) % 360.0
 
         return CoordinateSample(
             ra_deg=ra_deg,
@@ -743,7 +763,7 @@ class PointingCoordinateService:
             valid=True,
             aligned=True,
             metadata={
-                "mode": "mount_baseline_plus_imu_delta",
+                "mode": "mount_readback_plus_imu_delta",
                 "anchor_mount_ra": anchor["mount_ra"],
                 "anchor_mount_dec": anchor["mount_dec"],
                 "anchor_imu_ra": anchor["imu_ra"],
@@ -765,14 +785,22 @@ class PointingCoordinateService:
         )
 
     def _gated_imu_delta(
-        self, imu_radec: Tuple[float, float]
+        self, imu_radec: Tuple[float, float], *, accumulate: bool = True
     ) -> Tuple[float, float, str, float]:
         """Accumulate only fast IMU motion into the applied fusion delta.
 
         Returns (applied_delta_ra, applied_delta_dec, gate_state, rate_deg_s).
-        The tracker resets whenever the mount/IMU anchor is recreated (a mount
-        move or sync), which also clears any applied offset after a disturbance
-        has been corrected.
+        The gate uses rate hysteresis: an accumulation episode starts above
+        IMU_DELTA_ENTER_RATE_DEG_PER_SEC and keeps accumulating until the rate
+        drops below IMU_DELTA_EXIT_RATE_DEG_PER_SEC, so a weak slip's slow
+        head/tail is captured once the event is underway. Outside an episode,
+        steps are discarded but the already-applied offset is HELD — once the
+        scope stops, the fused coordinate must stay at the disturbed position,
+        not creep back to the mount readback. With ``accumulate=False`` (mount
+        moving itself) the IMU reference still advances so the mount's own
+        motion is never counted, but the offset is untouched. The tracker
+        resets when the anchor is recreated (a sync re-establishes the mount
+        frame), which clears the offset.
         """
         now = time.monotonic()
         tracker = self._imu_delta_tracker
@@ -784,6 +812,7 @@ class PointingCoordinateService:
                 "t": now,
                 "applied_ra": 0.0,
                 "applied_dec": 0.0,
+                "episode": False,
             }
             return 0.0, 0.0, "init", 0.0
 
@@ -795,15 +824,23 @@ class PointingCoordinateService:
         )
         rate = step_deg / dt
 
-        if rate >= IMU_DELTA_FAST_RATE_DEG_PER_SEC:
-            tracker["applied_ra"] += step_ra
-            tracker["applied_dec"] += step_dec
-            gate_state = "fast_follow"
+        if not accumulate:
+            tracker["episode"] = False
+            gate_state = "suspended_mount_motion"
         else:
-            decay = math.exp(-dt / IMU_DELTA_DECAY_TAU_SECONDS)
-            tracker["applied_ra"] *= decay
-            tracker["applied_dec"] *= decay
-            gate_state = "slow_decay"
+            threshold = (
+                IMU_DELTA_EXIT_RATE_DEG_PER_SEC
+                if tracker.get("episode")
+                else IMU_DELTA_ENTER_RATE_DEG_PER_SEC
+            )
+            if rate >= threshold:
+                tracker["applied_ra"] += step_ra
+                tracker["applied_dec"] += step_dec
+                tracker["episode"] = True
+                gate_state = "fast_follow"
+            else:
+                tracker["episode"] = False
+                gate_state = "hold"
 
         tracker["imu_ra"] = imu_radec[0]
         tracker["imu_dec"] = imu_radec[1]
@@ -814,6 +851,25 @@ class PointingCoordinateService:
             gate_state,
             rate,
         )
+
+    def _track_imu_reference_without_accumulation(
+        self, mount: CoordinateSample, imu: CoordinateSample
+    ) -> None:
+        """Advance the IMU delta reference while the mount moves itself.
+
+        Called instead of the fusion while mount motion suppresses the IMU
+        delta: the tracker's IMU reference must follow the (mount-driven)
+        motion so it is not later misread as a physical push, while the
+        accumulated disturbance offset stays intact for when the mount is
+        stationary again.
+        """
+        mount_radec = mount.radec()
+        imu_radec = imu.radec()
+        if mount_radec is None or imu_radec is None:
+            return
+        if self._mount_imu_anchor_should_reset(mount, imu):
+            self._mount_imu_anchor = self._new_mount_imu_anchor(mount, imu)
+        self._gated_imu_delta(imu_radec, accumulate=False)
 
     def _new_mount_imu_anchor(
         self, mount: CoordinateSample, imu: CoordinateSample
@@ -842,20 +898,13 @@ class PointingCoordinateService:
         if self._mount_imu_anchor is None:
             return True
 
+        # Re-anchor (which clears the applied disturbance offset) ONLY when a
+        # sync re-establishes the mount frame. Mount readback movement alone
+        # must not reset: the fused base follows the live readback, and a
+        # pulse/slew-triggered reset would silently erase a real physical
+        # disturbance offset.
         sync_key = self._mount_sync_key(mount)
-        if self._mount_imu_anchor.get("sync_key") != sync_key:
-            return True
-
-        anchor_mount = (
-            float(self._mount_imu_anchor["mount_ra"]),
-            float(self._mount_imu_anchor["mount_dec"]),
-        )
-        mount_delta = angular_separation_degrees(
-            anchor_mount[0], anchor_mount[1], mount_radec[0], mount_radec[1]
-        )
-        # Re-anchor only when the mount readback actually moved.  A heartbeat
-        # with the same mount coordinates must not erase manual IMU movement.
-        return mount_delta >= 0.02
+        return self._mount_imu_anchor.get("sync_key") != sync_key
 
     def _mount_sync_key(self, mount: CoordinateSample) -> tuple[Any, ...]:
         sync = mount.metadata.get("coordinate_sync")

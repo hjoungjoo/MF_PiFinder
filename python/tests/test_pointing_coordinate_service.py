@@ -544,3 +544,189 @@ def test_multipoint_completed_points_without_sync_do_not_align_mount():
 
     assert sample.valid is True
     assert sample.aligned is False
+
+
+def _fused_mount(ra_deg, dec_deg, synced_at=1.0, **extra_metadata):
+    metadata = {"state": "connected", "coordinate_sync": {"synced_at": synced_at}}
+    metadata.update(extra_metadata)
+    return CoordinateSample(
+        ra_deg=ra_deg,
+        dec_deg=dec_deg,
+        source=SOURCE_MOUNT,
+        valid=True,
+        aligned=True,
+        timestamp=100.0,
+        metadata=metadata,
+    )
+
+
+def _fused_imu(ra_deg, dec_deg):
+    return CoordinateSample(
+        ra_deg=ra_deg,
+        dec_deg=dec_deg,
+        source=SOURCE_IMU,
+        valid=True,
+        timestamp=100.0,
+    )
+
+
+def _build_disturbance_offset(service, monkeypatch, clock):
+    """Push the IMU fast (5 deg/s) so a +5 deg dec offset is applied."""
+    import PiFinder.pointing_coordinate_service as pcs
+
+    monkeypatch.setattr(pcs.time, "monotonic", lambda: clock[0])
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+
+    first = service._select_current(
+        solved, _fused_imu(100.0, 20.0), _fused_mount(10.0, 10.0), CoordinateHealth()
+    )
+    assert first.source == SOURCE_FUSED
+    assert first.radec() == pytest.approx((10.0, 10.0))
+
+    clock[0] += 1.0
+    pushed = service._select_current(
+        solved, _fused_imu(100.0, 25.0), _fused_mount(10.0, 10.0), CoordinateHealth()
+    )
+    assert pushed.source == SOURCE_FUSED
+    assert pushed.radec()[1] == pytest.approx(15.0)
+    return solved
+
+
+def test_disturbance_offset_holds_after_scope_stops(monkeypatch):
+    service = PointingCoordinateService()
+    clock = [1000.0]
+    solved = _build_disturbance_offset(service, monkeypatch, clock)
+
+    # Scope stationary for 5 minutes: the offset must not decay back.
+    for _ in range(5):
+        clock[0] += 60.0
+        held = service._select_current(
+            solved,
+            _fused_imu(100.0, 25.0),
+            _fused_mount(10.0, 10.0),
+            CoordinateHealth(),
+        )
+
+    assert held.source == SOURCE_FUSED
+    assert held.radec()[1] == pytest.approx(15.0)
+    assert held.metadata["imu_delta_gate"] == "hold"
+
+
+def test_disturbance_offset_survives_mount_motion(monkeypatch):
+    service = PointingCoordinateService()
+    clock = [1000.0]
+    solved = _build_disturbance_offset(service, monkeypatch, clock)
+
+    # Mount slews itself; the IMU sees that motion too. Readback has priority
+    # during the slew, but the offset must survive it.
+    clock[0] += 1.0
+    slewing = service._select_current(
+        solved,
+        _fused_imu(101.0, 26.0),
+        _fused_mount(11.0, 10.0, goto_motion_active=True, state="slewing"),
+        CoordinateHealth(),
+    )
+    assert slewing.source == SOURCE_MOUNT
+    assert slewing.radec() == pytest.approx((11.0, 10.0))
+
+    # Motion over, hold window expired: fused = live readback + held offset,
+    # and the mount-driven IMU movement was not double-counted.
+    clock[0] += 10.0
+    service._mount_motion_hold_until = clock[0] - 0.1
+    resumed = service._select_current(
+        solved,
+        _fused_imu(101.0, 26.0),
+        _fused_mount(11.0, 10.0),
+        CoordinateHealth(),
+    )
+    assert resumed.source == SOURCE_FUSED
+    assert resumed.radec()[1] == pytest.approx(15.0)
+    assert resumed.radec()[0] == pytest.approx(11.0)
+
+
+def test_fused_base_follows_live_readback_without_losing_offset(monkeypatch):
+    service = PointingCoordinateService()
+    clock = [1000.0]
+    solved = _build_disturbance_offset(service, monkeypatch, clock)
+
+    # A tiny readback move (guide pulse, below the motion-detect threshold)
+    # shifts the fused base directly; the offset stays applied.
+    clock[0] += 1.0
+    nudged = service._select_current(
+        solved,
+        _fused_imu(100.0, 25.0),
+        _fused_mount(10.004, 10.0),
+        CoordinateHealth(),
+    )
+    assert nudged.source == SOURCE_FUSED
+    assert nudged.radec()[0] == pytest.approx(10.004)
+    assert nudged.radec()[1] == pytest.approx(15.0)
+
+
+def test_sync_clears_disturbance_offset(monkeypatch):
+    service = PointingCoordinateService()
+    clock = [1000.0]
+    solved = _build_disturbance_offset(service, monkeypatch, clock)
+
+    # A mount sync re-establishes the frame. The sync jumped the readback, so
+    # the motion hold shows the readback first; once it expires the fused
+    # coordinate must be the plain readback — the offset is cleared, not held.
+    clock[0] += 1.0
+    synced = service._select_current(
+        solved,
+        _fused_imu(100.0, 25.0),
+        _fused_mount(12.0, 14.9, synced_at=2.0),
+        CoordinateHealth(),
+    )
+    assert synced.radec() == pytest.approx((12.0, 14.9))
+
+    clock[0] += 10.0
+    service._mount_motion_hold_until = clock[0] - 0.1
+    settled = service._select_current(
+        solved,
+        _fused_imu(100.0, 25.0),
+        _fused_mount(12.0, 14.9, synced_at=2.0),
+        CoordinateHealth(),
+    )
+    assert settled.source == SOURCE_FUSED
+    assert settled.radec() == pytest.approx((12.0, 14.9))
+
+
+def test_gate_hysteresis_captures_weak_slip_head_and_tail(monkeypatch):
+    """Reproduces the hardware-captured weak stall-slip pattern (2026-07-16):
+    rates ramp 0.033 -> 0.06 -> 0.02 -> 0.01 deg/s. With enter=0.03/exit=0.015
+    the episode accumulates from the first 0.033 tick through the 0.02 tail,
+    and releases at 0.01."""
+    import PiFinder.pointing_coordinate_service as pcs
+
+    service = PointingCoordinateService()
+    clock = [1000.0]
+    monkeypatch.setattr(pcs.time, "monotonic", lambda: clock[0])
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+
+    dec = 20.0
+    mount = _fused_mount(10.0, 10.0)
+
+    def tick(dec_step):
+        nonlocal dec
+        clock[0] += 1.0
+        dec += dec_step
+        return service._select_current(
+            solved, _fused_imu(100.0, dec), mount, CoordinateHealth()
+        )
+
+    service._select_current(
+        solved, _fused_imu(100.0, dec), mount, CoordinateHealth()
+    )
+
+    assert tick(0.004).metadata["imu_delta_gate"] == "hold"     # artifact floor
+    assert tick(0.033).metadata["imu_delta_gate"] == "fast_follow"  # enters
+    assert tick(0.060).metadata["imu_delta_gate"] == "fast_follow"  # peak
+    assert tick(0.020).metadata["imu_delta_gate"] == "fast_follow"  # tail kept
+    released = tick(0.010)                                          # exits
+    assert released.metadata["imu_delta_gate"] == "hold"
+    assert tick(0.020).metadata["imu_delta_gate"] == "hold"     # below re-entry
+
+    # Applied dec offset = 0.033 + 0.060 + 0.020 only.
+    assert released.metadata["imu_delta_applied_dec"] == pytest.approx(0.113)
+    assert released.radec()[1] == pytest.approx(10.0 + 0.113)
