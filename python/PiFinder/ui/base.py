@@ -569,6 +569,12 @@ class UIModule:
         "w": "north",
         "e": "northeast",
     }
+    # Slew-rate keys sit next to the letter jog pad, mirroring the 9/3 number
+    # keys. Kept identical everywhere the letters drive the mount.
+    _GUIDE_TEXT_SPEED = {
+        ",": "reduce_slew_rate",
+        ".": "increase_slew_rate",
+    }
     _GUIDE_MOTION_LEASE_SECONDS = 2.5
     _GUIDE_MOTION_KEEPALIVE_INTERVAL = 0.25
     _GUIDE_MOTION_RESTART_INTERVAL = 8.0
@@ -685,13 +691,30 @@ class UIModule:
             return self._guide_move("stop")
         return False
 
+    def _guide_key_speed(self, char: str) -> bool:
+        """Handle the slew-rate letters (, and .). One step per key event.
+
+        key_text and key_text_press are mutually exclusive per input source (the
+        main loop dispatches one or the other), so handling it in both fires
+        exactly once either way; release is ignored.
+        """
+        command = self._GUIDE_TEXT_SPEED.get(char)
+        if command is None:
+            return False
+        if not self._guide_send_mount({"type": command}):
+            return False
+        self.message(
+            _("Speed +") if command == "increase_slew_rate" else _("Speed -"), 0.5
+        )
+        return True
+
     def _guide_key_text(self, char: str) -> bool:
         if not char:
             return False
         direction = self._GUIDE_TEXT_DIRECTIONS.get(char.lower())
         if direction:
             return self._guide_move(direction)
-        return False
+        return self._guide_key_speed(char)
 
     def _guide_key_text_press(self, char: str) -> bool:
         if not char:
@@ -699,7 +722,7 @@ class UIModule:
         direction = self._GUIDE_TEXT_DIRECTIONS.get(char.lower())
         if direction:
             return self._guide_move(direction, keepalive=True)
-        return False
+        return self._guide_key_speed(char)
 
     def _guide_key_text_release(self, char: str) -> bool:
         if not char:
@@ -778,7 +801,7 @@ class UIModule:
                         "indi_goto_refine_once", False
                     ),
                     "refine_accuracy_arcmin": self.config_object.get_option(
-                        "indi_goto_refine_accuracy_arcmin", 10.0
+                        "indi_goto_refine_accuracy_arcmin", 6.0
                     ),
                 }
             )

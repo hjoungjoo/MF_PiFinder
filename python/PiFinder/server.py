@@ -1084,7 +1084,7 @@ class Server:
                     cfg.get_option("indi_goto_refine_once", False)
                 ),
                 "indi_goto_refine_accuracy_arcmin": float(
-                    cfg.get_option("indi_goto_refine_accuracy_arcmin", 10.0)
+                    cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
                 ),
                 "indi_goto_method": cfg.get_option(
                     "indi_goto_method", "indi_mount"
@@ -1099,6 +1099,12 @@ class Server:
                     cfg.get_option(
                         "indi_tracking_guide_manual_retarget_enabled", True
                     )
+                ),
+                "indi_guide_pulse_invert_we": bool(
+                    cfg.get_option("indi_guide_pulse_invert_we", False)
+                ),
+                "indi_guide_pulse_invert_ns": bool(
+                    cfg.get_option("indi_guide_pulse_invert_ns", False)
                 ),
                 "indi_pifinder_goto_max_gotos": int(
                     cfg.get_option("indi_pifinder_goto_max_gotos", 10)
@@ -1571,7 +1577,7 @@ class Server:
 
             try:
                 refine_accuracy_arcmin = float(
-                    request.form.get("indi_goto_refine_accuracy_arcmin") or "10.0"
+                    request.form.get("indi_goto_refine_accuracy_arcmin") or "6.0"
                 )
                 if refine_accuracy_arcmin <= 0:
                     raise ValueError("Refine accuracy must be greater than zero")
@@ -1627,6 +1633,14 @@ class Server:
             cfg.set_option(
                 "indi_tracking_guide_manual_retarget_enabled",
                 request.form.get("indi_tracking_guide_manual_retarget_enabled") == "on",
+            )
+            cfg.set_option(
+                "indi_guide_pulse_invert_we",
+                request.form.get("indi_guide_pulse_invert_we") == "on",
+            )
+            cfg.set_option(
+                "indi_guide_pulse_invert_ns",
+                request.form.get("indi_guide_pulse_invert_ns") == "on",
             )
             try:
                 max_gotos = int(request.form.get("indi_pifinder_goto_max_gotos") or 10)

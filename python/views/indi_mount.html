@@ -222,16 +222,21 @@
         </div>
       </div>
     </div>
+    <div class="row">
+      <div class="col s12">
+        <span class="grey-text">{{ _('Move Direction (DIR)') }}</span>
+      </div>
+    </div>
     <div class="row indi-motion-grid">
-      <button type="button" data-direction="northwest" class="btn indi-motion-northwest">{{ _('NE') }}</button>
-      <button type="button" data-direction="north" class="btn indi-motion-north">{{ _('North') }}</button>
-      <button type="button" data-direction="northeast" class="btn indi-motion-northeast">{{ _('NW') }}</button>
-      <button type="button" data-direction="west" class="btn indi-motion-west">{{ _('East') }}</button>
+      <button type="button" data-direction="northwest" class="btn indi-motion-northwest" title="{{ _('Move up-left') }}" aria-label="{{ _('Move up-left') }}">&#8598;</button>
+      <button type="button" data-direction="north" class="btn indi-motion-north" title="{{ _('Move up') }}" aria-label="{{ _('Move up') }}">&#8593;</button>
+      <button type="button" data-direction="northeast" class="btn indi-motion-northeast" title="{{ _('Move up-right') }}" aria-label="{{ _('Move up-right') }}">&#8599;</button>
+      <button type="button" data-direction="west" class="btn indi-motion-west" title="{{ _('Move left') }}" aria-label="{{ _('Move left') }}">&#8592;</button>
       <button type="button" class="btn disabled indi-motion-center">{{ _('Hold') }}</button>
-      <button type="button" data-direction="east" class="btn indi-motion-east">{{ _('West') }}</button>
-      <button type="button" data-direction="southwest" class="btn indi-motion-southwest">{{ _('SE') }}</button>
-      <button type="button" data-direction="south" class="btn indi-motion-south">{{ _('South') }}</button>
-      <button type="button" data-direction="southeast" class="btn indi-motion-southeast">{{ _('SW') }}</button>
+      <button type="button" data-direction="east" class="btn indi-motion-east" title="{{ _('Move right') }}" aria-label="{{ _('Move right') }}">&#8594;</button>
+      <button type="button" data-direction="southwest" class="btn indi-motion-southwest" title="{{ _('Move down-left') }}" aria-label="{{ _('Move down-left') }}">&#8601;</button>
+      <button type="button" data-direction="south" class="btn indi-motion-south" title="{{ _('Move down') }}" aria-label="{{ _('Move down') }}">&#8595;</button>
+      <button type="button" data-direction="southeast" class="btn indi-motion-southeast" title="{{ _('Move down-right') }}" aria-label="{{ _('Move down-right') }}">&#8600;</button>
     </div>
   </div>
 </div>
@@ -500,6 +505,20 @@
           <label>
             <input type="checkbox" name="indi_tracking_guide_manual_retarget_enabled" {% if indi_tracking_guide_manual_retarget_enabled %}checked{% endif %}>
             <span>{{ _('Manual Re-target (after a manual move, track the new position instead of returning)') }}</span>
+          </label>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col s12 m6">
+          <label>
+            <input type="checkbox" name="indi_guide_pulse_invert_we" {% if indi_guide_pulse_invert_we %}checked{% endif %}>
+            <span>{{ _('Invert guide pulse RA/Az (WE)') }}</span>
+          </label>
+        </div>
+        <div class="col s12 m6">
+          <label>
+            <input type="checkbox" name="indi_guide_pulse_invert_ns" {% if indi_guide_pulse_invert_ns %}checked{% endif %}>
+            <span>{{ _('Invert guide pulse Dec/Alt (NS)') }}</span>
           </label>
         </div>
       </div>

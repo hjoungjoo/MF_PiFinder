@@ -188,9 +188,20 @@ indi_goto_method = "indi_mount" | "pifinder"
 indi_tracking_guide_enabled = false | true
   기본값: false
 
-indi_goto_refine_accuracy_arcmin
-  기존 설정 유지. PiFinder GoTo 최종 pulse guide 정렬의 목표 정확도로 사용한다
-  (0.1도 = 6분각). 추적 가이드의 목표 정확도로도 공유한다.
+indi_goto_refine_accuracy_arcmin = 6.0
+  solve 기반 정밀 보정의 목표 정확도(분각). 기본 6′ = 0.1도로 문서와 일치시켰다
+  (이전 10′에서 하향). 공유 사용처: INDI Mount refine(`indi_goto_refine_once`),
+  PiFinder GoTo 최종 pulse guide 정렬, SkySafari GoTo refine, LCD 수동 "Guide
+  Correction". (자동 추적 가이드 밴드는 별도 키 `indi_tracking_guide_threshold_arcmin`
+  사용.)
+
+indi_guide_pulse_invert_we = false | true
+  기본값: false
+  timed guide pulse의 RA/Az(WE) 방향 반전. 마운트가 RA에서 반대로 가면 On.
+
+indi_guide_pulse_invert_ns = false | true
+  기본값: false
+  timed guide pulse의 Dec/Alt(NS) 방향 반전. 마운트가 Dec에서 반대로 가면 On.
 
 indi_pifinder_goto_near_threshold_deg = 1.0
   PiFinder GoTo에서 sync + 마운트 GoTo 반복을 끝내고 pulse guide 미세 보정으로
@@ -238,6 +249,14 @@ indi_tracking_guide_motion_arcmin = 15.0
    동안엔(융합 좌표 델타가 잠깐 임계값 아래로 떨어지는 순간에도) `disturbed`를
    유지하고 recovery로 넘어가지 않는다. 정말로 `settle_seconds`만큼 정지한 뒤에만
    recovery가 한 번 발동한다.
+   - **IMU 플래그 상한 (2026-07-16)**: BNO055 플래그는 좌표 임계값보다 훨씬
+     민감해(quat 델타 ~0.0003) 릴리즈 후 미세 흔들림으로 수십 초 유지될 수 있고,
+     실측에서 recovery 시작이 30초 이상 지연됐다. 좌표가
+     `settle_seconds x TRACKING_IMU_QUIET_OVERRIDE_MULTIPLE`(기본 2배 = 8초) 동안
+     정지해 있으면 IMU 플래그 단독으로는 더 이상 recovery를 막지 못한다
+     (좌표 이동은 계속 무제한으로 막는다 — 실제 밀기 진행 중 보호는 유지).
+     override 발동은 로그로 남는다. 상태 전이도 이제 journal에 로깅된다
+     (`Tracking guide disturbed -> settling (...)`).
 2. guide-correction 펄스는 더 이상 마운트 readback 우선권을 주장하지 않는다
    (mountcontrol `_motion_status`). 미세 펄스 보정 중에도 IMU가 살아 있게 한다
    (펄스는 sub-arcminute이고 IMU-delta rate 게이트가 어차피 버린다).
@@ -252,8 +271,9 @@ indi_tracking_guide_goto_recovery_enabled = false | true
   Off이면 오차 크기와 관계없이 pulse guide로만 보정하고(큰 오차는 상태에
   표시), 마운트를 절대 슬루하지 않는다.
 
-indi_tracking_guide_goto_threshold_deg = 3.0
-  pulse guide는 정착 후 오차를 이 크기까지 담당한다 (기본 3도).
+indi_tracking_guide_goto_threshold_deg = 0.5
+  pulse guide는 정착 후 오차를 이 크기까지 담당한다 (기본 0.5도 = 30 arcmin;
+  메뉴 INDI Setting > Goto/Guide > Recovery Range에서 0.25~3도 선택).
   이 값을 "초과"하는 오차는 (복구가 켜져 있을 때) pulse guide 대신
   sync + GoTo 복구를 사용하고, 이하이면 pulse guide로 직접 보정한다.
   이 단일 경계가 곧 pulse guide의 실용 한계이기도 하다.
@@ -516,12 +536,27 @@ flowchart TD
   ms로 clamp한다.
 - **가이드레이트**: 드라이버의 `GUIDE_RATE`(sidereal 배수)를 읽어 사용하고,
   못 읽으면 기본값(0.5×)으로 폴백한다.
+- **복귀 속도 전환**: 남은 오차가 `정확도 × 2`를 초과하는 동안은 `GUIDE_RATE`를
+  **1.0×**(fast)로 올려 복귀 펄스가 두 배 빨리 이동하게 하고(1.0× 쓰기를 받는
+  수정된 OnStepX 드라이버 필요), 오차가 그 밴드 안으로 들어오면 **0.5×**(fine)로
+  내려 정밀 보정으로 마무리한다. 보정이 정확도 내로 수렴하거나 guide correction이
+  꺼질 때도 0.5×로 복원한다. 드라이버가 `GUIDE_RATE` 쓰기를 거부하면 현재
+  레이트를 그대로 쓰고 재시도하지 않는다(펄스 시간 계산은 항상 실제 레이트를
+  다시 읽으므로 안전).
 - **capability 감지**: 드라이버에 `TELESCOPE_TIMED_GUIDE_*` 프로퍼티가 있으면
   timed guide pulse를 쓰고, 없으면 기존처럼 **짧은 manual movement lease를
   fallback**으로 사용한다(감지 결과는 캐시).
-- **방향 부호 검증**: NS는 dec 오차 부호(양수→N), WE는 RA 오차 부호로 정한다.
-  RA(WE) 부호는 드라이버마다 반대일 수 있어, 요소 매핑을 한 곳(상수)에서 교체
-  가능하게 두고 실장비에서 1회 검증한다.
+- **방향 부호 반전**: NS는 dec 오차 부호(양수→N), WE는 RA 오차 부호로 정한다.
+  드라이버마다 축 부호가 반대일 수 있어, 축별 반전을 config로 둔다
+  (`indi_guide_pulse_invert_we`=RA/Az, `indi_guide_pulse_invert_ns`=Dec/Alt,
+  기본 off; LCD·Web에서 토글). 반전은 timed guide pulse에만 적용되고 manual
+  fallback에는 적용되지 않는다(그쪽 매핑은 이미 검증됨).
+  - **실장비 검증(OnStepX, 2026-07-15)**: 실제 LX200 OnStepX에서 펄스를 쏘고 RA/Dec
+    변화를 측정한 결과 `TIMED_GUIDE_E`→RA↑, `TIMED_GUIDE_W`→RA↓, `TIMED_GUIDE_N`
+    →Dec↑ (모두 표준). 따라서 **기본 매핑이 맞고 반전 불필요**(두 반전 키 기본
+    off 유지). 반전 옵션은 다른 드라이버 대비 안전장치로 둔다.
+  - 같은 테스트에서 펄스 실이동량이 공칭 GUIDE_RATE(0.5×)의 ~1.6배로 측정되어,
+    오버슛 방지를 위해 `GUIDE_PULSE_AGGRESSIVENESS`를 0.5로 보수적으로 둔다.
 
 이 방식은 (1) 수동이동과 명령이 달라 트래킹 보정 펄스가 마운트 상태에
 `manual_motion`으로 찍히지 않으므로 [수동 재타겟] 구분이 깔끔해지고, (2) 오차
@@ -569,8 +604,8 @@ guide_correction_threshold_arcmin
    움직임의 첫 프레임부터 보정하지 않고, 멈출 때까지 기다린다.
 2. 움직임이 멈추고 좌표가 정착하면, target까지 오차를 측정해 크기별로 복구를
    선택한다:
-   - **작은/중간 오차** (GoTo 임계값 이하, 기본 3도): pulse guide 미세 보정.
-   - **큰 오차** (GoTo 임계값 초과, 즉 3도 초과): 정확하고 빠른 복구를 위해
+   - **작은/중간 오차** (GoTo 임계값 이하, 기본 0.5도): pulse guide 미세 보정.
+   - **큰 오차** (GoTo 임계값 초과, 즉 0.5도 초과): 정확하고 빠른 복구를 위해
      **마운트를 PiFinder 현재 좌표로 sync**하고 **target으로 GoTo**한 뒤, target
      근처에서 **pulse guide 미세 보정으로 복귀**한다.
 3. 위 동작들은 모두 설정으로 게이트된다. sync + GoTo 복구는 별도 On/Off
@@ -625,7 +660,7 @@ flowchart TD
     E -->|no| F[state=settling: 계속 대기]
     F --> B
     E -->|yes| G[current로 target 대비 오차 측정]
-    G --> H{오차 <= goto_threshold, 3도?}
+    G --> H{오차 <= goto_threshold, 0.5도?}
     H -->|yes| I[state=enabled: pulse guide 미세 보정]
     I --> B
     H -->|no| J{goto_recovery_enabled?}
@@ -640,8 +675,8 @@ flowchart TD
 밴드:
 
 ```text
-오차 <= 3도 (goto_threshold)   -> pulse guide 미세 보정
-오차 > 3도                     -> sync + GoTo 복구 후 target 근처에서 pulse guide;
+오차 <= 0.5도 (goto_threshold) -> pulse guide 미세 보정
+오차 > 0.5도                   -> sync + GoTo 복구 후 target 근처에서 pulse guide;
                                  복구 Off면 pulse guide만 (슬루 없음)
 ```
 

@@ -83,7 +83,10 @@ MANUAL_MOTION_POLL_SECONDS = 0.1
 MANUAL_MOTION_STOP_RETRY_SECONDS = 0.5
 GOTO_REFINE_DELAY_SECONDS = 8.0
 GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
-DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 10.0
+# Solve-based fine-correction target accuracy (arcmin). 6' = 0.1 deg, matching
+# the documented PiFinder GoTo final-alignment accuracy; used as the fallback
+# when a caller does not pass an explicit accuracy.
+DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 6.0
 GUIDE_CORRECTION_INTERVAL_SECONDS = 10.0
 # Manual-move fallback lease used only when the driver does not expose the INDI
 # timed guide-pulse interface.
@@ -94,8 +97,21 @@ GUIDE_CORRECTION_PULSE_SECONDS = 0.4
 SIDEREAL_ARCSEC_PER_SEC = 15.041
 # Fraction of sidereal used when the driver does not report GUIDE_RATE.
 DEFAULT_GUIDE_RATE_X = 0.5
-# Close this fraction of the error per pulse; the periodic loop converges the rest.
-GUIDE_PULSE_AGGRESSIVENESS = 0.7
+# Recovery-speed guide-rate switching. While the remaining guide-correction
+# error is above accuracy * GUIDE_RATE_FAST_MIN_ERROR_MULTIPLE, the guide rate
+# is raised to the fast value so recovery pulses cover ground quickly (needs a
+# driver that accepts GUIDE_RATE writes up to 1.0, e.g. the modified OnStepX).
+# It drops back to the fine value for the final corrections and is restored
+# whenever guide correction converges or is disabled, so precision guiding
+# always finishes at the conservative rate.
+GUIDE_RATE_FAST_X = 1.0
+GUIDE_RATE_FINE_X = 0.5
+GUIDE_RATE_FAST_MIN_ERROR_MULTIPLE = 2.0
+# Close this fraction of the error per pulse; the periodic loop converges the
+# rest. Kept conservative because an OnStepX bench test measured the actual
+# pulse motion at ~1.6x the nominal GUIDE_RATE (0.5x sidereal), so a higher
+# value would overshoot.
+GUIDE_PULSE_AGGRESSIVENESS = 0.5
 GUIDE_PULSE_MIN_MS = 20
 GUIDE_PULSE_MAX_MS = 2500
 # INDI timed-guide (property, element) per computed direction. If a mount guides
@@ -404,6 +420,12 @@ class MountControlIndi(BacklashCalibrationMixin):
         # not yet probed). When False, guide correction uses the manual-move
         # fallback.
         self._pulse_guide_supported: Optional[bool] = None
+        # Guide-rate switching state: boosted is True while the fast recovery
+        # rate is applied (must be restored to the fine rate on finish);
+        # writable is None until the first GUIDE_RATE write attempt, False when
+        # the driver rejected it (no further attempts).
+        self._guide_rate_boosted = False
+        self._guide_rate_writable: Optional[bool] = None
         self._last_goto_progress_status_at = 0.0
         self._last_manual_motion_status_at = 0.0
         self.backlash_ra: Optional[int] = None
@@ -1763,6 +1785,7 @@ class MountControlIndi(BacklashCalibrationMixin):
 
         if not enabled:
             self._guide_correction_enabled = False
+            self._restore_fine_guide_rate()
             self._write_controller_status("connected", "Guide correction disabled")
             self._console("Guide corr\nOff")
             return True
@@ -1831,6 +1854,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._guide_correction_next_at = now + GUIDE_CORRECTION_INTERVAL_SECONDS
 
         if separation <= self._guide_correction_accuracy_arcmin:
+            self._restore_fine_guide_rate()
             self._write_controller_status(
                 "guide_correction",
                 f"Guide correction within {separation:.1f} arcmin",
@@ -1842,6 +1866,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         # computed from the axis error and guide rate; NOT a manual move, so it
         # does not show up as manual_motion in status).
         if self._guide_pulse_supported():
+            self._select_guide_rate_for_error(separation)
             self._apply_guide_pulse(
                 current_ra, current_dec, target_ra, target_dec, separation
             )
@@ -1906,6 +1931,69 @@ class MountControlIndi(BacklashCalibrationMixin):
             return driver
         return DEFAULT_GUIDE_RATE_X, DEFAULT_GUIDE_RATE_X
 
+    def _set_guide_rate(self, rate_x: float) -> bool:
+        if self.client is None or self.device is None:
+            return False
+        return self.client.set_number(
+            self.device,
+            "GUIDE_RATE",
+            {"GUIDE_RATE_WE": rate_x, "GUIDE_RATE_NS": rate_x},
+        )
+
+    def _select_guide_rate_for_error(self, separation_arcmin: float) -> None:
+        """Pick the guide rate for the coming pulse from the remaining error.
+
+        Large recovery errors run at GUIDE_RATE_FAST_X so each capped pulse
+        covers twice the ground; once the error is inside the fine band the
+        rate drops back to GUIDE_RATE_FINE_X for precise final corrections.
+        A driver that rejects the GUIDE_RATE write keeps its own rate (the
+        pulse-duration math always reads the actual rate back), and no further
+        writes are attempted.
+        """
+        if self._guide_rate_writable is False:
+            return
+        fast_band_arcmin = (
+            self._guide_correction_accuracy_arcmin
+            * GUIDE_RATE_FAST_MIN_ERROR_MULTIPLE
+        )
+        desired = (
+            GUIDE_RATE_FAST_X
+            if separation_arcmin > fast_band_arcmin
+            else GUIDE_RATE_FINE_X
+        )
+        current_we, current_ns = self._current_guide_rate_x()
+        if abs(current_we - desired) <= 0.01 and abs(current_ns - desired) <= 0.01:
+            self._guide_rate_boosted = desired == GUIDE_RATE_FAST_X
+            return
+        if self._set_guide_rate(desired):
+            self._guide_rate_writable = True
+            self._guide_rate_boosted = desired == GUIDE_RATE_FAST_X
+            logger.info(
+                "Guide rate set to %.2fx sidereal (error %.1f arcmin, "
+                "fast band > %.1f arcmin)",
+                desired,
+                separation_arcmin,
+                fast_band_arcmin,
+            )
+        else:
+            if self._guide_rate_writable is None:
+                logger.warning(
+                    "Driver rejected GUIDE_RATE write; keeping current guide rate"
+                )
+            self._guide_rate_writable = False
+
+    def _restore_fine_guide_rate(self) -> None:
+        """Drop back to the fine guide rate after a fast-rate recovery."""
+        if not self._guide_rate_boosted:
+            return
+        self._guide_rate_boosted = False
+        if self._guide_rate_writable is False:
+            return
+        if self._set_guide_rate(GUIDE_RATE_FINE_X):
+            logger.info(
+                "Guide rate restored to %.2fx sidereal", GUIDE_RATE_FINE_X
+            )
+
     def _guide_pulse_ms(self, error_arcsec: float, guide_rate_x: float) -> int:
         rate_arcsec_per_sec = max(0.01, guide_rate_x) * SIDEREAL_ARCSEC_PER_SEC
         ms = (
@@ -1924,6 +2012,24 @@ class MountControlIndi(BacklashCalibrationMixin):
             self.device, prop_name, {element: float(duration_ms)}
         )
 
+    def _guide_pulse_inversions(self) -> tuple[bool, bool]:
+        """Per-axis guide-pulse direction inversion (NS, WE) from config.
+
+        Read fresh each cycle so a UI toggle takes effect without extra plumbing;
+        the guide loop only runs every GUIDE_CORRECTION_INTERVAL_SECONDS. Applies
+        to the timed guide pulse only, not the manual-move fallback (whose
+        direction mapping is already hardware-validated).
+        """
+        try:
+            cfg = config.Config()
+            cfg.load_config()
+            invert_ns = bool(cfg.get_option("indi_guide_pulse_invert_ns", False))
+            invert_we = bool(cfg.get_option("indi_guide_pulse_invert_we", False))
+        except Exception:
+            logger.debug("Guide-pulse inversion config read failed", exc_info=True)
+            return False, False
+        return invert_ns, invert_we
+
     def _apply_guide_pulse(
         self,
         current_ra: float,
@@ -1937,6 +2043,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         ra_arcsec = ra_delta_deg * 3600.0 * math.cos(math.radians(current_dec))
         dec_arcsec = dec_delta_deg * 3600.0
         guide_we_x, guide_ns_x = self._current_guide_rate_x()
+        invert_ns, invert_we = self._guide_pulse_inversions()
         threshold_arcsec = (
             max(0.5, self._guide_correction_accuracy_arcmin / 2.0) * 60.0
         )
@@ -1944,11 +2051,15 @@ class MountControlIndi(BacklashCalibrationMixin):
         pulses: list[str] = []
         if abs(dec_arcsec) > threshold_arcsec:
             ns_dir = "north" if dec_arcsec > 0 else "south"
+            if invert_ns:
+                ns_dir = "south" if ns_dir == "north" else "north"
             ns_ms = self._guide_pulse_ms(dec_arcsec, guide_ns_x)
             if self._send_guide_pulse(ns_dir, ns_ms):
                 pulses.append(f"{ns_dir} {ns_ms}ms")
         if abs(ra_arcsec) > threshold_arcsec:
             we_dir = "east" if ra_arcsec > 0 else "west"
+            if invert_we:
+                we_dir = "west" if we_dir == "east" else "east"
             we_ms = self._guide_pulse_ms(ra_arcsec, guide_we_x)
             if self._send_guide_pulse(we_dir, we_ms):
                 pulses.append(f"{we_dir} {we_ms}ms")

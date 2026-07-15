@@ -1181,6 +1181,20 @@ pifinder_menu = {
                                     ],
                                 },
                                 {
+                                    "name": _("Recovery Range"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "config_option": "indi_tracking_guide_goto_threshold_deg",
+                                    "post_callback": callbacks.reload_config,
+                                    "items": [
+                                        {"name": "0.25°", "value": 0.25},
+                                        {"name": "0.5°", "value": 0.5},
+                                        {"name": "1°", "value": 1.0},
+                                        {"name": "2°", "value": 2.0},
+                                        {"name": "3°", "value": 3.0},
+                                    ],
+                                },
+                                {
                                     "name": _("Manual Re-target"),
                                     "class": UITextMenu,
                                     "select": "single",
@@ -1209,6 +1223,40 @@ pifinder_menu = {
                                         {"name": "10", "value": 10},
                                         {"name": "15", "value": 15},
                                         {"name": "20", "value": 20},
+                                    ],
+                                },
+                                {
+                                    "name": _("Invert Guide RA/Az"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "config_option": "indi_guide_pulse_invert_we",
+                                    "post_callback": callbacks.reload_config,
+                                    "items": [
+                                        {
+                                            "name": _("Off"),
+                                            "value": False,
+                                        },
+                                        {
+                                            "name": _("On"),
+                                            "value": True,
+                                        },
+                                    ],
+                                },
+                                {
+                                    "name": _("Invert Guide Dec/Alt"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "config_option": "indi_guide_pulse_invert_ns",
+                                    "post_callback": callbacks.reload_config,
+                                    "items": [
+                                        {
+                                            "name": _("Off"),
+                                            "value": False,
+                                        },
+                                        {
+                                            "name": _("On"),
+                                            "value": True,
+                                        },
                                     ],
                                 },
                             ],

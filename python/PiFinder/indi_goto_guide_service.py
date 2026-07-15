@@ -63,6 +63,13 @@ PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
 # before giving up (mount-control pulses about every 10 s off a fresh solve).
 PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
 TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 2
+# The BNO055 "moving" flag is far more sensitive than the coordinate-motion
+# threshold (quaternion-delta hysteresis around 0.0003) and can stay set for
+# tens of seconds of micro-sway after the scope is released. Without a bound it
+# resets the settle window every tick and delays recovery indefinitely. Once
+# the fused coordinate has been still for this many settle windows, the IMU
+# flag alone no longer holds off recovery.
+TRACKING_IMU_QUIET_OVERRIDE_MULTIPLE = 2.0
 
 
 class IndiGotoGuideService:
@@ -113,6 +120,8 @@ class IndiGotoGuideService:
         self.tracking_motion_ra: Optional[float] = None
         self.tracking_motion_dec: Optional[float] = None
         self.tracking_last_motion_at = 0.0
+        self.tracking_last_imu_motion_at = 0.0
+        self.tracking_imu_flag_overridden = False
         self.tracking_recovery_state = "idle"
         self.tracking_recovery_goto_sent_at = 0.0
         self.tracking_recovery_goto_idle_since = 0.0
@@ -368,10 +377,10 @@ class IndiGotoGuideService:
     def _final_accuracy_arcmin(self) -> float:
         try:
             value = float(
-                self.config_values.get("indi_goto_refine_accuracy_arcmin", 10.0)
+                self.config_values.get("indi_goto_refine_accuracy_arcmin", 6.0)
             )
         except (TypeError, ValueError):
-            value = 10.0
+            value = 6.0
         return max(0.1, value)
 
     def _send_sync_and_goto(self, *, first: bool) -> None:
@@ -676,6 +685,17 @@ class IndiGotoGuideService:
         )
 
     def _tick_tracking_guide(self) -> None:
+        previous_state = self.tracking_guide_state
+        self._tick_tracking_guide_states()
+        if self.tracking_guide_state != previous_state:
+            logger.info(
+                "Tracking guide %s -> %s (%s)",
+                previous_state,
+                self.tracking_guide_state,
+                self.tracking_guide_last_action,
+            )
+
+    def _tick_tracking_guide_states(self) -> None:
         enabled = bool(self.config_values.get("indi_tracking_guide_enabled", False))
         if not enabled:
             self._disable_tracking_guide("disabled in config")
@@ -773,38 +793,60 @@ class IndiGotoGuideService:
         # keying the settle window off the IMU motion flag as well keeps the
         # recovery slew from firing mid-interaction -- it holds off until the
         # scope is genuinely still (the operator's original "correct only once
-        # movement stops" intent).
+        # movement stops" intent). The IMU flag alone is bounded by
+        # TRACKING_IMU_QUIET_OVERRIDE_MULTIPLE, so residual micro-sway cannot
+        # postpone recovery indefinitely.
         imu_moving = bool(
             ((pointing.get("imu") or {}).get("metadata") or {}).get("moving")
         )
         coordinate_moving = self._tracking_coordinate_moving(current_ra, current_dec)
-        if coordinate_moving or imu_moving:
-            if imu_moving:
-                # Refresh the settle window even when the coordinate looks stable.
-                self.tracking_last_motion_at = time.monotonic()
+        now = time.monotonic()
+        if imu_moving:
+            self.tracking_last_imu_motion_at = now
+
+        settle_seconds = float(
+            self.config_values.get("indi_tracking_guide_settle_seconds", 4.0)
+        )
+        coord_quiet = (
+            now - self.tracking_last_motion_at
+            if self.tracking_last_motion_at
+            else settle_seconds
+        )
+        imu_quiet = (
+            now - self.tracking_last_imu_motion_at
+            if self.tracking_last_imu_motion_at
+            else settle_seconds
+        )
+        ignore_imu_flag = (
+            not coordinate_moving
+            and coord_quiet >= settle_seconds * TRACKING_IMU_QUIET_OVERRIDE_MULTIPLE
+        )
+        if imu_moving and ignore_imu_flag and not self.tracking_imu_flag_overridden:
+            self.tracking_imu_flag_overridden = True
+            logger.info(
+                "Tracking guide: IMU moving flag still set %.1fs after the "
+                "coordinate went quiet; proceeding without it",
+                coord_quiet,
+            )
+        if not imu_moving:
+            self.tracking_imu_flag_overridden = False
+
+        if coordinate_moving or (imu_moving and not ignore_imu_flag):
             self._disable_tracking_guide("scope moving")
             self.tracking_recovery_attempts = 0
             self.tracking_guide_recovery_mode = "none"
             self.tracking_guide_state = "disturbed"
             self.tracking_guide_last_action = (
-                "suspended: IMU moving"
-                if imu_moving
-                else "suspended: coordinate moving"
+                "suspended: coordinate moving"
+                if coordinate_moving
+                else "suspended: IMU moving"
             )
             return
 
         # Settle wait: the scope must stay still before we correct again. Kept
         # comfortably longer than a reflexive nudge so a brief pause between
         # pushes does not trigger a recovery slew (Option A).
-        settle_seconds = float(
-            self.config_values.get("indi_tracking_guide_settle_seconds", 4.0)
-        )
-        now = time.monotonic()
-        stable_for = (
-            now - self.tracking_last_motion_at
-            if self.tracking_last_motion_at
-            else settle_seconds
-        )
+        stable_for = coord_quiet if ignore_imu_flag else min(coord_quiet, imu_quiet)
         self.tracking_guide_settle_remaining = max(0.0, settle_seconds - stable_for)
         if stable_for < settle_seconds:
             self.tracking_guide_state = "settling"
@@ -859,7 +901,7 @@ class IndiGotoGuideService:
             return
 
         goto_threshold_arcmin = (
-            float(self.config_values.get("indi_tracking_guide_goto_threshold_deg", 3.0))
+            float(self.config_values.get("indi_tracking_guide_goto_threshold_deg", 0.5))
             * 60.0
         )
         goto_recovery_enabled = bool(
@@ -1016,6 +1058,8 @@ class IndiGotoGuideService:
         self.tracking_motion_ra = None
         self.tracking_motion_dec = None
         self.tracking_last_motion_at = 0.0
+        self.tracking_last_imu_motion_at = 0.0
+        self.tracking_imu_flag_overridden = False
         self.tracking_recovery_state = "idle"
         self.tracking_recovery_goto_sent_at = 0.0
         self.tracking_recovery_goto_idle_since = 0.0
@@ -1245,7 +1289,7 @@ class IndiGotoGuideService:
                 )
             ),
             "indi_goto_refine_accuracy_arcmin": float(
-                cfg.get_option("indi_goto_refine_accuracy_arcmin", 10.0)
+                cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
             ),
             "indi_tracking_guide_threshold_arcmin": float(
                 cfg.get_option("indi_tracking_guide_threshold_arcmin", 10.0)
@@ -1260,7 +1304,7 @@ class IndiGotoGuideService:
                 cfg.get_option("indi_tracking_guide_goto_recovery_enabled", False)
             ),
             "indi_tracking_guide_goto_threshold_deg": float(
-                cfg.get_option("indi_tracking_guide_goto_threshold_deg", 3.0)
+                cfg.get_option("indi_tracking_guide_goto_threshold_deg", 0.5)
             ),
             "indi_tracking_guide_manual_retarget_enabled": bool(
                 cfg.get_option("indi_tracking_guide_manual_retarget_enabled", True)

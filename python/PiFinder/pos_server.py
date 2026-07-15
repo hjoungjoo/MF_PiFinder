@@ -714,7 +714,7 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
             "dec": dec_deg,
             "refine_after_goto": refine_after_goto,
             "refine_accuracy_arcmin": float(
-                _get_config_option("indi_goto_refine_accuracy_arcmin", 10.0)
+                _get_config_option("indi_goto_refine_accuracy_arcmin", 6.0)
             ),
         }
         goto_guide_queue.put(command)

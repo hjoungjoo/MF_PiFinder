@@ -195,10 +195,22 @@ indi_goto_method = "indi_mount" | "pifinder"
 indi_tracking_guide_enabled = false | true
   default: false
 
-indi_goto_refine_accuracy_arcmin
-  existing setting. Used as the target accuracy of the PiFinder GoTo final
-  pulse-guide alignment (0.1 deg = 6 arcmin). Also shared as the tracking-guide
-  target accuracy.
+indi_goto_refine_accuracy_arcmin = 6.0
+  Target accuracy (arcmin) for solve-based fine correction. Default 6' = 0.1 deg
+  to match the docs (lowered from 10'). Shared by: INDI Mount refine
+  (`indi_goto_refine_once`), PiFinder GoTo final pulse-guide alignment, SkySafari
+  GoTo refine, and the LCD manual "Guide Correction". (The automatic tracking
+  guide band uses a separate key, `indi_tracking_guide_threshold_arcmin`.)
+
+indi_guide_pulse_invert_we = false | true
+  default: false
+  Invert the RA/Az (WE) direction of the timed guide pulse. Turn on if the mount
+  guides the wrong way in RA.
+
+indi_guide_pulse_invert_ns = false | true
+  default: false
+  Invert the Dec/Alt (NS) direction of the timed guide pulse. Turn on if the
+  mount guides the wrong way in Dec.
 
 indi_pifinder_goto_near_threshold_deg = 1.0
   The boundary where PiFinder GoTo stops the sync + mount GoTo loop and switches
@@ -253,6 +265,15 @@ Fixes:
    during a brief pause where the fused-coordinate delta dips below the
    threshold — it stays `disturbed` and never settles into a recovery. Recovery
    fires only once the scope is genuinely still for `settle_seconds`.
+   - **IMU-flag bound (2026-07-16)**: the BNO055 flag is far more sensitive
+     than the coordinate threshold (quat delta ~0.0003) and can stay set for
+     tens of seconds of micro-sway after release; in hardware testing this
+     delayed recovery by 30+ seconds. Once the coordinate has been still for
+     `settle_seconds x TRACKING_IMU_QUIET_OVERRIDE_MULTIPLE` (default 2x = 8 s),
+     the IMU flag alone no longer holds off recovery (coordinate motion still
+     blocks indefinitely — mid-push protection is unchanged). The override is
+     logged, and tracking-guide state transitions are now journaled
+     (`Tracking guide disturbed -> settling (...)`).
 2. A guide-correction pulse no longer claims mount readback priority
    (mountcontrol `_motion_status`), so the IMU stays live during fine pulse
    corrections (the pulse is sub-arcminute and the IMU-delta rate gate discards
@@ -269,8 +290,9 @@ indi_tracking_guide_goto_recovery_enabled = false | true
   When Off, Tracking Guide corrects with pulse-guide only, regardless of
   error size (large errors are reported in status); it never slews the mount.
 
-indi_tracking_guide_goto_threshold_deg = 3.0
-  Pulse-guide handles post-settle errors up to this size (default 3 deg).
+indi_tracking_guide_goto_threshold_deg = 0.5
+  Pulse-guide handles post-settle errors up to this size (default 0.5 deg =
+  30 arcmin; menu INDI Setting > Goto/Guide > Recovery Range offers 0.25-3 deg).
   Errors strictly ABOVE this use the sync + GoTo recovery (when goto
   recovery is enabled); at/below it, pulse-guide corrects directly.
   This single boundary is also the practical pulse-guide envelope.
@@ -548,12 +570,32 @@ button); a timed guide pulse moves at the guide rate for a specified **duration
   converges; clamped to a min/max ms.
 - **Guide rate**: read the driver's `GUIDE_RATE` (multiples of sidereal); fall
   back to a default (0.5×) if it is not reported.
+- **Recovery-speed switching**: while the remaining error is above
+  `accuracy × 2`, the `GUIDE_RATE` is raised to **1.0×** (fast) so recovery
+  pulses cover twice the ground (requires a driver that accepts a 1.0× write,
+  e.g. the modified OnStepX); once the error enters that band it drops back to
+  **0.5×** (fine) to finish with precise corrections. The rate is also restored
+  to 0.5× when the correction converges within accuracy or guide correction is
+  disabled. If the driver rejects the `GUIDE_RATE` write, the current rate is
+  kept and no further writes are attempted (the pulse-duration math always
+  reads the actual rate back, so this is safe).
 - **Capability detection**: if the driver exposes `TELESCOPE_TIMED_GUIDE_*`, use
   timed guide pulses; otherwise fall back to the **short manual-movement lease**
   as before (result is cached).
-- **Direction sign**: NS from the dec-error sign (positive → N), WE from the
-  RA-error sign. The RA (WE) sign can be reversed per driver, so the element
-  mapping is a single swappable constant to hardware-validate once.
+- **Direction inversion**: NS from the dec-error sign (positive → N), WE from
+  the RA-error sign. A driver's axis sign can be reversed, so per-axis inversion
+  is a config option (`indi_guide_pulse_invert_we` = RA/Az,
+  `indi_guide_pulse_invert_ns` = Dec/Alt, default off; toggled from LCD/Web). The
+  inversion applies only to the timed guide pulse, not the manual-move fallback
+  (whose mapping is already validated).
+  - **Hardware validated (OnStepX, 2026-07-15)**: pulsing a real LX200 OnStepX
+    and measuring the RA/Dec change gave `TIMED_GUIDE_E` → RA↑, `TIMED_GUIDE_W`
+    → RA↓, `TIMED_GUIDE_N` → Dec↑ (all standard). So the **default mapping is
+    correct and no inversion is needed** (both invert keys stay off); the invert
+    options remain as a safeguard for other drivers.
+  - The same test measured the actual pulse motion at ~1.6x the nominal
+    GUIDE_RATE (0.5x), so `GUIDE_PULSE_AGGRESSIVENESS` is kept conservative at
+    0.5 to avoid overshoot.
 
 This (1) keeps the tracking correction pulses from showing up as `manual_motion`
 in mount status, so the [Manual Re-target] discrimination stays clean, and (2) is
@@ -605,9 +647,9 @@ While Tracking Guide is On and a target is held:
    motion; wait until motion stops.
 2. Once motion has stopped and the coordinate has settled, measure the error to
    the target and choose recovery by magnitude:
-   - **Small/medium error** (up to the GoTo threshold, default 3 degrees):
+   - **Small/medium error** (up to the GoTo threshold, default 0.5 degrees):
      pulse-guide fine correction.
-   - **Large error** (strictly above the GoTo threshold, i.e. > 3 degrees): for
+   - **Large error** (strictly above the GoTo threshold, i.e. > 0.5 degrees): for
      accurate, fast recovery, **sync the mount to PiFinder's current coordinate**,
      send a **GoTo back to the target**, then near the target **resume pulse-guide
      fine correction**.
@@ -665,7 +707,7 @@ flowchart TD
     E -->|no| F[state=settling: keep waiting]
     F --> B
     E -->|yes| G[Measure error vs target from current]
-    G --> H{error <= goto_threshold, 3 deg?}
+    G --> H{error <= goto_threshold, 0.5 deg?}
     H -->|yes| I[state=enabled: pulse-guide fine correction]
     I --> B
     H -->|no| J{goto_recovery_enabled?}
@@ -680,8 +722,8 @@ flowchart TD
 Bands, using the user-facing numbers:
 
 ```text
-error <= 3 deg (goto_threshold)   -> pulse-guide fine correction
-error > 3 deg                     -> sync + GoTo recovery, then pulse-guide near
+error <= 0.5 deg (goto_threshold) -> pulse-guide fine correction
+error > 0.5 deg                   -> sync + GoTo recovery, then pulse-guide near
                                      target; if recovery Off, pulse-guide only
                                      (no slew)
 ```

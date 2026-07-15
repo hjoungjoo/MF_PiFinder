@@ -491,7 +491,7 @@ class UIIndiGuide(UIIndiBase):
                 {
                     "type": "toggle_guide_correction",
                     "accuracy_arcmin": self.config_object.get_option(
-                        "indi_goto_refine_accuracy_arcmin", 10.0
+                        "indi_goto_refine_accuracy_arcmin", 6.0
                     ),
                 }
             )
@@ -526,6 +526,21 @@ class UIIndiGuide(UIIndiBase):
         if number in self._number_direction:
             self._move("stop")
 
+    def _text_speed(self, char: str) -> bool:
+        """Slew-rate letters (, and .), matching the 9/3 number keys.
+
+        key_text and key_text_press are mutually exclusive per input source, so
+        handling it in both fires exactly once either way.
+        """
+        command = self._GUIDE_TEXT_SPEED.get(char)
+        if command is None:
+            return False
+        self._send_mount({"type": command})
+        self.message(
+            _("Speed +") if command == "increase_slew_rate" else _("Speed -"), 0.5
+        )
+        return True
+
     def key_text(self, char: str = ""):
         if not char:
             return
@@ -541,6 +556,8 @@ class UIIndiGuide(UIIndiBase):
                 }
             )
             self.update(force=True)
+        else:
+            self._text_speed(char)
 
     def key_text_press(self, char: str = ""):
         if not char:
@@ -548,6 +565,8 @@ class UIIndiGuide(UIIndiBase):
         direction = self._text_direction.get(char.lower())
         if direction:
             self._move(direction)
+        else:
+            self._text_speed(char)
 
     def key_text_release(self, char: str = ""):
         if not char:

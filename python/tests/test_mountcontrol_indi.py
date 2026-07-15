@@ -1374,3 +1374,82 @@ def test_guide_correction_does_not_pulse_inside_accuracy():
     mount._check_guide_correction()
 
     assert mount._manual_motion_direction is None
+
+
+def test_guide_rate_boosts_to_fast_for_large_error(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._guide_correction_accuracy_arcmin = 6.0
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (0.5, 0.5))
+
+    mount._select_guide_rate_for_error(60.0)
+
+    assert mount.client.numbers[-1] == (
+        "LX200 OnStep",
+        "GUIDE_RATE",
+        {"GUIDE_RATE_WE": mci.GUIDE_RATE_FAST_X, "GUIDE_RATE_NS": mci.GUIDE_RATE_FAST_X},
+    )
+    assert mount._guide_rate_boosted
+    assert mount._guide_rate_writable is True
+
+
+def test_guide_rate_drops_to_fine_inside_fast_band(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._guide_correction_accuracy_arcmin = 6.0
+    mount._guide_rate_boosted = True
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (1.0, 1.0))
+
+    # 10' error is above the 6' accuracy but inside the 12' fast band.
+    mount._select_guide_rate_for_error(10.0)
+
+    assert mount.client.numbers[-1][2] == {
+        "GUIDE_RATE_WE": mci.GUIDE_RATE_FINE_X,
+        "GUIDE_RATE_NS": mci.GUIDE_RATE_FINE_X,
+    }
+    assert not mount._guide_rate_boosted
+
+
+def test_guide_rate_not_rewritten_when_already_at_desired(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._guide_correction_accuracy_arcmin = 6.0
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (1.0, 1.0))
+
+    mount._select_guide_rate_for_error(60.0)
+
+    assert mount.client.numbers == []
+    assert mount._guide_rate_boosted
+
+
+def test_guide_rate_restored_to_fine_on_disable():
+    mount = DummyConnectedMount()
+    mount._guide_rate_boosted = True
+
+    assert mount.toggle_guide_correction(enabled=False)
+
+    assert mount.client.numbers[-1] == (
+        "LX200 OnStep",
+        "GUIDE_RATE",
+        {"GUIDE_RATE_WE": mci.GUIDE_RATE_FINE_X, "GUIDE_RATE_NS": mci.GUIDE_RATE_FINE_X},
+    )
+    assert not mount._guide_rate_boosted
+
+
+def test_guide_rate_write_rejection_stops_future_attempts(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._guide_correction_accuracy_arcmin = 6.0
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (0.5, 0.5))
+    monkeypatch.setattr(mount.client, "set_number", lambda *args, **kwargs: False)
+
+    mount._select_guide_rate_for_error(60.0)
+
+    assert mount._guide_rate_writable is False
+    assert not mount._guide_rate_boosted
+
+    attempts = []
+    monkeypatch.setattr(
+        mount, "_set_guide_rate", lambda rate: attempts.append(rate) or True
+    )
+    mount._select_guide_rate_for_error(60.0)
+    mount._guide_rate_boosted = True
+    mount._restore_fine_guide_rate()
+
+    assert attempts == []

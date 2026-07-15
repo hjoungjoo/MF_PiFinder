@@ -59,6 +59,8 @@ KEY_V = 47
 KEY_B = 48
 KEY_N = 49
 KEY_M = 50
+KEY_COMMA = 51
+KEY_DOT = 52
 KEY_RIGHTSHIFT = 54
 KEY_LEFTALT = 56
 KEY_SPACE = 57
@@ -134,6 +136,9 @@ class KeyboardPi(KeyboardInterface):
 
         self.text_physical_key_mapping: dict[int, int] = {
             KEY_SPACE: self.text_key(" "),
+            # Slew-rate keys for the letter jog pad (see _GUIDE_TEXT_SPEED).
+            KEY_COMMA: self.text_key(","),
+            KEY_DOT: self.text_key("."),
             KEY_A: self.text_key("a"),
             KEY_B: self.text_key("b"),
             KEY_C: self.text_key("c"),
