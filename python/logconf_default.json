@@ -46,6 +46,22 @@
         },
 
         /////////////////////////////////////////////////////////////////
+        ////// INDI mount control / GoTo-Guide / pointing coordinate
+        //
+        // INFO here captures tracking-guide state transitions, recovery
+        // sync+GoTo events, guide pulses, and guide-rate switches --
+        // needed to diagnose disturbance-recovery behaviour in the field.
+        "MountControl": {
+            "level": "INFO"
+        },
+        "IndiGotoGuideService": {
+            "level": "INFO"
+        },
+        "PointingCoordinateService": {
+            "level": "INFO"
+        },
+
+        /////////////////////////////////////////////////////////////////
         ////// Flask Framework (used for webserver)
         //
         // Flask and related component logging
