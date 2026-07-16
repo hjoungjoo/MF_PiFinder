@@ -425,7 +425,6 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - `python/PiFinder/ui/indi.py`
 - `python/views/indi_mount.html`
 - `python/views/tools.html`
-- `scripts/install_indi_mount.sh`
 - `scripts/install_indi_mount_OnstepX.sh`
 - `scripts/install_indi_mount_archive.sh`
 - `scripts/package_indi_mount_archive.sh`

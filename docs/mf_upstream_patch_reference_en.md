@@ -262,7 +262,6 @@ Key files:
 - `python/PiFinder/pos_server.py`
 - `python/PiFinder/ui/indi.py`
 - `python/views/indi_mount.html`
-- `scripts/install_indi_mount.sh`
 - `scripts/install_indi_mount_OnstepX.sh`
 - `scripts/install_indi_mount_archive.sh`
 - `scripts/package_indi_mount_archive.sh`

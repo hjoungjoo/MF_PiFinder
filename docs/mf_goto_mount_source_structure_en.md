@@ -781,7 +781,7 @@ Install docs:
 
 Install script:
 
-- `scripts/install_indi_mount.sh`
+- `scripts/install_indi_mount_OnstepX.sh`
 
 Services:
 

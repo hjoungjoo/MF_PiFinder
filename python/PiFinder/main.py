@@ -101,7 +101,12 @@ def init_keypad_pwm():
     global keypad_pwm
     global hardware_platform
     if hardware_platform == "Pi":
-        keypad_pwm = HardwarePWM(pwm_channel=1, hz=120)
+        from PiFinder.board_config import get_pwm_chip
+
+        # The keypad PWM lives on a different sysfs chip on the Pi 5 (RP1)
+        # than on the Pi 1-4 SoC; pick it per board so brightness works on
+        # both.  Requires rpi-hardware-pwm >= 0.2.1 for the `chip` argument.
+        keypad_pwm = HardwarePWM(pwm_channel=1, hz=120, chip=get_pwm_chip())
         keypad_pwm.start(0)
 
 

@@ -60,7 +60,7 @@ or `0` sends the matching `ALT_*` input.
 ## INDI Mount Control
 
 INDI mount control is optional. It is available only after installing INDI
-support with `scripts/install_indi_mount.sh` and enabling this PiFinder setting:
+support with `scripts/install_indi_mount_OnstepX.sh` and enabling this PiFinder setting:
 
 ```text
 Settings > Experimental > Mount Control > On

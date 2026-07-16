@@ -288,7 +288,6 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 - `python/PiFinder/pos_server.py`
 - `python/PiFinder/ui/indi.py`
 - `python/views/indi_mount.html`
-- `scripts/install_indi_mount.sh`
 - `scripts/install_indi_mount_OnstepX.sh`
 - `scripts/install_indi_mount_archive.sh`
 - `scripts/package_indi_mount_archive.sh`

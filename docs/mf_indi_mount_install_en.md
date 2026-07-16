@@ -22,13 +22,13 @@ The first integrated scope includes:
 
 Automatic target refinement, drift compensation, and alignment-subsystem management from the older reference branch are not enabled in this first modular port.
 
-## Install INDI Support
+## Install INDI Support (Source Build)
 
 Run the dedicated installer from the PiFinder checkout:
 
 ```bash
 cd ~/PiFinder
-bash scripts/install_indi_mount.sh
+bash scripts/install_indi_mount_OnstepX.sh
 ```
 
 The script installs INDI, INDI third-party drivers, PyIndi, INDI Web Manager, and Chrony GPS time support. It stops the `pifinder` service while compiling and starts it again at the end.
@@ -38,19 +38,10 @@ INDI Web Manager dependencies are pinned to `FastAPI 0.103.2`, `Starlette 0.27.0
 Useful environment overrides:
 
 ```bash
-INDI_VERSION=v2.1.6 INDI_3RDPARTY_VERSION=v2.1.6.2 JOBS=2 bash scripts/install_indi_mount.sh
+JOBS=4 bash scripts/install_indi_mount_OnstepX.sh
 ```
 
-`JOBS=2` is the recommended default on Raspberry Pi 4 to keep memory use conservative. On Raspberry Pi 5 or CM5, `JOBS=3` or `JOBS=4` can reduce build time if cooling and power are stable.
-
-### Latest INDI + LX200 OnStepX Source Build
-
-Use this script for the latest INDI test build that includes the `LX200 OnStepX` driver:
-
-```bash
-cd ~/PiFinder
-bash scripts/install_indi_mount_OnstepX.sh
-```
+`JOBS=2` is the conservative default for Raspberry Pi 4 memory use. On Raspberry Pi 5 or CM5, `JOBS=3` or `JOBS=4` can reduce build time if cooling and power are stable. `INDI_VERSION` / `INDI_3RDPARTY_VERSION` can also be overridden the same way.
 
 The script checks out INDI `v2.2.3.1` under `~/indi-latest`, builds it, and automatically applies `scripts/patches/indi-v2.2.3.1-onstepx.patch`. The patch leaves the upstream `LX200 OnStep` driver unchanged and adds a separate `LX200 OnStepX` device and executable link. The OnStepX patch also carries the PiFinder Backlash range/readback fixes and writable `GUIDE_RATE` handling for driver compatibility.
 

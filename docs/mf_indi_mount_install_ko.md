@@ -22,13 +22,13 @@ INDI 마운트 제어는 실험 기능입니다. 먼저 INDI Telescope Simulator
 
 구버전 참고 브랜치에 있던 자동 target refinement, drift compensation, INDI alignment subsystem 관리 기능은 이번 1차 모듈화 포트에는 포함하지 않았습니다.
 
-## INDI 지원 설치
+## INDI 지원 설치 (소스 빌드)
 
 PiFinder 체크아웃에서 전용 설치 스크립트를 실행합니다.
 
 ```bash
 cd ~/PiFinder
-bash scripts/install_indi_mount.sh
+bash scripts/install_indi_mount_OnstepX.sh
 ```
 
 이 스크립트는 INDI, INDI third-party 드라이버, PyIndi, INDI Web Manager, Chrony GPS 시간 동기화 지원을 설치합니다. 컴파일 중에는 `pifinder` 서비스를 잠시 멈추고, 완료 후 다시 시작합니다.
@@ -38,19 +38,10 @@ INDI Web Manager는 현재 `FastAPI 0.103.2`, `Starlette 0.27.0`, `Uvicorn 0.23.
 필요하면 환경 변수로 버전과 빌드 병렬 수를 바꿀 수 있습니다.
 
 ```bash
-INDI_VERSION=v2.1.6 INDI_3RDPARTY_VERSION=v2.1.6.2 JOBS=2 bash scripts/install_indi_mount.sh
+JOBS=4 bash scripts/install_indi_mount_OnstepX.sh
 ```
 
-Pi 4에서는 메모리 여유를 위해 기본 `JOBS=2`를 권장합니다. Pi 5나 CM5에서는 냉각과 전원 상태가 안정적이면 `JOBS=3` 또는 `JOBS=4`로 빌드 시간을 줄일 수 있습니다.
-
-### 최신 INDI + LX200 OnStepX 소스 빌드
-
-`LX200 OnStepX` 드라이버가 포함된 최신 INDI 테스트 빌드는 다음 스크립트를 사용합니다.
-
-```bash
-cd ~/PiFinder
-bash scripts/install_indi_mount_OnstepX.sh
-```
+Pi 4에서는 메모리 여유를 위해 기본 `JOBS=2`를 권장합니다. Pi 5나 CM5에서는 냉각과 전원 상태가 안정적이면 `JOBS=3` 또는 `JOBS=4`로 빌드 시간을 줄일 수 있습니다. `INDI_VERSION` / `INDI_3RDPARTY_VERSION`도 같은 방식으로 바꿀 수 있습니다.
 
 이 스크립트는 INDI `v2.2.3.1`을 `~/indi-latest` 아래에 받아 빌드하고, `scripts/patches/indi-v2.2.3.1-onstepx.patch`를 자동으로 적용합니다. 패치는 원본 `LX200 OnStep` 드라이버를 변경하지 않고 `LX200 OnStepX` 장치와 실행 링크를 추가합니다. OnStepX 패치에는 PiFinder Backlash 범위/readback 수정과 드라이버 호환성을 위한 writable `GUIDE_RATE` 처리도 포함됩니다.
 

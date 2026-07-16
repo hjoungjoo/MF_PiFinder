@@ -10,22 +10,29 @@ class BoardProfile:
     name: str
     gps_device: str
     uart_overlay: str
+    # sysfs PWM chip index for the keypad backlight PWM.  Pi 1-4 expose the
+    # SoC PWM block as pwmchip0; the Pi 5 / CM5 drive PWM through the RP1
+    # controller, which the rpi-hardware-pwm library addresses as chip 2.
+    pwm_chip: int
 
 
 PI5_CLASS = BoardProfile(
     name="pi5_class",
     gps_device="/dev/ttyAMA2",
     uart_overlay="dtoverlay=uart2-pi5",
+    pwm_chip=2,
 )
 PI4 = BoardProfile(
     name="pi4",
     gps_device="/dev/ttyAMA3",
     uart_overlay="dtoverlay=uart3",
+    pwm_chip=0,
 )
 LEGACY = BoardProfile(
     name="legacy",
     gps_device="/dev/ttyAMA1",
     uart_overlay="dtoverlay=uart3",
+    pwm_chip=0,
 )
 
 
@@ -51,3 +58,7 @@ def get_default_gpsd_device(model: str | None = None) -> str:
 
 def get_uart_overlay(model: str | None = None) -> str:
     return get_board_profile(model).uart_overlay
+
+
+def get_pwm_chip(model: str | None = None) -> int:
+    return get_board_profile(model).pwm_chip

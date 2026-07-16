@@ -119,6 +119,25 @@ pifinder_uart_overlay() {
     esac
 }
 
+# Device-tree overlay that exposes the keypad backlight PWM on GPIO13
+# (PWM channel 1).  Pi 1-4 use the SoC PWM block via the single-channel "pwm"
+# overlay; the Pi 5 / CM5 drive PWM through the RP1 controller, which needs the
+# two-channel overlay to map GPIO13 to channel 1.
+#
+# NOTE(pi5): the RP1 pin function selector (func2=4) is a best-effort default
+# and should be confirmed on Pi 5 hardware together with pwm_chip=2 in
+# python/PiFinder/board_config.py.
+pifinder_pwm_overlay() {
+    case "$(pifinder_board_profile)" in
+        pi5_class)
+            printf "%s\n" "dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4"
+            ;;
+        *)
+            printf "%s\n" "dtoverlay=pwm,pin=13,func=4"
+            ;;
+    esac
+}
+
 pifinder_gps_device() {
     case "$(pifinder_board_profile)" in
         pi5_class)

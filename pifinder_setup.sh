@@ -159,9 +159,15 @@ fi
 
 # Enable interfaces
 BOOT_CONFIG="$(pifinder_boot_config_path)"
+# Drop any previously-written keypad PWM overlay so we only ever keep the one
+# that matches this board (Pi 1-4 vs Pi 5 / RP1 -- see pifinder_pwm_overlay).
+sudo sed -i \
+    -e '/^dtoverlay=pwm,/d' \
+    -e '/^dtoverlay=pwm-2chan,/d' \
+    "${BOOT_CONFIG}"
 for line in \
     "dtparam=spi=on" \
-    "dtoverlay=pwm,pin=13,func=4" \
+    "$(pifinder_pwm_overlay)" \
     "$(pifinder_uart_overlay)"
 do
     grep -qxF "${line}" "${BOOT_CONFIG}" || echo "${line}" | sudo tee -a "${BOOT_CONFIG}"
@@ -198,6 +204,16 @@ else
 fi
 if [[ "$(pifinder_uart_overlay)" == "dtoverlay=uart2-pi5" ]]; then
     sudo sed -i 's/^dtoverlay=uart3/#dtoverlay=uart3/' "${BOOT_CONFIG}"
+fi
+
+# GPIO library for the keypad matrix (PiFinder/keyboard_pi.py imports RPi.GPIO).
+# The classic C-extension RPi.GPIO (python3-rpi.gpio) talks to the SoC directly
+# and does not work on the Pi 5 / CM5, whose GPIOs hang off the RP1 controller.
+# python3-rpi-lgpio provides the same RPi.GPIO API on top of lgpio and does work
+# there, so install it on Pi 5-class boards (apt replaces python3-rpi.gpio).
+if [[ "$(pifinder_board_profile)" == "pi5_class" ]]; then
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-rpi-lgpio \
+        || echo "WARNING: could not install python3-rpi-lgpio; keypad GPIO may not work on Pi 5." >&2
 fi
 # Note: camera types are added lateron by python/PiFinder/switch_camera.py
 

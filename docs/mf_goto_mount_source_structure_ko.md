@@ -786,7 +786,7 @@ GoTo 자동화에도 abort/stop 경로가 항상 접근 가능해야 한다.
 
 설치 스크립트:
 
-- `scripts/install_indi_mount.sh`
+- `scripts/install_indi_mount_OnstepX.sh`
 
 서비스:
 
