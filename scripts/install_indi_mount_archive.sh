@@ -116,7 +116,28 @@ PIP_BREAK_SYSTEM_PACKAGES=1 sudo python3 -m pip install --break-system-packages 
 sudo systemctl stop pifinder || true
 sudo systemctl stop indiwebmanager.service || true
 
-sudo tar -C "${TMPDIR}/rootfs" -cf - . | sudo tar -C / -xpf -
+# --keep-directory-symlink is REQUIRED: on Bookworm /lib, /bin, /sbin and
+# /lib64 are symlinks into /usr (the "usrmerge" layout). The rootfs overlay
+# ships real ./lib and ./usr directories, and without this flag GNU tar would
+# replace the /lib -> usr/lib symlink with a fresh real directory. That makes
+# /lib/ld-linux-aarch64.so.1 (the dynamic loader) disappear, so every
+# dynamically-linked binary — sudo, rm, bash — dies with
+# "cannot execute: required file not found" and the whole system is bricked.
+# The flag tells tar to descend into the existing symlinked directory instead.
+sudo tar -C "${TMPDIR}/rootfs" -cf - . | sudo tar -C / --keep-directory-symlink -xpf -
+sudo ldconfig
+
+# Safety net: if a previous run (or an older archive) already clobbered the
+# usrmerge symlinks, restore them so the system stays bootable.
+for merged in lib bin sbin lib64; do
+    if [ -d "/${merged}" ] && [ ! -L "/${merged}" ] && [ -d "/usr/${merged}" ]; then
+        echo "WARNING: /${merged} is a real directory but should be a symlink to /usr/${merged}." >&2
+        echo "         Merging its contents back into /usr/${merged} and restoring the symlink." >&2
+        sudo cp -a "/${merged}/." "/usr/${merged}/"
+        sudo rm -rf "/${merged}"
+        sudo ln -s "usr/${merged}" "/${merged}"
+    fi
+done
 sudo ldconfig
 
 cat > "${TMPDIR}/indiwebmanager.service" <<EOF
