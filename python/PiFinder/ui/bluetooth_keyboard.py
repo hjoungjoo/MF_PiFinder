@@ -4,7 +4,9 @@
 Bluetooth keyboard pairing and connection UI.
 """
 
+import contextlib
 import fcntl
+import logging
 import os
 import re
 import select
@@ -15,6 +17,8 @@ from typing import Any, TYPE_CHECKING
 from PiFinder import utils
 from PiFinder.ui.text_menu import UITextMenu
 
+logger = logging.getLogger("UIBluetoothKeyboard")
+
 if TYPE_CHECKING:
 
     def _(a) -> Any:
@@ -24,11 +28,21 @@ if TYPE_CHECKING:
 sys_utils = utils.get_sys_utils()
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+# bluetoothctl wraps its colored agent prompts in readline's non-printing
+# markers \x01 (SOH) and \x02 (STX). Left in place they sit between "Passkey:"
+# and the digits, breaking passkey detection, so strip all C0 control chars
+# except tab/newline (\r is normalized to \n separately).
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 PASSKEY_RE = re.compile(r"Passkey:\s*([0-9]{4,8})", re.IGNORECASE)
 MAC_ADDRESS_RE = re.compile(r"^[0-9A-Fa-f:]{17}$")
 DEVICE_NAME_MAX = 20
 SCAN_SECONDS = 12
 PAIR_TIMEOUT = 90
+# Hard cap on how long WiFi may stay paused during a pairing attempt. A
+# successful pair (incl. passkey entry) completes well inside this; capping it
+# means a slow/hung pair can never leave the user without WiFi for the full
+# PAIR_TIMEOUT. The attempt keeps running; only the WiFi silence ends.
+WIFI_MAX_PAUSE = 35
 
 
 class UIBluetoothKeyboard(UITextMenu):
@@ -56,6 +70,8 @@ class UIBluetoothKeyboard(UITextMenu):
         self.pair_success = False
         self.pair_connect_sent = False
         self.pair_yes_sent = False
+        self.pair_passkey = ""
+        self.wifi_paused = False
 
         self._refresh_devices()
         kwargs["item_definition"] = self._create_menu_definition()
@@ -71,7 +87,7 @@ class UIBluetoothKeyboard(UITextMenu):
 
     def _create_menu_definition(self):
         items = [
-            {"name": _("Scan / Pair"), "value": "__scan__"},
+            {"name": _("Scan"), "value": "__scan__"},
             {"name": _("Reconnect"), "value": "__reconnect__"},
             {"name": _("Refresh"), "value": "__refresh__"},
         ]
@@ -131,10 +147,33 @@ class UIBluetoothKeyboard(UITextMenu):
             self.status = f"Scan error: {e}"
         self._rebuild_menu()
 
+    @contextlib.contextmanager
+    def _wifi_paused_for_link(self):
+        """
+        Silence WiFi while establishing a Bluetooth link, then always restore
+        it. Onboard WiFi/BT share one 2.4GHz antenna and coexistence breaks BLE
+        connection setup; a detached watchdog restores WiFi even if we die here.
+        """
+        paused = False
+        try:
+            sys_utils.pause_wifi_for_bt_pairing()
+            paused = True
+        except Exception as e:
+            logger.warning("BT link: could not pause WiFi: %s", e)
+        try:
+            yield
+        finally:
+            if paused:
+                try:
+                    sys_utils.resume_wifi_after_bt_pairing()
+                except Exception as e:
+                    logger.warning("BT link: could not resume WiFi: %s", e)
+
     def _run_reconnect(self):
         self.message(_("Connecting"), 2)
         try:
-            count = sys_utils.reconnect_bluetooth_keyboards()
+            with self._wifi_paused_for_link():
+                count = sys_utils.reconnect_bluetooth_keyboards()
             self.status = f"Reconnect {count}"
         except Exception as e:
             self.status = f"Conn error: {e}"
@@ -177,7 +216,8 @@ class UIBluetoothKeyboard(UITextMenu):
         self.message(label, 1)
         try:
             if action == "connect":
-                output = sys_utils.connect_bluetooth_device(address)
+                with self._wifi_paused_for_link():
+                    output = sys_utils.connect_bluetooth_device(address)
             elif action == "disconnect":
                 output = sys_utils.disconnect_bluetooth_device(address)
             elif action == "remove":
@@ -209,6 +249,17 @@ class UIBluetoothKeyboard(UITextMenu):
         self.pair_success = False
         self.pair_connect_sent = False
         self.pair_yes_sent = False
+        self.pair_passkey = ""
+
+        # Onboard WiFi shares the 2.4GHz antenna with Bluetooth and reliably
+        # breaks BLE pairing (HCI 0x3e). Silence WiFi for the attempt; it is
+        # always restored in _close_pair_process (plus a detached watchdog).
+        self.pair_status = "Pausing WiFi"
+        try:
+            sys_utils.pause_wifi_for_bt_pairing()
+            self.wifi_paused = True
+        except Exception as e:
+            logger.warning("BT pairing: could not pause WiFi: %s", e)
 
         try:
             self.pair_process = subprocess.Popen(
@@ -235,6 +286,9 @@ class UIBluetoothKeyboard(UITextMenu):
         except Exception as e:
             self.pair_status = f"Start failed: {e}"
             self._finish_pairing(False)
+            # The update loop won't tear down a process it never saw, so restore
+            # WiFi here rather than waiting for the safety watchdog.
+            self._close_pair_process()
 
     def _send_pair_command(self, command: str):
         if self.pair_process is None or self.pair_process.stdin is None:
@@ -246,7 +300,9 @@ class UIBluetoothKeyboard(UITextMenu):
             pass
 
     def _clean_text(self, text: str) -> str:
-        return ANSI_ESCAPE_RE.sub("", text).replace("\r", "\n")
+        text = ANSI_ESCAPE_RE.sub("", text)
+        text = CONTROL_CHARS_RE.sub("", text)
+        return text.replace("\r", "\n")
 
     def _read_pair_output(self):
         if self.pair_process is None or self.pair_process.stdout is None:
@@ -269,7 +325,8 @@ class UIBluetoothKeyboard(UITextMenu):
     def _handle_pair_text(self, text: str):
         passkey = PASSKEY_RE.search(text)
         if passkey:
-            self.pair_status = f"Type {passkey.group(1)}"
+            self.pair_passkey = passkey.group(1)
+            self.pair_status = "Type this code:"
 
         if (
             not self.pair_yes_sent
@@ -318,6 +375,7 @@ class UIBluetoothKeyboard(UITextMenu):
 
     def _close_pair_process(self):
         if self.pair_process is None:
+            self._resume_wifi()
             return
         try:
             if self.pair_process.poll() is None:
@@ -329,11 +387,25 @@ class UIBluetoothKeyboard(UITextMenu):
             except Exception:
                 pass
         self.pair_process = None
+        self._resume_wifi()
+
+    def _resume_wifi(self):
+        if not self.wifi_paused:
+            return
+        self.wifi_paused = False
+        try:
+            sys_utils.resume_wifi_after_bt_pairing()
+        except Exception as e:
+            logger.warning("BT pairing: could not resume WiFi: %s", e)
 
     def _update_pairing(self):
         if self.pair_process is None:
             return
         self._read_pair_output()
+        # Bound the WiFi-off window independently of how long pairing runs, so a
+        # slow attempt can't lock the user out of the network.
+        if self.wifi_paused and time.time() - self.pair_started > WIFI_MAX_PAUSE:
+            self._resume_wifi()
         if time.time() - self.pair_started > PAIR_TIMEOUT:
             self.pair_status = "Pair timeout"
             self._finish_pairing(False)
@@ -376,6 +448,39 @@ class UIBluetoothKeyboard(UITextMenu):
 
     def _draw_pairing(self):
         self._update_pairing()
+        # While a passkey must be typed on the keyboard, show the digits in a
+        # large font so they're easy to read off the small display.
+        if self.pair_passkey and not self.pair_done_at:
+            self.clear_screen()
+            draw_y = self.display_class.titlebar_height + 2
+            max_chars = max(4, (self.display_class.resX - 4) // self.fonts.base.width)
+            name = self.pair_name
+            if len(name) > max_chars:
+                name = name[: max_chars - 3] + "..."
+            for text in (name, "Type this code:"):
+                self.draw.text(
+                    (2, draw_y),
+                    text,
+                    font=self.fonts.base.font,
+                    fill=self.colors.get(128),
+                )
+                draw_y += self.fonts.base.height + 2
+            self.draw.text(
+                (2, draw_y + 2),
+                self.pair_passkey,
+                font=self.fonts.large.font,
+                fill=self.colors.get(255),
+            )
+            draw_y += self.fonts.large.height + 4
+            if self.wifi_paused:
+                self.draw.text(
+                    (2, draw_y),
+                    "WiFi paused",
+                    font=self.fonts.base.font,
+                    fill=self.colors.get(96),
+                )
+            return self.screen_update()
+
         lines = [
             "Pair Keyboard",
             self.pair_name,
@@ -385,6 +490,8 @@ class UIBluetoothKeyboard(UITextMenu):
             lines.append("OK" if self.pair_success else "Failed")
         else:
             lines.append("Left cancels")
+        if self.wifi_paused:
+            lines.append("WiFi paused")
         self._draw_lines(lines)
         return self.screen_update()
 
