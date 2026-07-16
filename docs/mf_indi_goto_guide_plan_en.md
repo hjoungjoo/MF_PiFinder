@@ -749,6 +749,29 @@ to pulse-guide near the target.
   (existing `paused` guard), nor while the mount reports motion or parked.
 - Stop/Abort takes priority in every state and clears the recovery sub-state.
 
+### Target safety guards (added 2026-07-16)
+
+Derived from an overnight incident: after the target set below the horizon, a
+pointing reset re-established the coordinate frame and the still-armed target
+produced a 38-degree "disturbance", so recovery GoTos repeatedly slewed the
+scope toward a below-horizon position.
+
+- **Minimum-altitude guard**: when the target's altitude falls below
+  `indi_tracking_guide_min_target_alt_deg` (default 10 deg), the target is
+  **abandoned** regardless of error size — stop_movement halts any in-flight
+  slew, the target is cleared, state goes `failed`, and a warning is logged.
+  Altitude comes from shared-state location/datetime (cached 10 s, keyed by
+  the target coordinates); if it cannot be computed the guard is skipped.
+  Sidereal tracking stays on.
+- **Recovery error cap**: a measured error above
+  `TRACKING_RECOVERY_MAX_ERROR_DEG` (10 deg) cannot be a physical
+  disturbance (it is a re-established frame or a stale target), so the target
+  is abandoned instead of slewing.
+- **Reset integration**: a pointing reset sends `clear_tracking_target`,
+  dropping the target without any mount command — a reset restarts the
+  coordinate frame, so a pre-reset target must not generate errors against
+  the new frame.
+
 ### New status fields
 
 ```text

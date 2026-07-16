@@ -35,6 +35,7 @@ from multiprocessing import Queue
 from typing import Any, Optional
 
 from PiFinder import config, utils
+from PiFinder.calc_utils import sf_utils
 from PiFinder.multiproclogging import MultiprocLogging
 
 
@@ -63,6 +64,18 @@ PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
 # before giving up (mount-control pulses about every 10 s off a fresh solve).
 PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
 TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 2
+# A recovery error beyond this is not a plausible physical disturbance — it is
+# a re-established coordinate frame (e.g. a pointing reset hours later) or a
+# stale target. Slewing would chase a meaningless position, so the target is
+# abandoned instead.
+TRACKING_RECOVERY_MAX_ERROR_DEG = 10.0
+# Once the tracking target sinks below this altitude the guide must never move
+# the mount toward it (overnight targets set below the horizon; a recovery slew
+# would drive the scope into the ground). Overridable via config.
+TRACKING_TARGET_MIN_ALT_DEFAULT_DEG = 10.0
+# Target altitude changes at sidereal rate, so a cached value stays valid for
+# a while; recompute this often (or immediately when the target changes).
+TRACKING_TARGET_ALT_CACHE_SECONDS = 10.0
 # The BNO055 "moving" flag is far more sensitive than the coordinate-motion
 # threshold (quaternion-delta hysteresis around 0.0003) and can stay set for
 # tens of seconds of micro-sway after the scope is released. Without a bound it
@@ -122,6 +135,9 @@ class IndiGotoGuideService:
         self.tracking_last_motion_at = 0.0
         self.tracking_last_imu_motion_at = 0.0
         self.tracking_imu_flag_overridden = False
+        # Cached tracking-target altitude, keyed by target coordinates so a
+        # fresh target is never judged by a stale altitude.
+        self._target_alt_cache: Optional[dict[str, Any]] = None
         self.tracking_recovery_state = "idle"
         self.tracking_recovery_goto_sent_at = 0.0
         self.tracking_recovery_goto_idle_since = 0.0
@@ -185,6 +201,18 @@ class IndiGotoGuideService:
             return True
         if command_type == "goto_target":
             self._handle_goto_target(command)
+            return True
+        if command_type == "clear_tracking_target":
+            # Drop the tracking target without any mount command. Sent by the
+            # pointing reset: after a frame re-alignment the old target (often
+            # hours stale, possibly below the horizon) must not drive a
+            # recovery slew.
+            self._disable_tracking_guide("tracking target cleared")
+            self._reset_tracking_recovery()
+            self.tracking_target_ra = None
+            self.tracking_target_dec = None
+            self.last_action = "tracking target cleared"
+            logger.info("Tracking target cleared by request")
             return True
         if command_type == "set_tracking_target":
             # Re-arm the tracking-guide target for a GoTo the UI sent straight to
@@ -729,6 +757,22 @@ class IndiGotoGuideService:
             self.tracking_guide_last_action = "paused because mount is parked"
             return
 
+        # Altitude guard: once the target has set below the minimum altitude,
+        # abandon it — no pulse or recovery slew may ever chase a target near
+        # or below the horizon (an overnight target set while unattended).
+        target_alt = self._tracking_target_altitude_deg()
+        min_alt = float(
+            self.config_values.get(
+                "indi_tracking_guide_min_target_alt_deg",
+                TRACKING_TARGET_MIN_ALT_DEFAULT_DEG,
+            )
+        )
+        if target_alt is not None and target_alt < min_alt:
+            self._abandon_tracking_target(
+                f"target altitude {target_alt:.1f} deg below limit {min_alt:.1f} deg"
+            )
+            return
+
         # Drive an in-progress sync + GoTo recovery to completion first, even
         # though the mount reports motion during its own recovery slew.
         if self.tracking_recovery_state == "goto_wait":
@@ -913,6 +957,17 @@ class IndiGotoGuideService:
             self.tracking_guide_error_arcmin > goto_threshold_arcmin
             and goto_recovery_enabled
         ):
+            # An error this large is not a plausible physical disturbance —
+            # it is a re-established frame (pointing reset) or a stale target.
+            if (
+                self.tracking_guide_error_arcmin
+                > TRACKING_RECOVERY_MAX_ERROR_DEG * 60.0
+            ):
+                self._abandon_tracking_target(
+                    f"recovery error {self.tracking_guide_error_arcmin / 60.0:.1f} "
+                    f"deg exceeds {TRACKING_RECOVERY_MAX_ERROR_DEG:.0f} deg limit"
+                )
+                return
             self._begin_tracking_recovery_goto(current_ra, current_dec)
             return
 
@@ -977,6 +1032,76 @@ class IndiGotoGuideService:
             self.tracking_last_motion_at = time.monotonic()
             return True
         return False
+
+    def _tracking_target_altitude_deg(self) -> Optional[float]:
+        """Current altitude of the tracking target, or None if not computable.
+
+        Needs the shared-state location and datetime; without them (e.g. no
+        GPS fix yet) the guard is skipped rather than blocking the guide.
+        The result is cached briefly and keyed by the target coordinates so a
+        freshly set target is never judged by a stale altitude.
+        """
+        if (
+            self.shared_state is None
+            or self.tracking_target_ra is None
+            or self.tracking_target_dec is None
+        ):
+            return None
+
+        cache = self._target_alt_cache
+        now = time.monotonic()
+        if (
+            cache is not None
+            and cache["ra"] == self.tracking_target_ra
+            and cache["dec"] == self.tracking_target_dec
+            and now - cache["t"] < TRACKING_TARGET_ALT_CACHE_SECONDS
+        ):
+            return cache["alt"]
+
+        try:
+            location = self.shared_state.location()
+            dt = self.shared_state.datetime()
+        except Exception:
+            logger.debug("Could not read location/datetime", exc_info=True)
+            return None
+        if location is None or dt is None:
+            return None
+
+        try:
+            sf_utils.set_location(location.lat, location.lon, location.altitude)
+            alt, _az = sf_utils.radec_to_altaz(
+                self.tracking_target_ra, self.tracking_target_dec, dt
+            )
+        except Exception:
+            logger.debug("Target altitude computation failed", exc_info=True)
+            return None
+
+        alt_value = self._finite_float(alt)
+        self._target_alt_cache = {
+            "ra": self.tracking_target_ra,
+            "dec": self.tracking_target_dec,
+            "alt": alt_value,
+            "t": now,
+        }
+        return alt_value
+
+    def _abandon_tracking_target(self, reason: str) -> None:
+        """Drop the tracking target and halt any in-flight recovery slew.
+
+        Used when correcting toward the target would be wrong no matter what:
+        the target set below the altitude limit, or the measured error is too
+        large to be a physical disturbance. stop_movement aborts motion only;
+        sidereal tracking stays on.
+        """
+        self._forward_to_mountcontrol({"type": "stop_movement"})
+        self._disable_tracking_guide(reason)
+        self._reset_tracking_recovery()
+        self.tracking_target_ra = None
+        self.tracking_target_dec = None
+        self._target_alt_cache = None
+        self.tracking_guide_state = "failed"
+        self.tracking_guide_last_action = reason
+        logger.warning("Tracking guide target abandoned: %s", reason)
 
     def _begin_tracking_recovery_goto(
         self, current_ra: float, current_dec: float
@@ -1305,6 +1430,12 @@ class IndiGotoGuideService:
             ),
             "indi_tracking_guide_goto_threshold_deg": float(
                 cfg.get_option("indi_tracking_guide_goto_threshold_deg", 0.5)
+            ),
+            "indi_tracking_guide_min_target_alt_deg": float(
+                cfg.get_option(
+                    "indi_tracking_guide_min_target_alt_deg",
+                    TRACKING_TARGET_MIN_ALT_DEFAULT_DEG,
+                )
             ),
             "indi_tracking_guide_manual_retarget_enabled": bool(
                 cfg.get_option("indi_tracking_guide_manual_retarget_enabled", True)

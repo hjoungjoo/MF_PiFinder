@@ -1,5 +1,14 @@
 {
     // Note that the JSON5 library that we use for configuration supports comments in JSON files.
+    //
+    // INDI field-debug log config.  Same as logconf_default.json, but raises
+    // the INDI mount-control / GoTo-Guide / pointing-coordinate loggers to
+    // INFO so recovery slews, guide pulses, guide-rate switches, and
+    // tracking-guide state transitions are written to pifinder.log.
+    //
+    // Switch to this from the web Logs page ("Indi") ONLY while diagnosing
+    // mount behaviour in the field -- it writes continuously to the SD card.
+    // Switch back to "Default" when done.
     "version": 1,
     "disable_existing_loggers": false, // THIS MUST BE FALSE for logging to work
     "formatters": {
@@ -25,8 +34,6 @@
         /////////////////////////////////////////////////////////////////
         ////// root logger
         //
-        // This is the main logging configuration
-        //
         "": {
             "level": "ERROR",
             "handlers": ["console"]
@@ -35,9 +42,6 @@
 
         /////////////////////////////////////////////////////////////////
         ////// Web Server Subsystem (Flask with Jinja2 i18n)
-        //
-        // Supported logger hierarchy:
-        //   Server
         "Server": {
             "level": "INFO"
         },
@@ -48,28 +52,21 @@
         /////////////////////////////////////////////////////////////////
         ////// INDI mount control / GoTo-Guide / pointing coordinate
         //
-        // Kept at WARNING here so normal operation does not stream INFO
-        // (guide pulses, pointing updates, state transitions) into
-        // pifinder.log on every loop iteration -- that constant SD-card
-        // writing is costly on the Pi.  To capture the verbose
-        // disturbance-recovery trace when diagnosing in the field, switch
-        // the active log config to "Indi" (logconf_indi.json) from the web
-        // Logs page, then switch back to "Default" when done.
+        // Raised to INFO for field diagnosis of disturbance-recovery
+        // behaviour: tracking-guide state transitions, recovery sync+GoTo
+        // events, guide pulses, and guide-rate switches.
         "MountControl": {
-            "level": "WARNING"
+            "level": "INFO"
         },
         "IndiGotoGuideService": {
-            "level": "WARNING"
+            "level": "INFO"
         },
         "PointingCoordinateService": {
-            "level": "WARNING"
+            "level": "INFO"
         },
 
         /////////////////////////////////////////////////////////////////
         ////// Flask Framework (used for webserver)
-        //
-        // Flask and related component logging
-        //
         "waitress": {
             "level": "ERROR"
         },
@@ -98,10 +95,10 @@
         /////////////////////////////////////////////////////////////////
         ////// GPS Subsystem
         "GPS": {
-            "level": "WARNING" // Set this to DEBUG, to see results parsed from the GPS
+            "level": "WARNING"
         },
         "GPS.parser": {
-            "level": "WARNING" // Set this to DEBUG, to see results parsed from the GPS
+            "level": "WARNING"
         },
         "GPS.fake": {
             "level": "WARNING"
@@ -109,9 +106,6 @@
 
         /////////////////////////////////////////////////////////////////
         ////// Third party Libraries
-        //
-        // Silence logging of libraries that we use.
-        //
         "PIL.PngImagePlugin": {
             "level": "WARNING"
         },

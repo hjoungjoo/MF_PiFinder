@@ -698,6 +698,24 @@ target 근처에서 pulse guide로 넘긴다.
   가드), 마운트 모션/parked 중에도 안 함.
 - Stop/Abort는 모든 상태에서 최우선이며 복구 하위 상태를 초기화한다.
 
+### 타겟 안전 가드 (2026-07-16 추가)
+
+밤샘 세션에서 타겟이 지평선 아래로 진 뒤 pointing reset을 하자, 밤새 살아 있던
+타겟과 재정렬된 프레임 사이의 38도 오차가 외란으로 인식되어 복구 GoTo가 지평선
+아래로 반복 슬루한 사고에서 도출:
+
+- **최소 고도 가드**: 타겟 고도가 `indi_tracking_guide_min_target_alt_deg`
+  (기본 10도) 미만이면 pulse/복구를 불문하고 타겟을 **폐기**(abandon)한다 —
+  stop_movement로 진행 중 슬루를 중단하고, 타겟 해제 + `failed` + 경고 로그.
+  고도는 shared_state의 location/datetime으로 계산하며(10초 캐시, 타겟 좌표로
+  키잉) 계산 불가 시(위치/시각 없음) 가드는 건너뛴다. 항성시 추적만 유지된다.
+- **복구 오차 상한**: 측정 오차가 `TRACKING_RECOVERY_MAX_ERROR_DEG`(10도)를
+  넘으면 물리적 외란일 수 없으므로(프레임 재정렬/실효 타겟) 복구 슬루 대신
+  타겟을 폐기한다.
+- **reset 연동**: pointing reset이 `clear_tracking_target` 명령을 보내 타겟을
+  마운트 명령 없이 해제한다. reset은 좌표 프레임의 재시작이므로 이전 타겟이
+  새 프레임 기준의 오차를 만들면 안 된다.
+
 ### 신규 상태 필드
 
 ```text

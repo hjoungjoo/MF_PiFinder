@@ -472,6 +472,11 @@ def _handle_pointing_reset_request(shared_state) -> None:
         aligned = _align_mount_to_imu_on_reset(shared_state)
         _coordinate_service.clear_state()
         _invalidate_pointing_cache()
+        # A reset re-establishes the coordinate frame; a tracking target from
+        # before the reset (possibly hours stale or below the horizon) must
+        # not drive a recovery slew against the new frame.
+        if goto_guide_queue is not None:
+            goto_guide_queue.put({"type": "clear_tracking_target"})
         _pointing_reset_last_at = time.time()
         logger.info(
             "Pointing coordinate service reset (source=%s, imu_align=%s)",

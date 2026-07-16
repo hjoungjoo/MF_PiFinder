@@ -127,3 +127,62 @@ def test_short_imu_flag_episode_extends_settle_normally(monkeypatch):
     clock[0] += 1.0
     service._tick_tracking_guide()
     assert service.tracking_guide_state == "recovering_goto"
+
+
+def test_target_below_altitude_limit_abandons_without_slew(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    monkeypatch.setattr(service, "_tracking_target_altitude_deg", lambda: 5.0)
+
+    service._tick_tracking_guide()
+
+    assert service.tracking_guide_state == "failed"
+    assert service.tracking_target_ra is None
+    assert service.tracking_target_dec is None
+    commands = [c["type"] for c in service.mountcontrol_queue.commands]
+    assert "goto_target" not in commands
+    assert "stop_movement" in commands
+
+
+def test_target_above_altitude_limit_recovers_normally(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    monkeypatch.setattr(service, "_tracking_target_altitude_deg", lambda: 45.0)
+
+    service._tick_tracking_guide()
+    for _ in range(4):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+
+    assert service.tracking_guide_state == "recovering_goto"
+
+
+def test_excessive_recovery_error_abandons_target(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    # Current position 15 deg away from the target: beyond any plausible
+    # physical disturbance (frame reset / stale target).
+    service._pointing["current"]["dec"] = 35.0
+
+    service._tick_tracking_guide()
+    for _ in range(4):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+
+    assert service.tracking_guide_state == "failed"
+    assert service.tracking_target_ra is None
+    commands = [c["type"] for c in service.mountcontrol_queue.commands]
+    assert "goto_target" not in commands
+    assert "stop_movement" in commands
+
+
+def test_clear_tracking_target_command(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+
+    assert service.handle_command({"type": "clear_tracking_target"}) is True
+
+    assert service.tracking_target_ra is None
+    assert service.tracking_target_dec is None
+    service._tick_tracking_guide()
+    assert service.tracking_guide_state == "waiting_target"
