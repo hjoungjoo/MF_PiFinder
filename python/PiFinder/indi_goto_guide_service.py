@@ -64,11 +64,6 @@ PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
 # before giving up (mount-control pulses about every 10 s off a fresh solve).
 PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
 TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 2
-# A recovery error beyond this is not a plausible physical disturbance — it is
-# a re-established coordinate frame (e.g. a pointing reset hours later) or a
-# stale target. Slewing would chase a meaningless position, so the target is
-# abandoned instead.
-TRACKING_RECOVERY_MAX_ERROR_DEG = 10.0
 # Once the tracking target sinks below this altitude the guide must never move
 # the mount toward it (overnight targets set below the horizon; a recovery slew
 # would drive the scope into the ground). Overridable via config.
@@ -957,17 +952,6 @@ class IndiGotoGuideService:
             self.tracking_guide_error_arcmin > goto_threshold_arcmin
             and goto_recovery_enabled
         ):
-            # An error this large is not a plausible physical disturbance —
-            # it is a re-established frame (pointing reset) or a stale target.
-            if (
-                self.tracking_guide_error_arcmin
-                > TRACKING_RECOVERY_MAX_ERROR_DEG * 60.0
-            ):
-                self._abandon_tracking_target(
-                    f"recovery error {self.tracking_guide_error_arcmin / 60.0:.1f} "
-                    f"deg exceeds {TRACKING_RECOVERY_MAX_ERROR_DEG:.0f} deg limit"
-                )
-                return
             self._begin_tracking_recovery_goto(current_ra, current_dec)
             return
 
