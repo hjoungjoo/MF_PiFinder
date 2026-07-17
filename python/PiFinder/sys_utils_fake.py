@@ -30,6 +30,18 @@ def is_onstep_family_device_name(device_name):
     }
 
 
+def ensure_uhid_loaded():
+    return True
+
+
+def pause_wifi_for_bt_pairing(safety_timeout=150):
+    logger.info("FAKE SYS: pause_wifi_for_bt_pairing (no-op)")
+
+
+def resume_wifi_after_bt_pairing():
+    logger.info("FAKE SYS: resume_wifi_after_bt_pairing (no-op)")
+
+
 def get_indi_profile_drivers(profile_name=None, profiles_db_path=None):
     return {"profile": "MF_PiFinder", "drivers": [DEFAULT_ONSTEP_DEVICE_NAME]}
 

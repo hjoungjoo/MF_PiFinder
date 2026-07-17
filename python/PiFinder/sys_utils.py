@@ -161,6 +161,27 @@ BLUETOOTH_DEVICE_FIELD_RE = re.compile(
 )
 BLUETOOTH_MAC_RE = re.compile(r"^[0-9A-Fa-f:]{17}$")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+# bluetoothctl wraps colored prompts in readline non-printing markers \x01/\x02;
+# strip all C0 control chars except tab/newline so they don't corrupt parsing.
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+# HID-over-uhid: BlueZ needs the `uhid` kernel module to register a paired
+# Bluetooth keyboard as a Linux input device. Without it a keyboard shows as
+# "Connected" but no keystrokes reach the system.
+UHID_MODULE = "uhid"
+
+# The Raspberry Pi onboard chip (BCM4345C0) shares a single 2.4GHz antenna
+# between WiFi and Bluetooth. Active WiFi traffic reliably clobbers BLE
+# connection-establishment events, so pairing a keyboard fails ~0.3s after
+# connect with HCI 0x3e (Connection Failed to be Established). We therefore
+# silence WiFi for the duration of a pairing attempt and always restore it.
+BT_PAIRING_STA_INTERFACE = "wlan0"
+BT_PAIRING_AP_INTERFACE = "uap0"
+BT_PAIRING_WIFI_SAFETY_TIMEOUT = 60
+# Where we stash the active wlan0 connection UUID while WiFi is paused, so both
+# the normal restore and the detached watchdog bring back exactly that profile
+# instead of guessing (nmcli "device connect" can fail to pick an existing one).
+BT_PAIRING_WIFI_STATE_FILE = "/tmp/pifinder_bt_pairing_wlan_conn"
 
 
 def is_onstepx_device_name(device_name: str | None) -> bool:
@@ -2383,8 +2404,140 @@ def go_wifi_apsta():
     return True
 
 
+def ensure_uhid_loaded() -> bool:
+    """
+    Make sure the `uhid` kernel module is loaded so BlueZ can register a paired
+    Bluetooth keyboard as an input device. Idempotent and best-effort: returns
+    True if /dev/uhid is present afterwards.
+    """
+    if os.path.exists("/dev/uhid"):
+        return True
+    try:
+        subprocess.run(
+            ["sudo", "-n", "modprobe", UHID_MODULE],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as e:
+        logger.warning("SYS: could not modprobe uhid: %s", e)
+    return os.path.exists("/dev/uhid")
+
+
+def _restore_wifi_command() -> str:
+    """
+    Shell command that brings WiFi (client + AP) back online.
+
+    ``radio wifi on`` only re-enables the radio; reassociating the client is
+    otherwise left to NetworkManager autoconnect and can lag 10-30s, which reads
+    as "WiFi never came back". We therefore explicitly bring the exact profile
+    that was active back up (its UUID was stashed at pause time), falling back to
+    ``device connect``. hostapd is only restarted if it was already running, so
+    client-only-mode devices don't get an access point started behind their back.
+    """
+    return (
+        f'uuid=$(cat {BT_PAIRING_WIFI_STATE_FILE} 2>/dev/null); '
+        f"{NMCLI_COMMAND} radio wifi on; "
+        f'if [ -n "$uuid" ]; then {NMCLI_COMMAND} connection up "$uuid" 2>/dev/null; '
+        f"else {NMCLI_COMMAND} device connect {BT_PAIRING_STA_INTERFACE} 2>/dev/null; fi; "
+        f"ip link set {BT_PAIRING_AP_INTERFACE} up 2>/dev/null; "
+        "systemctl is-active --quiet hostapd && systemctl restart hostapd || true"
+    )
+
+
+def _capture_wlan_connection() -> None:
+    """Stash the active wlan0 connection UUID for a precise restore later."""
+    uuid = ""
+    try:
+        result = subprocess.run(
+            [
+                "sudo",
+                "-n",
+                NMCLI_COMMAND,
+                "-t",
+                "-g",
+                "GENERAL.CON-UUID",
+                "device",
+                "show",
+                BT_PAIRING_STA_INTERFACE,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        uuid = (result.stdout or "").strip()
+    except Exception as e:
+        logger.warning("SYS: could not read wlan0 connection: %s", e)
+    try:
+        with open(BT_PAIRING_WIFI_STATE_FILE, "w") as state_file:
+            state_file.write(uuid)
+    except Exception as e:
+        logger.warning("SYS: could not stash wlan0 connection: %s", e)
+
+
+def pause_wifi_for_bt_pairing(
+    safety_timeout: int = BT_PAIRING_WIFI_SAFETY_TIMEOUT,
+) -> None:
+    """
+    Silence the 2.4GHz radio so a Bluetooth keyboard can pair without WiFi
+    coexistence interference (see BT_PAIRING_* notes above).
+
+    A detached watchdog restores WiFi after ``safety_timeout`` seconds no matter
+    what, so a crash mid-pairing can never leave the device without networking.
+    ``resume_wifi_after_bt_pairing`` restores it sooner on the normal path.
+    """
+    ensure_uhid_loaded()
+    # Remember exactly which client profile is up so we can bring it back cleanly.
+    _capture_wlan_connection()
+    # Safety net: an independent, session-detached process that re-enables WiFi
+    # even if this process dies while WiFi is down.
+    try:
+        subprocess.Popen(
+            [
+                "sudo",
+                "-n",
+                "setsid",
+                "bash",
+                "-c",
+                f"sleep {int(safety_timeout)}; {_restore_wifi_command()}",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        logger.warning("SYS: could not arm WiFi restore watchdog: %s", e)
+    logger.info("SYS: pausing WiFi for Bluetooth pairing")
+    subprocess.run(
+        ["sudo", "-n", "ip", "link", "set", BT_PAIRING_AP_INTERFACE, "down"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    subprocess.run(
+        ["sudo", "-n", NMCLI_COMMAND, "radio", "wifi", "off"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def resume_wifi_after_bt_pairing() -> None:
+    """Bring WiFi (client + AP) back after a pairing attempt. Idempotent."""
+    logger.info("SYS: resuming WiFi after Bluetooth pairing")
+    subprocess.run(
+        ["sudo", "-n", "bash", "-c", _restore_wifi_command()],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def _clean_bluetoothctl_output(output: str) -> str:
     output = ANSI_ESCAPE_RE.sub("", output)
+    output = CONTROL_CHARS_RE.sub("", output)
     return output.replace("\r", "\n")
 
 
@@ -2521,6 +2674,7 @@ def scan_bluetooth_devices(scan_seconds: int = 12) -> list[dict[str, Any]]:
     Scan for nearby Bluetooth devices and return the refreshed cached device list.
     """
     logger.info("SYS: Scanning for Bluetooth devices for %s seconds", scan_seconds)
+    ensure_uhid_loaded()
     process = subprocess.Popen(
         [BLUETOOTHCTL_COMMAND],
         stdin=subprocess.PIPE,
@@ -2559,6 +2713,7 @@ def scan_bluetooth_devices(scan_seconds: int = 12) -> list[dict[str, Any]]:
 
 def connect_bluetooth_device(address: str, timeout: int = 25) -> str:
     logger.info("SYS: Connecting Bluetooth device %s", address)
+    ensure_uhid_loaded()
     return _bluetoothctl(
         [
             "power on",

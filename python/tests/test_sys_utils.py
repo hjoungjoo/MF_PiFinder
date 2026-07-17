@@ -577,6 +577,87 @@ try:
         assert "# 127.0.1.1 oldname\n" in result
         assert result.endswith("127.0.1.1\tpf-rich\n")
 
+    @pytest.mark.unit
+    def test_ensure_uhid_loaded_skips_modprobe_when_present(monkeypatch):
+        calls = []
+        monkeypatch.setattr(sys_utils.os.path, "exists", lambda p: True)
+        monkeypatch.setattr(
+            sys_utils.subprocess, "run", lambda *a, **k: calls.append(a)
+        )
+        assert sys_utils.ensure_uhid_loaded() is True
+        assert calls == []  # no modprobe needed
+
+    @pytest.mark.unit
+    def test_ensure_uhid_loaded_modprobes_when_missing(monkeypatch):
+        seen = {"exists": 0}
+        run_cmds = []
+
+        def fake_exists(_path):
+            # missing on the first check, present after modprobe
+            seen["exists"] += 1
+            return seen["exists"] > 1
+
+        monkeypatch.setattr(sys_utils.os.path, "exists", fake_exists)
+        monkeypatch.setattr(
+            sys_utils.subprocess, "run", lambda cmd, **k: run_cmds.append(cmd)
+        )
+        assert sys_utils.ensure_uhid_loaded() is True
+        assert run_cmds == [["sudo", "-n", "modprobe", sys_utils.UHID_MODULE]]
+
+    @pytest.mark.unit
+    def test_pause_wifi_for_bt_pairing_silences_radio_and_arms_watchdog(monkeypatch):
+        run_cmds = []
+        popen_cmds = []
+        monkeypatch.setattr(sys_utils, "ensure_uhid_loaded", lambda: True)
+        monkeypatch.setattr(sys_utils, "_capture_wlan_connection", lambda: None)
+        monkeypatch.setattr(
+            sys_utils.subprocess, "run", lambda cmd, **k: run_cmds.append(cmd)
+        )
+        monkeypatch.setattr(
+            sys_utils.subprocess, "Popen", lambda cmd, **k: popen_cmds.append(cmd)
+        )
+        sys_utils.pause_wifi_for_bt_pairing(safety_timeout=42)
+        # radio is turned off (both client wifi and the AP interface)
+        assert ["sudo", "-n", sys_utils.NMCLI_COMMAND, "radio", "wifi", "off"] in run_cmds
+        assert [
+            "sudo",
+            "-n",
+            "ip",
+            "link",
+            "set",
+            sys_utils.BT_PAIRING_AP_INTERFACE,
+            "down",
+        ] in run_cmds
+        # a detached watchdog is armed that restores wifi after the timeout
+        assert len(popen_cmds) == 1
+        watchdog = popen_cmds[0]
+        assert watchdog[:4] == ["sudo", "-n", "setsid", "bash"]
+        assert "sleep 42" in watchdog[-1]
+        assert "radio wifi on" in watchdog[-1]
+
+    @pytest.mark.unit
+    def test_resume_wifi_after_bt_pairing_restores_radio(monkeypatch):
+        run_cmds = []
+        monkeypatch.setattr(
+            sys_utils.subprocess, "run", lambda cmd, **k: run_cmds.append(cmd)
+        )
+        sys_utils.resume_wifi_after_bt_pairing()
+        assert len(run_cmds) == 1
+        restore = run_cmds[0]
+        assert restore[:4] == ["sudo", "-n", "bash", "-c"]
+        assert "radio wifi on" in restore[-1]
+        assert f"set {sys_utils.BT_PAIRING_AP_INTERFACE} up" in restore[-1]
+
+    @pytest.mark.unit
+    def test_clean_bluetoothctl_output_strips_readline_markers():
+        # bluetoothctl wraps colored agent prompts in readline markers
+        # (\x01/\x02) that land between "Passkey:" and the digits. If they
+        # survive cleaning, passkey detection fails and the code never shows.
+        raw = "[agent]\x01\x1b[0m\x02 Passkey: \x01\x02189795\n"
+        cleaned = sys_utils._clean_bluetoothctl_output(raw)
+        assert "\x01" not in cleaned and "\x02" not in cleaned
+        assert "Passkey: 189795" in cleaned
+
 
 except ImportError:
     pass

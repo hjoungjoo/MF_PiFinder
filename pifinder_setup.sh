@@ -147,6 +147,10 @@ if [[ -f /etc/bluetooth/input.conf ]]; then
         -e 's/^#\?LEAutoSecurity=.*/LEAutoSecurity=true/' \
         /etc/bluetooth/input.conf
 fi
+# BlueZ needs the uhid module to expose a paired BT keyboard as an input
+# device; without it the keyboard connects but sends no keystrokes.
+echo uhid | sudo tee /etc/modules-load.d/uhid.conf >/dev/null
+sudo modprobe uhid || true
 
 # Samba config
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/smb.conf" /etc/samba/smb.conf
