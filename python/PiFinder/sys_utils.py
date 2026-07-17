@@ -698,60 +698,137 @@ def apply_indi_onstep_connection(
     if connection_type not in {ONSTEP_CONNECTION_USB, ONSTEP_CONNECTION_NETWORK}:
         raise ValueError("Invalid OnStep connection type")
 
-    properties = [f"{device_name}.CONNECTION.DISCONNECT=On"]
     if connection_type == ONSTEP_CONNECTION_USB:
         if not serial_port.strip().startswith("/dev/"):
             raise ValueError("USB serial port must be a /dev path")
-        properties.extend(
-            [
-                f"{device_name}.CONNECTION_MODE.CONNECTION_SERIAL=On",
-                f"{device_name}.DEVICE_PORT.PORT={serial_port.strip()}",
-            ]
-        )
+        config_properties = [
+            f"{device_name}.CONNECTION_MODE.CONNECTION_SERIAL=On",
+            f"{device_name}.DEVICE_PORT.PORT={serial_port.strip()}",
+        ]
     else:
         if not network_host.strip():
             raise ValueError("Network host/IP is required")
         if not (1 <= int(network_port) <= 65535):
             raise ValueError("Network port must be between 1 and 65535")
-        properties.extend(
-            [
-                f"{device_name}.CONNECTION_MODE.CONNECTION_TCP=On",
-                f"{device_name}.CONNECTION_TYPE.TCP=On",
-                f"{device_name}.DEVICE_ADDRESS.ADDRESS={network_host.strip()}",
-                f"{device_name}.DEVICE_ADDRESS.PORT={int(network_port)}",
-            ]
-        )
-
-    properties.extend(
-        [
-            f"{device_name}.CONNECTION.CONNECT=On",
-            f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On",
+        config_properties = [
+            f"{device_name}.CONNECTION_MODE.CONNECTION_TCP=On",
+            f"{device_name}.CONNECTION_TYPE.TCP=On",
+            f"{device_name}.DEVICE_ADDRESS.ADDRESS={network_host.strip()}",
+            f"{device_name}.DEVICE_ADDRESS.PORT={int(network_port)}",
         ]
-    )
 
-    try:
-        result = _run_indi_command(
-            [
-                INDI_SETPROP_COMMAND,
-                "-h",
-                server_host,
-                "-p",
-                str(server_port),
-                *properties,
-            ],
-            timeout=10.0,
+    def _setprop(properties: list) -> subprocess.CompletedProcess:
+        try:
+            return _run_indi_command(
+                [
+                    INDI_SETPROP_COMMAND,
+                    "-h",
+                    server_host,
+                    "-p",
+                    str(server_port),
+                    *properties,
+                ],
+                timeout=10.0,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("indi_setprop is not installed") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "Timed out while applying INDI OnStep settings"
+            ) from exc
+
+    def _connect_state() -> str:
+        try:
+            result = _run_indi_command(
+                [
+                    INDI_GETPROP_COMMAND,
+                    "-h",
+                    server_host,
+                    "-p",
+                    str(server_port),
+                    "-t",
+                    "1",
+                    f"{device_name}.CONNECTION.CONNECT",
+                ],
+                timeout=5.0,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return ""
+        for line in result.stdout.splitlines():
+            if "=" in line:
+                return line.split("=", 1)[1].strip()
+        return ""
+
+    def _wait_for_connect(deadline_seconds: float) -> bool:
+        deadline = time.monotonic() + deadline_seconds
+        while time.monotonic() < deadline:
+            if _connect_state() == "On":
+                return True
+            time.sleep(1.0)
+        return _connect_state() == "On"
+
+    # The OnStepX driver fails to (re)connect when disconnect, address changes
+    # and CONNECT=On arrive in a single indi_setprop batch, leaving CONNECT
+    # stuck Off while the settings apply. Stage the commands instead: settle
+    # the disconnect, apply the connection settings, then connect and verify
+    # (with one retry) before persisting via CONFIG_SAVE.
+    applied_properties = [f"{device_name}.CONNECTION.DISCONNECT=On"]
+    result = _setprop(applied_properties[-1:])
+    if result.returncode != 0:
+        return {
+            "ok": False,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "properties": applied_properties,
+        }
+    time.sleep(1.0)
+
+    result = _setprop(config_properties)
+    applied_properties.extend(config_properties)
+    if result.returncode != 0:
+        return {
+            "ok": False,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "properties": applied_properties,
+        }
+    time.sleep(0.5)
+
+    connected = False
+    for _attempt in range(2):
+        result = _setprop([f"{device_name}.CONNECTION.CONNECT=On"])
+        applied_properties.append(f"{device_name}.CONNECTION.CONNECT=On")
+        if result.returncode == 0 and _wait_for_connect(8.0):
+            connected = True
+            break
+        time.sleep(1.0)
+
+    if not connected:
+        return {
+            "ok": False,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr
+            or f"{device_name} did not connect with the applied settings",
+            "properties": applied_properties,
+        }
+
+    save_result = _setprop([f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On"])
+    applied_properties.append(f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On")
+    if save_result.returncode != 0:
+        logger.warning(
+            "INDI CONFIG_SAVE failed after connect: %s",
+            save_result.stderr or save_result.stdout,
         )
-    except FileNotFoundError as exc:
-        raise RuntimeError("indi_setprop is not installed") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("Timed out while applying INDI OnStep settings") from exc
 
     return {
-        "ok": result.returncode == 0,
-        "returncode": result.returncode,
+        "ok": True,
+        "returncode": 0,
         "stdout": result.stdout,
         "stderr": result.stderr,
-        "properties": properties,
+        "properties": applied_properties,
     }
 
 
