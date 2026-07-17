@@ -73,7 +73,7 @@
             <option value="network" {% if connection_type == "network" %}selected{% endif %}>{{ _('Network TCP') }}</option>
             <option value="usb" {% if connection_type == "usb" %}selected{% endif %}>{{ _('USB Serial') }}</option>
           </select>
-          <label>{{ _('Connection Type') }}</label>
+          <label class="active">{{ _('Connection Type') }}</label>
         </div>
         <div class="input-field col s12 m3">
           <input value="{{ server_host }}" id="server_host" type="text" name="server_host">
@@ -98,7 +98,7 @@
                 {% endif %}
               {% endfor %}
             </select>
-            <label>{{ _('OnStep Network Device') }}</label>
+            <label class="active">{{ _('OnStep Network Device') }}</label>
           </div>
           <div class="input-field col s12 m4">
             <input value="{{ network_port }}" id="network_port" type="number" min="1" max="65535" name="network_port">
@@ -125,7 +125,7 @@
               <option value="" disabled>{{ _('No USB serial ports detected') }}</option>
               {% endif %}
             </select>
-            <label>{{ _('USB Serial Port') }}</label>
+            <label class="active">{{ _('USB Serial Port') }}</label>
           </div>
         </div>
         {% if not serial_ports %}
@@ -167,7 +167,7 @@
             <option value="P" {% if skysafari_lx200_mount_code == "P" %}selected{% endif %}>{{ _('Polar / EQ') }}</option>
             <option value="G" {% if skysafari_lx200_mount_code == "G" %}selected{% endif %}>{{ _('German EQ') }}</option>
           </select>
-          <label>{{ _('SkySafari LX200 Mount Code') }}</label>
+          <label class="active">{{ _('SkySafari LX200 Mount Code') }}</label>
         </div>
         <div class="input-field col s12 m4">
           <input value="{{ indi_goto_refine_accuracy_arcmin }}" id="indi_goto_refine_accuracy_arcmin" type="number" min="0.1" step="0.1" name="indi_goto_refine_accuracy_arcmin">
@@ -304,7 +304,7 @@
             <option value="{{ loop.index0 }}" {% if onstep_props.get(onstep_device ~ '.TELESCOPE_SLEW_RATE.' ~ loop.index0|string, '') == 'On' %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
-          <label>{{ _('Slew Rate') }}</label>
+          <label class="active">{{ _('Slew Rate') }}</label>
         </div>
         <div class="input-field col s4">
           <span id="indi_action_status" class="grey-text"></span>
@@ -365,7 +365,7 @@
             <option value="manual" {% if multipoint_align.get('mode', 'manual') == 'manual' %}selected{% endif %}>{{ _('Manual') }}</option>
             <option value="auto" {% if multipoint_align.get('mode') == 'auto' %}selected{% endif %}>{{ _('Auto') }}</option>
           </select>
-          <label>{{ _('Align Mode') }}</label>
+          <label class="active">{{ _('Align Mode') }}</label>
         </div>
         <div class="input-field col s12 m3">
           <input id="align_points" type="number" min="1" max="9" step="1" name="align_points" value="{{ multipoint_align.get('total_points', 3) }}">
@@ -380,7 +380,7 @@
             </option>
             {% endfor %}
           </select>
-          <label>{{ _('Alignment Star') }}</label>
+          <label class="active">{{ _('Alignment Star') }}</label>
         </div>
       </div>
       <div class="row">
@@ -485,9 +485,11 @@
             <option value="indi_mount" {% if indi_goto_method == "indi_mount" %}selected{% endif %}>{{ _('INDI Mount') }}</option>
             <option value="pifinder" {% if indi_goto_method == "pifinder" %}selected{% endif %}>{{ _('PiFinder') }}</option>
           </select>
-          <label>{{ _('GoTo Method') }}</label>
+          <label class="active">{{ _('GoTo Type') }}</label>
         </div>
-        <div class="col s12 m6">
+      </div>
+      <div class="row">
+        <div class="col s12">
           <label>
             <input type="checkbox" name="indi_tracking_guide_enabled" {% if indi_tracking_guide_enabled %}checked{% endif %}>
             <span>{{ _('Tracking Guide') }}</span>
@@ -531,7 +533,7 @@
             <option value="{{ n }}" {% if indi_pifinder_goto_max_gotos == n %}selected{% endif %}>{{ n }}</option>
             {% endfor %}
           </select>
-          <label>{{ _('PiFinder GoTo: Max sync + GoTo iterations') }}</label>
+          <label class="active">{{ _('PiFinder GoTo: Max sync + GoTo iterations') }}</label>
         </div>
       </div>
       <div class="row">

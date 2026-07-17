@@ -763,10 +763,11 @@ scope toward a below-horizon position.
   Altitude comes from shared-state location/datetime (cached 10 s, keyed by
   the target coordinates); if it cannot be computed the guard is skipped.
   Sidereal tracking stays on.
-- **Recovery error cap**: a measured error above
-  `TRACKING_RECOVERY_MAX_ERROR_DEG` (10 deg) cannot be a physical
-  disturbance (it is a re-established frame or a stale target), so the target
-  is abandoned instead of slewing.
+- ~~**Recovery error cap**~~ (removed 2026-07-17): a guard that abandoned
+  the target when the error exceeded 10 deg shipped alongside the above, but
+  it also blocked legitimate recovery after a large manual move (hand slew),
+  so it was removed. The frame-reset incident is covered by the
+  minimum-altitude guard and the reset integration.
 - **Reset integration**: a pointing reset sends `clear_tracking_target`,
   dropping the target without any mount command — a reset restarts the
   coordinate frame, so a pre-reset target must not generate errors against

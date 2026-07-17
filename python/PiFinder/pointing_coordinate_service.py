@@ -79,6 +79,14 @@ MOUNT_READBACK_MOVING_DELTA_DEGREES = 0.005
 # clears only when the mount frame is re-established by a sync.
 IMU_DELTA_ENTER_RATE_DEG_PER_SEC = 0.03
 IMU_DELTA_EXIT_RATE_DEG_PER_SEC = 0.015
+# After a mount-driven slew the BNO055's internal fusion re-converges for a
+# while (the orientation "slides" without any physical motion), at rates above
+# the accumulation gate. Require the IMU to stay below the exit rate for this
+# long after mount motion before disturbance accumulation may resume, so the
+# slide is never booked as a physical push. Together with
+# MOUNT_IMU_DELTA_HOLD_SECONDS this sets the total quiet time after a slew
+# before IMU disturbance detection re-arms (~3 s).
+IMU_DELTA_POST_MOTION_QUIET_SECONDS = 1.5
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -247,6 +255,8 @@ class PointingCoordinateService:
         self._imu_filter_altaz: Optional[Tuple[float, float]] = None
         self._mount_motion_hold_until = 0.0
         self._last_mount_motion_radec: Optional[Tuple[float, float]] = None
+        self._last_mount_sample_ts: Optional[float] = None
+        self._imu_delta_applied_snapshot: Optional[Tuple[float, float]] = None
         self._last_health_mount_radec: Optional[Tuple[float, float]] = None
         self._last_health_imu_altaz: Optional[Tuple[float, float]] = None
         self._state_lock = threading.RLock()
@@ -286,6 +296,8 @@ class PointingCoordinateService:
             self._imu_filter_altaz = None
             self._mount_motion_hold_until = 0.0
             self._last_mount_motion_radec = None
+            self._last_mount_sample_ts = None
+            self._imu_delta_applied_snapshot = None
 
     def solved_sample(self, shared_state: Any, dt: Any) -> CoordinateSample:
         try:
@@ -431,6 +443,7 @@ class PointingCoordinateService:
             )
             az = (az + float(imu_alignment_correction.get("az_offset", 0.0))) % 360.0
 
+        aligned_alt, aligned_az = alt, az
         smoothed_alt, smoothed_az, filter_state, filter_delta = self._smooth_imu_altaz(
             alt, az
         )
@@ -442,6 +455,23 @@ class PointingCoordinateService:
         except Exception:
             logger.debug("Could not convert IMU Alt/Az to RA/Dec", exc_info=True)
             return CoordinateSample.invalid(SOURCE_IMU, "alt/az conversion failed")
+
+        # Unsmoothed counterpart for the disturbance delta tracker: the
+        # smoothing filter's slow convergence tail after a large move reads as
+        # sustained motion and would keep accumulating into the fused offset
+        # long after the scope has stopped. The raw orientation settles
+        # immediately, so rate-gating on it ends the episode with the motion.
+        raw_ra_deg: Optional[float] = None
+        raw_dec_deg: Optional[float] = None
+        try:
+            raw_ra_deg, raw_dec_deg = sf_utils.altaz_to_radec(
+                aligned_alt, aligned_az, dt
+            )
+            raw_ra_deg = raw_ra_deg % 360.0
+        except Exception:
+            logger.debug(
+                "Could not convert raw IMU Alt/Az to RA/Dec", exc_info=True
+            )
 
         timestamp = _as_float(getattr(imu_sample, "timestamp", None))
         quat_values = None
@@ -478,6 +508,8 @@ class PointingCoordinateService:
                 ),
                 "raw_alt": altaz[0],
                 "raw_az": altaz[1],
+                "raw_ra": raw_ra_deg,
+                "raw_dec": raw_dec_deg,
                 "smoothed_alt": alt,
                 "smoothed_az": az,
                 "filter_state": filter_state,
@@ -742,7 +774,7 @@ class PointingCoordinateService:
         # pulses and slews move the fused coordinate directly and never need a
         # re-anchor that would wipe the disturbance offset.
         applied_ra, applied_dec, gate_state, imu_rate = self._gated_imu_delta(
-            imu_radec
+            self._imu_tracker_radec(imu)
         )
         east_delta = applied_ra * math.cos(math.radians(imu_radec[1]))
         dec_deg = max(-89.9, min(89.9, mount_radec[1] + applied_dec))
@@ -813,7 +845,10 @@ class PointingCoordinateService:
                 "applied_ra": 0.0,
                 "applied_dec": 0.0,
                 "episode": False,
+                "settle_pending": False,
+                "quiet_since": None,
             }
+            self._imu_delta_applied_snapshot = (0.0, 0.0)
             return 0.0, 0.0, "init", 0.0
 
         dt = max(1e-3, now - tracker["t"])
@@ -826,7 +861,25 @@ class PointingCoordinateService:
 
         if not accumulate:
             tracker["episode"] = False
+            tracker["settle_pending"] = True
+            tracker["quiet_since"] = None
             gate_state = "suspended_mount_motion"
+        elif tracker.get("settle_pending"):
+            # Post-motion settle: the BNO055 orientation keeps sliding after a
+            # slew; wait for a sustained quiet stretch before booking anything
+            # as a disturbance again.
+            if rate < IMU_DELTA_EXIT_RATE_DEG_PER_SEC:
+                if tracker["quiet_since"] is None:
+                    tracker["quiet_since"] = now
+                if (
+                    now - tracker["quiet_since"]
+                    >= IMU_DELTA_POST_MOTION_QUIET_SECONDS
+                ):
+                    tracker["settle_pending"] = False
+                    tracker["quiet_since"] = None
+            else:
+                tracker["quiet_since"] = None
+            gate_state = "post_motion_settle"
         else:
             threshold = (
                 IMU_DELTA_EXIT_RATE_DEG_PER_SEC
@@ -869,7 +922,18 @@ class PointingCoordinateService:
             return
         if self._mount_imu_anchor_should_reset(mount, imu):
             self._mount_imu_anchor = self._new_mount_imu_anchor(mount, imu)
-        self._gated_imu_delta(imu_radec, accumulate=False)
+        self._gated_imu_delta(self._imu_tracker_radec(imu), accumulate=False)
+
+    def _imu_tracker_radec(self, imu: CoordinateSample) -> Tuple[float, float]:
+        """RA/Dec the delta tracker should difference: raw (unsmoothed) when
+        available, so the smoothing tail never reads as motion."""
+        raw_ra = _as_float(imu.metadata.get("raw_ra"))
+        raw_dec = _as_float(imu.metadata.get("raw_dec"))
+        if raw_ra is not None and raw_dec is not None:
+            return raw_ra, raw_dec
+        radec = imu.radec()
+        assert radec is not None
+        return radec
 
     def _new_mount_imu_anchor(
         self, mount: CoordinateSample, imu: CoordinateSample
@@ -1056,6 +1120,23 @@ class PointingCoordinateService:
         if mount_radec is not None:
             self._last_mount_motion_radec = mount_radec
 
+        # Readback samples arrive slower than the fusion ticks, so IMU steps
+        # from a mount slew can accumulate as a bogus "disturbance" during the
+        # window before the next readback reveals the motion. Bookkeep per
+        # fresh readback sample: while stationary, snapshot the applied offset;
+        # the moment a sample shows movement, roll the offset back to the last
+        # stationary snapshot, discarding only that leaked window.
+        fresh_sample = (
+            mount.timestamp is not None
+            and mount.timestamp != self._last_mount_sample_ts
+        )
+        if fresh_sample:
+            self._last_mount_sample_ts = mount.timestamp
+            if readback_moving:
+                self._rollback_imu_delta_to_snapshot()
+            else:
+                self._snapshot_imu_delta_applied()
+
         if readback_priority or readback_moving:
             self._mount_motion_hold_until = max(
                 self._mount_motion_hold_until,
@@ -1064,6 +1145,27 @@ class PointingCoordinateService:
             return False
 
         return now >= self._mount_motion_hold_until
+
+    def _snapshot_imu_delta_applied(self) -> None:
+        tracker = self._imu_delta_tracker
+        if tracker is not None and tracker.get("anchor") is self._mount_imu_anchor:
+            self._imu_delta_applied_snapshot = (
+                tracker["applied_ra"],
+                tracker["applied_dec"],
+            )
+        else:
+            self._imu_delta_applied_snapshot = None
+
+    def _rollback_imu_delta_to_snapshot(self) -> None:
+        tracker = self._imu_delta_tracker
+        snapshot = self._imu_delta_applied_snapshot
+        if (
+            tracker is not None
+            and snapshot is not None
+            and tracker.get("anchor") is self._mount_imu_anchor
+        ):
+            tracker["applied_ra"], tracker["applied_dec"] = snapshot
+            tracker["episode"] = False
 
     def mount_status_motion_active(self, status: dict[str, Any]) -> bool:
         if not isinstance(status, dict):

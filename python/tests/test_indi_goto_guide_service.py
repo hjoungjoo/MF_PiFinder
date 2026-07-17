@@ -157,11 +157,11 @@ def test_target_above_altitude_limit_recovers_normally(monkeypatch):
     assert service.tracking_guide_state == "recovering_goto"
 
 
-def test_excessive_recovery_error_abandons_target(monkeypatch):
+def test_large_recovery_error_still_recovers(monkeypatch):
     clock = [1000.0]
     service = _make_service(monkeypatch, clock)
-    # Current position 15 deg away from the target: beyond any plausible
-    # physical disturbance (frame reset / stale target).
+    # Current position 15 deg away from the target (e.g. a large hand-slew):
+    # recovery has no error cap, only the target-altitude guard.
     service._pointing["current"]["dec"] = 35.0
 
     service._tick_tracking_guide()
@@ -169,11 +169,8 @@ def test_excessive_recovery_error_abandons_target(monkeypatch):
         clock[0] += 1.0
         service._tick_tracking_guide()
 
-    assert service.tracking_guide_state == "failed"
-    assert service.tracking_target_ra is None
-    commands = [c["type"] for c in service.mountcontrol_queue.commands]
-    assert "goto_target" not in commands
-    assert "stop_movement" in commands
+    assert service.tracking_guide_state == "recovering_goto"
+    assert service.tracking_target_ra is not None
 
 
 def test_clear_tracking_target_command(monkeypatch):

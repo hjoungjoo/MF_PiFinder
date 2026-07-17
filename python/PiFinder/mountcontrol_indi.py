@@ -355,6 +355,31 @@ if PyIndi is not None:
             ):
                 self.mount_control.set_current_position(ra_hours * 15.0, dec_deg)
 
+        def updateProperty(self, prop):
+            # INDI 2.x replaced the typed 1.x callbacks (newNumber, ...) with
+            # this single entry point. Without it the driver's PERIOD_MS
+            # coordinate pushes are silently dropped and the readback only
+            # advances on the 5 s status heartbeat — far too slow for the
+            # pointing fusion to attribute slew motion to the mount.
+            try:
+                if prop.getType() != PyIndi.INDI_NUMBER:
+                    return
+                if prop.getName() != "EQUATORIAL_EOD_COORD":
+                    return
+                nvp = PyIndi.PropertyNumber(prop)
+                ra_widget = nvp.findWidgetByName("RA")
+                dec_widget = nvp.findWidgetByName("DEC")
+                if (
+                    self.mount_control is not None
+                    and ra_widget is not None
+                    and dec_widget is not None
+                ):
+                    self.mount_control.set_current_position(
+                        ra_widget.getValue() * 15.0, dec_widget.getValue()
+                    )
+            except Exception:
+                clientlogger.exception("updateProperty coordinate handling failed")
+
         def newMessage(self, device, message):
             clientlogger.info(
                 "INDI message from %s: %s",
