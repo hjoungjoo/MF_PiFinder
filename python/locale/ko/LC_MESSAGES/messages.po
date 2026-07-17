@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-15 23:02+0900\n"
+"POT-Creation-Date: 2026-07-17 12:25+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -16,13 +16,13 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Generated-By: Babel 2.16.0\n"
+"Generated-By: Babel 2.18.0\n"
 
 #: PiFinder/cat_images.py:206
 msgid "No Image"
 msgstr "이미지 없음"
 
-#: PiFinder/main.py:802
+#: PiFinder/main.py:807
 msgid ""
 "Degraded\n"
 "Check Status"
@@ -30,7 +30,7 @@ msgstr ""
 "상태 확인\n"
 "필요"
 
-#: PiFinder/main.py:899
+#: PiFinder/main.py:904
 msgid ""
 "Catalogs\n"
 "Fully Loaded"
@@ -38,7 +38,7 @@ msgstr ""
 "카탈로그\n"
 "로드 완료"
 
-#: PiFinder/main.py:1109 PiFinder/main.py:1119
+#: PiFinder/main.py:1114 PiFinder/main.py:1124
 msgid ""
 "INDI Mount\n"
 "restarting"
@@ -47,7 +47,7 @@ msgstr ""
 "재시작 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/main.py:1131 PiFinder/main.py:1140
+#: PiFinder/main.py:1136 PiFinder/main.py:1145
 msgid ""
 "INDI GoTo/Guide\n"
 "restarting"
@@ -153,7 +153,7 @@ msgstr "Invalid Password"
 msgid "Remote"
 msgstr "Remote"
 
-#: PiFinder/server.py:343 PiFinder/ui/menu_structure.py:1253
+#: PiFinder/server.py:343 PiFinder/ui/menu_structure.py:1267
 msgid "Advanced"
 msgstr "고급"
 
@@ -166,7 +166,7 @@ msgstr "Wi-Fi 검색 실패"
 msgid "Network"
 msgstr "네트워크"
 
-#: PiFinder/server.py:380 PiFinder/ui/menu_structure.py:1445
+#: PiFinder/server.py:380 PiFinder/ui/menu_structure.py:1459
 msgid "GPS"
 msgstr "GPS"
 
@@ -195,13 +195,13 @@ msgstr "Altitude must be between -1000 and 10000 meters"
 msgid "Error must be between 0 and 10000 meters"
 msgstr "Error must be between 0 and 10000 meters"
 
-#: PiFinder/server.py:646 PiFinder/ui/menu_structure.py:1840
+#: PiFinder/server.py:646 PiFinder/ui/menu_structure.py:1854
 msgid "Restart"
 msgstr "재시작"
 
 #: PiFinder/server.py:667 PiFinder/server.py:676 PiFinder/server.py:680
 #: PiFinder/server.py:684 PiFinder/server.py:1039
-#: PiFinder/ui/menu_structure.py:1687 views/base.html:67 views/base.html:80
+#: PiFinder/ui/menu_structure.py:1701 views/base.html:67 views/base.html:80
 #: views/tools.html:6
 msgid "Tools"
 msgstr "도구"
@@ -225,7 +225,7 @@ msgstr "New passwords do not match"
 #: PiFinder/server.py:709 PiFinder/server.py:720 PiFinder/server.py:737
 #: PiFinder/server.py:819 PiFinder/server.py:875 PiFinder/server.py:888
 #: PiFinder/server.py:961 PiFinder/server.py:974
-#: PiFinder/ui/menu_structure.py:1692 views/base.html:65 views/base.html:78
+#: PiFinder/ui/menu_structure.py:1706 views/base.html:65 views/base.html:78
 #: views/equipment.html:6
 msgid "Equipment"
 msgstr "장비"
@@ -238,7 +238,7 @@ msgstr "set as active instrument."
 msgid "set as active eyepiece."
 msgstr "set as active eyepiece."
 
-#: PiFinder/server.py:821
+#: PiFinder/server.py:822
 msgid "Equipment Imported, restart your PiFinder to use this new data"
 msgstr "Equipment Imported, restart your PiFinder to use this new data"
 
@@ -250,7 +250,7 @@ msgstr "Edit Eyepiece"
 msgid "Eyepiece added, restart your PiFinder to use"
 msgstr "Eyepiece added, restart your PiFinder to use"
 
-#: PiFinder/server.py:890
+#: PiFinder/server.py:891
 msgid "Eyepiece Deleted, restart your PiFinder to remove from menu"
 msgstr "Eyepiece Deleted, restart your PiFinder to remove from menu"
 
@@ -262,7 +262,7 @@ msgstr "Edit Instrument"
 msgid "Instrument Added, restart your PiFinder to use"
 msgstr "Instrument Added, restart your PiFinder to use"
 
-#: PiFinder/server.py:976
+#: PiFinder/server.py:977
 msgid "Instrument Deleted, restart your PiFinder to remove from menu"
 msgstr "Instrument Deleted, restart your PiFinder to remove from menu"
 
@@ -281,7 +281,7 @@ msgid "LiveCam"
 msgstr "LiveCam"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1128
+#: PiFinder/server.py:1129
 #, python-format
 msgid ""
 "This INDI profile uses %(driver)s. OnStepX controls are available only "
@@ -423,17 +423,17 @@ msgid "Solved GoTo loop continue requested"
 msgstr "해석 좌표 GoTo 루프 계속을 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2124 views/indi_mount.html:1390
+#: PiFinder/server.py:2124 views/indi_mount.html:1394
 msgid "Backlash motion test stop requested"
 msgstr "백래시 이동 테스트 정지를 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2130
+#: PiFinder/server.py:2131
 msgid "Backlash stop requested; waiting for mount-control process stop"
 msgstr "백래시 정지를 요청했습니다. 마운트 제어 프로세스 종료를 기다리는 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2146 views/indi_mount.html:1343
+#: PiFinder/server.py:2146 views/indi_mount.html:1347
 msgid "Pointing reset requested"
 msgstr "좌표 초기화를 요청했습니다"
 
@@ -464,16 +464,19 @@ msgstr "정렬 완료"
 
 #. TRANSLATORS: hint bar; preserve leading spaces for layout
 #: PiFinder/ui/align.py:251 PiFinder/ui/align_daytime.py:209
+#, python-brace-format
 msgid "  {icon} START ALIGN"
 msgstr "  {icon} 정렬 시작"
 
 #. TRANSLATORS: hint bar; {icon} is a directional-arrows glyph
 #: PiFinder/ui/align.py:254
+#, python-brace-format
 msgid "{icon} SELECT STAR"
 msgstr "{icon} 별 선택"
 
 #. TRANSLATORS: hint bar; {icon} is the SQUARE button glyph
 #: PiFinder/ui/align.py:257
+#, python-brace-format
 msgid "{icon} SAVE / 0 CANCEL"
 msgstr "{icon} 저장 / 0 취소"
 
@@ -508,6 +511,7 @@ msgid "Exp Auto"
 msgstr "자동 노출"
 
 #: PiFinder/ui/align_daytime.py:199
+#, python-brace-format
 msgid "{icon} SAVE  0 CANCEL"
 msgstr "{icon} 저장  0 취소"
 
@@ -520,82 +524,85 @@ msgstr "자동"
 msgid " Cancel"
 msgstr " Cancel"
 
-#: PiFinder/ui/base.py:766
+#: PiFinder/ui/base.py:707 PiFinder/ui/base.py:828 PiFinder/ui/indi.py:506
+#: PiFinder/ui/indi.py:540 PiFinder/ui/indi.py:911
+msgid "Speed +"
+msgstr "속도 +"
+
+#: PiFinder/ui/base.py:707 PiFinder/ui/base.py:831 PiFinder/ui/indi.py:509
+#: PiFinder/ui/indi.py:540 PiFinder/ui/indi.py:914
+msgid "Speed -"
+msgstr "속도 -"
+
+#: PiFinder/ui/base.py:789
 msgid "Mount Stop"
 msgstr "마운트 정지"
 
-#: PiFinder/ui/base.py:795
+#: PiFinder/ui/base.py:818
 msgid "Mount GoTo"
 msgstr "마운트 GoTo"
 
-#: PiFinder/ui/base.py:799 PiFinder/ui/indi.py:561 PiFinder/ui/indi.py:1033
-#: PiFinder/ui/indi.py:1038 PiFinder/ui/object_details.py:411
+#: PiFinder/ui/base.py:822 PiFinder/ui/indi.py:580 PiFinder/ui/indi.py:1052
+#: PiFinder/ui/indi.py:1057 PiFinder/ui/object_details.py:411
 #: PiFinder/ui/polar_align.py:444
 msgid "No solve"
 msgstr "해 없음"
 
-#: PiFinder/ui/base.py:802
+#: PiFinder/ui/base.py:825
 msgid "Mount Sync"
 msgstr "마운트 동기화"
 
-#: PiFinder/ui/base.py:805 PiFinder/ui/indi.py:506 PiFinder/ui/indi.py:892
-msgid "Speed +"
-msgstr "속도 +"
+#: PiFinder/ui/bluetooth_keyboard.py:90
+#, fuzzy
+msgid "Scan"
+msgstr "취소"
 
-#: PiFinder/ui/base.py:808 PiFinder/ui/indi.py:509 PiFinder/ui/indi.py:895
-msgid "Speed -"
-msgstr "속도 -"
-
-#: PiFinder/ui/bluetooth_keyboard.py:74
-msgid "Scan / Pair"
-msgstr "스캔/페어"
-
-#: PiFinder/ui/bluetooth_keyboard.py:75
+#: PiFinder/ui/bluetooth_keyboard.py:91
 msgid "Reconnect"
 msgstr "재접속"
 
-#: PiFinder/ui/bluetooth_keyboard.py:76 PiFinder/ui/object_list.py:134
+#: PiFinder/ui/bluetooth_keyboard.py:92 PiFinder/ui/object_list.py:134
 msgid "Refresh"
 msgstr "새로고침"
 
-#: PiFinder/ui/bluetooth_keyboard.py:87
+#: PiFinder/ui/bluetooth_keyboard.py:103
 msgid "No BT devices"
 msgstr "BT 장치 없음"
 
-#: PiFinder/ui/bluetooth_keyboard.py:88 PiFinder/ui/menu_structure.py:1596
+#: PiFinder/ui/bluetooth_keyboard.py:104 PiFinder/ui/menu_structure.py:1610
 msgid "Keyboard"
 msgstr "키보드"
 
-#: PiFinder/ui/bluetooth_keyboard.py:126
+#: PiFinder/ui/bluetooth_keyboard.py:142
 msgid "BT scanning"
 msgstr "BT 스캔 중"
 
-#: PiFinder/ui/bluetooth_keyboard.py:135
+#: PiFinder/ui/bluetooth_keyboard.py:173
 msgid "Connecting"
 msgstr "연결 중"
 
-#: PiFinder/ui/bluetooth_keyboard.py:153
+#: PiFinder/ui/bluetooth_keyboard.py:192
 msgid "Pair+Connect"
 msgstr "페어+연결"
 
-#: PiFinder/ui/bluetooth_keyboard.py:155
+#: PiFinder/ui/bluetooth_keyboard.py:194
 msgid "Pair Again"
 msgstr "다시 페어"
 
-#: PiFinder/ui/bluetooth_keyboard.py:156 PiFinder/ui/menu_structure.py:94
+#: PiFinder/ui/bluetooth_keyboard.py:195 PiFinder/ui/menu_structure.py:94
 msgid "Connect"
 msgstr "연결"
 
-#: PiFinder/ui/bluetooth_keyboard.py:158
+#: PiFinder/ui/bluetooth_keyboard.py:197
 msgid "Disconnect"
 msgstr "연결 해제"
 
-#: PiFinder/ui/bluetooth_keyboard.py:159
+#: PiFinder/ui/bluetooth_keyboard.py:198
 msgid "Remove"
 msgstr "제거"
 
-#: PiFinder/ui/bluetooth_keyboard.py:160 PiFinder/ui/menu_structure.py:360
-#: PiFinder/ui/menu_structure.py:1836 PiFinder/ui/menu_structure.py:1849
+#: PiFinder/ui/bluetooth_keyboard.py:199 PiFinder/ui/menu_structure.py:360
+#: PiFinder/ui/menu_structure.py:1850 PiFinder/ui/menu_structure.py:1863
 #: PiFinder/ui/software.py:299 PiFinder/ui/software.py:354
 #: PiFinder/ui/software.py:448 PiFinder/ui/sqm_correction.py:70
 #: views/edit_eyepiece.html:54 views/edit_instrument.html:108
@@ -617,7 +624,7 @@ msgstr ""
 msgid "Filters Reset"
 msgstr "필터 초기화"
 
-#: PiFinder/ui/callbacks.py:84 PiFinder/ui/menu_structure.py:1742
+#: PiFinder/ui/callbacks.py:84 PiFinder/ui/menu_structure.py:1756
 msgid "Test Mode"
 msgstr "테스트 모드"
 
@@ -738,6 +745,7 @@ msgid "WiFi to AP+STA"
 msgstr "WiFi AP+STA로"
 
 #: PiFinder/ui/callbacks.py:516
+#, python-brace-format
 msgid ""
 "{lat:.2f}, {lon:.2f}\n"
 "{alt}m alt"
@@ -758,6 +766,7 @@ msgid "No location lock"
 msgstr "위치 고정 없음"
 
 #: PiFinder/ui/callbacks.py:549
+#, python-brace-format
 msgid ""
 "Saved\n"
 "{name}"
@@ -772,14 +781,17 @@ msgid "Location Name"
 msgstr "위치 이름"
 
 #: PiFinder/ui/callbacks.py:556 PiFinder/ui/gpsstatus.py:82
+#, python-brace-format
 msgid "Loc {number}"
 msgstr "위치 {number}"
 
 #: PiFinder/ui/callbacks.py:587
+#, python-brace-format
 msgid "Time: {time}"
 msgstr "시간: {time}"
 
 #: PiFinder/ui/callbacks.py:605
+#, python-brace-format
 msgid ""
 "{date}\n"
 "{time}"
@@ -788,6 +800,7 @@ msgstr ""
 "{time}"
 
 #: PiFinder/ui/callbacks.py:625
+#, python-brace-format
 msgid ""
 "User object created\n"
 "{name}"
@@ -828,12 +841,13 @@ msgstr ""
 "failed"
 
 #: PiFinder/ui/chart.py:50 PiFinder/ui/menu_structure.py:610
-#: views/indi_mount.html:333
+#: views/indi_mount.html:335
 msgid "Settings"
 msgstr "설정"
 
 #. TRANSLATORS: chart corner label, e.g. "Zenith up" — keep short
 #: PiFinder/ui/chart.py:125
+#, python-brace-format
 msgid "{label} up"
 msgstr "{label} up"
 
@@ -885,10 +899,12 @@ msgid "No eyepiece selected"
 msgstr "아이피스 없음"
 
 #: PiFinder/ui/equipment.py:74
+#, python-brace-format
 msgid "Mag: {mag:.0f}x"
 msgstr "배율: {mag:.0f}x"
 
-#: PiFinder/ui/equipment.py:86
+#: PiFinder/ui/equipment.py:87
+#, python-brace-format
 msgid "TFOV: {tfov_degrees:.0f}°{tfov_minutes:02.0f}'"
 msgstr "실시야: {tfov_degrees:.0f}°{tfov_minutes:02.0f}'"
 
@@ -921,20 +937,24 @@ msgstr "시간 동기화 상태 없음"
 #: PiFinder/ui/gps_time_sync_status.py:123
 #: PiFinder/ui/gps_time_sync_status.py:173
 #: PiFinder/ui/gps_time_sync_status.py:260
+#, python-brace-format
 msgid "Helper: {state}"
 msgstr "헬퍼: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:126
 #: PiFinder/ui/gps_time_sync_status.py:174
+#, python-brace-format
 msgid "Request: {present}"
 msgstr "요청: {present}"
 
 #: PiFinder/ui/gps_time_sync_status.py:129
 #: PiFinder/ui/gps_time_sync_status.py:178
+#, python-brace-format
 msgid "{square} Details"
 msgstr "{square} 상세"
 
 #: PiFinder/ui/gps_time_sync_status.py:144
+#, python-brace-format
 msgid "On {ticks}"
 msgstr "켜짐 {ticks}"
 
@@ -944,73 +964,86 @@ msgstr "켜짐 {ticks}"
 #: PiFinder/ui/menu_structure.py:894 PiFinder/ui/menu_structure.py:918
 #: PiFinder/ui/menu_structure.py:949 PiFinder/ui/menu_structure.py:965
 #: PiFinder/ui/menu_structure.py:1157 PiFinder/ui/menu_structure.py:1174
-#: PiFinder/ui/menu_structure.py:1191 PiFinder/ui/menu_structure.py:1222
-#: PiFinder/ui/menu_structure.py:1239 PiFinder/ui/menu_structure.py:1420
-#: PiFinder/ui/menu_structure.py:1470 PiFinder/ui/menu_structure.py:1483
-#: PiFinder/ui/menu_structure.py:1500 PiFinder/ui/menu_structure.py:1517
-#: PiFinder/ui/menu_structure.py:1567 PiFinder/ui/menu_structure.py:1584
-#: PiFinder/ui/menu_structure.py:1615 PiFinder/ui/menu_structure.py:1654
-#: PiFinder/ui/menu_structure.py:1761 PiFinder/ui/menu_structure.py:1788
-#: PiFinder/ui/menu_structure.py:1804
+#: PiFinder/ui/menu_structure.py:1205 PiFinder/ui/menu_structure.py:1236
+#: PiFinder/ui/menu_structure.py:1253 PiFinder/ui/menu_structure.py:1434
+#: PiFinder/ui/menu_structure.py:1484 PiFinder/ui/menu_structure.py:1497
+#: PiFinder/ui/menu_structure.py:1514 PiFinder/ui/menu_structure.py:1531
+#: PiFinder/ui/menu_structure.py:1581 PiFinder/ui/menu_structure.py:1598
+#: PiFinder/ui/menu_structure.py:1630 PiFinder/ui/menu_structure.py:1668
+#: PiFinder/ui/menu_structure.py:1775 PiFinder/ui/menu_structure.py:1802
+#: PiFinder/ui/menu_structure.py:1818
 msgid "Off"
 msgstr "끔"
 
 #: PiFinder/ui/gps_time_sync_status.py:150
 #: PiFinder/ui/gps_time_sync_status.py:208 PiFinder/ui/indi.py:94
+#, python-brace-format
 msgid "State: {state}"
 msgstr "상태: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:151
 #: PiFinder/ui/gps_time_sync_status.py:210
+#, python-brace-format
 msgid "Clock: {manager}"
 msgstr "시계: {manager}"
 
 #: PiFinder/ui/gps_time_sync_status.py:154
 #: PiFinder/ui/gps_time_sync_status.py:213
+#, python-brace-format
 msgid "Selected: {source}"
 msgstr "선택: {source}"
 
 #: PiFinder/ui/gps_time_sync_status.py:157
 #: PiFinder/ui/gps_time_sync_status.py:231
+#, python-brace-format
 msgid "Chrony: {state}"
 msgstr "Chrony: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:158
+#, python-brace-format
 msgid "Ref: {ref}"
 msgstr "기준: {ref}"
 
 #: PiFinder/ui/gps_time_sync_status.py:162
+#, python-brace-format
 msgid "GPS valid: {valid}"
 msgstr "GPS 유효: {valid}"
 
 #: PiFinder/ui/gps_time_sync_status.py:165
+#, python-brace-format
 msgid "Source: {source}"
 msgstr "소스: {source}"
 
 #: PiFinder/ui/gps_time_sync_status.py:166
 #: PiFinder/ui/gps_time_sync_status.py:241
+#, python-brace-format
 msgid "NTP: {state}"
 msgstr "NTP: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:167
 #: PiFinder/ui/gps_time_sync_status.py:242
+#, python-brace-format
 msgid "NTP srv: {server}"
 msgstr "NTP 서버: {server}"
 
 #: PiFinder/ui/gps_time_sync_status.py:168
 #: PiFinder/ui/gps_time_sync_status.py:224
+#, python-brace-format
 msgid "tAcc: {tacc}"
 msgstr "시간정확도: {tacc}"
 
 #: PiFinder/ui/gps_time_sync_status.py:169
+#, python-brace-format
 msgid "Sys: {state}"
 msgstr "시스템: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:172
+#, python-brace-format
 msgid "RTC: {state}"
 msgstr "RTC: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:177
+#, python-brace-format
 msgid "PPS: {state}"
 msgstr "PPS: {state}"
 
@@ -1019,95 +1052,117 @@ msgid "Status file missing"
 msgstr "상태 파일 없음"
 
 #: PiFinder/ui/gps_time_sync_status.py:191
+#, python-brace-format
 msgid "Helper file: {state}"
 msgstr "헬퍼 파일: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:194
 #: PiFinder/ui/gps_time_sync_status.py:286
+#, python-brace-format
 msgid "{square} Summary"
 msgstr "{square} 요약"
 
 #: PiFinder/ui/gps_time_sync_status.py:209
+#, python-brace-format
 msgid "Msg: {message}"
 msgstr "메시지: {message}"
 
 #: PiFinder/ui/gps_time_sync_status.py:216
+#, python-brace-format
 msgid "Sel time: {time}"
 msgstr "선택 시간: {time}"
 
 #: PiFinder/ui/gps_time_sync_status.py:219
+#, python-brace-format
 msgid "GPS: {time}"
 msgstr "GPS: {time}"
 
 #: PiFinder/ui/gps_time_sync_status.py:222
+#, python-brace-format
 msgid "Age: {age}"
 msgstr "나이: {age}"
 
 #: PiFinder/ui/gps_time_sync_status.py:223
+#, python-brace-format
 msgid "Valid: {valid}"
 msgstr "유효: {valid}"
 
 #: PiFinder/ui/gps_time_sync_status.py:225
+#, python-brace-format
 msgid "Offset: {offset}"
 msgstr "오프셋: {offset}"
 
 #: PiFinder/ui/gps_time_sync_status.py:228
+#, python-brace-format
 msgid "Sys off: {offset}"
 msgstr "시스템 오프셋: {offset}"
 
 #: PiFinder/ui/gps_time_sync_status.py:232
+#, python-brace-format
 msgid "Chrony ref: {ref}"
 msgstr "Chrony 기준: {ref}"
 
 #: PiFinder/ui/gps_time_sync_status.py:236
+#, python-brace-format
 msgid "Chrony off: {offset}"
 msgstr "Chrony 오프셋: {offset}"
 
 #: PiFinder/ui/gps_time_sync_status.py:243
+#, python-brace-format
 msgid "NTP time: {time}"
 msgstr "NTP 시간: {time}"
 
 #: PiFinder/ui/gps_time_sync_status.py:246
+#, python-brace-format
 msgid "NTP delay: {delay}"
 msgstr "NTP 지연: {delay}"
 
 #: PiFinder/ui/gps_time_sync_status.py:249
+#, python-brace-format
 msgid "Samples: {count}/{min_required}"
 msgstr "샘플: {count}/{min_required}"
 
 #: PiFinder/ui/gps_time_sync_status.py:253
+#, python-brace-format
 msgid "Sys req: {state}"
 msgstr "시스템 요청: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:256
+#, python-brace-format
 msgid "RTC req: {state}"
 msgstr "RTC 요청: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:257
+#, python-brace-format
 msgid "PPS ticks: {ticks}"
 msgstr "PPS 틱: {ticks}"
 
 #: PiFinder/ui/gps_time_sync_status.py:261
+#, python-brace-format
 msgid "Helper UID: {uid}"
 msgstr "헬퍼 UID: {uid}"
 
 #: PiFinder/ui/gps_time_sync_status.py:264
+#, python-brace-format
 msgid "Helper msg: {message}"
 msgstr "헬퍼 메시지: {message}"
 
 #: PiFinder/ui/gps_time_sync_status.py:267
+#, python-brace-format
 msgid "Req file: {present}"
 msgstr "요청 파일: {present}"
 
 #: PiFinder/ui/gps_time_sync_status.py:275
+#, python-brace-format
 msgid "Sys result: {state}"
 msgstr "시스템 결과: {state}"
 
 #: PiFinder/ui/gps_time_sync_status.py:281
+#, python-brace-format
 msgid "RTC result: {state}"
 msgstr "RTC 결과: {state}"
 
-#: PiFinder/ui/gpsstatus.py:30
+#: PiFinder/ui/gpsstatus.py:31
 msgid "Limited"
 msgstr "제한"
 
@@ -1127,7 +1182,7 @@ msgstr "정확"
 msgid "Precise"
 msgstr "정밀"
 
-#: PiFinder/ui/gpsstatus.py:45 PiFinder/ui/menu_structure.py:1669
+#: PiFinder/ui/gpsstatus.py:45 PiFinder/ui/menu_structure.py:1683
 #: PiFinder/ui/sqm_correction.py:71 views/gps.html:77 views/network.html:203
 msgid "Save"
 msgstr "저장"
@@ -1145,10 +1200,12 @@ msgid "Location locked"
 msgstr "위치 고정됨"
 
 #: PiFinder/ui/gpsstatus.py:142
+#, python-brace-format
 msgid "{error:.1f} km"
 msgstr "{error:.1f} km"
 
 #: PiFinder/ui/gpsstatus.py:146
+#, python-brace-format
 msgid "{error:.0f} m"
 msgstr "{error:.0f} m"
 
@@ -1168,11 +1225,11 @@ msgstr "관측 준비"
 msgid "to observe!"
 msgstr "완료!"
 
-#: PiFinder/ui/gpsstatus.py:203
+#: PiFinder/ui/gpsstatus.py:204
 msgid "Stay on this screen"
 msgstr "빠른 고정을 위해"
 
-#: PiFinder/ui/gpsstatus.py:212
+#: PiFinder/ui/gpsstatus.py:213
 msgid "for quicker lock"
 msgstr "이 화면 유지"
 
@@ -1190,39 +1247,48 @@ msgid "Sats seen/used:"
 msgstr "위성 보임/사용:"
 
 #: PiFinder/ui/gpsstatus.py:259
+#, python-brace-format
 msgid "{square} Toggle Details"
 msgstr "{square} 상세 전환"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/gpsstatus.py:268
+#, python-brace-format
 msgid "Sat v/s/u: {in_view}/{seen}/{used}"
 msgstr "위성 v/s/u: {in_view}/{seen}/{used}"
 
 #: PiFinder/ui/gpsstatus.py:279
+#, python-brace-format
 msgid "Error: {error}"
 msgstr "오차: {error}"
 
 #: PiFinder/ui/gpsstatus.py:290
+#, python-brace-format
 msgid "Lock:  {locktype}"
 msgstr "고정:  {locktype}"
 
 #: PiFinder/ui/gpsstatus.py:303
+#, python-brace-format
 msgid "Lat:   {latitude:.5f}"
 msgstr "위도:   {latitude:.5f}"
 
 #: PiFinder/ui/gpsstatus.py:311
+#, python-brace-format
 msgid "Lon:   {longitude:.5f}"
 msgstr "경도:   {longitude:.5f}"
 
 #: PiFinder/ui/gpsstatus.py:319
+#, python-brace-format
 msgid "Alt:   {altitude:.1f} m"
 msgstr "고도:   {altitude:.1f} m"
 
 #: PiFinder/ui/gpsstatus.py:328
+#, python-brace-format
 msgid "Time:  {time}"
 msgstr "시간:  {time}"
 
 #: PiFinder/ui/gpsstatus.py:337
+#, python-brace-format
 msgid "Date:  {date}"
 msgstr "날짜:  {date}"
 
@@ -1232,11 +1298,13 @@ msgid "None (cold)"
 msgstr "없음(콜드)"
 
 #: PiFinder/ui/gpsstatus.py:352
+#, python-brace-format
 msgid "From:  {location_source}"
 msgstr "출처:  {location_source}"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/gpsstatus.py:362
+#, python-brace-format
 msgid "Top C/N0: {cno}"
 msgstr "상위 C/N0: {cno}"
 
@@ -1245,14 +1313,17 @@ msgid "No status"
 msgstr "상태 없음"
 
 #: PiFinder/ui/indi.py:103
+#, python-brace-format
 msgid "Speed: {rate} {label}"
 msgstr "속도: {rate} {label}"
 
 #: PiFinder/ui/indi.py:109
+#, python-brace-format
 msgid "RA {ra:.1f} Dec {dec:.1f}"
 msgstr "RA {ra:.1f} Dec {dec:.1f}"
 
 #: PiFinder/ui/indi.py:116
+#, python-brace-format
 msgid "Loc: {lat:.4f},{lon:.4f}"
 msgstr "위치: {lat:.4f},{lon:.4f}"
 
@@ -1289,7 +1360,7 @@ msgid "Time/Location"
 msgstr "시간/위치"
 
 #: PiFinder/ui/indi.py:151 PiFinder/ui/menu_structure.py:106
-#: views/indi_mount.html:207
+#: views/indi_mount.html:296
 msgid "Park"
 msgstr "파크"
 
@@ -1298,17 +1369,17 @@ msgid "Set Home"
 msgstr "홈 설정"
 
 #: PiFinder/ui/indi.py:157 PiFinder/ui/menu_structure.py:118
-#: views/indi_mount.html:206
+#: views/indi_mount.html:295
 msgid "Return Home"
 msgstr "홈으로 복귀"
 
 #: PiFinder/ui/indi.py:160 PiFinder/ui/menu_structure.py:110
-#: views/indi_mount.html:208
+#: views/indi_mount.html:297
 msgid "Unpark"
 msgstr "언파크"
 
 #: PiFinder/ui/indi.py:163 PiFinder/ui/menu_structure.py:122
-#: views/indi_mount.html:209
+#: views/indi_mount.html:298
 msgid "Set-Park"
 msgstr "파크 위치 설정"
 
@@ -1316,12 +1387,13 @@ msgstr "파크 위치 설정"
 msgid "INDI Restart"
 msgstr "INDI 재시작"
 
-#: PiFinder/ui/indi.py:281 PiFinder/ui/indi.py:765 views/indi_mount.html:340
-#: views/indi_mount.html:1153
+#: PiFinder/ui/indi.py:281 PiFinder/ui/indi.py:784 views/indi_mount.html:342
+#: views/indi_mount.html:1157
 msgid "Idle"
 msgstr "대기"
 
 #: PiFinder/ui/indi.py:292
+#, python-brace-format
 msgid "Axis: {axis}"
 msgstr "축: {axis}"
 
@@ -1353,14 +1425,17 @@ msgstr "2/4/6/8 : 이동"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/indi.py:448
+#, python-brace-format
 msgid "9/3 : Speed {label}"
 msgstr "9/3 : 속도 {label}"
 
 #: PiFinder/ui/indi.py:454
+#, python-brace-format
 msgid "5 : Refine {state}"
 msgstr "5 : 보정 {state}"
 
 #: PiFinder/ui/indi.py:460
+#, python-brace-format
 msgid "0 : Guide {state}"
 msgstr "0 : 가이드 {state}"
 
@@ -1376,156 +1451,162 @@ msgstr "보정 켜짐"
 msgid "Refine Off"
 msgstr "보정 꺼짐"
 
-#: PiFinder/ui/indi.py:564
+#: PiFinder/ui/indi.py:583
 msgid "Aligned"
 msgstr "정렬됨"
 
-#: PiFinder/ui/indi.py:735
+#: PiFinder/ui/indi.py:754
 msgid "Align Complete"
 msgstr "정렬 완료"
 
-#: PiFinder/ui/indi.py:769 views/indi_mount.html:370
+#: PiFinder/ui/indi.py:788 views/indi_mount.html:372
 msgid "Align Points"
 msgstr "정렬점 수"
 
-#: PiFinder/ui/indi.py:770 PiFinder/ui/indi.py:786 PiFinder/ui/indi.py:802
+#: PiFinder/ui/indi.py:789 PiFinder/ui/indi.py:805 PiFinder/ui/indi.py:821
+#, python-brace-format
 msgid "Points: {points}"
 msgstr "점수: {points}"
 
-#: PiFinder/ui/indi.py:771
+#: PiFinder/ui/indi.py:790
+#, python-brace-format
 msgid "Progress: {done}/{total}"
 msgstr "진행: {done}/{total}"
 
-#: PiFinder/ui/indi.py:775
+#: PiFinder/ui/indi.py:794
 msgid "+/- or 1-9 select"
 msgstr "+/- 또는 1-9 선택"
 
-#: PiFinder/ui/indi.py:776
+#: PiFinder/ui/indi.py:795
 msgid "Right/Square next"
 msgstr "오른쪽/네모 다음"
 
-#: PiFinder/ui/indi.py:777
+#: PiFinder/ui/indi.py:796
 msgid "Left back"
 msgstr "왼쪽 뒤로"
 
-#: PiFinder/ui/indi.py:785
+#: PiFinder/ui/indi.py:804
 msgid "Preparing Align"
 msgstr "정렬 준비"
 
-#: PiFinder/ui/indi.py:790
+#: PiFinder/ui/indi.py:809
 msgid "Syncing PiFinder"
 msgstr "PiFinder 동기화"
 
-#: PiFinder/ui/indi.py:791
+#: PiFinder/ui/indi.py:810
 msgid "Wait for mount"
 msgstr "마운트 대기"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:792 PiFinder/ui/indi.py:833
+#: PiFinder/ui/indi.py:811 PiFinder/ui/indi.py:852
 msgid "Left mode/cancel"
 msgstr "왼쪽 모드/취소"
 
-#: PiFinder/ui/indi.py:800 views/indi_mount.html:366
+#: PiFinder/ui/indi.py:819 views/indi_mount.html:368
 msgid "Align Mode"
 msgstr "정렬 모드"
 
-#: PiFinder/ui/indi.py:801
+#: PiFinder/ui/indi.py:820
+#, python-brace-format
 msgid "Mode: {mode}"
 msgstr "모드: {mode}"
 
-#: PiFinder/ui/indi.py:806
+#: PiFinder/ui/indi.py:825
 msgid "1 Manual  2 Auto"
 msgstr "1 수동  2 자동"
 
-#: PiFinder/ui/indi.py:807
+#: PiFinder/ui/indi.py:826
 msgid "Up/Down change"
 msgstr "위/아래 변경"
 
-#: PiFinder/ui/indi.py:808
+#: PiFinder/ui/indi.py:827
 msgid "Right/Square start"
 msgstr "오른쪽/네모 시작"
 
-#: PiFinder/ui/indi.py:809
+#: PiFinder/ui/indi.py:828
 msgid "Left points"
 msgstr "왼쪽 점수"
 
-#: PiFinder/ui/indi.py:817
+#: PiFinder/ui/indi.py:836
+#, python-brace-format
 msgid "Alt: {alt:.0f} deg"
 msgstr "고도: {alt:.0f}도"
 
-#: PiFinder/ui/indi.py:819
+#: PiFinder/ui/indi.py:838
 msgid "Alt: unknown"
 msgstr "고도: 알 수 없음"
 
-#: PiFinder/ui/indi.py:823
+#: PiFinder/ui/indi.py:842
 msgid "Manual Star"
 msgstr "수동 별"
 
-#: PiFinder/ui/indi.py:824
+#: PiFinder/ui/indi.py:843
+#, python-brace-format
 msgid "Star: {star}"
 msgstr "별: {star}"
 
-#: PiFinder/ui/indi.py:826 PiFinder/ui/indi.py:859
+#: PiFinder/ui/indi.py:845 PiFinder/ui/indi.py:878
+#, python-brace-format
 msgid "Point {done}/{total}"
 msgstr "점 {done}/{total}"
 
-#: PiFinder/ui/indi.py:830
+#: PiFinder/ui/indi.py:849
 msgid "Up/Down star"
 msgstr "위/아래 별 선택"
 
-#: PiFinder/ui/indi.py:831
+#: PiFinder/ui/indi.py:850
 msgid "Right/Square GoTo"
 msgstr "오른쪽/네모 GoTo"
 
-#: PiFinder/ui/indi.py:832
+#: PiFinder/ui/indi.py:851
 msgid "SkySafari GoTo/Align OK"
 msgstr "SkySafari GoTo/정렬 OK"
 
-#: PiFinder/ui/indi.py:842
+#: PiFinder/ui/indi.py:861
 msgid "Align Star"
 msgstr "정렬 별"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:864
+#: PiFinder/ui/indi.py:883
 msgid "8/2/4/6 move  9/3 speed"
 msgstr "8/2/4/6 이동  9/3 속도"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:868
+#: PiFinder/ui/indi.py:887
 msgid "Release stop  Left back"
 msgstr "떼면 정지  왼쪽 뒤로"
 
-#: PiFinder/ui/indi.py:872
+#: PiFinder/ui/indi.py:891
 msgid "Square : Confirm"
 msgstr "네모 : 확정"
 
-#: PiFinder/ui/indi.py:981 PiFinder/ui/indi.py:987 PiFinder/ui/indi.py:993
-#: PiFinder/ui/indi.py:1073
+#: PiFinder/ui/indi.py:1000 PiFinder/ui/indi.py:1006 PiFinder/ui/indi.py:1012
+#: PiFinder/ui/indi.py:1092
 msgid "Align Cancelled"
 msgstr "정렬 취소됨"
 
-#: PiFinder/ui/indi.py:1029
+#: PiFinder/ui/indi.py:1048
 msgid "Manual Align"
 msgstr "수동 정렬"
 
-#: PiFinder/ui/indi.py:1052
+#: PiFinder/ui/indi.py:1071
 msgid "Auto Align"
 msgstr "자동 정렬"
 
-#: PiFinder/ui/indi.py:1058
+#: PiFinder/ui/indi.py:1077
 msgid "Below horizon"
 msgstr "지평선 아래"
 
-#: PiFinder/ui/indi.py:1068
+#: PiFinder/ui/indi.py:1087
 msgid "GoTo Sent"
 msgstr "GoTo 전송됨"
 
-#: PiFinder/ui/indi.py:1092
+#: PiFinder/ui/indi.py:1111
 msgid "Point Confirmed"
 msgstr "정렬점 확정"
 
-#: PiFinder/ui/location_list.py:28 PiFinder/ui/menu_structure.py:1673
-#: PiFinder/ui/menu_structure.py:1814
+#: PiFinder/ui/location_list.py:28 PiFinder/ui/menu_structure.py:1687
+#: PiFinder/ui/menu_structure.py:1828
 msgid "Load"
 msgstr "불러오기"
 
@@ -1540,14 +1621,17 @@ msgid "Delete"
 msgstr "삭제"
 
 #: PiFinder/ui/location_list.py:105
+#, python-brace-format
 msgid "Loaded: {name}"
 msgstr "불러옴: {name}"
 
 #: PiFinder/ui/location_list.py:128
+#, python-brace-format
 msgid "Deleted: {name}"
 msgstr "삭제됨: {name}"
 
 #: PiFinder/ui/location_list.py:148
+#, python-brace-format
 msgid ""
 "Renamed to:\n"
 "{name}"
@@ -1596,7 +1680,7 @@ msgid "󰍴 Delete  󰐕 E/W"
 msgstr "󰍴 Delete  󰐕 E/W"
 
 #: PiFinder/ui/locationentry.py:312 PiFinder/ui/locationentry.py:324
-#: PiFinder/ui/menu_structure.py:1712
+#: PiFinder/ui/menu_structure.py:1726
 msgid "Enter Coords"
 msgstr "좌표 입력"
 
@@ -1707,7 +1791,7 @@ msgstr "정렬"
 msgid "Align (Day)"
 msgstr "주간정렬"
 
-#: PiFinder/ui/menu_structure.py:76 PiFinder/ui/menu_structure.py:1699
+#: PiFinder/ui/menu_structure.py:76 PiFinder/ui/menu_structure.py:1713
 msgid "GPS Status"
 msgstr "GPS 상태"
 
@@ -1719,12 +1803,12 @@ msgstr "상태"
 msgid "INIT"
 msgstr "초기화"
 
-#: PiFinder/ui/menu_structure.py:98 PiFinder/ui/menu_structure.py:1707
+#: PiFinder/ui/menu_structure.py:98 PiFinder/ui/menu_structure.py:1721
 msgid "Set Location"
 msgstr "위치 설정"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:102 views/indi_mount.html:180
+#: PiFinder/ui/menu_structure.py:102 views/indi_mount.html:269
 msgid "Reset Pointing"
 msgstr "좌표 초기화"
 
@@ -1863,7 +1947,7 @@ msgstr "최근"
 msgid "Obs Lists"
 msgstr "관측목록"
 
-#: PiFinder/ui/menu_structure.py:337 PiFinder/ui/menu_structure.py:1550
+#: PiFinder/ui/menu_structure.py:337 PiFinder/ui/menu_structure.py:1564
 msgid "Custom"
 msgstr "사용자"
 
@@ -1879,8 +1963,8 @@ msgstr "필터 설정"
 msgid "Reset All"
 msgstr "전체 초기화"
 
-#: PiFinder/ui/menu_structure.py:357 PiFinder/ui/menu_structure.py:1835
-#: PiFinder/ui/menu_structure.py:1846 PiFinder/ui/software.py:354
+#: PiFinder/ui/menu_structure.py:357 PiFinder/ui/menu_structure.py:1849
+#: PiFinder/ui/menu_structure.py:1860 PiFinder/ui/software.py:354
 #: PiFinder/ui/software.py:450
 msgid "Confirm"
 msgstr "확인"
@@ -1935,7 +2019,7 @@ msgstr "빠름"
 
 #: PiFinder/ui/menu_structure.py:707 PiFinder/ui/menu_structure.py:731
 #: PiFinder/ui/menu_structure.py:854 PiFinder/ui/menu_structure.py:878
-#: PiFinder/ui/menu_structure.py:902 PiFinder/ui/menu_structure.py:1633
+#: PiFinder/ui/menu_structure.py:902 PiFinder/ui/menu_structure.py:1648
 msgid "Medium"
 msgstr "보통"
 
@@ -2028,12 +2112,12 @@ msgid "Reticle"
 msgstr "십자선"
 
 #: PiFinder/ui/menu_structure.py:850 PiFinder/ui/menu_structure.py:874
-#: PiFinder/ui/menu_structure.py:898 PiFinder/ui/menu_structure.py:1627
+#: PiFinder/ui/menu_structure.py:898 PiFinder/ui/menu_structure.py:1642
 msgid "Low"
 msgstr "낮음"
 
 #: PiFinder/ui/menu_structure.py:858 PiFinder/ui/menu_structure.py:882
-#: PiFinder/ui/menu_structure.py:906 PiFinder/ui/menu_structure.py:1639
+#: PiFinder/ui/menu_structure.py:906 PiFinder/ui/menu_structure.py:1654
 msgid "High"
 msgstr "높음"
 
@@ -2067,13 +2151,13 @@ msgstr "방위 표시"
 
 #: PiFinder/ui/menu_structure.py:945 PiFinder/ui/menu_structure.py:961
 #: PiFinder/ui/menu_structure.py:1161 PiFinder/ui/menu_structure.py:1178
-#: PiFinder/ui/menu_structure.py:1195 PiFinder/ui/menu_structure.py:1226
-#: PiFinder/ui/menu_structure.py:1243 PiFinder/ui/menu_structure.py:1424
-#: PiFinder/ui/menu_structure.py:1487 PiFinder/ui/menu_structure.py:1504
-#: PiFinder/ui/menu_structure.py:1521 PiFinder/ui/menu_structure.py:1571
-#: PiFinder/ui/menu_structure.py:1588 PiFinder/ui/menu_structure.py:1658
-#: PiFinder/ui/menu_structure.py:1765 PiFinder/ui/menu_structure.py:1792
-#: PiFinder/ui/menu_structure.py:1808
+#: PiFinder/ui/menu_structure.py:1209 PiFinder/ui/menu_structure.py:1240
+#: PiFinder/ui/menu_structure.py:1257 PiFinder/ui/menu_structure.py:1438
+#: PiFinder/ui/menu_structure.py:1501 PiFinder/ui/menu_structure.py:1518
+#: PiFinder/ui/menu_structure.py:1535 PiFinder/ui/menu_structure.py:1585
+#: PiFinder/ui/menu_structure.py:1602 PiFinder/ui/menu_structure.py:1672
+#: PiFinder/ui/menu_structure.py:1779 PiFinder/ui/menu_structure.py:1806
+#: PiFinder/ui/menu_structure.py:1822
 msgid "On"
 msgstr "켬"
 
@@ -2085,8 +2169,8 @@ msgstr "천체 크기"
 msgid "Camera Exp"
 msgstr "노출"
 
-#: PiFinder/ui/menu_structure.py:981 PiFinder/ui/menu_structure.py:1364
-#: views/indi_mount.html:76 views/indi_mount.html:364 views/network.html:32
+#: PiFinder/ui/menu_structure.py:981 PiFinder/ui/menu_structure.py:1378
+#: views/indi_mount.html:165 views/indi_mount.html:366 views/network.html:32
 msgid "Auto"
 msgstr "자동"
 
@@ -2192,7 +2276,7 @@ msgid "Mount Type"
 msgstr "가대 종류"
 
 #: PiFinder/ui/menu_structure.py:1105 views/edit_instrument.html:57
-#: views/indi_mount.html:77
+#: views/indi_mount.html:166
 msgid "Alt/Az"
 msgstr "경위대"
 
@@ -2209,8 +2293,8 @@ msgstr "INDI 설정"
 msgid "Multi Align"
 msgstr "멀티 정렬"
 
-#: PiFinder/ui/menu_structure.py:1124 views/indi_mount.html:391
-#: views/indi_mount.html:592
+#: PiFinder/ui/menu_structure.py:1124 views/indi_mount.html:393
+#: views/indi_mount.html:596
 msgid "Backlash"
 msgstr "백래시"
 
@@ -2220,22 +2304,22 @@ msgid "Goto/Guide"
 msgstr "GoTo/Guide"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1133 views/indi_mount.html:486
+#: PiFinder/ui/menu_structure.py:1133
 msgid "GoTo Method"
 msgstr "GoTo 방식"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1140 views/indi_mount.html:483
+#: PiFinder/ui/menu_structure.py:1140 views/indi_mount.html:485
 msgid "INDI Mount"
 msgstr "INDI 마운트"
 
-#: PiFinder/ui/menu_structure.py:1144 PiFinder/ui/menu_structure.py:1466
-#: views/indi_mount.html:484
+#: PiFinder/ui/menu_structure.py:1144 PiFinder/ui/menu_structure.py:1480
+#: views/indi_mount.html:486
 msgid "PiFinder"
 msgstr "PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1150 views/indi_mount.html:491
+#: PiFinder/ui/menu_structure.py:1150 views/indi_mount.html:495
 msgid "Tracking Guide"
 msgstr "추적 가이드"
 
@@ -2244,297 +2328,303 @@ msgstr "추적 가이드"
 msgid "GoTo Recovery"
 msgstr "GoTo 복구"
 
+# AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/menu_structure.py:1184
+#, fuzzy
+msgid "Recovery Range"
+msgstr "복구"
+
+#: PiFinder/ui/menu_structure.py:1198
 msgid "Manual Re-target"
 msgstr "수동 재타겟"
 
-#: PiFinder/ui/menu_structure.py:1201
+#: PiFinder/ui/menu_structure.py:1215
 msgid "Max GoTos"
 msgstr "최대 GoTo 횟수"
 
-#: PiFinder/ui/menu_structure.py:1215
+#: PiFinder/ui/menu_structure.py:1229
 msgid "Invert Guide RA/Az"
 msgstr "가이드 RA/Az 반전"
 
-#: PiFinder/ui/menu_structure.py:1232
+#: PiFinder/ui/menu_structure.py:1246
 msgid "Invert Guide Dec/Alt"
 msgstr "가이드 Dec/Alt 반전"
 
-#: PiFinder/ui/menu_structure.py:1259
+#: PiFinder/ui/menu_structure.py:1273
 msgid "PiFinder Type"
 msgstr "PiFinder형"
 
-#: PiFinder/ui/menu_structure.py:1266
+#: PiFinder/ui/menu_structure.py:1280
 msgid "Left"
 msgstr "왼쪽"
 
-#: PiFinder/ui/menu_structure.py:1270
+#: PiFinder/ui/menu_structure.py:1284
 msgid "Right"
 msgstr "오른쪽"
 
-#: PiFinder/ui/menu_structure.py:1274
+#: PiFinder/ui/menu_structure.py:1288
 msgid "Straight"
 msgstr "직선형"
 
-#: PiFinder/ui/menu_structure.py:1278
+#: PiFinder/ui/menu_structure.py:1292
 msgid "Flat v3"
 msgstr "Flat v3"
 
-#: PiFinder/ui/menu_structure.py:1282
+#: PiFinder/ui/menu_structure.py:1296
 msgid "Flat v2"
 msgstr "Flat v2"
 
-#: PiFinder/ui/menu_structure.py:1286
+#: PiFinder/ui/menu_structure.py:1300
 msgid "AS Bloom"
 msgstr "AS Bloom"
 
-#: PiFinder/ui/menu_structure.py:1292
+#: PiFinder/ui/menu_structure.py:1306
 msgid "Camera Type"
 msgstr "카메라 종류"
 
-#: PiFinder/ui/menu_structure.py:1298
+#: PiFinder/ui/menu_structure.py:1312
 msgid "v2 - imx477"
 msgstr "v2 - imx477"
 
-#: PiFinder/ui/menu_structure.py:1303
+#: PiFinder/ui/menu_structure.py:1317
 msgid "v3 - imx296"
 msgstr "v3 - imx296"
 
-#: PiFinder/ui/menu_structure.py:1308
+#: PiFinder/ui/menu_structure.py:1322
 msgid "v3 - imx462"
 msgstr "v3 - imx462"
 
-#: PiFinder/ui/menu_structure.py:1315 views/gps.html:6
+#: PiFinder/ui/menu_structure.py:1329 views/gps.html:6
 msgid "GPS Settings"
 msgstr "GPS 설정"
 
-#: PiFinder/ui/menu_structure.py:1320
+#: PiFinder/ui/menu_structure.py:1334
 msgid "GPS Type"
 msgstr "GPS 종류"
 
-#: PiFinder/ui/menu_structure.py:1328
+#: PiFinder/ui/menu_structure.py:1342
 msgid "UBlox"
 msgstr "UBlox"
 
-#: PiFinder/ui/menu_structure.py:1332
+#: PiFinder/ui/menu_structure.py:1346
 msgid "GPSD (generic)"
 msgstr "GPSD"
 
-#: PiFinder/ui/menu_structure.py:1338
+#: PiFinder/ui/menu_structure.py:1352
 msgid "GPS Baud Rate"
 msgstr "GPS Baud"
 
-#: PiFinder/ui/menu_structure.py:1346
+#: PiFinder/ui/menu_structure.py:1360
 msgid "9600 (standard)"
 msgstr "9600 (standard)"
 
-#: PiFinder/ui/menu_structure.py:1350
+#: PiFinder/ui/menu_structure.py:1364
 msgid "115200 (UBlox-10)"
 msgstr "115200 (UBlox-10)"
 
-#: PiFinder/ui/menu_structure.py:1356
+#: PiFinder/ui/menu_structure.py:1370
 msgid "GPS Port"
 msgstr "GPS 포트"
 
-#: PiFinder/ui/menu_structure.py:1368
+#: PiFinder/ui/menu_structure.py:1382
 msgid "ttyAMA1"
 msgstr "ttyAMA1"
 
-#: PiFinder/ui/menu_structure.py:1372
+#: PiFinder/ui/menu_structure.py:1386
 msgid "ttyAMA2"
 msgstr "ttyAMA2"
 
-#: PiFinder/ui/menu_structure.py:1376
+#: PiFinder/ui/menu_structure.py:1390
 msgid "ttyAMA3"
 msgstr "ttyAMA3"
 
-#: PiFinder/ui/menu_structure.py:1380
+#: PiFinder/ui/menu_structure.py:1394
 msgid "serial0"
 msgstr "serial0"
 
-#: PiFinder/ui/menu_structure.py:1384
+#: PiFinder/ui/menu_structure.py:1398
 msgid "ttyAMA0"
 msgstr "ttyAMA0"
 
-#: PiFinder/ui/menu_structure.py:1388
+#: PiFinder/ui/menu_structure.py:1402
 msgid "ttyAMA10"
 msgstr "ttyAMA10"
 
-#: PiFinder/ui/menu_structure.py:1392
+#: PiFinder/ui/menu_structure.py:1406
 msgid "ttyS0"
 msgstr "ttyS0"
 
-#: PiFinder/ui/menu_structure.py:1396
+#: PiFinder/ui/menu_structure.py:1410
 msgid "ttyACM0"
 msgstr "ttyACM0"
 
-#: PiFinder/ui/menu_structure.py:1400
+#: PiFinder/ui/menu_structure.py:1414
 msgid "ttyUSB0"
 msgstr "ttyUSB0"
 
-#: PiFinder/ui/menu_structure.py:1408 PiFinder/ui/menu_structure.py:1413
-#: PiFinder/ui/menu_structure.py:1703
+#: PiFinder/ui/menu_structure.py:1422 PiFinder/ui/menu_structure.py:1427
+#: PiFinder/ui/menu_structure.py:1717
 msgid "Time Sync"
 msgstr "시간 동기화"
 
-#: PiFinder/ui/menu_structure.py:1430
+#: PiFinder/ui/menu_structure.py:1444
 msgid "Source Mode"
 msgstr "소스 모드"
 
-#: PiFinder/ui/menu_structure.py:1437 PiFinder/ui/menu_structure.py:1462
+#: PiFinder/ui/menu_structure.py:1451 PiFinder/ui/menu_structure.py:1476
 msgid "Chrony"
 msgstr "Chrony"
 
-#: PiFinder/ui/menu_structure.py:1441
+#: PiFinder/ui/menu_structure.py:1455
 msgid "Best"
 msgstr "최적"
 
-#: PiFinder/ui/menu_structure.py:1449
+#: PiFinder/ui/menu_structure.py:1463
 msgid "NTP"
 msgstr "NTP"
 
-#: PiFinder/ui/menu_structure.py:1455
+#: PiFinder/ui/menu_structure.py:1469
 msgid "Clock Manager"
 msgstr "시계 관리자"
 
-#: PiFinder/ui/menu_structure.py:1476
+#: PiFinder/ui/menu_structure.py:1490
 msgid "Chrony Source"
 msgstr "Chrony 소스"
 
-#: PiFinder/ui/menu_structure.py:1493
+#: PiFinder/ui/menu_structure.py:1507
 msgid "GPS Source"
 msgstr "GPS 소스"
 
-#: PiFinder/ui/menu_structure.py:1510
+#: PiFinder/ui/menu_structure.py:1524
 msgid "PiFinder NTP"
 msgstr "PiFinder NTP"
 
-#: PiFinder/ui/menu_structure.py:1527
+#: PiFinder/ui/menu_structure.py:1541
 msgid "PiFinder NTP Server"
 msgstr "PiFinder NTP 서버"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1534
+#: PiFinder/ui/menu_structure.py:1548
 msgid "pool.ntp.org"
 msgstr "pool.ntp.org"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1538
+#: PiFinder/ui/menu_structure.py:1552
 msgid "time.google.com"
 msgstr "time.google.com"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1542
+#: PiFinder/ui/menu_structure.py:1556
 msgid "time.cloudflare.com"
 msgstr "time.cloudflare.com"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1546
+#: PiFinder/ui/menu_structure.py:1560
 msgid "time.nist.gov"
 msgstr "time.nist.gov"
 
-#: PiFinder/ui/menu_structure.py:1560
+#: PiFinder/ui/menu_structure.py:1574
 msgid "Software PPS"
 msgstr "소프트웨어 PPS"
 
-#: PiFinder/ui/menu_structure.py:1577
+#: PiFinder/ui/menu_structure.py:1591
 msgid "RTC Sync"
 msgstr "RTC 동기화"
 
-#: PiFinder/ui/menu_structure.py:1603
+#: PiFinder/ui/menu_structure.py:1617
 msgid "IMU Settings"
 msgstr "IMU 설정"
 
-#: PiFinder/ui/menu_structure.py:1608
+#: PiFinder/ui/menu_structure.py:1622
 msgid "Sensitivity"
 msgstr "감도"
 
-#: PiFinder/ui/menu_structure.py:1621
+#: PiFinder/ui/menu_structure.py:1636
 msgid "Very Low"
 msgstr "아주 낮음"
 
-#: PiFinder/ui/menu_structure.py:1647
+#: PiFinder/ui/menu_structure.py:1661
 msgid "Compass"
 msgstr "나침반"
 
-#: PiFinder/ui/menu_structure.py:1664
+#: PiFinder/ui/menu_structure.py:1678
 msgid "Calibration"
 msgstr "캘리브레이션"
 
-#: PiFinder/ui/menu_structure.py:1677
+#: PiFinder/ui/menu_structure.py:1691
 msgid "Clear"
 msgstr "지우기"
 
-#: PiFinder/ui/menu_structure.py:1691 views/livecam.html:260
+#: PiFinder/ui/menu_structure.py:1705 views/livecam.html:260
 #: views/network.html:116
 msgid "Status"
 msgstr "상태"
 
-#: PiFinder/ui/menu_structure.py:1694
+#: PiFinder/ui/menu_structure.py:1708
 msgid "Place & Time"
 msgstr "위치/시간"
 
-#: PiFinder/ui/menu_structure.py:1716 views/locations.html:86
+#: PiFinder/ui/menu_structure.py:1730 views/locations.html:86
 msgid "Load Location"
 msgstr "위치 불러오기"
 
-#: PiFinder/ui/menu_structure.py:1720 views/location_form.html:105
+#: PiFinder/ui/menu_structure.py:1734 views/location_form.html:105
 msgid "Save Location"
 msgstr "위치 저장"
 
-#: PiFinder/ui/menu_structure.py:1726
+#: PiFinder/ui/menu_structure.py:1740
 msgid "Set Time/Date"
 msgstr "시간/날짜"
 
-#: PiFinder/ui/menu_structure.py:1733
+#: PiFinder/ui/menu_structure.py:1747
 msgid "Reset Location"
 msgstr "위치 초기화"
 
-#: PiFinder/ui/menu_structure.py:1735
+#: PiFinder/ui/menu_structure.py:1749
 msgid "Reset Time/Date"
 msgstr "시간 초기화"
 
-#: PiFinder/ui/menu_structure.py:1740
+#: PiFinder/ui/menu_structure.py:1754
 msgid "Console"
 msgstr "Console"
 
-#: PiFinder/ui/menu_structure.py:1741
+#: PiFinder/ui/menu_structure.py:1755
 msgid "Software Upd"
 msgstr "SW 업데이트"
 
-#: PiFinder/ui/menu_structure.py:1744
+#: PiFinder/ui/menu_structure.py:1758
 msgid "Experimental"
 msgstr "실험적"
 
-#: PiFinder/ui/menu_structure.py:1749
+#: PiFinder/ui/menu_structure.py:1763
 msgid "Polar Align"
 msgstr "극축정렬"
 
-#: PiFinder/ui/menu_structure.py:1754 views/indi_mount.html:188
+#: PiFinder/ui/menu_structure.py:1768 views/indi_mount.html:277
 msgid "Mount Control"
 msgstr "마운트 제어"
 
-#: PiFinder/ui/menu_structure.py:1771
+#: PiFinder/ui/menu_structure.py:1785
 msgid "Dev Tools"
 msgstr "개발도구"
 
-#: PiFinder/ui/menu_structure.py:1776
+#: PiFinder/ui/menu_structure.py:1790
 msgid "Telemetry"
 msgstr "Telemetry"
 
-#: PiFinder/ui/menu_structure.py:1781
+#: PiFinder/ui/menu_structure.py:1795
 msgid "Record"
 msgstr "기록"
 
-#: PiFinder/ui/menu_structure.py:1798
+#: PiFinder/ui/menu_structure.py:1812
 msgid "Images"
 msgstr "이미지"
 
-#: PiFinder/ui/menu_structure.py:1824
+#: PiFinder/ui/menu_structure.py:1838
 msgid "Power"
 msgstr "전원"
 
-#: PiFinder/ui/menu_structure.py:1830
+#: PiFinder/ui/menu_structure.py:1844
 msgid "Shutdown"
 msgstr "종료"
 
@@ -2551,11 +2641,13 @@ msgid "No Object Found"
 msgstr "천체 없음"
 
 #: PiFinder/ui/object_details.py:234 PiFinder/ui/object_details.py:241
+#, python-brace-format
 msgid "Mag:{obj_mag}"
 msgstr "등급:{obj_mag}"
 
 #. TRANSLATORS: object info magnitude
 #: PiFinder/ui/object_details.py:237
+#, python-brace-format
 msgid "Sz:{size}"
 msgstr "크기:{size}"
 
@@ -2564,10 +2656,12 @@ msgid "  Not Logged"
 msgstr "  미기록"
 
 #: PiFinder/ui/object_details.py:365
+#, python-brace-format
 msgid "  {logs} Logs"
 msgstr "  로그 {logs}"
 
 #: PiFinder/ui/object_details.py:417
+#, python-brace-format
 msgid "yet{elipsis}"
 msgstr "아직{elipsis}"
 
@@ -2576,6 +2670,7 @@ msgid "Searching"
 msgstr "검색 중"
 
 #: PiFinder/ui/object_details.py:437
+#, python-brace-format
 msgid "for GPS{elipsis}"
 msgstr "GPS{elipsis}"
 
@@ -2599,22 +2694,22 @@ msgstr "대비 여유"
 msgid "No contrast data"
 msgstr "대비 데이터 없음"
 
-#: PiFinder/ui/object_details.py:603
+#: PiFinder/ui/object_details.py:604
 msgid "CR measures object"
 msgstr "CR measures object"
 
 #. TRANSLATORS: Contrast reserve explanation line 1
-#: PiFinder/ui/object_details.py:606
+#: PiFinder/ui/object_details.py:607
 msgid "visibility based on"
 msgstr "visibility based on"
 
 #. TRANSLATORS: Contrast reserve explanation line 2
-#: PiFinder/ui/object_details.py:609
+#: PiFinder/ui/object_details.py:610
 msgid "sky brightness,"
 msgstr "sky brightness,"
 
 #. TRANSLATORS: Contrast reserve explanation line 3
-#: PiFinder/ui/object_details.py:612
+#: PiFinder/ui/object_details.py:613
 msgid "telescope, and EP."
 msgstr "telescope, and EP."
 
@@ -2642,15 +2737,15 @@ msgstr "표준"
 msgid "Filter"
 msgstr "필터"
 
-#: PiFinder/ui/object_list.py:250 PiFinder/ui/software.py:491
+#: PiFinder/ui/object_list.py:251 PiFinder/ui/software.py:491
 msgid "Downloading..."
 msgstr "다운로드 중..."
 
-#: PiFinder/ui/object_list.py:257
+#: PiFinder/ui/object_list.py:258
 msgid "No GPS lock"
 msgstr "GPS 고정 없음"
 
-#: PiFinder/ui/object_list.py:264
+#: PiFinder/ui/object_list.py:265
 msgid "Calculating..."
 msgstr "계산 중..."
 
@@ -2663,6 +2758,7 @@ msgid "Loading..."
 msgstr "로드 중..."
 
 #: PiFinder/ui/object_list.py:280
+#, python-brace-format
 msgid ""
 "Sorting by\n"
 "{sort_order}"
@@ -2692,15 +2788,18 @@ msgid "match filter"
 msgstr "필터 결과 없음"
 
 #: PiFinder/ui/object_list.py:571
+#, python-brace-format
 msgid "{catalog_info_1} obj"
 msgstr "{catalog_info_1}개 천체"
 
 #. TRANSLATORS: number of objects in object list
 #: PiFinder/ui/object_list.py:574
+#, python-brace-format
 msgid ", {catalog_info_2}d old"
 msgstr ", {catalog_info_2}일 전"
 
 #: PiFinder/ui/object_list.py:584
+#, python-brace-format
 msgid "Sort: {sort_order}"
 msgstr "정렬: {sort_order}"
 
@@ -2709,6 +2808,7 @@ msgid "Refreshing..."
 msgstr "새로고침 중..."
 
 #: PiFinder/ui/obs_list.py:151
+#, python-brace-format
 msgid ""
 "Error loading\n"
 "{parsed} parsed"
@@ -2717,6 +2817,7 @@ msgstr ""
 "{parsed} parsed"
 
 #: PiFinder/ui/obs_list.py:157
+#, python-brace-format
 msgid ""
 "{name}\n"
 "{matched}/{parsed} objects"
@@ -2770,6 +2871,7 @@ msgstr "GPS: 대기 중..."
 
 #. TRANSLATORS: hint bar; {icon} is the SQUARE button glyph
 #: PiFinder/ui/polar_align.py:331
+#, python-brace-format
 msgid "{icon} START"
 msgstr "{icon} 시작"
 
@@ -2816,6 +2918,7 @@ msgstr "최근 해 없음"
 #. TRANSLATORS: hint bar; {square} is the SQUARE button glyph, {minus}
 #. is the MINUS button glyph.
 #: PiFinder/ui/polar_align.py:373
+#, python-brace-format
 msgid "{square} CAPTURE  {minus} CANCEL"
 msgstr "{square} 촬영  {minus} 취소"
 
@@ -2843,6 +2946,7 @@ msgstr "대기"
 #. TRANSLATORS: hint bar; {icon} is the SQUARE button glyph
 #: PiFinder/ui/polar_align.py:398 PiFinder/ui/polar_align.py:470
 #: PiFinder/ui/polar_align.py:500
+#, python-brace-format
 msgid "{icon} BACK"
 msgstr "{icon} 뒤로"
 
@@ -2865,6 +2969,7 @@ msgstr "pt"
 #. TRANSLATORS: hint bar; {square} is the SQUARE button glyph, {minus}
 #. is the MINUS button glyph.
 #: PiFinder/ui/polar_align.py:428
+#, python-brace-format
 msgid "{square} REDO  {minus} CANCEL"
 msgstr "{square} 다시  {minus} 취소"
 
@@ -2937,10 +3042,12 @@ msgid "keep going"
 msgstr "계속"
 
 #: PiFinder/ui/preview.py:412
+#, python-brace-format
 msgid "det {n}"
 msgstr "검출 {n}"
 
 #: PiFinder/ui/preview.py:509
+#, python-brace-format
 msgid "Zoom x{zoom_number}"
 msgstr "Zoom x{zoom_number}"
 
@@ -2989,6 +3096,7 @@ msgid "Error on Upd"
 msgstr "업데이트 오류"
 
 #: PiFinder/ui/software.py:190
+#, python-brace-format
 msgid "Wifi Mode: {mode}"
 msgstr "WiFi 모드: {mode}"
 
@@ -3013,6 +3121,7 @@ msgid "Checking for"
 msgstr "업데이트"
 
 #: PiFinder/ui/software.py:261
+#, python-brace-format
 msgid "updates{elipsis}"
 msgstr "확인 중{elipsis}"
 
@@ -3037,6 +3146,7 @@ msgid "IRREVERSIBLE"
 msgstr "되돌릴 수 없음"
 
 #: PiFinder/ui/software.py:392
+#, python-brace-format
 msgid "Download: {}MB"
 msgstr "Download: {}MB"
 
@@ -3076,11 +3186,11 @@ msgstr "릴리스 노트"
 msgid "SQM"
 msgstr "SQM"
 
-#: PiFinder/ui/sqm.py:42
+#: PiFinder/ui/sqm.py:43
 msgid "CAL"
 msgstr "CAL"
 
-#: PiFinder/ui/sqm.py:48
+#: PiFinder/ui/sqm.py:49
 msgid "CORRECT"
 msgstr "CORRECT"
 
@@ -3093,6 +3203,7 @@ msgid "mag/arcsec²"
 msgstr "mag/arcsec²"
 
 #: PiFinder/ui/sqm.py:148 PiFinder/ui/sqm.py:252
+#, python-brace-format
 msgid "Bortle {bc}"
 msgstr "Bortle {bc}"
 
@@ -3105,10 +3216,12 @@ msgid "SCROLL"
 msgstr "스크롤"
 
 #: PiFinder/ui/sqm.py:171
+#, python-brace-format
 msgid "{s}s ago"
 msgstr "{s}초 전"
 
 #: PiFinder/ui/sqm.py:173
+#, python-brace-format
 msgid "{m}m ago"
 msgstr "{m}분 전"
 
@@ -3128,11 +3241,11 @@ msgstr "SQM Sweep"
 msgid "Excellent Dark-Sky Site"
 msgstr "Excellent Dark-Sky Site"
 
-#: PiFinder/ui/sqm.py:354
+#: PiFinder/ui/sqm.py:355
 msgid "The zodiacal light is visible and colorful. Gegenschein readily visible."
 msgstr "The zodiacal light is visible and colorful. Gegenschein readily visible."
 
-#: PiFinder/ui/sqm.py:357
+#: PiFinder/ui/sqm.py:358
 msgid ""
 "The Scorpius and Sagittarius regions of the Milky Way cast obvious "
 "shadows."
@@ -3152,7 +3265,7 @@ msgstr "Abundant stars make faint constellations hard to distinguish."
 msgid "Typical Truly Dark Site"
 msgstr "Typical Truly Dark Site"
 
-#: PiFinder/ui/sqm.py:370
+#: PiFinder/ui/sqm.py:371
 msgid ""
 "The zodiacal light is distinctly yellowish and bright enough to cast "
 "shadows at dusk and dawn."
@@ -3172,11 +3285,11 @@ msgstr "The summer Milky Way is highly structured. M33 easily visible."
 msgid "Rural Sky"
 msgstr "Rural Sky"
 
-#: PiFinder/ui/sqm.py:383
+#: PiFinder/ui/sqm.py:384
 msgid "The zodiacal light is striking in spring and autumn, color still visible."
 msgstr "The zodiacal light is striking in spring and autumn, color still visible."
 
-#: PiFinder/ui/sqm.py:386
+#: PiFinder/ui/sqm.py:387
 msgid ""
 "Some light pollution at horizon. Clouds illuminated near horizon, dark "
 "overhead."
@@ -3196,7 +3309,7 @@ msgstr "Several Messier objects remain naked-eye visible."
 msgid "Brighter Rural"
 msgstr "Brighter Rural"
 
-#: PiFinder/ui/sqm.py:399
+#: PiFinder/ui/sqm.py:400
 msgid "Zodiacal light still visible but doesn't extend halfway to zenith."
 msgstr "Zodiacal light still visible but doesn't extend halfway to zenith."
 
@@ -3204,7 +3317,7 @@ msgstr "Zodiacal light still visible but doesn't extend halfway to zenith."
 msgid "Light pollution domes apparent in multiple directions."
 msgstr "Light pollution domes apparent in multiple directions."
 
-#: PiFinder/ui/sqm.py:403
+#: PiFinder/ui/sqm.py:404
 msgid ""
 "The Milky Way well above the horizon is still impressive, but lacks "
 "detail."
@@ -3220,7 +3333,7 @@ msgstr "M33 difficult to see."
 msgid "Semi-Suburban/Transition Sky"
 msgstr "Semi-Suburban/Transition Sky"
 
-#: PiFinder/ui/sqm.py:415
+#: PiFinder/ui/sqm.py:416
 msgid "Clouds have a grayish glow at zenith and appear bright toward city domes."
 msgstr "Clouds have a grayish glow at zenith and appear bright toward city domes."
 
@@ -3236,7 +3349,7 @@ msgstr "Great Rift observable overhead."
 msgid "Suburban Sky"
 msgstr "Suburban Sky"
 
-#: PiFinder/ui/sqm.py:428
+#: PiFinder/ui/sqm.py:429
 msgid "Only hints of zodiacal light seen on best nights in autumn and spring."
 msgstr "Only hints of zodiacal light seen on best nights in autumn and spring."
 
@@ -3260,11 +3373,11 @@ msgstr "Bright Suburban Sky"
 msgid "The zodiacal light is invisible."
 msgstr "The zodiacal light is invisible."
 
-#: PiFinder/ui/sqm.py:443
+#: PiFinder/ui/sqm.py:444
 msgid "Light pollution makes sky within 35° of horizon glow grayish white."
 msgstr "Light pollution makes sky within 35° of horizon glow grayish white."
 
-#: PiFinder/ui/sqm.py:446
+#: PiFinder/ui/sqm.py:447
 msgid "The Milky Way is only visible near the zenith. M33 undetectable."
 msgstr "The Milky Way is only visible near the zenith. M33 undetectable."
 
@@ -3320,7 +3433,7 @@ msgstr "The sky is brilliantly lit."
 msgid "Many stars forming constellations invisible."
 msgstr "Many stars forming constellations invisible."
 
-#: PiFinder/ui/sqm.py:483
+#: PiFinder/ui/sqm.py:484
 msgid ""
 "Only the Moon, planets, bright satellites, and a few of the brightest "
 "star clusters observable."
@@ -3337,6 +3450,7 @@ msgid "Del"
 msgstr "삭제"
 
 #: PiFinder/ui/sqm_correction.py:106
+#, python-brace-format
 msgid "Original: {sqm:.2f}"
 msgstr "원본: {sqm:.2f}"
 
@@ -3357,6 +3471,7 @@ msgid "Saving..."
 msgstr "저장 중..."
 
 #: PiFinder/ui/sqm_correction.py:225
+#, python-brace-format
 msgid "Saved: {filename}"
 msgstr "저장됨: {filename}"
 
@@ -3365,6 +3480,7 @@ msgid "Save failed"
 msgstr "저장 실패"
 
 #: PiFinder/ui/sqm_correction.py:340
+#, python-brace-format
 msgid "Saving {label}..."
 msgstr "Saving {label}..."
 
@@ -3376,7 +3492,7 @@ msgstr "리플레이 중지"
 msgid "Select None"
 msgstr "선택 해제"
 
-#: PiFinder/ui/text_menu.py:213
+#: PiFinder/ui/text_menu.py:214
 msgid "Select All"
 msgstr "전체 선택"
 
@@ -3667,8 +3783,8 @@ msgid "PiFinder Screen"
 msgstr "PiFinder Screen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/index.html:14 views/indi_mount.html:168 views/indi_mount.html:1076
-#: views/indi_mount.html:1114
+#: views/index.html:14 views/indi_mount.html:257 views/indi_mount.html:1080
+#: views/indi_mount.html:1118
 msgid "Mode"
 msgstr "모드"
 
@@ -3776,160 +3892,241 @@ msgid "Active INDI"
 msgstr "활성 INDI"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:67
+#: views/indi_mount.html:68
+#, python-format
+msgid "%(driver)s Driver Connection"
+msgstr "%(driver)s 드라이버 연결"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:73
+msgid "Network TCP"
+msgstr "네트워크 TCP"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:74
+msgid "USB Serial"
+msgstr "USB 시리얼"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:76
+msgid "Connection Type"
+msgstr "연결 방식"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:80
+msgid "INDI Server Host"
+msgstr "INDI 서버 호스트"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:84
+msgid "INDI Server Port"
+msgstr "INDI 서버 포트"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:92 views/indi_mount.html:120 views/network.html:182
+msgid "Manual entry"
+msgstr "수동 입력"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:101
+msgid "OnStep Network Device"
+msgstr "OnStep 네트워크 장치"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:105
+msgid "OnStep TCP Port"
+msgstr "OnStep TCP 포트"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:111
+msgid "Manual IP or Host"
+msgstr "수동 IP 또는 호스트"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:125
+msgid "No USB serial ports detected"
+msgstr "감지된 USB 시리얼 포트 없음"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:128
+msgid "USB Serial Port"
+msgstr "USB 시리얼 포트"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:134
+msgid ""
+"No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently "
+"visible. Connect the USB-serial cable and reload this page, or use manual"
+" entry if the port name is known."
+msgstr ""
+"현재 보이는 /dev/serial/by-id, /dev/ttyUSB, /dev/ttyACM 포트가 없습니다. USB-시리얼 케이블을"
+" 연결하고 이 페이지를 다시 불러오거나, 포트 이름을 알면 수동 입력을 사용하세요."
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:141
+msgid "Manual Serial Port"
+msgstr "수동 시리얼 포트"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:147
+msgid "Apply to INDI"
+msgstr "INDI에 적용"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:156
 msgid "SkySafari Mount Mode"
 msgstr "SkySafari 마운트 모드"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:72
+#: views/indi_mount.html:161
 msgid "PiFinder Mount Type"
 msgstr "PiFinder 마운트 종류"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:78
+#: views/indi_mount.html:167
 msgid "Polar / EQ"
 msgstr "적도의 / EQ"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:79
+#: views/indi_mount.html:168
 msgid "German EQ"
 msgstr "독일식 EQ"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:81
+#: views/indi_mount.html:170
 msgid "SkySafari LX200 Mount Code"
 msgstr "SkySafari LX200 마운트 코드"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:85
+#: views/indi_mount.html:174
 msgid "Refine Accuracy arcmin"
 msgstr "정밀 보정 정확도 arcmin"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:92
+#: views/indi_mount.html:181
 msgid "Use SkySafari Align to calibrate IMU before solve"
 msgstr "해석 전 SkySafari 정렬로 IMU 보정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:98
+#: views/indi_mount.html:187
 msgid "Forward SkySafari GoTo and Align/Sync to INDI"
 msgstr "SkySafari GoTo 및 정렬/동기화를 INDI로 전달"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:106
+#: views/indi_mount.html:195
 msgid "Forward SkySafari Align/Sync to INDI even when GoTo forwarding is off"
 msgstr "GoTo 전달이 꺼져 있어도 SkySafari 정렬/동기화를 INDI로 전달"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:112
+#: views/indi_mount.html:201
 msgid "One-shot solve refine after INDI GoTo"
 msgstr "INDI GoTo 후 1회 해석 정밀 보정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:117
+#: views/indi_mount.html:206
 msgid "Apply SkySafari Settings"
 msgstr "SkySafari 설정 적용"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:126
+#: views/indi_mount.html:215
 msgid "Location and Time"
 msgstr "위치 및 시간"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:129
+#: views/indi_mount.html:218
 msgid "GPS Lock"
 msgstr "GPS 고정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:130
+#: views/indi_mount.html:219
 msgid "Location Source"
 msgstr "위치 소스"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:131
+#: views/indi_mount.html:220
 msgid "Location to Send"
 msgstr "전송할 위치"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:132
+#: views/indi_mount.html:221
 msgid "PiFinder UTC Time"
 msgstr "PiFinder UTC 시간"
 
-#: views/indi_mount.html:139 views/locations.html:63
+#: views/indi_mount.html:228 views/locations.html:63
 msgid "Latitude"
 msgstr "Latitude"
 
-#: views/indi_mount.html:143 views/locations.html:64
+#: views/indi_mount.html:232 views/locations.html:64
 msgid "Longitude"
 msgstr "Longitude"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:147
+#: views/indi_mount.html:236
 msgid "Elevation m"
 msgstr "해발고도 m"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:151
+#: views/indi_mount.html:240
 msgid "UTC Time"
 msgstr "UTC 시간"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:155
+#: views/indi_mount.html:244
 msgid "Reload Current Values"
 msgstr "현재 값 다시 읽기"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:156
+#: views/indi_mount.html:245
 msgid "Send Location and Time"
 msgstr "위치 및 시간 전송"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:164
+#: views/indi_mount.html:253
 msgid "Pointing Coordinate Service"
 msgstr "지향 좌표 서비스"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:167
+#: views/indi_mount.html:256
 msgid "Selected Source"
 msgstr "선택된 소스"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:169
+#: views/indi_mount.html:258
 msgid "Quality"
 msgstr "품질"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:170
+#: views/indi_mount.html:259
 msgid "RA (deg)"
 msgstr "RA (도)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:171
+#: views/indi_mount.html:260
 msgid "Dec (deg)"
 msgstr "Dec (도)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:172
+#: views/indi_mount.html:261
 msgid "Mount Separation (deg)"
 msgstr "마운트 이격 (도)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:173
+#: views/indi_mount.html:262
 msgid "IMU-Mount Separation (deg)"
 msgstr "IMU-마운트 이격 (도)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:174
+#: views/indi_mount.html:263
 msgid "Warnings"
 msgstr "경고"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:175
+#: views/indi_mount.html:264
 msgid "Last Reset"
 msgstr "마지막 초기화"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:178
+#: views/indi_mount.html:267
 msgid ""
 "Reinitialize the fused coordinate when it has drifted from the sky "
 "(bad/absent plate solves, or IMU drift). With a valid plate solve it re-"
@@ -3940,230 +4137,149 @@ msgstr ""
 "솔빙 기준으로 다시 잡고, 없으면 마운트를 현재 IMU 좌표에 정렬합니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:191
+#: views/indi_mount.html:280
 msgid "Home State"
 msgstr "홈 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:195
+#: views/indi_mount.html:284
 msgid "Park State"
 msgstr "파크 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:199
+#: views/indi_mount.html:288
 msgid "Raw Mount Status"
 msgstr "원시 마운트 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:205 views/indi_mount.html:597
+#: views/indi_mount.html:294 views/indi_mount.html:601
 msgid "At Home"
 msgstr "홈 위치"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:218
+#: views/indi_mount.html:307
 msgid "Slew Rate"
 msgstr "슬루 속도"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:227
+#: views/indi_mount.html:316
 msgid "Move Direction (DIR)"
 msgstr "이동 방향 (DIR)"
 
-#: views/indi_mount.html:231
+#: views/indi_mount.html:320
 msgid "Move up-left"
 msgstr "왼쪽 위로 이동"
 
-#: views/indi_mount.html:232
+#: views/indi_mount.html:321
 msgid "Move up"
 msgstr "위로 이동"
 
-#: views/indi_mount.html:233
+#: views/indi_mount.html:322
 msgid "Move up-right"
 msgstr "오른쪽 위로 이동"
 
-#: views/indi_mount.html:234
+#: views/indi_mount.html:323
 msgid "Move left"
 msgstr "왼쪽으로 이동"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:235
+#: views/indi_mount.html:324
 msgid "Hold"
 msgstr "유지"
 
-#: views/indi_mount.html:236
+#: views/indi_mount.html:325
 msgid "Move right"
 msgstr "오른쪽으로 이동"
 
-#: views/indi_mount.html:237
+#: views/indi_mount.html:326
 msgid "Move down-left"
 msgstr "왼쪽 아래로 이동"
 
-#: views/indi_mount.html:238
+#: views/indi_mount.html:327
 msgid "Move down"
 msgstr "아래로 이동"
 
-#: views/indi_mount.html:239
+#: views/indi_mount.html:328
 msgid "Move down-right"
 msgstr "오른쪽 아래로 이동"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:246
-#, python-format
-msgid "%(driver)s Driver Connection"
-msgstr "%(driver)s 드라이버 연결"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:251
-msgid "Network TCP"
-msgstr "네트워크 TCP"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:252
-msgid "USB Serial"
-msgstr "USB 시리얼"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:254
-msgid "Connection Type"
-msgstr "연결 방식"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:258
-msgid "INDI Server Host"
-msgstr "INDI 서버 호스트"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:262
-msgid "INDI Server Port"
-msgstr "INDI 서버 포트"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:270 views/indi_mount.html:298 views/network.html:182
-msgid "Manual entry"
-msgstr "수동 입력"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:279
-msgid "OnStep Network Device"
-msgstr "OnStep 네트워크 장치"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:283
-msgid "OnStep TCP Port"
-msgstr "OnStep TCP 포트"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:289
-msgid "Manual IP or Host"
-msgstr "수동 IP 또는 호스트"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:303
-msgid "No USB serial ports detected"
-msgstr "감지된 USB 시리얼 포트 없음"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:306
-msgid "USB Serial Port"
-msgstr "USB 시리얼 포트"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:312
-msgid ""
-"No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently "
-"visible. Connect the USB-serial cable and reload this page, or use manual"
-" entry if the port name is known."
-msgstr ""
-"현재 보이는 /dev/serial/by-id, /dev/ttyUSB, /dev/ttyACM 포트가 없습니다. USB-시리얼 케이블을"
-" 연결하고 이 페이지를 다시 불러오거나, 포트 이름을 알면 수동 입력을 사용하세요."
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:319
-msgid "Manual Serial Port"
-msgstr "수동 시리얼 포트"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:325
-msgid "Apply to INDI"
-msgstr "INDI에 적용"
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:334
+#: views/indi_mount.html:336
 msgid "Multi-Point Align"
 msgstr "다지점 정렬"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:338
+#: views/indi_mount.html:340
 msgid "Align Status"
 msgstr "정렬 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:344
+#: views/indi_mount.html:346
 msgid "Align Progress"
 msgstr "정렬 진행"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:350
+#: views/indi_mount.html:352
 msgid "Current Align Star"
 msgstr "현재 정렬 별"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:363
+#: views/indi_mount.html:365
 msgid "Manual"
 msgstr "수동"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:377
+#: views/indi_mount.html:379
 msgid "mag"
 msgstr "mag"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:381
+#: views/indi_mount.html:383
 msgid "Alignment Star"
 msgstr "정렬 별"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:385
+#: views/indi_mount.html:387
 msgid "Start Align"
 msgstr "정렬 시작"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:386
+#: views/indi_mount.html:388
 msgid "GoTo Selected Star"
 msgstr "선택한 별로 GoTo"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:387
+#: views/indi_mount.html:389
 msgid "Confirm Point"
 msgstr "정렬점 확정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:388
+#: views/indi_mount.html:390
 msgid "Cancel Align"
 msgstr "정렬 취소"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:395
+#: views/indi_mount.html:397
 msgid "Current Backlash"
 msgstr "현재 백래시"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:402
+#: views/indi_mount.html:404
 msgid "Auto Calculation"
 msgstr "자동 계산"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:409
+#: views/indi_mount.html:411
 msgid "Calculated Backlash"
 msgstr "계산된 백래시"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:413
+#: views/indi_mount.html:415
 msgid "Auto Method"
 msgstr "자동 방식"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:414
+#: views/indi_mount.html:416
 msgid ""
 "Solved-coordinate GoTo round-trip test; repeated return/offset GoTo moves"
 " are recorded and filtered by direction before recommending candidate "
@@ -4171,27 +4287,27 @@ msgid ""
 msgstr "해석 좌표 GoTo 왕복 테스트. 반복적인 복귀/오프셋 GoTo 이동을 기록하고 방향별로 필터링한 뒤 후보 백래시 값을 추천합니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:417
+#: views/indi_mount.html:419
 msgid "Motion Command"
 msgstr "이동 명령"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:418
+#: views/indi_mount.html:420
 msgid "INDI GoTo"
 msgstr "INDI GoTo"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:421
+#: views/indi_mount.html:423
 msgid "Motion Test Repeats"
 msgstr "이동 테스트 반복"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:427
+#: views/indi_mount.html:429
 msgid "Motion Test Details"
 msgstr "이동 테스트 상세"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:431
+#: views/indi_mount.html:433
 #, python-format
 msgid ""
 "Filtered %(filtered)s / %(sample)s, warm-up %(warmup)s, excluded "
@@ -4201,33 +4317,33 @@ msgstr ""
 "%(spread)s%%, 방향 편차 %(delta)s%%"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:450 views/indi_mount.html:454
+#: views/indi_mount.html:452 views/indi_mount.html:456
 #, python-format
 msgid "%(axis)s Backlash"
 msgstr "%(axis)s 백래시"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:458 views/indi_mount.html:593
+#: views/indi_mount.html:460 views/indi_mount.html:597
 msgid "Start Motion Test"
 msgstr "이동 테스트 시작"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:459 views/indi_mount.html:594
+#: views/indi_mount.html:461 views/indi_mount.html:598
 msgid "Continue Motion Test"
 msgstr "이동 테스트 계속"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:460
+#: views/indi_mount.html:462
 msgid "Save Backlash"
 msgstr "백래시 저장"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:468
+#: views/indi_mount.html:470
 msgid "INDI Driver"
 msgstr "INDI 드라이버"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:470
+#: views/indi_mount.html:472
 #, python-format
 msgid ""
 "%(driver)s is selected in the active INDI profile. OnStepX-specific setup"
@@ -4237,238 +4353,243 @@ msgstr ""
 "숨겨집니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:470
+#: views/indi_mount.html:472
 msgid "No driver"
 msgstr "드라이버 없음"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:478
+#: views/indi_mount.html:480
 msgid "GoTo / Guide Settings"
 msgstr "GoTo / Guide 설정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:499
+#: views/indi_mount.html:488
+msgid "GoTo Type"
+msgstr "GoTo 유형"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:503
 msgid "Tracking Guide GoTo Recovery (re-slew when off target by more than 3 deg)"
 msgstr "추적 가이드 GoTo 복구 (목표에서 3° 이상 벗어나면 재슬루)"
 
-#: views/indi_mount.html:507
+#: views/indi_mount.html:511
 msgid ""
 "Manual Re-target (after a manual move, track the new position instead of "
 "returning)"
 msgstr "수동 재타겟 (수동 이동 후 원위치 복귀 대신 새 위치를 추적)"
 
-#: views/indi_mount.html:515
+#: views/indi_mount.html:519
 msgid "Invert guide pulse RA/Az (WE)"
 msgstr "가이드 펄스 RA/Az(WE) 반전"
 
-#: views/indi_mount.html:521
+#: views/indi_mount.html:525
 msgid "Invert guide pulse Dec/Alt (NS)"
 msgstr "가이드 펄스 Dec/Alt(NS) 반전"
 
-#: views/indi_mount.html:532
+#: views/indi_mount.html:536
 msgid "PiFinder GoTo: Max sync + GoTo iterations"
 msgstr "PiFinder GoTo: 최대 sync + GoTo 반복 횟수"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:536
+#: views/indi_mount.html:540
 msgid "Apply GoTo / Guide Settings"
 msgstr "GoTo / Guide 설정 적용"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:539
+#: views/indi_mount.html:543
 msgid "GoTo / Guide Status"
 msgstr "GoTo / Guide 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:540
+#: views/indi_mount.html:544
 msgid "Service"
 msgstr "서비스"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:542
+#: views/indi_mount.html:546
 msgid "Guide State"
 msgstr "가이드 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:544
+#: views/indi_mount.html:548
 msgid "Guide Error"
 msgstr "가이드 오차"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:546
+#: views/indi_mount.html:550
 msgid "Recovery"
 msgstr "복구"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:548
+#: views/indi_mount.html:552
 msgid "Last Action"
 msgstr "마지막 동작"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:595
+#: views/indi_mount.html:599
 msgid "STOP"
 msgstr "정지"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:598
+#: views/indi_mount.html:602
 msgid "Not at Home"
 msgstr "홈 위치 아님"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:599
+#: views/indi_mount.html:603
 msgid "Waiting at Home"
 msgstr "홈에서 대기 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:600
+#: views/indi_mount.html:604
 msgid "Parked"
 msgstr "파크됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:601
+#: views/indi_mount.html:605
 msgid "Unparked"
 msgstr "언파크됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:602
+#: views/indi_mount.html:606
 msgid "Parking"
 msgstr "파크 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:603
+#: views/indi_mount.html:607
 msgid "Parking Failed"
 msgstr "파크 실패"
 
-#: views/indi_mount.html:604
+#: views/indi_mount.html:608
 msgid "Unknown"
 msgstr "미상"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:906
+#: views/indi_mount.html:910
 msgid "Estimated"
 msgstr "추정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1077
+#: views/indi_mount.html:1081
 msgid "Records"
 msgstr "기록"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1089 views/indi_mount.html:1102
+#: views/indi_mount.html:1093 views/indi_mount.html:1106
 msgid "calculated"
 msgstr "계산됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1090 views/indi_mount.html:1103
+#: views/indi_mount.html:1094 views/indi_mount.html:1107
 msgid "filtered"
 msgstr "필터됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1094
+#: views/indi_mount.html:1098
 msgid "By movement direction"
 msgstr "이동 방향별"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1115
+#: views/indi_mount.html:1119
 msgid "Confidence"
 msgstr "신뢰도"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1116
+#: views/indi_mount.html:1120
 msgid "Filtered"
 msgstr "필터됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1117
+#: views/indi_mount.html:1121
 msgid "warm-up"
 msgstr "워밍업"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1118
+#: views/indi_mount.html:1122
 msgid "excluded"
 msgstr "제외"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1119
+#: views/indi_mount.html:1123
 msgid "Spread"
 msgstr "산포"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1120
+#: views/indi_mount.html:1124
 msgid "direction delta"
 msgstr "방향 편차"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1211
+#: views/indi_mount.html:1215
 msgid "Reading"
 msgstr "읽는 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1218
+#: views/indi_mount.html:1222
 msgid "Could not read current values"
 msgstr "현재 값을 읽을 수 없습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1225
+#: views/indi_mount.html:1229
 msgid "Updated"
 msgstr "업데이트됨"
 
-#: views/indi_mount.html:1316
+#: views/indi_mount.html:1320
 msgid "Setting"
 msgstr "설정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1318
+#: views/indi_mount.html:1322
 msgid "Applied"
 msgstr "적용됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1328
+#: views/indi_mount.html:1332
 msgid "Command sent"
 msgstr "명령을 전송했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1338
+#: views/indi_mount.html:1342
 msgid "Resetting..."
 msgstr "초기화 중..."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1357
+#: views/indi_mount.html:1361
 msgid "Starting auto calculation"
 msgstr "자동 계산 시작"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1366
+#: views/indi_mount.html:1370
 msgid "Auto calculation requested"
 msgstr "자동 계산을 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1384
+#: views/indi_mount.html:1388
 msgid "Stopping motion test"
 msgstr "이동 테스트 정지 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1404 views/indi_mount.html:1410
+#: views/indi_mount.html:1408 views/indi_mount.html:1414
 msgid "Continue requested"
 msgstr "계속을 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1431
+#: views/indi_mount.html:1435
 msgid "Working"
 msgstr "처리 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1520
+#: views/indi_mount.html:1524
 msgid "Stop"
 msgstr "정지"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1558
+#: views/indi_mount.html:1562
 msgid "Restarting INDI"
 msgstr "INDI 재시작 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1561
+#: views/indi_mount.html:1565
 msgid "Restart requested"
 msgstr "재시작을 요청했습니다"
 
@@ -5288,4 +5409,7 @@ msgstr ""
 # AI-TRANSLATED (claude): needs human review
 #~ msgid "SW"
 #~ msgstr "남서"
+
+#~ msgid "Scan / Pair"
+#~ msgstr "스캔/페어"
 

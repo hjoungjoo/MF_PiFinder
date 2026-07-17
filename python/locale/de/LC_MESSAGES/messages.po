@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-15 23:02+0900\n"
+"POT-Creation-Date: 2026-07-17 12:25+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: Jens Scheidtmann\n"
 "Language: de_DE\n"
@@ -16,13 +16,13 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Generated-By: Babel 2.16.0\n"
+"Generated-By: Babel 2.18.0\n"
 
 #: PiFinder/cat_images.py:206
 msgid "No Image"
 msgstr "Kein Bild"
 
-#: PiFinder/main.py:802
+#: PiFinder/main.py:807
 msgid ""
 "Degraded\n"
 "Check Status"
@@ -30,7 +30,7 @@ msgstr ""
 "Eingeschränkt\n"
 "Status checken"
 
-#: PiFinder/main.py:899
+#: PiFinder/main.py:904
 msgid ""
 "Catalogs\n"
 "Fully Loaded"
@@ -38,14 +38,14 @@ msgstr ""
 "Kataloge\n"
 "geladen"
 
-#: PiFinder/main.py:1109 PiFinder/main.py:1119
+#: PiFinder/main.py:1114 PiFinder/main.py:1124
 #, fuzzy
 msgid ""
 "INDI Mount\n"
 "restarting"
 msgstr "Ok! Neustart..."
 
-#: PiFinder/main.py:1131 PiFinder/main.py:1140
+#: PiFinder/main.py:1136 PiFinder/main.py:1145
 msgid ""
 "INDI GoTo/Guide\n"
 "restarting"
@@ -149,7 +149,7 @@ msgstr "Falsches Passwort"
 msgid "Remote"
 msgstr "Fernsteuerung"
 
-#: PiFinder/server.py:343 PiFinder/ui/menu_structure.py:1253
+#: PiFinder/server.py:343 PiFinder/ui/menu_structure.py:1267
 msgid "Advanced"
 msgstr "Erweitert"
 
@@ -162,7 +162,7 @@ msgstr "Speichern fehlgeschlagen"
 msgid "Network"
 msgstr "Netzwerk"
 
-#: PiFinder/server.py:380 PiFinder/ui/menu_structure.py:1445
+#: PiFinder/server.py:380 PiFinder/ui/menu_structure.py:1459
 msgid "GPS"
 msgstr "GPS"
 
@@ -191,13 +191,13 @@ msgstr "Höhe muss zwischen -1000 und 10000 Metern sein"
 msgid "Error must be between 0 and 10000 meters"
 msgstr "Unsicherheit muss zwichen 0 und 10000 Metern liegen"
 
-#: PiFinder/server.py:646 PiFinder/ui/menu_structure.py:1840
+#: PiFinder/server.py:646 PiFinder/ui/menu_structure.py:1854
 msgid "Restart"
 msgstr "Neu starten"
 
 #: PiFinder/server.py:667 PiFinder/server.py:676 PiFinder/server.py:680
 #: PiFinder/server.py:684 PiFinder/server.py:1039
-#: PiFinder/ui/menu_structure.py:1687 views/base.html:67 views/base.html:80
+#: PiFinder/ui/menu_structure.py:1701 views/base.html:67 views/base.html:80
 #: views/tools.html:6
 msgid "Tools"
 msgstr "Werkzeuge"
@@ -221,7 +221,7 @@ msgstr "Neue Passwörter sind unterschiedlich"
 #: PiFinder/server.py:709 PiFinder/server.py:720 PiFinder/server.py:737
 #: PiFinder/server.py:819 PiFinder/server.py:875 PiFinder/server.py:888
 #: PiFinder/server.py:961 PiFinder/server.py:974
-#: PiFinder/ui/menu_structure.py:1692 views/base.html:65 views/base.html:78
+#: PiFinder/ui/menu_structure.py:1706 views/base.html:65 views/base.html:78
 #: views/equipment.html:6
 msgid "Equipment"
 msgstr "Ausrüstung"
@@ -234,7 +234,7 @@ msgstr "als aktives Instrument gesetzt."
 msgid "set as active eyepiece."
 msgstr "Als aktives Okular gesetzt."
 
-#: PiFinder/server.py:821
+#: PiFinder/server.py:822
 msgid "Equipment Imported, restart your PiFinder to use this new data"
 msgstr "Ausrüstung importiert, bitte PiFinder neustarten"
 
@@ -246,7 +246,7 @@ msgstr "Okular editieren"
 msgid "Eyepiece added, restart your PiFinder to use"
 msgstr "Okular hinzugefügt, bitte PiFinder neustarten"
 
-#: PiFinder/server.py:890
+#: PiFinder/server.py:891
 msgid "Eyepiece Deleted, restart your PiFinder to remove from menu"
 msgstr "Okular gelöscht, bitte PiFinder neustarten"
 
@@ -258,7 +258,7 @@ msgstr "Instrument editieren"
 msgid "Instrument Added, restart your PiFinder to use"
 msgstr "Instrument hinzugefügt, bitte PiFinder neustarten"
 
-#: PiFinder/server.py:976
+#: PiFinder/server.py:977
 msgid "Instrument Deleted, restart your PiFinder to remove from menu"
 msgstr "Instrument gelöscht, bitte PiFinder neustarten"
 
@@ -275,7 +275,7 @@ msgstr "Log speichern"
 msgid "LiveCam"
 msgstr ""
 
-#: PiFinder/server.py:1128
+#: PiFinder/server.py:1129
 #, python-format
 msgid ""
 "This INDI profile uses %(driver)s. OnStepX controls are available only "
@@ -399,15 +399,15 @@ msgstr ""
 msgid "Solved GoTo loop continue requested"
 msgstr ""
 
-#: PiFinder/server.py:2124 views/indi_mount.html:1390
+#: PiFinder/server.py:2124 views/indi_mount.html:1394
 msgid "Backlash motion test stop requested"
 msgstr ""
 
-#: PiFinder/server.py:2130
+#: PiFinder/server.py:2131
 msgid "Backlash stop requested; waiting for mount-control process stop"
 msgstr ""
 
-#: PiFinder/server.py:2146 views/indi_mount.html:1343
+#: PiFinder/server.py:2146 views/indi_mount.html:1347
 msgid "Pointing reset requested"
 msgstr ""
 
@@ -439,18 +439,21 @@ msgstr "Justage fertig"
 # AI-TRANSLATED (claude): needs human review
 #. TRANSLATORS: hint bar; preserve leading spaces for layout
 #: PiFinder/ui/align.py:251 PiFinder/ui/align_daytime.py:209
+#, python-brace-format
 msgid "  {icon} START ALIGN"
 msgstr "  {icon} START JUSTAGE"
 
 # AI-TRANSLATED (claude): needs human review
 #. TRANSLATORS: hint bar; {icon} is a directional-arrows glyph
 #: PiFinder/ui/align.py:254
+#, python-brace-format
 msgid "{icon} SELECT STAR"
 msgstr "{icon} STERN WÄHLEN"
 
 # AI-TRANSLATED (claude): needs human review
 #. TRANSLATORS: hint bar; {icon} is the SQUARE button glyph
 #: PiFinder/ui/align.py:257
+#, python-brace-format
 msgid "{icon} SAVE / 0 CANCEL"
 msgstr "{icon} SPEICHERN / 0 ABBR"
 
@@ -488,6 +491,7 @@ msgstr "Bel. Auto"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/align_daytime.py:199
+#, python-brace-format
 msgid "{icon} SAVE  0 CANCEL"
 msgstr "{icon} SPEICHERN  0 ABBR"
 
@@ -501,92 +505,95 @@ msgstr "AUTO"
 msgid " Cancel"
 msgstr " Abbruch"
 
-#: PiFinder/ui/base.py:766
+#: PiFinder/ui/base.py:707 PiFinder/ui/base.py:828 PiFinder/ui/indi.py:506
+#: PiFinder/ui/indi.py:540 PiFinder/ui/indi.py:911
+msgid "Speed +"
+msgstr ""
+
+#: PiFinder/ui/base.py:707 PiFinder/ui/base.py:831 PiFinder/ui/indi.py:509
+#: PiFinder/ui/indi.py:540 PiFinder/ui/indi.py:914
+msgid "Speed -"
+msgstr ""
+
+#: PiFinder/ui/base.py:789
 #, fuzzy
 msgid "Mount Stop"
 msgstr "Montierungsart"
 
-#: PiFinder/ui/base.py:795
+#: PiFinder/ui/base.py:818
 #, fuzzy
 msgid "Mount GoTo"
 msgstr "Montierungsart"
 
-#: PiFinder/ui/base.py:799 PiFinder/ui/indi.py:561 PiFinder/ui/indi.py:1033
-#: PiFinder/ui/indi.py:1038 PiFinder/ui/object_details.py:411
+#: PiFinder/ui/base.py:822 PiFinder/ui/indi.py:580 PiFinder/ui/indi.py:1052
+#: PiFinder/ui/indi.py:1057 PiFinder/ui/object_details.py:411
 #: PiFinder/ui/polar_align.py:444
 msgid "No solve"
 msgstr "Bisher keine"
 
-#: PiFinder/ui/base.py:802
+#: PiFinder/ui/base.py:825
 #, fuzzy
 msgid "Mount Sync"
 msgstr "Montierungsart"
 
-#: PiFinder/ui/base.py:805 PiFinder/ui/indi.py:506 PiFinder/ui/indi.py:892
-msgid "Speed +"
-msgstr ""
+#: PiFinder/ui/bluetooth_keyboard.py:90
+#, fuzzy
+msgid "Scan"
+msgstr "ABBR"
 
-#: PiFinder/ui/base.py:808 PiFinder/ui/indi.py:509 PiFinder/ui/indi.py:895
-msgid "Speed -"
-msgstr ""
-
-#: PiFinder/ui/bluetooth_keyboard.py:74
-msgid "Scan / Pair"
-msgstr ""
-
-#: PiFinder/ui/bluetooth_keyboard.py:75
+#: PiFinder/ui/bluetooth_keyboard.py:91
 #, fuzzy
 msgid "Reconnect"
 msgstr "Letzte..."
 
-#: PiFinder/ui/bluetooth_keyboard.py:76 PiFinder/ui/object_list.py:134
+#: PiFinder/ui/bluetooth_keyboard.py:92 PiFinder/ui/object_list.py:134
 msgid "Refresh"
 msgstr "Aktualis."
 
-#: PiFinder/ui/bluetooth_keyboard.py:87
+#: PiFinder/ui/bluetooth_keyboard.py:103
 #, fuzzy
 msgid "No BT devices"
 msgstr "Keine Objekte"
 
-#: PiFinder/ui/bluetooth_keyboard.py:88 PiFinder/ui/menu_structure.py:1596
+#: PiFinder/ui/bluetooth_keyboard.py:104 PiFinder/ui/menu_structure.py:1610
 msgid "Keyboard"
 msgstr ""
 
-#: PiFinder/ui/bluetooth_keyboard.py:126
+#: PiFinder/ui/bluetooth_keyboard.py:142
 msgid "BT scanning"
 msgstr ""
 
-#: PiFinder/ui/bluetooth_keyboard.py:135
+#: PiFinder/ui/bluetooth_keyboard.py:173
 #, fuzzy
 msgid "Connecting"
 msgstr "Sternbilder"
 
-#: PiFinder/ui/bluetooth_keyboard.py:153
+#: PiFinder/ui/bluetooth_keyboard.py:192
 msgid "Pair+Connect"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/bluetooth_keyboard.py:155
+#: PiFinder/ui/bluetooth_keyboard.py:194
 #, fuzzy
 msgid "Pair Again"
 msgstr "Polausricht."
 
-#: PiFinder/ui/bluetooth_keyboard.py:156 PiFinder/ui/menu_structure.py:94
+#: PiFinder/ui/bluetooth_keyboard.py:195 PiFinder/ui/menu_structure.py:94
 #, fuzzy
 msgid "Connect"
 msgstr "Korrektur"
 
-#: PiFinder/ui/bluetooth_keyboard.py:158
+#: PiFinder/ui/bluetooth_keyboard.py:197
 msgid "Disconnect"
 msgstr ""
 
-#: PiFinder/ui/bluetooth_keyboard.py:159
+#: PiFinder/ui/bluetooth_keyboard.py:198
 #, fuzzy
 msgid "Remove"
 msgstr "Fernsteuerung"
 
-#: PiFinder/ui/bluetooth_keyboard.py:160 PiFinder/ui/menu_structure.py:360
-#: PiFinder/ui/menu_structure.py:1836 PiFinder/ui/menu_structure.py:1849
+#: PiFinder/ui/bluetooth_keyboard.py:199 PiFinder/ui/menu_structure.py:360
+#: PiFinder/ui/menu_structure.py:1850 PiFinder/ui/menu_structure.py:1863
 #: PiFinder/ui/software.py:299 PiFinder/ui/software.py:354
 #: PiFinder/ui/software.py:448 PiFinder/ui/sqm_correction.py:70
 #: views/edit_eyepiece.html:54 views/edit_instrument.html:108
@@ -608,7 +615,7 @@ msgstr ""
 msgid "Filters Reset"
 msgstr "Filterreset"
 
-#: PiFinder/ui/callbacks.py:84 PiFinder/ui/menu_structure.py:1742
+#: PiFinder/ui/callbacks.py:84 PiFinder/ui/menu_structure.py:1756
 msgid "Test Mode"
 msgstr "Test Modus"
 
@@ -720,6 +727,7 @@ msgid "WiFi to AP+STA"
 msgstr "WLAN AP"
 
 #: PiFinder/ui/callbacks.py:516
+#, python-brace-format
 msgid ""
 "{lat:.2f}, {lon:.2f}\n"
 "{alt}m alt"
@@ -742,6 +750,7 @@ msgid "No location lock"
 msgstr "Ort nicht gesetzt"
 
 #: PiFinder/ui/callbacks.py:549
+#, python-brace-format
 msgid ""
 "Saved\n"
 "{name}"
@@ -756,14 +765,17 @@ msgid "Location Name"
 msgstr "Ort setzen"
 
 #: PiFinder/ui/callbacks.py:556 PiFinder/ui/gpsstatus.py:82
+#, python-brace-format
 msgid "Loc {number}"
 msgstr "Ort {number}"
 
 #: PiFinder/ui/callbacks.py:587
+#, python-brace-format
 msgid "Time: {time}"
 msgstr "Zeit: {time}"
 
 #: PiFinder/ui/callbacks.py:605
+#, python-brace-format
 msgid ""
 "{date}\n"
 "{time}"
@@ -773,6 +785,7 @@ msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/callbacks.py:625
+#, python-brace-format
 msgid ""
 "User object created\n"
 "{name}"
@@ -813,13 +826,14 @@ msgstr ""
 "kaputt"
 
 #: PiFinder/ui/chart.py:50 PiFinder/ui/menu_structure.py:610
-#: views/indi_mount.html:333
+#: views/indi_mount.html:335
 msgid "Settings"
 msgstr "Einstellungen"
 
 # AI-TRANSLATED (claude): needs human review
 #. TRANSLATORS: chart corner label, e.g. "Zenith up" — keep short
 #: PiFinder/ui/chart.py:125
+#, python-brace-format
 msgid "{label} up"
 msgstr "{label} oben"
 
@@ -872,10 +886,12 @@ msgstr "Kein Okular gewählt"
 # AI-TRANSLATED (claude): needs human review; previous "M" dropped the {mag}
 # value
 #: PiFinder/ui/equipment.py:74
+#, python-brace-format
 msgid "Mag: {mag:.0f}x"
 msgstr "Vergr: {mag:.0f}x"
 
-#: PiFinder/ui/equipment.py:86
+#: PiFinder/ui/equipment.py:87
+#, python-brace-format
 msgid "TFOV: {tfov_degrees:.0f}°{tfov_minutes:02.0f}'"
 msgstr "WFld: {tfov_degrees:.0f}°{tfov_minutes:02.0f}'"
 
@@ -909,22 +925,24 @@ msgstr ""
 #: PiFinder/ui/gps_time_sync_status.py:123
 #: PiFinder/ui/gps_time_sync_status.py:173
 #: PiFinder/ui/gps_time_sync_status.py:260
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Helper: {state}"
 msgstr "Gelöscht: {name}"
 
 #: PiFinder/ui/gps_time_sync_status.py:126
 #: PiFinder/ui/gps_time_sync_status.py:174
+#, python-brace-format
 msgid "Request: {present}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:129
 #: PiFinder/ui/gps_time_sync_status.py:178
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "{square} Details"
 msgstr "{square} für Details"
 
 #: PiFinder/ui/gps_time_sync_status.py:144
+#, python-brace-format
 msgid "On {ticks}"
 msgstr ""
 
@@ -934,81 +952,87 @@ msgstr ""
 #: PiFinder/ui/menu_structure.py:894 PiFinder/ui/menu_structure.py:918
 #: PiFinder/ui/menu_structure.py:949 PiFinder/ui/menu_structure.py:965
 #: PiFinder/ui/menu_structure.py:1157 PiFinder/ui/menu_structure.py:1174
-#: PiFinder/ui/menu_structure.py:1191 PiFinder/ui/menu_structure.py:1222
-#: PiFinder/ui/menu_structure.py:1239 PiFinder/ui/menu_structure.py:1420
-#: PiFinder/ui/menu_structure.py:1470 PiFinder/ui/menu_structure.py:1483
-#: PiFinder/ui/menu_structure.py:1500 PiFinder/ui/menu_structure.py:1517
-#: PiFinder/ui/menu_structure.py:1567 PiFinder/ui/menu_structure.py:1584
-#: PiFinder/ui/menu_structure.py:1615 PiFinder/ui/menu_structure.py:1654
-#: PiFinder/ui/menu_structure.py:1761 PiFinder/ui/menu_structure.py:1788
-#: PiFinder/ui/menu_structure.py:1804
+#: PiFinder/ui/menu_structure.py:1205 PiFinder/ui/menu_structure.py:1236
+#: PiFinder/ui/menu_structure.py:1253 PiFinder/ui/menu_structure.py:1434
+#: PiFinder/ui/menu_structure.py:1484 PiFinder/ui/menu_structure.py:1497
+#: PiFinder/ui/menu_structure.py:1514 PiFinder/ui/menu_structure.py:1531
+#: PiFinder/ui/menu_structure.py:1581 PiFinder/ui/menu_structure.py:1598
+#: PiFinder/ui/menu_structure.py:1630 PiFinder/ui/menu_structure.py:1668
+#: PiFinder/ui/menu_structure.py:1775 PiFinder/ui/menu_structure.py:1802
+#: PiFinder/ui/menu_structure.py:1818
 msgid "Off"
 msgstr "Aus"
 
 #: PiFinder/ui/gps_time_sync_status.py:150
 #: PiFinder/ui/gps_time_sync_status.py:208 PiFinder/ui/indi.py:94
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "State: {state}"
 msgstr "Datum:  {date}"
 
 #: PiFinder/ui/gps_time_sync_status.py:151
 #: PiFinder/ui/gps_time_sync_status.py:210
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Clock: {manager}"
 msgstr "Ort {number}"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/gps_time_sync_status.py:154
 #: PiFinder/ui/gps_time_sync_status.py:213
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Selected: {source}"
 msgstr "Gelöscht: {name}"
 
 #: PiFinder/ui/gps_time_sync_status.py:157
 #: PiFinder/ui/gps_time_sync_status.py:231
+#, python-brace-format
 msgid "Chrony: {state}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:158
+#, python-brace-format
 msgid "Ref: {ref}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:162
+#, python-brace-format
 msgid "GPS valid: {valid}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:165
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Source: {source}"
 msgstr "Sort.: {sort_order}"
 
 #: PiFinder/ui/gps_time_sync_status.py:166
 #: PiFinder/ui/gps_time_sync_status.py:241
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "NTP: {state}"
 msgstr "Datum:  {date}"
 
 #: PiFinder/ui/gps_time_sync_status.py:167
 #: PiFinder/ui/gps_time_sync_status.py:242
+#, python-brace-format
 msgid "NTP srv: {server}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:168
 #: PiFinder/ui/gps_time_sync_status.py:224
+#, python-brace-format
 msgid "tAcc: {tacc}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:169
+#, python-brace-format
 msgid "Sys: {state}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:172
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "RTC: {state}"
 msgstr "Datum:  {date}"
 
 #: PiFinder/ui/gps_time_sync_status.py:177
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "PPS: {state}"
 msgstr "GPS Status"
 
@@ -1017,104 +1041,119 @@ msgid "Status file missing"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:191
+#, python-brace-format
 msgid "Helper file: {state}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:194
 #: PiFinder/ui/gps_time_sync_status.py:286
+#, python-brace-format
 msgid "{square} Summary"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review; previous "M" dropped the {mag}
 # value
 #: PiFinder/ui/gps_time_sync_status.py:209
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Msg: {message}"
 msgstr "Vergr: {mag:.0f}x"
 
 #: PiFinder/ui/gps_time_sync_status.py:216
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Sel time: {time}"
 msgstr "Zeit: {time}"
 
 #: PiFinder/ui/gps_time_sync_status.py:219
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "GPS: {time}"
 msgstr "Zeit: {time}"
 
 #: PiFinder/ui/gps_time_sync_status.py:222
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Age: {age}"
 msgstr "Datum:  {date}"
 
 #: PiFinder/ui/gps_time_sync_status.py:223
+#, python-brace-format
 msgid "Valid: {valid}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:225
+#, python-brace-format
 msgid "Offset: {offset}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:228
+#, python-brace-format
 msgid "Sys off: {offset}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:232
+#, python-brace-format
 msgid "Chrony ref: {ref}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:236
+#, python-brace-format
 msgid "Chrony off: {offset}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:243
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "NTP time: {time}"
 msgstr "Zeit: {time}"
 
 #: PiFinder/ui/gps_time_sync_status.py:246
+#, python-brace-format
 msgid "NTP delay: {delay}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:249
+#, python-brace-format
 msgid "Samples: {count}/{min_required}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:253
+#, python-brace-format
 msgid "Sys req: {state}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:256
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "RTC req: {state}"
 msgstr "Datum:  {date}"
 
 #: PiFinder/ui/gps_time_sync_status.py:257
+#, python-brace-format
 msgid "PPS ticks: {ticks}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:261
+#, python-brace-format
 msgid "Helper UID: {uid}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:264
+#, python-brace-format
 msgid "Helper msg: {message}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:267
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Req file: {present}"
 msgstr "Filterreset"
 
 #: PiFinder/ui/gps_time_sync_status.py:275
+#, python-brace-format
 msgid "Sys result: {state}"
 msgstr ""
 
 #: PiFinder/ui/gps_time_sync_status.py:281
+#, python-brace-format
 msgid "RTC result: {state}"
 msgstr ""
 
-#: PiFinder/ui/gpsstatus.py:30
+#: PiFinder/ui/gpsstatus.py:31
 msgid "Limited"
 msgstr "eingeschränkt"
 
@@ -1134,7 +1173,7 @@ msgstr "akkurat"
 msgid "Precise"
 msgstr "präzise"
 
-#: PiFinder/ui/gpsstatus.py:45 PiFinder/ui/menu_structure.py:1669
+#: PiFinder/ui/gpsstatus.py:45 PiFinder/ui/menu_structure.py:1683
 #: PiFinder/ui/sqm_correction.py:71 views/gps.html:77 views/network.html:203
 msgid "Save"
 msgstr "Speichern"
@@ -1152,10 +1191,12 @@ msgid "Location locked"
 msgstr "Ort gesetzt"
 
 #: PiFinder/ui/gpsstatus.py:142
+#, python-brace-format
 msgid "{error:.1f} km"
 msgstr "{error:.1f} km"
 
 #: PiFinder/ui/gpsstatus.py:146
+#, python-brace-format
 msgid "{error:.0f} m"
 msgstr "{error:.0f} m"
 
@@ -1175,11 +1216,11 @@ msgstr "Bereit zur"
 msgid "to observe!"
 msgstr "Beobachtung!"
 
-#: PiFinder/ui/gpsstatus.py:203
+#: PiFinder/ui/gpsstatus.py:204
 msgid "Stay on this screen"
 msgstr "Hiergeblieben für"
 
-#: PiFinder/ui/gpsstatus.py:212
+#: PiFinder/ui/gpsstatus.py:213
 msgid "for quicker lock"
 msgstr "schnellen GPS Fix"
 
@@ -1197,39 +1238,47 @@ msgid "Sats seen/used:"
 msgstr "Sat gesehen/ben:"
 
 #: PiFinder/ui/gpsstatus.py:259
+#, python-brace-format
 msgid "{square} Toggle Details"
 msgstr "{square} für Details"
 
 #: PiFinder/ui/gpsstatus.py:268
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Sat v/s/u: {in_view}/{seen}/{used}"
 msgstr "Sats ges/ben: {sats_seen}/{sats_used}"
 
 #: PiFinder/ui/gpsstatus.py:279
+#, python-brace-format
 msgid "Error: {error}"
 msgstr "Fehler: {error}"
 
 #: PiFinder/ui/gpsstatus.py:290
+#, python-brace-format
 msgid "Lock:  {locktype}"
 msgstr "Fix:   {locktype}"
 
 #: PiFinder/ui/gpsstatus.py:303
+#, python-brace-format
 msgid "Lat:   {latitude:.5f}"
 msgstr "Länge: {latitude:.5f}"
 
 #: PiFinder/ui/gpsstatus.py:311
+#, python-brace-format
 msgid "Lon:   {longitude:.5f}"
 msgstr "Breite: {longitude:.5f}"
 
 #: PiFinder/ui/gpsstatus.py:319
+#, python-brace-format
 msgid "Alt:   {altitude:.1f} m"
 msgstr "Höhe:  {altitude:.1f} m"
 
 #: PiFinder/ui/gpsstatus.py:328
+#, python-brace-format
 msgid "Time:  {time}"
 msgstr "Zeit:  {time}"
 
 #: PiFinder/ui/gpsstatus.py:337
+#, python-brace-format
 msgid "Date:  {date}"
 msgstr "Datum:  {date}"
 
@@ -1238,10 +1287,12 @@ msgid "None (cold)"
 msgstr ""
 
 #: PiFinder/ui/gpsstatus.py:352
+#, python-brace-format
 msgid "From:  {location_source}"
 msgstr "Quelle: {location_source}"
 
 #: PiFinder/ui/gpsstatus.py:362
+#, python-brace-format
 msgid "Top C/N0: {cno}"
 msgstr ""
 
@@ -1251,15 +1302,17 @@ msgid "No status"
 msgstr "Status"
 
 #: PiFinder/ui/indi.py:103
+#, python-brace-format
 msgid "Speed: {rate} {label}"
 msgstr ""
 
 #: PiFinder/ui/indi.py:109
+#, python-brace-format
 msgid "RA {ra:.1f} Dec {dec:.1f}"
 msgstr ""
 
 #: PiFinder/ui/indi.py:116
-#, fuzzy
+#, fuzzy, python-brace-format
 msgid "Loc: {lat:.4f},{lon:.4f}"
 msgstr ""
 "{lat:.2f}, {lon:.2f}\n"
@@ -1302,7 +1355,7 @@ msgid "Time/Location"
 msgstr "Ort"
 
 #: PiFinder/ui/indi.py:151 PiFinder/ui/menu_structure.py:106
-#: views/indi_mount.html:207
+#: views/indi_mount.html:296
 msgid "Park"
 msgstr ""
 
@@ -1312,18 +1365,18 @@ msgid "Set Home"
 msgstr "Home"
 
 #: PiFinder/ui/indi.py:157 PiFinder/ui/menu_structure.py:118
-#: views/indi_mount.html:206
+#: views/indi_mount.html:295
 msgid "Return Home"
 msgstr ""
 
 #: PiFinder/ui/indi.py:160 PiFinder/ui/menu_structure.py:110
-#: views/indi_mount.html:208
+#: views/indi_mount.html:297
 #, fuzzy
 msgid "Unpark"
 msgstr "Unbkt"
 
 #: PiFinder/ui/indi.py:163 PiFinder/ui/menu_structure.py:122
-#: views/indi_mount.html:209
+#: views/indi_mount.html:298
 #, fuzzy
 msgid "Set-Park"
 msgstr "Stern"
@@ -1333,13 +1386,14 @@ msgstr "Stern"
 msgid "INDI Restart"
 msgstr "Neu starten"
 
-#: PiFinder/ui/indi.py:281 PiFinder/ui/indi.py:765 views/indi_mount.html:340
-#: views/indi_mount.html:1153
+#: PiFinder/ui/indi.py:281 PiFinder/ui/indi.py:784 views/indi_mount.html:342
+#: views/indi_mount.html:1157
 #, fuzzy
 msgid "Idle"
 msgstr "Filter"
 
 #: PiFinder/ui/indi.py:292
+#, python-brace-format
 msgid "Axis: {axis}"
 msgstr ""
 
@@ -1368,14 +1422,17 @@ msgid "2/4/6/8 : Move"
 msgstr ""
 
 #: PiFinder/ui/indi.py:448
+#, python-brace-format
 msgid "9/3 : Speed {label}"
 msgstr ""
 
 #: PiFinder/ui/indi.py:454
+#, python-brace-format
 msgid "5 : Refine {state}"
 msgstr ""
 
 #: PiFinder/ui/indi.py:460
+#, python-brace-format
 msgid "0 : Guide {state}"
 msgstr ""
 
@@ -1392,186 +1449,189 @@ msgstr ""
 msgid "Refine Off"
 msgstr ""
 
-#: PiFinder/ui/indi.py:564
+#: PiFinder/ui/indi.py:583
 #, fuzzy
 msgid "Aligned"
 msgstr "Justiert!"
 
-#: PiFinder/ui/indi.py:735
+#: PiFinder/ui/indi.py:754
 msgid "Align Complete"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:769 views/indi_mount.html:370
+#: PiFinder/ui/indi.py:788 views/indi_mount.html:372
 #, fuzzy
 msgid "Align Points"
 msgstr "Keine Pkte"
 
-#: PiFinder/ui/indi.py:770 PiFinder/ui/indi.py:786 PiFinder/ui/indi.py:802
+#: PiFinder/ui/indi.py:789 PiFinder/ui/indi.py:805 PiFinder/ui/indi.py:821
+#, python-brace-format
 msgid "Points: {points}"
 msgstr ""
 
-#: PiFinder/ui/indi.py:771
+#: PiFinder/ui/indi.py:790
+#, python-brace-format
 msgid "Progress: {done}/{total}"
 msgstr ""
 
-#: PiFinder/ui/indi.py:775
+#: PiFinder/ui/indi.py:794
 msgid "+/- or 1-9 select"
 msgstr ""
 
-#: PiFinder/ui/indi.py:776
+#: PiFinder/ui/indi.py:795
 msgid "Right/Square next"
 msgstr ""
 
-#: PiFinder/ui/indi.py:777
+#: PiFinder/ui/indi.py:796
 #, fuzzy
 msgid "Left back"
 msgstr "Links"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:785
+#: PiFinder/ui/indi.py:804
 #, fuzzy
 msgid "Preparing Align"
 msgstr "Polausricht."
 
-#: PiFinder/ui/indi.py:790
+#: PiFinder/ui/indi.py:809
 #, fuzzy
 msgid "Syncing PiFinder"
 msgstr "PiFinder Neustart..."
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:791
+#: PiFinder/ui/indi.py:810
 #, fuzzy
 msgid "Wait for mount"
 msgstr "warte auf"
 
-#: PiFinder/ui/indi.py:792 PiFinder/ui/indi.py:833
+#: PiFinder/ui/indi.py:811 PiFinder/ui/indi.py:852
 msgid "Left mode/cancel"
 msgstr ""
 
-#: PiFinder/ui/indi.py:800 views/indi_mount.html:366
+#: PiFinder/ui/indi.py:819 views/indi_mount.html:368
 #, fuzzy
 msgid "Align Mode"
 msgstr "client mode sein"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:801
-#, fuzzy
+#: PiFinder/ui/indi.py:820
+#, fuzzy, python-brace-format
 msgid "Mode: {mode}"
 msgstr "WLAN-Modus: {mode}"
 
-#: PiFinder/ui/indi.py:806
+#: PiFinder/ui/indi.py:825
 msgid "1 Manual  2 Auto"
 msgstr ""
 
-#: PiFinder/ui/indi.py:807
+#: PiFinder/ui/indi.py:826
 #, fuzzy
 msgid "Up/Down change"
 msgstr "Passwort geändert"
 
-#: PiFinder/ui/indi.py:808
+#: PiFinder/ui/indi.py:827
 msgid "Right/Square start"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:809
+#: PiFinder/ui/indi.py:828
 #, fuzzy
 msgid "Left points"
 msgstr "Keine Pkte"
 
-#: PiFinder/ui/indi.py:817
-#, fuzzy
+#: PiFinder/ui/indi.py:836
+#, fuzzy, python-brace-format
 msgid "Alt: {alt:.0f} deg"
 msgstr "Höhe:  {altitude:.1f} m"
 
-#: PiFinder/ui/indi.py:819
+#: PiFinder/ui/indi.py:838
 #, fuzzy
 msgid "Alt: unknown"
 msgstr "Unbkt"
 
-#: PiFinder/ui/indi.py:823
+#: PiFinder/ui/indi.py:842
 #, fuzzy
 msgid "Manual Star"
 msgstr "Dp. Stern"
 
-#: PiFinder/ui/indi.py:824
-#, fuzzy
+#: PiFinder/ui/indi.py:843
+#, fuzzy, python-brace-format
 msgid "Star: {star}"
 msgstr "Sort.: {sort_order}"
 
-#: PiFinder/ui/indi.py:826 PiFinder/ui/indi.py:859
+#: PiFinder/ui/indi.py:845 PiFinder/ui/indi.py:878
+#, python-brace-format
 msgid "Point {done}/{total}"
 msgstr ""
 
-#: PiFinder/ui/indi.py:830
+#: PiFinder/ui/indi.py:849
 #, fuzzy
 msgid "Up/Down star"
 msgstr "Dp. Stern"
 
-#: PiFinder/ui/indi.py:831
+#: PiFinder/ui/indi.py:850
 msgid "Right/Square GoTo"
 msgstr ""
 
-#: PiFinder/ui/indi.py:832
+#: PiFinder/ui/indi.py:851
 msgid "SkySafari GoTo/Align OK"
 msgstr ""
 
-#: PiFinder/ui/indi.py:842
+#: PiFinder/ui/indi.py:861
 #, fuzzy
 msgid "Align Star"
 msgstr "Justage fertig"
 
-#: PiFinder/ui/indi.py:864
+#: PiFinder/ui/indi.py:883
 msgid "8/2/4/6 move  9/3 speed"
 msgstr ""
 
-#: PiFinder/ui/indi.py:868
+#: PiFinder/ui/indi.py:887
 msgid "Release stop  Left back"
 msgstr ""
 
-#: PiFinder/ui/indi.py:872
+#: PiFinder/ui/indi.py:891
 #, fuzzy
 msgid "Square : Confirm"
 msgstr "Bestätigen"
 
-#: PiFinder/ui/indi.py:981 PiFinder/ui/indi.py:987 PiFinder/ui/indi.py:993
-#: PiFinder/ui/indi.py:1073
+#: PiFinder/ui/indi.py:1000 PiFinder/ui/indi.py:1006 PiFinder/ui/indi.py:1012
+#: PiFinder/ui/indi.py:1092
 #, fuzzy
 msgid "Align Cancelled"
 msgstr "Abgebrochen"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1029
+#: PiFinder/ui/indi.py:1048
 #, fuzzy
 msgid "Manual Align"
 msgstr "Polausricht."
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1052
+#: PiFinder/ui/indi.py:1071
 #, fuzzy
 msgid "Auto Align"
 msgstr "Polausricht."
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1058
+#: PiFinder/ui/indi.py:1077
 #, fuzzy
 msgid "Below horizon"
 msgstr "Horizontal"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:1068
+#: PiFinder/ui/indi.py:1087
 #, fuzzy
 msgid "GoTo Sent"
 msgstr "Ort zurücksetzen"
 
-#: PiFinder/ui/indi.py:1092
+#: PiFinder/ui/indi.py:1111
 #, fuzzy
 msgid "Point Confirmed"
 msgstr "Bestätigen"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/location_list.py:28 PiFinder/ui/menu_structure.py:1673
-#: PiFinder/ui/menu_structure.py:1814
+#: PiFinder/ui/location_list.py:28 PiFinder/ui/menu_structure.py:1687
+#: PiFinder/ui/menu_structure.py:1828
 msgid "Load"
 msgstr "Laden"
 
@@ -1589,16 +1649,19 @@ msgstr "Löschen"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/location_list.py:105
+#, python-brace-format
 msgid "Loaded: {name}"
 msgstr "Geladen: {name}"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/location_list.py:128
+#, python-brace-format
 msgid "Deleted: {name}"
 msgstr "Gelöscht: {name}"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/location_list.py:148
+#, python-brace-format
 msgid ""
 "Renamed to:\n"
 "{name}"
@@ -1647,7 +1710,7 @@ msgid "󰍴 Delete  󰐕 E/W"
 msgstr "󰍴 Löschen  󰐕 O/W"
 
 #: PiFinder/ui/locationentry.py:312 PiFinder/ui/locationentry.py:324
-#: PiFinder/ui/menu_structure.py:1712
+#: PiFinder/ui/menu_structure.py:1726
 msgid "Enter Coords"
 msgstr "Koord eingeben"
 
@@ -1760,7 +1823,7 @@ msgstr "Justieren"
 msgid "Align (Day)"
 msgstr "Justieren (Tag)"
 
-#: PiFinder/ui/menu_structure.py:76 PiFinder/ui/menu_structure.py:1699
+#: PiFinder/ui/menu_structure.py:76 PiFinder/ui/menu_structure.py:1713
 msgid "GPS Status"
 msgstr "GPS Status"
 
@@ -1775,11 +1838,11 @@ msgstr "Status"
 msgid "INIT"
 msgstr "PUNKT"
 
-#: PiFinder/ui/menu_structure.py:98 PiFinder/ui/menu_structure.py:1707
+#: PiFinder/ui/menu_structure.py:98 PiFinder/ui/menu_structure.py:1721
 msgid "Set Location"
 msgstr "Ort setzen"
 
-#: PiFinder/ui/menu_structure.py:102 views/indi_mount.html:180
+#: PiFinder/ui/menu_structure.py:102 views/indi_mount.html:269
 #, fuzzy
 msgid "Reset Pointing"
 msgstr "Ort resetten"
@@ -1921,7 +1984,7 @@ msgstr "Letzte..."
 msgid "Obs Lists"
 msgstr "Beob.-Listen"
 
-#: PiFinder/ui/menu_structure.py:337 PiFinder/ui/menu_structure.py:1550
+#: PiFinder/ui/menu_structure.py:337 PiFinder/ui/menu_structure.py:1564
 msgid "Custom"
 msgstr "RA/Dec"
 
@@ -1938,8 +2001,8 @@ msgstr "Filter setzen"
 msgid "Reset All"
 msgstr "Zurücksetzen"
 
-#: PiFinder/ui/menu_structure.py:357 PiFinder/ui/menu_structure.py:1835
-#: PiFinder/ui/menu_structure.py:1846 PiFinder/ui/software.py:354
+#: PiFinder/ui/menu_structure.py:357 PiFinder/ui/menu_structure.py:1849
+#: PiFinder/ui/menu_structure.py:1860 PiFinder/ui/software.py:354
 #: PiFinder/ui/software.py:450
 msgid "Confirm"
 msgstr "Bestätigen"
@@ -1994,7 +2057,7 @@ msgstr "Schnell"
 
 #: PiFinder/ui/menu_structure.py:707 PiFinder/ui/menu_structure.py:731
 #: PiFinder/ui/menu_structure.py:854 PiFinder/ui/menu_structure.py:878
-#: PiFinder/ui/menu_structure.py:902 PiFinder/ui/menu_structure.py:1633
+#: PiFinder/ui/menu_structure.py:902 PiFinder/ui/menu_structure.py:1648
 msgid "Medium"
 msgstr "Mittel"
 
@@ -2095,12 +2158,12 @@ msgid "Reticle"
 msgstr "Fadenkreuz"
 
 #: PiFinder/ui/menu_structure.py:850 PiFinder/ui/menu_structure.py:874
-#: PiFinder/ui/menu_structure.py:898 PiFinder/ui/menu_structure.py:1627
+#: PiFinder/ui/menu_structure.py:898 PiFinder/ui/menu_structure.py:1642
 msgid "Low"
 msgstr "Niedrig"
 
 #: PiFinder/ui/menu_structure.py:858 PiFinder/ui/menu_structure.py:882
-#: PiFinder/ui/menu_structure.py:906 PiFinder/ui/menu_structure.py:1639
+#: PiFinder/ui/menu_structure.py:906 PiFinder/ui/menu_structure.py:1654
 msgid "High"
 msgstr "Hoch"
 
@@ -2136,13 +2199,13 @@ msgstr "NSOW-Label"
 
 #: PiFinder/ui/menu_structure.py:945 PiFinder/ui/menu_structure.py:961
 #: PiFinder/ui/menu_structure.py:1161 PiFinder/ui/menu_structure.py:1178
-#: PiFinder/ui/menu_structure.py:1195 PiFinder/ui/menu_structure.py:1226
-#: PiFinder/ui/menu_structure.py:1243 PiFinder/ui/menu_structure.py:1424
-#: PiFinder/ui/menu_structure.py:1487 PiFinder/ui/menu_structure.py:1504
-#: PiFinder/ui/menu_structure.py:1521 PiFinder/ui/menu_structure.py:1571
-#: PiFinder/ui/menu_structure.py:1588 PiFinder/ui/menu_structure.py:1658
-#: PiFinder/ui/menu_structure.py:1765 PiFinder/ui/menu_structure.py:1792
-#: PiFinder/ui/menu_structure.py:1808
+#: PiFinder/ui/menu_structure.py:1209 PiFinder/ui/menu_structure.py:1240
+#: PiFinder/ui/menu_structure.py:1257 PiFinder/ui/menu_structure.py:1438
+#: PiFinder/ui/menu_structure.py:1501 PiFinder/ui/menu_structure.py:1518
+#: PiFinder/ui/menu_structure.py:1535 PiFinder/ui/menu_structure.py:1585
+#: PiFinder/ui/menu_structure.py:1602 PiFinder/ui/menu_structure.py:1672
+#: PiFinder/ui/menu_structure.py:1779 PiFinder/ui/menu_structure.py:1806
+#: PiFinder/ui/menu_structure.py:1822
 msgid "On"
 msgstr "An"
 
@@ -2155,8 +2218,8 @@ msgstr "Objektgröße"
 msgid "Camera Exp"
 msgstr "Belichtungsz."
 
-#: PiFinder/ui/menu_structure.py:981 PiFinder/ui/menu_structure.py:1364
-#: views/indi_mount.html:76 views/indi_mount.html:364 views/network.html:32
+#: PiFinder/ui/menu_structure.py:981 PiFinder/ui/menu_structure.py:1378
+#: views/indi_mount.html:165 views/indi_mount.html:366 views/network.html:32
 msgid "Auto"
 msgstr "Auto"
 
@@ -2265,7 +2328,7 @@ msgid "Mount Type"
 msgstr "Montierungsart"
 
 #: PiFinder/ui/menu_structure.py:1105 views/edit_instrument.html:57
-#: views/indi_mount.html:77
+#: views/indi_mount.html:166
 msgid "Alt/Az"
 msgstr "Alt/Az"
 
@@ -2284,8 +2347,8 @@ msgstr "Einstellungen"
 msgid "Multi Align"
 msgstr "Polausricht."
 
-#: PiFinder/ui/menu_structure.py:1124 views/indi_mount.html:391
-#: views/indi_mount.html:592
+#: PiFinder/ui/menu_structure.py:1124 views/indi_mount.html:393
+#: views/indi_mount.html:596
 #, fuzzy
 msgid "Backlash"
 msgstr "ZURÜCK"
@@ -2294,23 +2357,23 @@ msgstr "ZURÜCK"
 msgid "Goto/Guide"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1133 views/indi_mount.html:486
+#: PiFinder/ui/menu_structure.py:1133
 msgid "GoTo Method"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1140 views/indi_mount.html:483
+#: PiFinder/ui/menu_structure.py:1140 views/indi_mount.html:485
 #, fuzzy
 msgid "INDI Mount"
 msgstr "bewegen."
 
-#: PiFinder/ui/menu_structure.py:1144 PiFinder/ui/menu_structure.py:1466
-#: views/indi_mount.html:484
+#: PiFinder/ui/menu_structure.py:1144 PiFinder/ui/menu_structure.py:1480
+#: views/indi_mount.html:486
 #, fuzzy
 msgid "PiFinder"
 msgstr "PiFinder Art"
 
-#: PiFinder/ui/menu_structure.py:1150 views/indi_mount.html:491
+#: PiFinder/ui/menu_structure.py:1150 views/indi_mount.html:495
 msgid "Tracking Guide"
 msgstr ""
 
@@ -2318,320 +2381,326 @@ msgstr ""
 msgid "GoTo Recovery"
 msgstr ""
 
+# AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/menu_structure.py:1184
+#, fuzzy
+msgid "Recovery Range"
+msgstr "Aufnahme"
+
+#: PiFinder/ui/menu_structure.py:1198
 #, fuzzy
 msgid "Manual Re-target"
 msgstr "Dp. Stern"
 
-#: PiFinder/ui/menu_structure.py:1201
+#: PiFinder/ui/menu_structure.py:1215
 #, fuzzy
 msgid "Max GoTos"
 msgstr "Montierungsart"
 
-#: PiFinder/ui/menu_structure.py:1215
+#: PiFinder/ui/menu_structure.py:1229
 msgid "Invert Guide RA/Az"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1232
+#: PiFinder/ui/menu_structure.py:1246
 msgid "Invert Guide Dec/Alt"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1259
+#: PiFinder/ui/menu_structure.py:1273
 msgid "PiFinder Type"
 msgstr "PiFinder Art"
 
-#: PiFinder/ui/menu_structure.py:1266
+#: PiFinder/ui/menu_structure.py:1280
 msgid "Left"
 msgstr "Links"
 
-#: PiFinder/ui/menu_structure.py:1270
+#: PiFinder/ui/menu_structure.py:1284
 msgid "Right"
 msgstr "Rechts"
 
-#: PiFinder/ui/menu_structure.py:1274
+#: PiFinder/ui/menu_structure.py:1288
 msgid "Straight"
 msgstr "Gerade"
 
-#: PiFinder/ui/menu_structure.py:1278
+#: PiFinder/ui/menu_structure.py:1292
 msgid "Flat v3"
 msgstr "Flach v3"
 
-#: PiFinder/ui/menu_structure.py:1282
+#: PiFinder/ui/menu_structure.py:1296
 msgid "Flat v2"
 msgstr "Flach v2"
 
-#: PiFinder/ui/menu_structure.py:1286
+#: PiFinder/ui/menu_structure.py:1300
 msgid "AS Bloom"
 msgstr "AS Bloom"
 
-#: PiFinder/ui/menu_structure.py:1292
+#: PiFinder/ui/menu_structure.py:1306
 msgid "Camera Type"
 msgstr "Typ Kamera"
 
-#: PiFinder/ui/menu_structure.py:1298
+#: PiFinder/ui/menu_structure.py:1312
 msgid "v2 - imx477"
 msgstr "v2 - imx477"
 
-#: PiFinder/ui/menu_structure.py:1303
+#: PiFinder/ui/menu_structure.py:1317
 msgid "v3 - imx296"
 msgstr "v3 - imx296"
 
-#: PiFinder/ui/menu_structure.py:1308
+#: PiFinder/ui/menu_structure.py:1322
 msgid "v3 - imx462"
 msgstr "v3 - imx462"
 
-#: PiFinder/ui/menu_structure.py:1315 views/gps.html:6
+#: PiFinder/ui/menu_structure.py:1329 views/gps.html:6
 msgid "GPS Settings"
 msgstr "GPS Einstell."
 
-#: PiFinder/ui/menu_structure.py:1320
+#: PiFinder/ui/menu_structure.py:1334
 msgid "GPS Type"
 msgstr "GPS Typ"
 
-#: PiFinder/ui/menu_structure.py:1328
+#: PiFinder/ui/menu_structure.py:1342
 msgid "UBlox"
 msgstr "Ublox"
 
-#: PiFinder/ui/menu_structure.py:1332
+#: PiFinder/ui/menu_structure.py:1346
 msgid "GPSD (generic)"
 msgstr "GPSD (generisch)"
 
-#: PiFinder/ui/menu_structure.py:1338
+#: PiFinder/ui/menu_structure.py:1352
 msgid "GPS Baud Rate"
 msgstr "GPS Baud Rate"
 
-#: PiFinder/ui/menu_structure.py:1346
+#: PiFinder/ui/menu_structure.py:1360
 msgid "9600 (standard)"
 msgstr "9600 (Standard)"
 
-#: PiFinder/ui/menu_structure.py:1350
+#: PiFinder/ui/menu_structure.py:1364
 msgid "115200 (UBlox-10)"
 msgstr "115200 (Ublox-10)"
 
-#: PiFinder/ui/menu_structure.py:1356
+#: PiFinder/ui/menu_structure.py:1370
 #, fuzzy
 msgid "GPS Port"
 msgstr "Sortieren"
 
-#: PiFinder/ui/menu_structure.py:1368
+#: PiFinder/ui/menu_structure.py:1382
 msgid "ttyAMA1"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1372
+#: PiFinder/ui/menu_structure.py:1386
 msgid "ttyAMA2"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1376
+#: PiFinder/ui/menu_structure.py:1390
 msgid "ttyAMA3"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1380
+#: PiFinder/ui/menu_structure.py:1394
 msgid "serial0"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1384
+#: PiFinder/ui/menu_structure.py:1398
 msgid "ttyAMA0"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1388
+#: PiFinder/ui/menu_structure.py:1402
 msgid "ttyAMA10"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1392
+#: PiFinder/ui/menu_structure.py:1406
 msgid "ttyS0"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1396
+#: PiFinder/ui/menu_structure.py:1410
 msgid "ttyACM0"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1400
+#: PiFinder/ui/menu_structure.py:1414
 #, fuzzy
 msgid "ttyUSB0"
 msgstr "Status"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1408 PiFinder/ui/menu_structure.py:1413
-#: PiFinder/ui/menu_structure.py:1703
+#: PiFinder/ui/menu_structure.py:1422 PiFinder/ui/menu_structure.py:1427
+#: PiFinder/ui/menu_structure.py:1717
 #, fuzzy
 msgid "Time Sync"
 msgstr "Zeit"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1430
+#: PiFinder/ui/menu_structure.py:1444
 #, fuzzy
 msgid "Source Mode"
 msgstr "Quelle"
 
-#: PiFinder/ui/menu_structure.py:1437 PiFinder/ui/menu_structure.py:1462
+#: PiFinder/ui/menu_structure.py:1451 PiFinder/ui/menu_structure.py:1476
 msgid "Chrony"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1441
+#: PiFinder/ui/menu_structure.py:1455
 msgid "Best"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1449
+#: PiFinder/ui/menu_structure.py:1463
 msgid "NTP"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1455
+#: PiFinder/ui/menu_structure.py:1469
 #, fuzzy
 msgid "Clock Manager"
 msgstr "Ortsverwaltung"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1476
+#: PiFinder/ui/menu_structure.py:1490
 #, fuzzy
 msgid "Chrony Source"
 msgstr "Quelle"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1493
+#: PiFinder/ui/menu_structure.py:1507
 #, fuzzy
 msgid "GPS Source"
 msgstr "Quelle"
 
-#: PiFinder/ui/menu_structure.py:1510
+#: PiFinder/ui/menu_structure.py:1524
 #, fuzzy
 msgid "PiFinder NTP"
 msgstr "PiFinder Art"
 
-#: PiFinder/ui/menu_structure.py:1527
+#: PiFinder/ui/menu_structure.py:1541
 #, fuzzy
 msgid "PiFinder NTP Server"
 msgstr "PiFinder Art"
 
-#: PiFinder/ui/menu_structure.py:1534
+#: PiFinder/ui/menu_structure.py:1548
 msgid "pool.ntp.org"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1538
+#: PiFinder/ui/menu_structure.py:1552
 msgid "time.google.com"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1542
+#: PiFinder/ui/menu_structure.py:1556
 msgid "time.cloudflare.com"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1546
+#: PiFinder/ui/menu_structure.py:1560
 msgid "time.nist.gov"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1560
+#: PiFinder/ui/menu_structure.py:1574
 #, fuzzy
 msgid "Software PPS"
 msgstr "Update Softw"
 
-#: PiFinder/ui/menu_structure.py:1577
+#: PiFinder/ui/menu_structure.py:1591
 msgid "RTC Sync"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1603
+#: PiFinder/ui/menu_structure.py:1617
 #, fuzzy
 msgid "IMU Settings"
 msgstr "Einstellungen"
 
-#: PiFinder/ui/menu_structure.py:1608
+#: PiFinder/ui/menu_structure.py:1622
 msgid "Sensitivity"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1621
+#: PiFinder/ui/menu_structure.py:1636
 msgid "Very Low"
 msgstr "Sehr klein"
 
-#: PiFinder/ui/menu_structure.py:1647
+#: PiFinder/ui/menu_structure.py:1661
 #, fuzzy
 msgid "Compass"
 msgstr "Kometen"
 
-#: PiFinder/ui/menu_structure.py:1664
+#: PiFinder/ui/menu_structure.py:1678
 #, fuzzy
 msgid "Calibration"
 msgstr "SQM Kalibration"
 
-#: PiFinder/ui/menu_structure.py:1677
+#: PiFinder/ui/menu_structure.py:1691
 #, fuzzy
 msgid "Clear"
 msgstr "Karte"
 
-#: PiFinder/ui/menu_structure.py:1691 views/livecam.html:260
+#: PiFinder/ui/menu_structure.py:1705 views/livecam.html:260
 #: views/network.html:116
 msgid "Status"
 msgstr "Status"
 
-#: PiFinder/ui/menu_structure.py:1694
+#: PiFinder/ui/menu_structure.py:1708
 msgid "Place & Time"
 msgstr "Ort & Zeit"
 
-#: PiFinder/ui/menu_structure.py:1716 views/locations.html:86
+#: PiFinder/ui/menu_structure.py:1730 views/locations.html:86
 msgid "Load Location"
 msgstr "Ort laden"
 
-#: PiFinder/ui/menu_structure.py:1720 views/location_form.html:105
+#: PiFinder/ui/menu_structure.py:1734 views/location_form.html:105
 msgid "Save Location"
 msgstr "Ort speichern"
 
-#: PiFinder/ui/menu_structure.py:1726
+#: PiFinder/ui/menu_structure.py:1740
 msgid "Set Time/Date"
 msgstr "Zeit/Datum setzen"
 
-#: PiFinder/ui/menu_structure.py:1733
+#: PiFinder/ui/menu_structure.py:1747
 msgid "Reset Location"
 msgstr "Ort resetten"
 
-#: PiFinder/ui/menu_structure.py:1735
+#: PiFinder/ui/menu_structure.py:1749
 msgid "Reset Time/Date"
 msgstr "Rest Zeit/Datum"
 
-#: PiFinder/ui/menu_structure.py:1740
+#: PiFinder/ui/menu_structure.py:1754
 msgid "Console"
 msgstr "Konsole"
 
-#: PiFinder/ui/menu_structure.py:1741
+#: PiFinder/ui/menu_structure.py:1755
 msgid "Software Upd"
 msgstr "Update Softw"
 
-#: PiFinder/ui/menu_structure.py:1744
+#: PiFinder/ui/menu_structure.py:1758
 msgid "Experimental"
 msgstr "Experimentell"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1749
+#: PiFinder/ui/menu_structure.py:1763
 msgid "Polar Align"
 msgstr "Polausricht."
 
-#: PiFinder/ui/menu_structure.py:1754 views/indi_mount.html:188
+#: PiFinder/ui/menu_structure.py:1768 views/indi_mount.html:277
 #, fuzzy
 msgid "Mount Control"
 msgstr "Montierungsart"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1771
+#: PiFinder/ui/menu_structure.py:1785
 msgid "Dev Tools"
 msgstr "Entw.-Tools"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1776
+#: PiFinder/ui/menu_structure.py:1790
 msgid "Telemetry"
 msgstr "Telemetrie"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1781
+#: PiFinder/ui/menu_structure.py:1795
 msgid "Record"
 msgstr "Aufnahme"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1798
+#: PiFinder/ui/menu_structure.py:1812
 msgid "Images"
 msgstr "Bilder"
 
-#: PiFinder/ui/menu_structure.py:1824
+#: PiFinder/ui/menu_structure.py:1838
 msgid "Power"
 msgstr "Ein/Aus"
 
-#: PiFinder/ui/menu_structure.py:1830
+#: PiFinder/ui/menu_structure.py:1844
 msgid "Shutdown"
 msgstr "Ausschalten"
 
@@ -2648,11 +2717,13 @@ msgid "No Object Found"
 msgstr "Keine Objekte"
 
 #: PiFinder/ui/object_details.py:234 PiFinder/ui/object_details.py:241
+#, python-brace-format
 msgid "Mag:{obj_mag}"
 msgstr "Gr:{obj_mag}"
 
 #. TRANSLATORS: object info magnitude
 #: PiFinder/ui/object_details.py:237
+#, python-brace-format
 msgid "Sz:{size}"
 msgstr "D:{size}"
 
@@ -2661,10 +2732,12 @@ msgid "  Not Logged"
 msgstr "  Nicht geloggt"
 
 #: PiFinder/ui/object_details.py:365
+#, python-brace-format
 msgid "  {logs} Logs"
 msgstr "  {logs} Logs"
 
 #: PiFinder/ui/object_details.py:417
+#, python-brace-format
 msgid "yet{elipsis}"
 msgstr "Lösung{elipsis}"
 
@@ -2673,6 +2746,7 @@ msgid "Searching"
 msgstr "Suche"
 
 #: PiFinder/ui/object_details.py:437
+#, python-brace-format
 msgid "for GPS{elipsis}"
 msgstr "nach GPS{elipsis}"
 
@@ -2698,22 +2772,22 @@ msgstr "Kontrast Reserve"
 msgid "No contrast data"
 msgstr "Keine Kontrast Daten"
 
-#: PiFinder/ui/object_details.py:603
+#: PiFinder/ui/object_details.py:604
 msgid "CR measures object"
 msgstr "KR misst die Objekt"
 
 #. TRANSLATORS: Contrast reserve explanation line 1
-#: PiFinder/ui/object_details.py:606
+#: PiFinder/ui/object_details.py:607
 msgid "visibility based on"
 msgstr "Sichtbarkeit basierend auf"
 
 #. TRANSLATORS: Contrast reserve explanation line 2
-#: PiFinder/ui/object_details.py:609
+#: PiFinder/ui/object_details.py:610
 msgid "sky brightness,"
 msgstr "der Himmelshelligkeit"
 
 #. TRANSLATORS: Contrast reserve explanation line 3
-#: PiFinder/ui/object_details.py:612
+#: PiFinder/ui/object_details.py:613
 msgid "telescope, and EP."
 msgstr "Teleskop, und Okular"
 
@@ -2741,15 +2815,15 @@ msgstr "Standard"
 msgid "Filter"
 msgstr "Filter"
 
-#: PiFinder/ui/object_list.py:250 PiFinder/ui/software.py:491
+#: PiFinder/ui/object_list.py:251 PiFinder/ui/software.py:491
 msgid "Downloading..."
 msgstr "Herunterladen..."
 
-#: PiFinder/ui/object_list.py:257
+#: PiFinder/ui/object_list.py:258
 msgid "No GPS lock"
 msgstr "Kein GPS"
 
-#: PiFinder/ui/object_list.py:264
+#: PiFinder/ui/object_list.py:265
 msgid "Calculating..."
 msgstr "Berechne..."
 
@@ -2762,6 +2836,7 @@ msgid "Loading..."
 msgstr "Laden..."
 
 #: PiFinder/ui/object_list.py:280
+#, python-brace-format
 msgid ""
 "Sorting by\n"
 "{sort_order}"
@@ -2791,15 +2866,18 @@ msgid "match filter"
 msgstr "gefiltert"
 
 #: PiFinder/ui/object_list.py:571
+#, python-brace-format
 msgid "{catalog_info_1} obj"
 msgstr "{catalog_info_1} Obj"
 
 #. TRANSLATORS: number of objects in object list
 #: PiFinder/ui/object_list.py:574
+#, python-brace-format
 msgid ", {catalog_info_2}d old"
 msgstr ", {catalog_info_2}d alt"
 
 #: PiFinder/ui/object_list.py:584
+#, python-brace-format
 msgid "Sort: {sort_order}"
 msgstr "Sort.: {sort_order}"
 
@@ -2809,6 +2887,7 @@ msgstr "Erneuern..."
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/obs_list.py:151
+#, python-brace-format
 msgid ""
 "Error loading\n"
 "{parsed} parsed"
@@ -2818,6 +2897,7 @@ msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/obs_list.py:157
+#, python-brace-format
 msgid ""
 "{name}\n"
 "{matched}/{parsed} objects"
@@ -2883,6 +2963,7 @@ msgstr "GPS: warten..."
 # AI-TRANSLATED (claude): needs human review
 #. TRANSLATORS: hint bar; {icon} is the SQUARE button glyph
 #: PiFinder/ui/polar_align.py:331
+#, python-brace-format
 msgid "{icon} START"
 msgstr "{icon} START"
 
@@ -2940,6 +3021,7 @@ msgstr "Keine akt. Lösung"
 #. TRANSLATORS: hint bar; {square} is the SQUARE button glyph, {minus}
 #. is the MINUS button glyph.
 #: PiFinder/ui/polar_align.py:373
+#, python-brace-format
 msgid "{square} CAPTURE  {minus} CANCEL"
 msgstr "{square} AUFN.  {minus} ABBR"
 
@@ -2973,6 +3055,7 @@ msgstr "Kamera-Lösung."
 #. TRANSLATORS: hint bar; {icon} is the SQUARE button glyph
 #: PiFinder/ui/polar_align.py:398 PiFinder/ui/polar_align.py:470
 #: PiFinder/ui/polar_align.py:500
+#, python-brace-format
 msgid "{icon} BACK"
 msgstr "{icon} ZURÜCK"
 
@@ -3000,6 +3083,7 @@ msgstr "Pkt"
 #. TRANSLATORS: hint bar; {square} is the SQUARE button glyph, {minus}
 #. is the MINUS button glyph.
 #: PiFinder/ui/polar_align.py:428
+#, python-brace-format
 msgid "{square} REDO  {minus} CANCEL"
 msgstr "{square} NEU  {minus} ABBR"
 
@@ -3086,10 +3170,12 @@ msgstr "weiter"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/preview.py:412
+#, python-brace-format
 msgid "det {n}"
 msgstr "Det {n}"
 
 #: PiFinder/ui/preview.py:509
+#, python-brace-format
 msgid "Zoom x{zoom_number}"
 msgstr "Zoom x{zoom_number}"
 
@@ -3140,6 +3226,7 @@ msgstr "Fehler beim Upd"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/software.py:190
+#, python-brace-format
 msgid "Wifi Mode: {mode}"
 msgstr "WLAN-Modus: {mode}"
 
@@ -3164,6 +3251,7 @@ msgid "Checking for"
 msgstr "Überprüfen nach"
 
 #: PiFinder/ui/software.py:261
+#, python-brace-format
 msgid "updates{elipsis}"
 msgstr "Updates{elipsis}"
 
@@ -3189,6 +3277,7 @@ msgid "IRREVERSIBLE"
 msgstr "Umgekehrt"
 
 #: PiFinder/ui/software.py:392
+#, python-brace-format
 msgid "Download: {}MB"
 msgstr ""
 
@@ -3234,11 +3323,11 @@ msgstr "Release Version"
 msgid "SQM"
 msgstr "SQM"
 
-#: PiFinder/ui/sqm.py:42
+#: PiFinder/ui/sqm.py:43
 msgid "CAL"
 msgstr "SQM Cal"
 
-#: PiFinder/ui/sqm.py:48
+#: PiFinder/ui/sqm.py:49
 msgid "CORRECT"
 msgstr "Korrektur"
 
@@ -3251,6 +3340,7 @@ msgid "mag/arcsec²"
 msgstr "mag/arcsek²"
 
 #: PiFinder/ui/sqm.py:148 PiFinder/ui/sqm.py:252
+#, python-brace-format
 msgid "Bortle {bc}"
 msgstr "Bortle {bc}"
 
@@ -3263,10 +3353,12 @@ msgid "SCROLL"
 msgstr "ROLLEN"
 
 #: PiFinder/ui/sqm.py:171
+#, python-brace-format
 msgid "{s}s ago"
 msgstr "vor {s}s"
 
 #: PiFinder/ui/sqm.py:173
+#, python-brace-format
 msgid "{m}m ago"
 msgstr "vor {m}m"
 
@@ -3286,11 +3378,11 @@ msgstr "SQM Sweep"
 msgid "Excellent Dark-Sky Site"
 msgstr "Exzellenter Dunkelhimmel"
 
-#: PiFinder/ui/sqm.py:354
+#: PiFinder/ui/sqm.py:355
 msgid "The zodiacal light is visible and colorful. Gegenschein readily visible."
 msgstr "Das Zodiakallicht ist sichtbar und farbenfroh. Gegenschein gut sichtbar."
 
-#: PiFinder/ui/sqm.py:357
+#: PiFinder/ui/sqm.py:358
 msgid ""
 "The Scorpius and Sagittarius regions of the Milky Way cast obvious "
 "shadows."
@@ -3310,7 +3402,7 @@ msgstr "Zahlreiche Sterne erschweren das Erkennen schwacher Sternbilder."
 msgid "Typical Truly Dark Site"
 msgstr "Typischer Wirklich Dunkler Himmel"
 
-#: PiFinder/ui/sqm.py:370
+#: PiFinder/ui/sqm.py:371
 msgid ""
 "The zodiacal light is distinctly yellowish and bright enough to cast "
 "shadows at dusk and dawn."
@@ -3330,13 +3422,13 @@ msgstr "Die Sommer-Milchstraße ist stark strukturiert. M33 leicht sichtbar."
 msgid "Rural Sky"
 msgstr "Ländlicher Himmel"
 
-#: PiFinder/ui/sqm.py:383
+#: PiFinder/ui/sqm.py:384
 msgid "The zodiacal light is striking in spring and autumn, color still visible."
 msgstr ""
 "Das Zodiakallicht ist im Frühling und Herbst auffällig, Farben noch "
 "sichtbar."
 
-#: PiFinder/ui/sqm.py:386
+#: PiFinder/ui/sqm.py:387
 msgid ""
 "Some light pollution at horizon. Clouds illuminated near horizon, dark "
 "overhead."
@@ -3356,7 +3448,7 @@ msgstr "Mehrere Messier-Objekte bleiben mit bloßem Auge sichtbar."
 msgid "Brighter Rural"
 msgstr "Hellerer Ländlicher Himmel"
 
-#: PiFinder/ui/sqm.py:399
+#: PiFinder/ui/sqm.py:400
 msgid "Zodiacal light still visible but doesn't extend halfway to zenith."
 msgstr "Zodiakallicht noch sichtbar, aber reicht nicht bis zur Hälfte zum Zenit."
 
@@ -3364,7 +3456,7 @@ msgstr "Zodiakallicht noch sichtbar, aber reicht nicht bis zur Hälfte zum Zenit
 msgid "Light pollution domes apparent in multiple directions."
 msgstr "Lichtverschmutzungskuppeln in mehreren Richtungen sichtbar."
 
-#: PiFinder/ui/sqm.py:403
+#: PiFinder/ui/sqm.py:404
 msgid ""
 "The Milky Way well above the horizon is still impressive, but lacks "
 "detail."
@@ -3380,7 +3472,7 @@ msgstr "M33 schwer zu sehen."
 msgid "Semi-Suburban/Transition Sky"
 msgstr "Halbvorstädtischer/Übergangshimmel"
 
-#: PiFinder/ui/sqm.py:415
+#: PiFinder/ui/sqm.py:416
 msgid "Clouds have a grayish glow at zenith and appear bright toward city domes."
 msgstr ""
 "Wolken haben ein gräuliches Leuchten im Zenit und erscheinen hell zu "
@@ -3398,7 +3490,7 @@ msgstr "Großer Riss im Zenit beobachtbar."
 msgid "Suburban Sky"
 msgstr "Vorstädtischer Himmel"
 
-#: PiFinder/ui/sqm.py:428
+#: PiFinder/ui/sqm.py:429
 msgid "Only hints of zodiacal light seen on best nights in autumn and spring."
 msgstr ""
 "Nur Andeutungen von Zodiakallicht in den besten Nächten in Herbst und "
@@ -3424,13 +3516,13 @@ msgstr "Heller Vorstädtischer Himmel"
 msgid "The zodiacal light is invisible."
 msgstr "Das Zodiakallicht ist unsichtbar."
 
-#: PiFinder/ui/sqm.py:443
+#: PiFinder/ui/sqm.py:444
 msgid "Light pollution makes sky within 35° of horizon glow grayish white."
 msgstr ""
 "Lichtverschmutzung lässt Himmel innerhalb 35° vom Horizont grauweiß "
 "leuchten."
 
-#: PiFinder/ui/sqm.py:446
+#: PiFinder/ui/sqm.py:447
 msgid "The Milky Way is only visible near the zenith. M33 undetectable."
 msgstr "Die Milchstraße ist nur nahe dem Zenit sichtbar. M33 nicht erkennbar."
 
@@ -3486,7 +3578,7 @@ msgstr "Der Himmel ist hell erleuchtet."
 msgid "Many stars forming constellations invisible."
 msgstr "Viele Sterne die Sternbilder bilden sind unsichtbar."
 
-#: PiFinder/ui/sqm.py:483
+#: PiFinder/ui/sqm.py:484
 msgid ""
 "Only the Moon, planets, bright satellites, and a few of the brightest "
 "star clusters observable."
@@ -3503,6 +3595,7 @@ msgid "Del"
 msgstr "Löschen"
 
 #: PiFinder/ui/sqm_correction.py:106
+#, python-brace-format
 msgid "Original: {sqm:.2f}"
 msgstr "Original: {sqm:.2f}"
 
@@ -3523,6 +3616,7 @@ msgid "Saving..."
 msgstr "Speichern..."
 
 #: PiFinder/ui/sqm_correction.py:225
+#, python-brace-format
 msgid "Saved: {filename}"
 msgstr "gespeichert: {filename}"
 
@@ -3531,6 +3625,7 @@ msgid "Save failed"
 msgstr "Speichern fehlgeschlagen"
 
 #: PiFinder/ui/sqm_correction.py:340
+#, python-brace-format
 msgid "Saving {label}..."
 msgstr "Speichern {label}..."
 
@@ -3543,7 +3638,7 @@ msgstr "Wiedergabe stoppen"
 msgid "Select None"
 msgstr "Alle abwähl."
 
-#: PiFinder/ui/text_menu.py:213
+#: PiFinder/ui/text_menu.py:214
 msgid "Select All"
 msgstr "Alle anwähl."
 
@@ -3892,8 +3987,8 @@ msgid "PiFinder Screen"
 msgstr "PiFinder Display"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/index.html:14 views/indi_mount.html:168 views/indi_mount.html:1076
-#: views/indi_mount.html:1114
+#: views/index.html:14 views/indi_mount.html:257 views/indi_mount.html:1080
+#: views/indi_mount.html:1118
 msgid "Mode"
 msgstr "Modus"
 
@@ -4006,150 +4101,219 @@ msgstr ""
 msgid "Active INDI"
 msgstr "Aktiv"
 
-#: views/indi_mount.html:67
+#: views/indi_mount.html:68
+#, python-format
+msgid "%(driver)s Driver Connection"
+msgstr ""
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:73
+#, fuzzy
+msgid "Network TCP"
+msgstr "Netzwerk-Setup"
+
+#: views/indi_mount.html:74
+msgid "USB Serial"
+msgstr ""
+
+#: views/indi_mount.html:76
+#, fuzzy
+msgid "Connection Type"
+msgstr "Montierungsart"
+
+#: views/indi_mount.html:80
+msgid "INDI Server Host"
+msgstr ""
+
+#: views/indi_mount.html:84
+msgid "INDI Server Port"
+msgstr ""
+
+#: views/indi_mount.html:92 views/indi_mount.html:120 views/network.html:182
+msgid "Manual entry"
+msgstr ""
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:101
+#, fuzzy
+msgid "OnStep Network Device"
+msgstr "AP-Netzwerkname"
+
+#: views/indi_mount.html:105
+msgid "OnStep TCP Port"
+msgstr ""
+
+#: views/indi_mount.html:111
+msgid "Manual IP or Host"
+msgstr ""
+
+#: views/indi_mount.html:125
+msgid "No USB serial ports detected"
+msgstr ""
+
+#: views/indi_mount.html:128
+msgid "USB Serial Port"
+msgstr ""
+
+#: views/indi_mount.html:134
+msgid ""
+"No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently "
+"visible. Connect the USB-serial cable and reload this page, or use manual"
+" entry if the port name is known."
+msgstr ""
+
+#: views/indi_mount.html:141
+msgid "Manual Serial Port"
+msgstr ""
+
+#: views/indi_mount.html:147
+msgid "Apply to INDI"
+msgstr ""
+
+#: views/indi_mount.html:156
 msgid "SkySafari Mount Mode"
 msgstr ""
 
-#: views/indi_mount.html:72
+#: views/indi_mount.html:161
 #, fuzzy
 msgid "PiFinder Mount Type"
 msgstr "PiFinder Art"
 
-#: views/indi_mount.html:78
+#: views/indi_mount.html:167
 msgid "Polar / EQ"
 msgstr ""
 
-#: views/indi_mount.html:79
+#: views/indi_mount.html:168
 #, fuzzy
 msgid "German EQ"
 msgstr "Deutsch"
 
-#: views/indi_mount.html:81
+#: views/indi_mount.html:170
 msgid "SkySafari LX200 Mount Code"
 msgstr ""
 
-#: views/indi_mount.html:85
+#: views/indi_mount.html:174
 msgid "Refine Accuracy arcmin"
 msgstr ""
 
-#: views/indi_mount.html:92
+#: views/indi_mount.html:181
 msgid "Use SkySafari Align to calibrate IMU before solve"
 msgstr ""
 
-#: views/indi_mount.html:98
+#: views/indi_mount.html:187
 msgid "Forward SkySafari GoTo and Align/Sync to INDI"
 msgstr ""
 
-#: views/indi_mount.html:106
+#: views/indi_mount.html:195
 msgid "Forward SkySafari Align/Sync to INDI even when GoTo forwarding is off"
 msgstr ""
 
-#: views/indi_mount.html:112
+#: views/indi_mount.html:201
 msgid "One-shot solve refine after INDI GoTo"
 msgstr ""
 
-#: views/indi_mount.html:117
+#: views/indi_mount.html:206
 #, fuzzy
 msgid "Apply SkySafari Settings"
 msgstr "GPS Einstell."
 
-#: views/indi_mount.html:126
+#: views/indi_mount.html:215
 #, fuzzy
 msgid "Location and Time"
 msgstr "Ort setzen"
 
-#: views/indi_mount.html:129
+#: views/indi_mount.html:218
 #, fuzzy
 msgid "GPS Lock"
 msgstr "GPS fix!"
 
-#: views/indi_mount.html:130
+#: views/indi_mount.html:219
 #, fuzzy
 msgid "Location Source"
 msgstr "Ort gesetzt"
 
-#: views/indi_mount.html:131
+#: views/indi_mount.html:220
 #, fuzzy
 msgid "Location to Send"
 msgstr "Ort setzen"
 
-#: views/indi_mount.html:132
+#: views/indi_mount.html:221
 #, fuzzy
 msgid "PiFinder UTC Time"
 msgstr "PiFinder Art"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:139 views/locations.html:63
+#: views/indi_mount.html:228 views/locations.html:63
 msgid "Latitude"
 msgstr "Breite"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:143 views/locations.html:64
+#: views/indi_mount.html:232 views/locations.html:64
 msgid "Longitude"
 msgstr "Länge"
 
-#: views/indi_mount.html:147
+#: views/indi_mount.html:236
 #, fuzzy
 msgid "Elevation m"
 msgstr "Ort setzen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:151
+#: views/indi_mount.html:240
 #, fuzzy
 msgid "UTC Time"
 msgstr "UTC-Zeit (h:m:s)"
 
-#: views/indi_mount.html:155
+#: views/indi_mount.html:244
 #, fuzzy
 msgid "Reload Current Values"
 msgstr "aktuelle Version"
 
-#: views/indi_mount.html:156
+#: views/indi_mount.html:245
 #, fuzzy
 msgid "Send Location and Time"
 msgstr "Ort eingeben:"
 
-#: views/indi_mount.html:164
+#: views/indi_mount.html:253
 msgid "Pointing Coordinate Service"
 msgstr ""
 
-#: views/indi_mount.html:167
+#: views/indi_mount.html:256
 #, fuzzy
 msgid "Selected Source"
 msgstr "Alle abwähl."
 
-#: views/indi_mount.html:169
+#: views/indi_mount.html:258
 #, fuzzy
 msgid "Quality"
 msgstr "Alt"
 
-#: views/indi_mount.html:170
+#: views/indi_mount.html:259
 msgid "RA (deg)"
 msgstr ""
 
-#: views/indi_mount.html:171
+#: views/indi_mount.html:260
 msgid "Dec (deg)"
 msgstr ""
 
-#: views/indi_mount.html:172
+#: views/indi_mount.html:261
 msgid "Mount Separation (deg)"
 msgstr ""
 
-#: views/indi_mount.html:173
+#: views/indi_mount.html:262
 msgid "IMU-Mount Separation (deg)"
 msgstr ""
 
-#: views/indi_mount.html:174
+#: views/indi_mount.html:263
 msgid "Warnings"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:175
+#: views/indi_mount.html:264
 #, fuzzy
 msgid "Last Reset"
 msgstr "Ort zurücksetzen"
 
-#: views/indi_mount.html:178
+#: views/indi_mount.html:267
 msgid ""
 "Reinitialize the fused coordinate when it has drifted from the sky "
 "(bad/absent plate solves, or IMU drift). With a valid plate solve it re-"
@@ -4158,512 +4322,448 @@ msgid ""
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:191
+#: views/indi_mount.html:280
 #, fuzzy
 msgid "Home State"
 msgstr "Hostname"
 
-#: views/indi_mount.html:195
+#: views/indi_mount.html:284
 #, fuzzy
 msgid "Park State"
 msgstr "GPS Status"
 
-#: views/indi_mount.html:199
+#: views/indi_mount.html:288
 msgid "Raw Mount Status"
 msgstr ""
 
-#: views/indi_mount.html:205 views/indi_mount.html:597
+#: views/indi_mount.html:294 views/indi_mount.html:601
 #, fuzzy
 msgid "At Home"
 msgstr "Home"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:218
+#: views/indi_mount.html:307
 #, fuzzy
 msgid "Slew Rate"
 msgstr "NSOW-Label"
 
-#: views/indi_mount.html:227
+#: views/indi_mount.html:316
 msgid "Move Direction (DIR)"
 msgstr ""
 
-#: views/indi_mount.html:231
+#: views/indi_mount.html:320
 msgid "Move up-left"
 msgstr ""
 
-#: views/indi_mount.html:232
+#: views/indi_mount.html:321
 #, fuzzy
 msgid "Move up"
 msgstr "Fernsteuerung"
 
-#: views/indi_mount.html:233
+#: views/indi_mount.html:322
 #, fuzzy
 msgid "Move up-right"
 msgstr "Tasten Helligkeit"
 
-#: views/indi_mount.html:234
+#: views/indi_mount.html:323
 #, fuzzy
 msgid "Move left"
 msgstr "Links"
 
-#: views/indi_mount.html:235
+#: views/indi_mount.html:324
 msgid "Hold"
 msgstr ""
 
-#: views/indi_mount.html:236
+#: views/indi_mount.html:325
 #, fuzzy
 msgid "Move right"
 msgstr "Tasten Helligkeit"
 
-#: views/indi_mount.html:237
+#: views/indi_mount.html:326
 msgid "Move down-left"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:238
+#: views/indi_mount.html:327
 #, fuzzy
 msgid "Move down"
 msgstr "0 JETZT LÖSEN"
 
-#: views/indi_mount.html:239
+#: views/indi_mount.html:328
 msgid "Move down-right"
 msgstr ""
 
-#: views/indi_mount.html:246
-#, python-format
-msgid "%(driver)s Driver Connection"
-msgstr ""
-
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:251
-#, fuzzy
-msgid "Network TCP"
-msgstr "Netzwerk-Setup"
-
-#: views/indi_mount.html:252
-msgid "USB Serial"
-msgstr ""
-
-#: views/indi_mount.html:254
-#, fuzzy
-msgid "Connection Type"
-msgstr "Montierungsart"
-
-#: views/indi_mount.html:258
-msgid "INDI Server Host"
-msgstr ""
-
-#: views/indi_mount.html:262
-msgid "INDI Server Port"
-msgstr ""
-
-#: views/indi_mount.html:270 views/indi_mount.html:298 views/network.html:182
-msgid "Manual entry"
-msgstr ""
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:279
-#, fuzzy
-msgid "OnStep Network Device"
-msgstr "AP-Netzwerkname"
-
-#: views/indi_mount.html:283
-msgid "OnStep TCP Port"
-msgstr ""
-
-#: views/indi_mount.html:289
-msgid "Manual IP or Host"
-msgstr ""
-
-#: views/indi_mount.html:303
-msgid "No USB serial ports detected"
-msgstr ""
-
-#: views/indi_mount.html:306
-msgid "USB Serial Port"
-msgstr ""
-
-#: views/indi_mount.html:312
-msgid ""
-"No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently "
-"visible. Connect the USB-serial cable and reload this page, or use manual"
-" entry if the port name is known."
-msgstr ""
-
-#: views/indi_mount.html:319
-msgid "Manual Serial Port"
-msgstr ""
-
-#: views/indi_mount.html:325
-msgid "Apply to INDI"
-msgstr ""
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:334
+#: views/indi_mount.html:336
 #, fuzzy
 msgid "Multi-Point Align"
 msgstr "Multi-Tap"
 
-#: views/indi_mount.html:338
+#: views/indi_mount.html:340
 #, fuzzy
 msgid "Align Status"
 msgstr "GPS Status"
 
-#: views/indi_mount.html:344
+#: views/indi_mount.html:346
 msgid "Align Progress"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:350
+#: views/indi_mount.html:352
 #, fuzzy
 msgid "Current Align Star"
 msgstr "Aktuelles Passwort"
 
-#: views/indi_mount.html:363
+#: views/indi_mount.html:365
 msgid "Manual"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:377
+#: views/indi_mount.html:379
 #, fuzzy
 msgid "mag"
 msgstr "Bilder"
 
-#: views/indi_mount.html:381
+#: views/indi_mount.html:383
 #, fuzzy
 msgid "Alignment Star"
 msgstr "Justage fertig"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:385
+#: views/indi_mount.html:387
 #, fuzzy
 msgid "Start Align"
 msgstr "  {icon} START JUSTAGE"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:386
+#: views/indi_mount.html:388
 #, fuzzy
 msgid "GoTo Selected Star"
 msgstr "{icon} STERN WÄHLEN"
 
-#: views/indi_mount.html:387
+#: views/indi_mount.html:389
 #, fuzzy
 msgid "Confirm Point"
 msgstr "Bestätigen"
 
-#: views/indi_mount.html:388
+#: views/indi_mount.html:390
 #, fuzzy
 msgid "Cancel Align"
 msgstr "Abgebrochen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:395
+#: views/indi_mount.html:397
 #, fuzzy
 msgid "Current Backlash"
 msgstr "Aktuelles Passwort"
 
-#: views/indi_mount.html:402
+#: views/indi_mount.html:404
 #, fuzzy
 msgid "Auto Calculation"
 msgstr "berechne..."
 
-#: views/indi_mount.html:409
+#: views/indi_mount.html:411
 msgid "Calculated Backlash"
 msgstr ""
 
-#: views/indi_mount.html:413
+#: views/indi_mount.html:415
 msgid "Auto Method"
 msgstr ""
 
-#: views/indi_mount.html:414
+#: views/indi_mount.html:416
 msgid ""
 "Solved-coordinate GoTo round-trip test; repeated return/offset GoTo moves"
 " are recorded and filtered by direction before recommending candidate "
 "backlash values."
 msgstr ""
 
-#: views/indi_mount.html:417
+#: views/indi_mount.html:419
 msgid "Motion Command"
 msgstr ""
 
-#: views/indi_mount.html:418
+#: views/indi_mount.html:420
 msgid "INDI GoTo"
 msgstr ""
 
-#: views/indi_mount.html:421
+#: views/indi_mount.html:423
 msgid "Motion Test Repeats"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:427
+#: views/indi_mount.html:429
 #, fuzzy
 msgid "Motion Test Details"
 msgstr "Ort zurücksetzen"
 
-#: views/indi_mount.html:431
+#: views/indi_mount.html:433
 #, python-format
 msgid ""
 "Filtered %(filtered)s / %(sample)s, warm-up %(warmup)s, excluded "
 "%(excluded)s, spread %(spread)s%%, direction delta %(delta)s%%"
 msgstr ""
 
-#: views/indi_mount.html:450 views/indi_mount.html:454
+#: views/indi_mount.html:452 views/indi_mount.html:456
 #, python-format
 msgid "%(axis)s Backlash"
 msgstr ""
 
-#: views/indi_mount.html:458 views/indi_mount.html:593
+#: views/indi_mount.html:460 views/indi_mount.html:597
 msgid "Start Motion Test"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:459 views/indi_mount.html:594
+#: views/indi_mount.html:461 views/indi_mount.html:598
 #, fuzzy
 msgid "Continue Motion Test"
 msgstr "Länge Minuten"
 
-#: views/indi_mount.html:460
+#: views/indi_mount.html:462
 msgid "Save Backlash"
 msgstr ""
 
-#: views/indi_mount.html:468
+#: views/indi_mount.html:470
 msgid "INDI Driver"
 msgstr ""
 
-#: views/indi_mount.html:470
+#: views/indi_mount.html:472
 #, python-format
 msgid ""
 "%(driver)s is selected in the active INDI profile. OnStepX-specific setup"
 " and motion controls are hidden for this driver."
 msgstr ""
 
-#: views/indi_mount.html:470
+#: views/indi_mount.html:472
 msgid "No driver"
 msgstr ""
 
-#: views/indi_mount.html:478
+#: views/indi_mount.html:480
 #, fuzzy
 msgid "GoTo / Guide Settings"
 msgstr "GPS Einstell."
 
-#: views/indi_mount.html:499
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:488
+msgid "GoTo Type"
+msgstr "GoTo-Typ"
+
+#: views/indi_mount.html:503
 msgid "Tracking Guide GoTo Recovery (re-slew when off target by more than 3 deg)"
 msgstr ""
 
-#: views/indi_mount.html:507
+#: views/indi_mount.html:511
 msgid ""
 "Manual Re-target (after a manual move, track the new position instead of "
 "returning)"
 msgstr ""
 
-#: views/indi_mount.html:515
+#: views/indi_mount.html:519
 msgid "Invert guide pulse RA/Az (WE)"
 msgstr ""
 
-#: views/indi_mount.html:521
+#: views/indi_mount.html:525
 msgid "Invert guide pulse Dec/Alt (NS)"
 msgstr ""
 
-#: views/indi_mount.html:532
+#: views/indi_mount.html:536
 msgid "PiFinder GoTo: Max sync + GoTo iterations"
 msgstr ""
 
-#: views/indi_mount.html:536
+#: views/indi_mount.html:540
 msgid "Apply GoTo / Guide Settings"
 msgstr ""
 
-#: views/indi_mount.html:539
+#: views/indi_mount.html:543
 msgid "GoTo / Guide Status"
 msgstr ""
 
-#: views/indi_mount.html:540
+#: views/indi_mount.html:544
 #, fuzzy
 msgid "Service"
 msgstr "beobachtet"
 
-#: views/indi_mount.html:542
+#: views/indi_mount.html:546
 msgid "Guide State"
 msgstr ""
 
-#: views/indi_mount.html:544
+#: views/indi_mount.html:548
 #, fuzzy
 msgid "Guide Error"
 msgstr "Fehler"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:546
+#: views/indi_mount.html:550
 #, fuzzy
 msgid "Recovery"
 msgstr "Aufnahme"
 
-#: views/indi_mount.html:548
+#: views/indi_mount.html:552
 #, fuzzy
 msgid "Last Action"
 msgstr "Ort setzen"
 
-#: views/indi_mount.html:595
+#: views/indi_mount.html:599
 #, fuzzy
 msgid "STOP"
 msgstr "RA/Dec"
 
-#: views/indi_mount.html:598
+#: views/indi_mount.html:602
 #, fuzzy
 msgid "Not at Home"
 msgstr "Kein Update"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:599
+#: views/indi_mount.html:603
 #, fuzzy
 msgid "Waiting at Home"
 msgstr "warte auf"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:600
+#: views/indi_mount.html:604
 #, fuzzy
 msgid "Parked"
 msgstr "Hersteller"
 
-#: views/indi_mount.html:601
+#: views/indi_mount.html:605
 msgid "Unparked"
 msgstr ""
 
-#: views/indi_mount.html:602
+#: views/indi_mount.html:606
 #, fuzzy
 msgid "Parking"
 msgstr "Suche"
 
-#: views/indi_mount.html:603
+#: views/indi_mount.html:607
 #, fuzzy
 msgid "Parking Failed"
 msgstr "Justage abgebrochen"
 
-#: views/indi_mount.html:604
+#: views/indi_mount.html:608
 msgid "Unknown"
 msgstr "Unbkt"
 
-#: views/indi_mount.html:906
+#: views/indi_mount.html:910
 #, fuzzy
 msgid "Estimated"
 msgstr "Rest Zeit/Datum"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1077
+#: views/indi_mount.html:1081
 #, fuzzy
 msgid "Records"
 msgstr "Aufnahme"
 
-#: views/indi_mount.html:1089 views/indi_mount.html:1102
+#: views/indi_mount.html:1093 views/indi_mount.html:1106
 #, fuzzy
 msgid "calculated"
 msgstr "berechne..."
 
-#: views/indi_mount.html:1090 views/indi_mount.html:1103
+#: views/indi_mount.html:1094 views/indi_mount.html:1107
 #, fuzzy
 msgid "filtered"
 msgstr "Filter"
 
-#: views/indi_mount.html:1094
+#: views/indi_mount.html:1098
 msgid "By movement direction"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1115
+#: views/indi_mount.html:1119
 #, fuzzy
 msgid "Confidence"
 msgstr "Löschen bestätigen"
 
-#: views/indi_mount.html:1116
+#: views/indi_mount.html:1120
 #, fuzzy
 msgid "Filtered"
 msgstr "Filter"
 
-#: views/indi_mount.html:1117
+#: views/indi_mount.html:1121
 msgid "warm-up"
 msgstr ""
 
-#: views/indi_mount.html:1118
+#: views/indi_mount.html:1122
 msgid "excluded"
 msgstr ""
 
-#: views/indi_mount.html:1119
+#: views/indi_mount.html:1123
 msgid "Spread"
 msgstr ""
 
-#: views/indi_mount.html:1120
+#: views/indi_mount.html:1124
 msgid "direction delta"
 msgstr ""
 
-#: views/indi_mount.html:1211
+#: views/indi_mount.html:1215
 #, fuzzy
 msgid "Reading"
 msgstr "Suche"
 
-#: views/indi_mount.html:1218
+#: views/indi_mount.html:1222
 msgid "Could not read current values"
 msgstr ""
 
-#: views/indi_mount.html:1225
+#: views/indi_mount.html:1229
 #, fuzzy
 msgid "Updated"
 msgstr "Kein Update"
 
-#: views/indi_mount.html:1316
+#: views/indi_mount.html:1320
 #, fuzzy
 msgid "Setting"
 msgstr "Einstellungen"
 
-#: views/indi_mount.html:1318
+#: views/indi_mount.html:1322
 #, fuzzy
 msgid "Applied"
 msgstr "Justiert!"
 
-#: views/indi_mount.html:1328
+#: views/indi_mount.html:1332
 msgid "Command sent"
 msgstr ""
 
-#: views/indi_mount.html:1338
+#: views/indi_mount.html:1342
 #, fuzzy
 msgid "Resetting..."
 msgstr "Neustart..."
 
-#: views/indi_mount.html:1357
+#: views/indi_mount.html:1361
 msgid "Starting auto calculation"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1366
+#: views/indi_mount.html:1370
 #, fuzzy
 msgid "Auto calculation requested"
 msgstr "Ort zurücksetzen"
 
-#: views/indi_mount.html:1384
+#: views/indi_mount.html:1388
 msgid "Stopping motion test"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1404 views/indi_mount.html:1410
+#: views/indi_mount.html:1408 views/indi_mount.html:1414
 #, fuzzy
 msgid "Continue requested"
 msgstr "Anmeldung erforderlich"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1431
+#: views/indi_mount.html:1435
 #, fuzzy
 msgid "Working"
 msgstr "Netzwerkeinstellungen"
 
-#: views/indi_mount.html:1520
+#: views/indi_mount.html:1524
 #, fuzzy
 msgid "Stop"
 msgstr "RA/Dec"
 
-#: views/indi_mount.html:1558
+#: views/indi_mount.html:1562
 #, fuzzy
 msgid "Restarting INDI"
 msgstr "PiFinder Neustart..."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1561
+#: views/indi_mount.html:1565
 #, fuzzy
 msgid "Restart requested"
 msgstr "Vom Ende neu starten"
@@ -5588,4 +5688,7 @@ msgstr ""
 
 #~ msgid "SW"
 #~ msgstr "Langsam"
+
+#~ msgid "Scan / Pair"
+#~ msgstr ""
 
