@@ -6,8 +6,14 @@ BUILD_ROOT="${BUILD_ROOT:-$HOME/indi-latest}"
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/dist}"
 INDI_BUILD_DIR="${INDI_BUILD_DIR:-${BUILD_ROOT}/indi/build}"
 INDI_3RDPARTY_BUILD_DIR="${INDI_3RDPARTY_BUILD_DIR:-${BUILD_ROOT}/indi-3rdparty/build-drivers}"
+INDI_3RDPARTY_LIBS_BUILD_DIR="${INDI_3RDPARTY_LIBS_BUILD_DIR:-${BUILD_ROOT}/indi-3rdparty/build-libs}"
 INDI_MANIFEST="${INDI_BUILD_DIR}/install_manifest.txt"
 INDI_3RDPARTY_MANIFEST="${INDI_3RDPARTY_BUILD_DIR}/install_manifest.txt"
+# The 3rd-party build has a separate "build-libs" stage that installs support
+# libraries. With all camera drivers disabled it currently installs nothing (no
+# manifest is produced), but if a driver that ships a bundled lib is ever
+# enabled, those libs must go into the archive too. Include it when present.
+INDI_3RDPARTY_LIBS_MANIFEST="${INDI_3RDPARTY_LIBS_BUILD_DIR}/install_manifest.txt"
 PYTHON_SITE="${PYTHON_SITE:-$(python3 -c 'import site; print(site.getsitepackages()[0])')}"
 SPLIT_ARCHIVE="${SPLIT_ARCHIVE:-auto}"
 ARCHIVE_SPLIT_SIZE="${ARCHIVE_SPLIT_SIZE:-47M}"
@@ -20,6 +26,25 @@ require_file() {
     fi
 }
 
+normalize_usrmerge_path() {
+    # Bookworm uses the usrmerge layout: /lib, /bin, /sbin and /lib64 are
+    # symlinks into /usr. Some INDI drivers install files under /lib (e.g.
+    # /lib/udev/rules.d), so the manifest lists /lib/... paths. Shipping those
+    # as a real ./lib in the archive would clobber the /lib -> usr/lib symlink
+    # on extraction and brick the system. Since /lib and /usr/lib are the same
+    # location, rewrite these prefixes to their /usr counterparts so the archive
+    # only ever contains ./usr/... and is safe to extract with any tar.
+    local path="$1"
+    case "${path}" in
+        /lib/*|/lib|/bin/*|/bin|/sbin/*|/sbin|/lib64/*|/lib64)
+            printf '/usr%s\n' "${path}"
+            ;;
+        *)
+            printf '%s\n' "${path}"
+            ;;
+    esac
+}
+
 copy_path_to_rootfs() {
     local path="$1"
     local rootfs="$2"
@@ -30,7 +55,7 @@ copy_path_to_rootfs() {
         return 0
     fi
 
-    dest="${rootfs}${path}"
+    dest="${rootfs}$(normalize_usrmerge_path "${path}")"
     mkdir -p "$(dirname "${dest}")"
     cp -a "${path}" "${dest}"
 }
@@ -139,6 +164,9 @@ check_arm64_compatibility "${METADATA}/compatibility_report.txt"
 
 copy_manifest_paths "${INDI_MANIFEST}" "${ROOTFS}"
 copy_manifest_paths "${INDI_3RDPARTY_MANIFEST}" "${ROOTFS}"
+if [ -f "${INDI_3RDPARTY_LIBS_MANIFEST}" ]; then
+    copy_manifest_paths "${INDI_3RDPARTY_LIBS_MANIFEST}" "${ROOTFS}"
+fi
 
 while IFS= read -r path; do
     copy_path_to_rootfs "${path}" "${ROOTFS}"
@@ -176,6 +204,10 @@ ldd /usr/bin/indiserver > "${METADATA}/ldd-indiserver.txt"
 ldd /usr/bin/indi_lx200generic > "${METADATA}/ldd-indi_lx200generic.txt"
 cp "${INDI_MANIFEST}" "${METADATA}/indi-install_manifest.txt"
 cp "${INDI_3RDPARTY_MANIFEST}" "${METADATA}/indi-3rdparty-install_manifest.txt"
+if [ -f "${INDI_3RDPARTY_LIBS_MANIFEST}" ]; then
+    cp "${INDI_3RDPARTY_LIBS_MANIFEST}" \
+        "${METADATA}/indi-3rdparty-libs-install_manifest.txt"
+fi
 
 ARCHIVE_NAME="${ARCHIVE_NAME:-mf-pifinder-indi-bookworm-arm64-$(date +%Y%m%d-%H%M%S).tar.gz}"
 ARCHIVE_PATH="${OUT_DIR}/${ARCHIVE_NAME}"
