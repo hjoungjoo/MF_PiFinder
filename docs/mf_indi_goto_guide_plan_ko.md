@@ -35,7 +35,7 @@ Web UI를 통한 target 설정
 ```
 
 세 입력 경로는 모두 같은 mount-control target 처리로 모이고, 선택된
-`Goto Method`에 따라 `INDI Mount` 또는 `PiFinder` 절차를 수행한다.
+`GoTo Type`에 따라 `INDI Mount` 또는 `PiFinder` 절차를 수행한다.
 
 ## 현재 관련 구현
 
@@ -99,7 +99,7 @@ ui/indi.py, ui/object_details.py
   LCD target/stop 요청을 새 서비스 큐로 전달
 
 indi_goto_guide_service.py
-  GoTo Method 정책 결정
+  GoTo Type 정책 결정
   PiFinder GoTo 상태 머신 실행
   Tracking Guide 상태 머신 실행
   PointingCoordinateService 좌표 읽기
@@ -163,7 +163,7 @@ updated
 
 - 새 서비스는 긴 blocking loop로 동작하지 않고 짧은 tick 단위 상태 머신으로 동작한다.
 - Stop/Abort 명령은 어느 phase에서도 최우선 처리한다.
-- 기존 `goto_target()` 경로는 `Goto Method = INDI Mount`일 때 그대로 유지한다.
+- 기존 `goto_target()` 경로는 `GoTo Type = INDI Mount`일 때 그대로 유지한다.
 - `skysafari_indi_goto`는 SkySafari GoTo를 mount 기능으로 전달할지 결정하는 설정이고,
   `indi_goto_method`는 전달된 GoTo를 어떤 방식으로 실행할지 결정하는 설정이다.
 - `PointingCoordinateService`는 좌표 계산의 단일 기준으로 사용한다.
@@ -184,6 +184,7 @@ updated
 ```text
 indi_goto_method = "indi_mount" | "pifinder"
   기본값: "indi_mount"
+  웹 UI 라벨: **GoTo Type** (2026-07-17에 "GoTo Method"에서 변경)
 
 indi_tracking_guide_enabled = false | true
   기본값: false
@@ -304,7 +305,7 @@ Settings
 
 ```text
 Goto/Guide
-  Goto Method
+  GoTo Type
     INDI Mount
     PiFinder
 
@@ -334,7 +335,7 @@ Goto/Guide
 표시 항목:
 
 ```text
-Goto Method
+GoTo Type
   radio 또는 select:
     INDI Mount
     PiFinder
@@ -350,7 +351,7 @@ Web UI는 기존 `SkySafari Mount Mode` 카드와 구분한다. SkySafari 설정
 SkySafari protocol forwarding 정책이고, `Goto/Guide`는 INDI 마운트 자체의
 GoTo/추적 보정 정책이다.
 
-## GoTo Method: INDI Mount
+## GoTo Type: INDI Mount
 
 현재 동작을 유지하는 모드다.
 
@@ -374,7 +375,7 @@ flowchart TD
 - 추적 가이드가 On이면 GoTo 이후 target을 기준으로 주기적 guide correction을
   수행한다.
 
-## GoTo Method: PiFinder
+## GoTo Type: PiFinder
 
 PiFinder가 `PointingCoordinateService` 좌표를 기준으로, mount sync와 INDI GoTo를
 반복해 target에 접근하고, 마지막 1도 이내에서는 pulse guide로 0.1도 미만까지
@@ -852,7 +853,7 @@ indi_goto_refine_accuracy_arcmin
 
 - `indi_goto_refine_accuracy_arcmin`은 `Goto/Guide` 공통 accuracy 설정으로
   이동할 수 있다.
-- `indi_goto_refine_once`는 `Goto Method = INDI Mount`에서 사용할 세부 옵션으로
+- `indi_goto_refine_once`는 `GoTo Type = INDI Mount`에서 사용할 세부 옵션으로
   유지하거나, PiFinder GoTo 구현 후 `PiFinder final refine`로 의미를 바꿀 수 있다.
 - SkySafari forwarding 설정(`skysafari_indi_goto`, `skysafari_indi_sync`)은
   SkySafari protocol 정책이므로 그대로 분리한다.
@@ -913,7 +914,7 @@ indi_goto_refine_accuracy_arcmin
 목표:
 
 - SkySafari/Web/LCD target 요청을 새 서비스 큐로 보낼 수 있게 한다.
-- `Goto Method = INDI Mount`이면 새 서비스가 기존 mountcontrol `goto_target`
+- `GoTo Type = INDI Mount`이면 새 서비스가 기존 mountcontrol `goto_target`
   명령을 그대로 전달한다.
 
 체크리스트:

@@ -18,7 +18,7 @@ New settings UI:
 First-pass settings:
 
 ```text
-GoTo Method
+GoTo Type  (web UI label; renamed from "GoTo Method" 2026-07-17)
   - INDI Mount
   - PiFinder
 
@@ -37,7 +37,7 @@ Web UI target setting
 
 All three input paths should converge on the same mount-control target handling
 and run either the `INDI Mount` or `PiFinder` procedure depending on the selected
-`GoTo Method`.
+`GoTo Type` (config key `indi_goto_method`).
 
 ## Current Related Implementation
 
@@ -102,7 +102,7 @@ ui/indi.py, ui/object_details.py
   Routes LCD target/stop requests to the new service queue
 
 indi_goto_guide_service.py
-  Selects the GoTo Method policy
+  Selects the GoTo Type policy
   Runs the PiFinder GoTo state machine
   Runs the Tracking Guide state machine
   Reads PointingCoordinateService coordinates
@@ -168,7 +168,7 @@ updated
 - The new service must be a short-tick state machine, not a long blocking loop.
 - Stop/Abort commands must take priority in every phase.
 - The existing `goto_target()` path must remain unchanged for
-  `Goto Method = INDI Mount`.
+  `GoTo Type = INDI Mount`.
 - `skysafari_indi_goto` controls whether SkySafari GoTo is forwarded to mount
   features, while `indi_goto_method` controls how a forwarded GoTo is executed.
 - `PointingCoordinateService` is the single coordinate-selection source.
@@ -326,7 +326,7 @@ Draft screen:
 
 ```text
 Goto/Guide
-  Goto Method
+  GoTo Type
     INDI Mount
     PiFinder
 
@@ -356,7 +356,7 @@ Location:
 Fields:
 
 ```text
-Goto Method
+GoTo Type
   radio or select:
     INDI Mount
     PiFinder
@@ -372,7 +372,7 @@ This card should remain separate from the existing `SkySafari Mount Mode` card.
 SkySafari settings control protocol forwarding, while `GoTo/Guide` controls the
 INDI mount GoTo and correction policy.
 
-## GoTo Method: INDI Mount
+## GoTo Type: INDI Mount
 
 This preserves the current behavior.
 
@@ -396,7 +396,7 @@ Behavior:
 - If Tracking Guide is On, periodic guide correction can run against the target
   after GoTo.
 
-## GoTo Method: PiFinder
+## GoTo Type: PiFinder
 
 In this mode, PiFinder uses `PointingCoordinateService` coordinates and repeats
 mount sync + INDI GoTo to approach the target, then within the last 1 degree
@@ -981,7 +981,7 @@ Checklist:
 Goal:
 
 - Route SkySafari/Web/LCD target requests to the new service queue.
-- If `Goto Method = INDI Mount`, the new service forwards the existing
+- If `GoTo Type = INDI Mount`, the new service forwards the existing
   mountcontrol `goto_target` command unchanged.
 
 Checklist:

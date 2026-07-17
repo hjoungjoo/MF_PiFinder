@@ -1130,7 +1130,7 @@ pifinder_menu = {
                             "select": "single",
                             "items": [
                                 {
-                                    "name": _("GoTo Method"),
+                                    "name": _("GoTo Type"),
                                     "class": UITextMenu,
                                     "select": "single",
                                     "config_option": "indi_goto_method",
