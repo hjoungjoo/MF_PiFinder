@@ -270,11 +270,16 @@ head/tail of a real event. Slips creeping entirely below 0.03 remain invisible
   readback is shown, and only the IMU reference advances (no accumulation) so
   the mount's own motion is never counted as a disturbance. The offset
   survives the motion.
+- Right after mount motion ends -> `post_motion_settle`: accumulation stays
+  suspended until the IMU rate holds below the exit threshold for 1.5 s
+  continuously, absorbing the BNO055's post-slew re-convergence slide
+  (added 2026-07-17, see "Mount-motion isolation hardening" below).
 - Only a sync (sync-key change) resets the tracker and the applied delta.
 - Diagnostics in metadata: `imu_delta_applied_ra/dec`, `imu_delta_gate`,
   `imu_delta_rate_deg_per_sec`.
-- Limitation: a real external force slower than the gate (0.05 deg/s) is
-  invisible without a solve. At night SOLVED_PRIMARY takes precedence anyway.
+- Limitation: a real external force slower than the enter gate (0.03 deg/s)
+  is invisible without a solve. At night SOLVED_PRIMARY takes precedence
+  anyway.
 - End-to-end hardware validation (2026-07-12, user physically pushed the tube):
   push detected (0.99 deg/s, err 1488') -> disturbed -> sync+GoTo recovery ->
   settling 2.9' -> enabled 0.0', re-acquiring the pre-push position.
@@ -304,6 +309,44 @@ the fused base became the live mount readback (no re-anchor needed); mount
 motion now only suspends accumulation instead of deleting the anchor; the
 offset clears only on a sync. Since GoTo recovery starts with a sync, a
 completed recovery still resets the offset naturally.
+
+### Mount-motion isolation hardening (fixed 2026-07-17)
+
+Found during hardware GoTo testing: the mount's own slews accumulated into the
+disturbance offset (observed 15.7 deg), so the PiFinder GoTo correction loop
+measured phantom errors that never improved, aborted, and never armed the
+tracking target — recovery then had nothing to return to. Four causes/fixes:
+
+1. **Readback supply cadence (`mountcontrol_indi.py`)**: current PyIndi
+   (INDI 2.x) never calls the legacy `newNumber` callback, so the driver's
+   1 s coordinate pushes were all dropped and the position only advanced on
+   the 5 s status heartbeat. Motion detection fired one tick per 5 s and the
+   1.5 s hold expired in between, booking the rest of the slew as a
+   disturbance. Implemented the INDI 2.x `updateProperty` callback; readback
+   now flows at the driver `POLLING_PERIOD` (~1 Hz).
+2. **Leak rollback**: the applied offset is snapshotted at every stationary
+   readback sample; when a sample shows movement, the offset rolls back to
+   the last stationary snapshot, discarding only the leak from the detection
+   gap (≤ ~1 s) while preserving genuine hand-push offsets
+   (`_snapshot_imu_delta_applied` / `_rollback_imu_delta_to_snapshot`).
+3. **Raw-IMU delta tracking**: the smoothing filter's convergence tail after
+   a large move read as sustained motion and kept accumulating for tens of
+   seconds after the slew. The tracker now differences raw (unsmoothed) IMU
+   RA/Dec (`imu.metadata.raw_ra/raw_dec`); smoothing remains display-only.
+4. **Post-motion settle gate**: the BNO055 re-converges its internal fusion
+   after a fast rotation — the orientation slides with no physical motion
+   (measured ~1.8 deg over 15 s, above the gate rates). After mount motion,
+   accumulation stays suspended until the IMU rate holds below the exit
+   threshold for `IMU_DELTA_POST_MOTION_QUIET_SECONDS` (1.5 s) continuously
+   (gate `post_motion_settle`); with the 1.5 s hold this makes ~3 s of total
+   quiet after a slew before disturbance detection re-arms.
+
+Hardware verification (15–30 deg commanded slews, 0.2 s fusion traces): the
+fused coordinate tracks the readback at 1 Hz during the slew with the applied
+delta pinned at 0.0, and stays at 0.0 after the settle gate clears. A
+deliberate physical drift invisible to the readback (ALT stepping +0.37 deg
+every ~8.5 s) still accumulates via `fast_follow`, growing the tracking-guide
+error as designed.
 
 ## GoTo Handling
 
@@ -375,7 +418,10 @@ falls back to interpreting `goto_motion_active`, `goto_refine_pending`,
 `manual_motion_direction`, `state`, `multipoint_align`, and `backlash_auto`.
 
 Even after status changes back to `connected`, changing mount readback extends a
-short hold window. The current hold time is 1.5 seconds.
+short hold window. The current hold time is 1.5 seconds; readback arrives at
+~1 Hz (the 2026-07-17 `updateProperty` fix), so the hold no longer lapses
+mid-slew. After the hold expires, the post-motion settle gate (1.5 s of
+sustained quiet) must also clear before disturbance accumulation resumes.
 
 Expected behavior:
 
@@ -434,7 +480,8 @@ file pattern):
    `PointingCoordinateService.clear_state()`, invalidates the pointing cache,
    and records `_pointing_reset_last_at`.
 3. `clear_state()` nulls `_state`, `_mount_imu_anchor`, `_imu_delta_tracker`,
-   `_imu_filter_altaz`, `_mount_motion_hold_until`, `_last_mount_motion_radec`.
+   `_imu_filter_altaz`, `_mount_motion_hold_until`, `_last_mount_motion_radec`,
+   `_last_mount_sample_ts`, and `_imu_delta_applied_snapshot`.
    The SkySafari IMU alignment correction is cleared by the reset handler in
    step 2 above, not by `clear_state()` (changed 2026-07-13, `dd045dc`).
    Previously reset preserved the correction ("it is the IMU→sky reference"),

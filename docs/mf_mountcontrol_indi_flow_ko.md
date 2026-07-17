@@ -233,12 +233,16 @@ flowchart TD
 
 ## INDI client event와 위치 갱신
 
-`PiFinderIndiClient.newNumber()`는 INDI에서 `EQUATORIAL_EOD_COORD` number vector가
-갱신될 때 호출된다.
+`PiFinderIndiClient.updateProperty()`가 INDI 2.x의 단일 콜백으로,
+`EQUATORIAL_EOD_COORD` number vector가 갱신될 때(드라이버 `POLLING_PERIOD`,
+기본 1초 주기) 호출된다. 구버전 PyIndi 호환용 `newNumber()`도 남아 있지만,
+현재 설치된 PyIndi(INDI 2.x)에서는 호출되지 않는다 — 과거에는 이 때문에
+드라이버의 좌표 push가 전부 유실되어 위치가 5초 heartbeat로만 갱신됐다
+(2026-07-17 수정).
 
 ```mermaid
 flowchart TD
-    A[INDI newNumber EQUATORIAL_EOD_COORD] --> B[RA hours / DEC deg 추출]
+    A[INDI updateProperty EQUATORIAL_EOD_COORD] --> B[RA hours / DEC deg 추출]
     B --> C[set_current_position RA*15, DEC]
     C --> D[current_ra/current_dec 갱신]
     D --> E[_write_position_status]
@@ -247,9 +251,11 @@ flowchart TD
     F -->|no| H[내부 값만 갱신]
 ```
 
-이 이벤트 기반 갱신은 일반 readback 변화에 유용하지만, 수동 이동 중에는 INDI driver가
-newNumber를 즉시 발행하지 않거나 PiFinder 루프가 소비하지 못할 수 있다. 그래서
-현재 구현은 수동 이동 중 별도 polling 발행도 수행한다.
+이 이벤트 기반 갱신은 GoTo/추적을 포함한 일반 readback 변화를 ~1Hz로
+공급하며, pointing coordinate service의 마운트 이동 감지가 이 주기에
+의존한다. 수동 이동 중에는 INDI driver가 좌표를 즉시 발행하지 않거나
+PiFinder 루프가 소비하지 못할 수 있어, 현재 구현은 수동 이동 중 별도
+polling 발행도 수행한다.
 
 ## 명령 분배
 

@@ -275,11 +275,14 @@ head/tail까지 포착한다. 0.03 미만으로만 기어가는 극미세 슬립
 - 마운트 자체 이동(GoTo/manual/펄스) 중 -> `suspended_mount_motion`: readback이
   우선 표시되고 IMU 기준점만 전진시켜(누적 없음) 마운트 스스로의 이동이 외란으로
   잘못 집계되지 않게 한다. 오프셋은 이동이 끝난 뒤에도 살아남는다.
+- 마운트 이동 종료 직후 -> `post_motion_settle`: BNO055 재수렴 슬라이드를
+  흡수하기 위해 rate가 탈출 속도 미만으로 1.5초 연속 유지될 때까지 누적을
+  보류한다 (2026-07-17 추가, 아래 "마운트 이동 격리 보강" 참고).
 - sync(sync key 변경) 시에만 tracker와 applied가 초기화된다.
 - 진단 metadata: `imu_delta_applied_ra/dec`, `imu_delta_gate`,
   `imu_delta_rate_deg_per_sec`.
-- 한계: 게이트(0.05 deg/s)보다 느린 실제 외력은 solve 없이는 보이지 않는다.
-  야간에는 solve(SOLVED_PRIMARY)가 우선되므로 영향 없다.
+- 한계: 진입 게이트(0.03 deg/s)보다 느린 실제 외력은 solve 없이는 보이지
+  않는다. 야간에는 solve(SOLVED_PRIMARY)가 우선되므로 영향 없다.
 - 실장비 end-to-end 검증(2026-07-12, 사용자가 경통을 실제로 밀어 테스트): 밀기
   감지(0.99 deg/s, err 1488') -> disturbed -> sync+GoTo 복구 -> settling 2.9' ->
   enabled 0.0'으로 밀기 전 위치 재획득.
@@ -314,6 +317,40 @@ head/tail까지 포착한다. 0.03 미만으로만 기어가는 극미세 슬립
 - 검증: 밀기 후 5분 정지에도 오프셋 유지, 마운트 슬루 통과 후 오프셋 생존,
   미세 readback 이동 시 base 즉시 추종, sync 후 오프셋 초기화 (단위 테스트
   4건 추가).
+
+### 마운트 이동 격리 보강 (2026-07-17 수정)
+
+실장비 GoTo 테스트에서 발견: 마운트 자체 슬루가 외란 오프셋에 누적되어
+(관측치 15.7도) PiFinder GoTo 보정 루프가 가짜 오차를 측정, "오차 개선 없음"으로
+중단되고 추적 타겟이 장착되지 않아 복구도 불가능했다. 원인 네 가지와 수정:
+
+1. **readback 공급 주기 (mountcontrol_indi.py)**: 설치된 PyIndi(INDI 2.x)는
+   구버전 `newNumber` 콜백을 호출하지 않아 드라이버의 1초 주기 좌표 push가
+   전부 유실되고, 위치가 5초 heartbeat로만 갱신됐다. 슬루 중 이동 감지가
+   5초에 한 틱만 발동하고 hold(1.5초)가 그 사이에 만료되어 나머지 구간의
+   IMU 이동이 전부 외란으로 누적됐다. INDI 2.x `updateProperty` 콜백을
+   구현해 readback이 드라이버 `POLLING_PERIOD`(~1Hz) 그대로 흐른다.
+2. **감지 전 누출 롤백**: 정지 상태의 readback 샘플마다 applied 오프셋
+   스냅숏을 저장하고, 새 샘플이 이동을 보이면 직전 정지 스냅숏으로 되돌린다.
+   슬루 시작~첫 감지 사이(최대 ~1초)의 누출만 정확히 폐기하고, 손밀기
+   오프셋은 보존된다 (`_snapshot_imu_delta_applied` /
+   `_rollback_imu_delta_to_snapshot`).
+3. **delta tracker 입력을 raw로**: 스무딩 필터의 큰 이동 후 수렴 꼬리가
+   지속 모션으로 읽혀 슬루 종료 후에도 수십 초간 누적됐다. tracker는
+   스무딩 전 raw IMU RA/Dec(`imu.metadata.raw_ra/raw_dec`)를 차분하고,
+   스무딩은 표시용으로만 유지한다.
+4. **post-motion settle 게이트**: BNO055가 큰 회전 후 내부 융합을 재수렴하며
+   물리 이동 없이 자세가 미끄러진다(실측 15초간 ~1.8도, 게이트 임계 초과
+   속도). 마운트 이동 종료 후 IMU rate가 탈출 속도 미만으로
+   `IMU_DELTA_POST_MOTION_QUIET_SECONDS`(1.5초) 연속 유지될 때까지 누적
+   재개를 보류한다 (gate `post_motion_settle`). hold 1.5초와 합쳐 슬루 후
+   IMU 외란 감지 재개까지 총 ~3초.
+
+검증 (실장비, 15~30도 슬루 + 0.2초 융합 트레이스): 슬루 중 fused =
+readback 1Hz 추종 / applied 0.0 유지, 종료 후 settle 게이트 해제 뒤에도
+applied 0.0. readback에 보이지 않는 의도적 물리 드리프트(~8.5초마다 ALT
++0.37도 스텝)는 여전히 fast_follow로 누적되어 추적 가이드 오차가 설계대로
+커진다.
 
 ## GoTo 중 좌표 처리
 
@@ -383,7 +420,10 @@ mount-control이 `state = manual_motion`, `mount_motion_active = true`를 보고
 `multipoint_align`, `backlash_auto`를 해석한다.
 
 GoTo 상태가 `connected`로 바뀐 직후에도 readback이 계속 변하면 일정 시간 동안
-IMU delta를 계속 보류한다. 현재 hold 시간은 1.5초이다.
+IMU delta를 계속 보류한다. 현재 hold 시간은 1.5초이고, readback이 ~1Hz로
+공급되므로(2026-07-17 `updateProperty` 수정) 슬루 중 hold가 끊기지 않는다.
+hold 만료 후에도 post-motion settle 게이트(1.5초 연속 정숙)가 통과해야
+외란 누적이 재개된다.
 
 이 구조의 기대 동작:
 
@@ -443,8 +483,8 @@ tick에 최적 소스로 다시 기준을 잡는다: 유효한 solve > 정렬된
    마운트를 raw IMU에 정렬(아래), `PointingCoordinateService.clear_state()`
    호출, pointing 캐시 무효화, `_pointing_reset_last_at` 기록.
 3. `clear_state()`는 `_state`, `_mount_imu_anchor`, `_imu_delta_tracker`,
-   `_imu_filter_altaz`, `_mount_motion_hold_until`, `_last_mount_motion_radec`를
-   비운다. SkySafari IMU 정렬 보정은 `clear_state()`가 아니라 reset 핸들러가
+   `_imu_filter_altaz`, `_mount_motion_hold_until`, `_last_mount_motion_radec`,
+   `_last_mount_sample_ts`, `_imu_delta_applied_snapshot`을 비운다. SkySafari IMU 정렬 보정은 `clear_state()`가 아니라 reset 핸들러가
    위 2번에서 지운다(2026-07-13 수정, `dd045dc`). 이전에는 reset이 보정을
    유지했는데("IMU→하늘 기준이므로 보존" 정책), 솔빙이 없는 환경(실내)에서는
    잘못된 target으로 정렬한 보정을 해제할 수단이 reset뿐인데도 보정이 살아남고,

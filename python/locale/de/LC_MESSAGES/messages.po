@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-17 12:25+0900\n"
+"POT-Creation-Date: 2026-07-17 14:11+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: Jens Scheidtmann\n"
 "Language: de_DE\n"
@@ -2357,9 +2357,10 @@ msgstr "ZURÜCK"
 msgid "Goto/Guide"
 msgstr ""
 
-#: PiFinder/ui/menu_structure.py:1133
-msgid "GoTo Method"
-msgstr ""
+# AI-TRANSLATED (claude): needs human review
+#: PiFinder/ui/menu_structure.py:1133 views/indi_mount.html:488
+msgid "GoTo Type"
+msgstr "GoTo-Typ"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/menu_structure.py:1140 views/indi_mount.html:485
@@ -4541,11 +4542,6 @@ msgstr ""
 msgid "GoTo / Guide Settings"
 msgstr "GPS Einstell."
 
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:488
-msgid "GoTo Type"
-msgstr "GoTo-Typ"
-
 #: views/indi_mount.html:503
 msgid "Tracking Guide GoTo Recovery (re-slew when off target by more than 3 deg)"
 msgstr ""
@@ -5690,5 +5686,8 @@ msgstr ""
 #~ msgstr "Langsam"
 
 #~ msgid "Scan / Pair"
+#~ msgstr ""
+
+#~ msgid "GoTo Method"
 #~ msgstr ""
 

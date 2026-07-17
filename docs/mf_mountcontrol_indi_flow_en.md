@@ -191,19 +191,25 @@ flowchart TD
 
 ## INDI Coordinate Readback
 
-When the INDI driver publishes `EQUATORIAL_EOD_COORD`, `PiFinderIndiClient`
-updates `current_ra/current_dec`.
+When the INDI driver publishes `EQUATORIAL_EOD_COORD` (at its
+`POLLING_PERIOD`, default 1 s), `PiFinderIndiClient.updateProperty()` — the
+single INDI 2.x client callback — updates `current_ra/current_dec`. The 1.x
+`newNumber()` callback is kept for older PyIndi builds but never fires on
+current PyIndi; before 2026-07-17 that dropped every driver coordinate push
+and the readback only advanced on the 5 s status heartbeat.
 
 ```mermaid
 flowchart TD
-    A[INDI newNumber EQUATORIAL_EOD_COORD] --> B[extract RA hours / DEC degrees]
+    A[INDI updateProperty EQUATORIAL_EOD_COORD] --> B[extract RA hours / DEC degrees]
     B --> C[set_current_position RA*15, DEC]
     C --> D[current_ra/current_dec update]
     D --> E[_write_position_status]
 ```
 
-This event path is useful, but manual motion may not produce timely UI-visible
-updates. Manual motion therefore also has explicit polling publication.
+This event path supplies readback at ~1 Hz during GoTo and tracking — the
+pointing coordinate service's mount-motion detection depends on that cadence.
+Manual motion may still not produce timely updates, so manual motion also has
+explicit polling publication.
 
 ## Command Dispatch
 

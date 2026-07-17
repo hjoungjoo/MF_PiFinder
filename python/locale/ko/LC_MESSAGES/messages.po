@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-17 12:25+0900\n"
+"POT-Creation-Date: 2026-07-17 14:11+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -2304,9 +2304,9 @@ msgid "Goto/Guide"
 msgstr "GoTo/Guide"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1133
-msgid "GoTo Method"
-msgstr "GoTo 방식"
+#: PiFinder/ui/menu_structure.py:1133 views/indi_mount.html:488
+msgid "GoTo Type"
+msgstr "GoTo 유형"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/menu_structure.py:1140 views/indi_mount.html:485
@@ -4363,11 +4363,6 @@ msgid "GoTo / Guide Settings"
 msgstr "GoTo / Guide 설정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:488
-msgid "GoTo Type"
-msgstr "GoTo 유형"
-
-# AI-TRANSLATED (claude): needs human review
 #: views/indi_mount.html:503
 msgid "Tracking Guide GoTo Recovery (re-slew when off target by more than 3 deg)"
 msgstr "추적 가이드 GoTo 복구 (목표에서 3° 이상 벗어나면 재슬루)"
@@ -5412,4 +5407,8 @@ msgstr ""
 
 #~ msgid "Scan / Pair"
 #~ msgstr "스캔/페어"
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "GoTo Method"
+#~ msgstr "GoTo 방식"
 
