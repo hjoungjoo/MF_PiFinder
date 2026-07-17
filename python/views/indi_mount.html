@@ -62,6 +62,95 @@
   </div>
 </div>
 
+{% if is_onstepx_driver %}
+<div class="card grey darken-2">
+  <div class="card-content">
+    <h5 class="grey-text">{{ _('%(driver)s Driver Connection') % {'driver': onstep_device} }}</h5>
+    <form action="/indi/driver" method="post" id="indi_mount_form" class="col s12">
+      <div class="row">
+        <div class="input-field col s12 m6">
+          <select id="connection_type" name="connection_type">
+            <option value="network" {% if connection_type == "network" %}selected{% endif %}>{{ _('Network TCP') }}</option>
+            <option value="usb" {% if connection_type == "usb" %}selected{% endif %}>{{ _('USB Serial') }}</option>
+          </select>
+          <label>{{ _('Connection Type') }}</label>
+        </div>
+        <div class="input-field col s12 m3">
+          <input value="{{ server_host }}" id="server_host" type="text" name="server_host">
+          <label for="server_host" class="active">{{ _('INDI Server Host') }}</label>
+        </div>
+        <div class="input-field col s12 m3">
+          <input value="{{ server_port }}" id="server_port" type="number" min="1" max="65535" name="server_port">
+          <label for="server_port" class="active">{{ _('INDI Server Port') }}</label>
+        </div>
+      </div>
+
+      <div id="network_settings">
+        <div class="row">
+          <div class="input-field col s12 m8">
+            <select id="network_host" name="network_host">
+              <option value="__manual__">{{ _('Manual entry') }}</option>
+              {% for client in ap_clients %}
+                {% if client.ip %}
+                <option value="{{ client.ip }}" {% if network_host == client.ip %}selected{% endif %}>
+                  {{ client.ip }}{% if client.hostname %} - {{ client.hostname }}{% endif %}{% if client.mac %} ({{ client.mac }}){% endif %}
+                </option>
+                {% endif %}
+              {% endfor %}
+            </select>
+            <label>{{ _('OnStep Network Device') }}</label>
+          </div>
+          <div class="input-field col s12 m4">
+            <input value="{{ network_port }}" id="network_port" type="number" min="1" max="65535" name="network_port">
+            <label for="network_port" class="active">{{ _('OnStep TCP Port') }}</label>
+          </div>
+        </div>
+        <div class="row">
+          <div class="input-field col s12">
+            <input value="{{ network_host }}" id="network_manual" type="text" name="network_manual">
+            <label for="network_manual" class="active">{{ _('Manual IP or Host') }}</label>
+          </div>
+        </div>
+      </div>
+
+      <div id="usb_settings">
+        <div class="row">
+          <div class="input-field col s12">
+            <select id="serial_port" name="serial_port">
+              <option value="__manual__">{{ _('Manual entry') }}</option>
+              {% for port in serial_ports %}
+              <option value="{{ port.path }}" {% if serial_port == port.path %}selected{% endif %}>{{ port.label }}</option>
+              {% endfor %}
+              {% if not serial_ports %}
+              <option value="" disabled>{{ _('No USB serial ports detected') }}</option>
+              {% endif %}
+            </select>
+            <label>{{ _('USB Serial Port') }}</label>
+          </div>
+        </div>
+        {% if not serial_ports %}
+        <div class="row">
+          <div class="col s12">
+            <p class="grey-text">{{ _('No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently visible. Connect the USB-serial cable and reload this page, or use manual entry if the port name is known.') }}</p>
+          </div>
+        </div>
+        {% endif %}
+        <div class="row">
+          <div class="input-field col s12">
+            <input value="{{ serial_port }}" id="serial_manual" type="text" name="serial_manual">
+            <label for="serial_manual" class="active">{{ _('Manual Serial Port') }}</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <button type="submit" class="btn">{{ _('Apply to INDI') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <div class="card grey darken-2">
   <div class="card-content">
     <h5 class="grey-text">{{ _('SkySafari Mount Mode') }}</h5>
@@ -238,93 +327,6 @@
       <button type="button" data-direction="south" class="btn indi-motion-south" title="{{ _('Move down') }}" aria-label="{{ _('Move down') }}">&#8595;</button>
       <button type="button" data-direction="southeast" class="btn indi-motion-southeast" title="{{ _('Move down-right') }}" aria-label="{{ _('Move down-right') }}">&#8600;</button>
     </div>
-  </div>
-</div>
-
-<div class="card grey darken-2">
-  <div class="card-content">
-    <h5 class="grey-text">{{ _('%(driver)s Driver Connection') % {'driver': onstep_device} }}</h5>
-    <form action="/indi/driver" method="post" id="indi_mount_form" class="col s12">
-      <div class="row">
-        <div class="input-field col s12 m6">
-          <select id="connection_type" name="connection_type">
-            <option value="network" {% if connection_type == "network" %}selected{% endif %}>{{ _('Network TCP') }}</option>
-            <option value="usb" {% if connection_type == "usb" %}selected{% endif %}>{{ _('USB Serial') }}</option>
-          </select>
-          <label>{{ _('Connection Type') }}</label>
-        </div>
-        <div class="input-field col s12 m3">
-          <input value="{{ server_host }}" id="server_host" type="text" name="server_host">
-          <label for="server_host" class="active">{{ _('INDI Server Host') }}</label>
-        </div>
-        <div class="input-field col s12 m3">
-          <input value="{{ server_port }}" id="server_port" type="number" min="1" max="65535" name="server_port">
-          <label for="server_port" class="active">{{ _('INDI Server Port') }}</label>
-        </div>
-      </div>
-
-      <div id="network_settings">
-        <div class="row">
-          <div class="input-field col s12 m8">
-            <select id="network_host" name="network_host">
-              <option value="__manual__">{{ _('Manual entry') }}</option>
-              {% for client in ap_clients %}
-                {% if client.ip %}
-                <option value="{{ client.ip }}" {% if network_host == client.ip %}selected{% endif %}>
-                  {{ client.ip }}{% if client.hostname %} - {{ client.hostname }}{% endif %}{% if client.mac %} ({{ client.mac }}){% endif %}
-                </option>
-                {% endif %}
-              {% endfor %}
-            </select>
-            <label>{{ _('OnStep Network Device') }}</label>
-          </div>
-          <div class="input-field col s12 m4">
-            <input value="{{ network_port }}" id="network_port" type="number" min="1" max="65535" name="network_port">
-            <label for="network_port" class="active">{{ _('OnStep TCP Port') }}</label>
-          </div>
-        </div>
-        <div class="row">
-          <div class="input-field col s12">
-            <input value="{{ network_host }}" id="network_manual" type="text" name="network_manual">
-            <label for="network_manual" class="active">{{ _('Manual IP or Host') }}</label>
-          </div>
-        </div>
-      </div>
-
-      <div id="usb_settings">
-        <div class="row">
-          <div class="input-field col s12">
-            <select id="serial_port" name="serial_port">
-              <option value="__manual__">{{ _('Manual entry') }}</option>
-              {% for port in serial_ports %}
-              <option value="{{ port.path }}" {% if serial_port == port.path %}selected{% endif %}>{{ port.label }}</option>
-              {% endfor %}
-              {% if not serial_ports %}
-              <option value="" disabled>{{ _('No USB serial ports detected') }}</option>
-              {% endif %}
-            </select>
-            <label>{{ _('USB Serial Port') }}</label>
-          </div>
-        </div>
-        {% if not serial_ports %}
-        <div class="row">
-          <div class="col s12">
-            <p class="grey-text">{{ _('No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently visible. Connect the USB-serial cable and reload this page, or use manual entry if the port name is known.') }}</p>
-          </div>
-        </div>
-        {% endif %}
-        <div class="row">
-          <div class="input-field col s12">
-            <input value="{{ serial_port }}" id="serial_manual" type="text" name="serial_manual">
-            <label for="serial_manual" class="active">{{ _('Manual Serial Port') }}</label>
-          </div>
-        </div>
-      </div>
-
-      <div class="row">
-        <button type="submit" class="btn">{{ _('Apply to INDI') }}</button>
-      </div>
-    </form>
   </div>
 </div>
 
