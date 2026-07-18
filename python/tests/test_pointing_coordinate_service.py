@@ -792,8 +792,9 @@ def test_altaz_mount_hand_swing_applies_delta_in_altaz_space():
 
 
 def test_eq_mount_delta_stays_component_additive_without_cos_rescale():
-    """EQ mount: a polar-axis rotation is the same RA change at any dec, so
-    the delta must be added component-wise with no cos(dec) transplant."""
+    """EQ mount FALLBACK path (no dt/location context, so the rotation
+    tracker cannot run): the delta must be added component-wise with no
+    cos(dec) transplant."""
     service = PointingCoordinateService()
     service._fusion_context = {
         "dt": None,
@@ -874,3 +875,62 @@ def test_altaz_rotation_tracker_survives_zenith_crossing():
         )
     )
     assert sep < 2.0
+
+
+def test_eq_mount_uses_rotation_tracker_and_survives_imu_yaw_offset():
+    """EQ mount with full context must use the rotation tracker: the scalar
+    RA/Dec path measures deltas in the IMU's own az frame, whose arbitrary
+    imuplus yaw offset bends a pure polar-axis rotation into a large fake Dec
+    component (measured on hardware: +15 RA read as +11.4 RA / +9.9 Dec at a
+    -53 deg offset). The rotation tracker's psi0 mapping must recover the true
+    motion."""
+    from PiFinder.calc_utils import sf_utils
+
+    dt = datetime.datetime(2026, 7, 18, 15, 0, tzinfo=datetime.timezone.utc)
+    location = SimpleNamespace(lat=37.527, lon=127.109, altitude=50.0)
+    sf_utils.set_location(location.lat, location.lon, location.altitude)
+
+    service = PointingCoordinateService()
+    service._fusion_context = {
+        "dt": dt,
+        "location": location,
+        "mount_type": "Equatorial",
+    }
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    yaw_off = -53.0  # arbitrary imuplus yaw frame offset
+
+    # Mount synced: readback equals the scope's true pointing.
+    alt0, az0 = 40.0, 200.0
+    mount_ra, mount_dec = sf_utils.altaz_to_radec(alt0, az0, dt)
+    mount = _fused_mount(mount_ra % 360.0, mount_dec)
+
+    def imu_at(true_alt, true_az):
+        # The IMU reports its own yaw-shifted azimuth for the true pointing.
+        return _fused_imu_altaz(true_alt, (true_az + yaw_off) % 360.0, dt)
+
+    first = service._select_current(
+        solved, imu_at(alt0, az0), mount, CoordinateHealth()
+    )
+    assert first.metadata["fusion_method"] == "rotation"
+    assert first.metadata["fusion_frame"] == "equatorial"
+    assert first.radec() == pytest.approx((mount_ra % 360.0, mount_dec))
+
+    # Physical hand rotation of +15 deg about the POLAR axis, in 5-deg steps:
+    # true pointing RA increases, Dec constant.
+    current = first
+    for dra in (5.0, 10.0, 15.0):
+        true_ra = (mount_ra + dra) % 360.0
+        true_alt, true_az = sf_utils.radec_to_altaz(
+            true_ra, mount_dec, dt, atmos=False
+        )
+        current = service._select_current(
+            solved, imu_at(true_alt, true_az), mount, CoordinateHealth()
+        )
+
+    fused_ra, fused_dec = current.radec()
+    assert _wrap(fused_ra - (mount_ra + 15.0)) == pytest.approx(0.0, abs=1.0)
+    assert fused_dec == pytest.approx(mount_dec, abs=1.0)
+
+
+def _wrap(delta):
+    return ((delta + 180.0) % 360.0) - 180.0

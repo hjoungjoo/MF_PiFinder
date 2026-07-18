@@ -307,7 +307,8 @@ alt/az 프레임, 아니면 equatorial 프레임):
 결과: az-only 손 스윙은 az-only fused 변화가 되고, fused 좌표는 스코프의
 물리적 지향 고도 아래로 절대 내려갈 수 없다.
 
-계산 순서, EQ 마운트 (`fusion_frame = "equatorial"`):
+계산 순서, EQ 마운트 — **폴백 전용** (`fusion_frame = "equatorial"`, 아래 EQ
+점검 참조):
 
 ```text
 fused_ra  = (mount_ra + applied_ra) mod 360     # cos(dec) 재스케일 없음
@@ -317,6 +318,9 @@ fused_dec = clamp(mount_dec + applied_dec, ±89.9)
 극축 주위 손 회전은 **어느 dec에서든** 회전각만큼 지향 RA를 바꾸고, dec축
 회전은 dec만 바꾼다 — EQ 마운트에서는 성분별 가산이 곧 축별 정확식이며, 구
 공식의 `cos(dec_imu)/cos(dec_mount)` 재스케일은 여기서도 틀린 것이라 제거했다.
+**단**, 이 식이 소비하는 delta는 IMU az 프레임에 yaw 오프셋이 없을 때만
+올바르다(아래 EQ 점검 참조). 그래서 융합 컨텍스트가 있으면 EQ 마운트도 회전
+tracker를 우선 사용하고, 이 스칼라 식은 컨텍스트 없는 폴백으로만 남는다.
 
 metadata: `fusion_frame`(`altaz` / `equatorial` / `equatorial_fallback`),
 alt/az 프레임은 `imu_delta_applied_az/alt` + `mount_alt/az` + `fused_alt/az`,
@@ -368,6 +372,33 @@ snapshot/rollback은 q_off 참조를 저장한다(교체만 하고 제자리 변
 median 0.38/0.94°(alt/az). 천정 케이스 회귀 테스트:
 `test_altaz_rotation_tracker_survives_zenith_crossing`(자오선을 따라 천정을
 넘는 20° 스윙이 반대편에 착지해야 한다).
+
+#### EQ 마운트 점검 — EQ도 회전 tracker가 우선 (2026-07-19)
+
+Alt/Az 작업 후 EQ 스칼라 경로를 점검하니 같은 부류의 프레임 결함이 두 가지
+남아 있었다:
+
+1. **IMU yaw 오프셋이 측정 RA/Dec delta를 오염시킨다.** EQ 스칼라 tracker는
+   `raw_ra/raw_dec`를 차분하는데, 이는 **IMU 자체 az**를
+   `altaz_to_radec(raw_alt, raw_az, dt)`로 변환한 값이다. imuplus yaw
+   오프셋 때문에 이는 엉뚱한 지향점의 변환이 되고, alt/az→RA/Dec 사상은
+   비선형이라 차분에서 오프셋이 소거되지 않는다. 실측 오프셋(−53°) 기준:
+   순수 극축 +15° 손 회전이 **+11.45 RA / +9.91 Dec**로 기록된다 — 가짜 Dec
+   성분 ~10°, 지평선 다이빙의 EQ 판이다. (Alt/Az **성분** 경로엔 이 문제가
+   없었다: Δaz/Δalt는 상수 az 오프셋에 불변이다. 적도 성분은 그렇지 않다 —
+   프레임 오프셋이 RA 회전이 아니라 az 회전이기 때문.)
+2. **천구 극 특이점.** RA는 dec ±90에서 수렴하는 성분의 atan2다 — 천정의 az와
+   구조적으로 동일 — 극 근처 스윙은 ΔRA 쓰레기를 기록한다.
+
+수정: 회전 tracker는 마운트 타입에 무관하다 — 스코프의 물리 회전을(psi0
+사상으로) 추적해 mount 지향벡터에 적용하며, 출력에서 마운트 축 분해를 쓰지
+않는다 — 그래서 이제 **모든** 마운트 타입의 우선 경로다. EQ 스칼라 성분식은
+컨텍스트 없는 폴백으로만 남는다. metadata `fusion_frame`은 여전히 마운트
+네이티브 프레임(EQ 마운트면 `equatorial`)을 보고하고
+`fusion_method = rotation`이 함께 실린다. 회귀 테스트:
+`test_eq_mount_uses_rotation_tracker_and_survives_imu_yaw_offset`(−53° yaw
+오프셋 하의 극축 +15° 회전이 (mount_ra + 15, mount_dec)의 1° 이내에 착지해야
+한다).
 
 ### IMU delta 속도 게이트 (2026-07-12 추가)
 
@@ -720,3 +751,6 @@ python -m pytest \
   2026-07-19 추가)
 - Alt/Az 마운트: 천정을 넘는 손 스윙을 회전 tracker가 추종
   (`test_altaz_rotation_tracker_survives_zenith_crossing`, 2026-07-19 추가)
+- EQ 마운트: IMU yaw 오프셋 하의 극축 회전을 회전 tracker가 복원
+  (`test_eq_mount_uses_rotation_tracker_and_survives_imu_yaw_offset`,
+  2026-07-19 추가)

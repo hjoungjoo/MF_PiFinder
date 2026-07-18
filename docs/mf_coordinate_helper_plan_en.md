@@ -307,7 +307,8 @@ Result: an az-only hand swing produces an az-only fused change, and the fused
 coordinate can never dive below the horizon-equivalent of where the scope
 physically points.
 
-Calculation order, EQ mount (`fusion_frame = "equatorial"`):
+Calculation order, EQ mount — FALLBACK ONLY (`fusion_frame = "equatorial"`,
+see the EQ review below):
 
 ```text
 fused_ra  = (mount_ra + applied_ra) mod 360     # NO cos(dec) rescale
@@ -318,7 +319,10 @@ A hand rotation about the polar axis changes the pointing's RA by the rotation
 angle at ANY declination, and a rotation about the dec axis changes dec alone —
 so on an EQ mount the component-wise addition IS the exact per-axis formula,
 and the old `cos(dec_imu)/cos(dec_mount)` rescaling was wrong there too (it is
-removed).
+removed). HOWEVER the deltas it consumes are only correct when the IMU's az
+frame carries no yaw offset (see the EQ review below), so with a full fusion
+context the rotation tracker is preferred for EQ mounts too; this scalar
+formula remains as the no-context fallback.
 
 Metadata: `fusion_frame` (`altaz` / `equatorial` / `equatorial_fallback`),
 `imu_delta_applied_az/alt` + `mount_alt/az` + `fused_alt/az` (alt/az frame),
@@ -377,6 +381,37 @@ fused samples; fused-vs-IMU tracking median 0.38/0.94 deg (alt/az) across a
 12–78 deg altitude range. Regression test for the zenith case:
 `test_altaz_rotation_tracker_survives_zenith_crossing` (a 20-deg meridian
 swing over the zenith must land the fused pointing on the far side).
+
+#### EQ-mount review — rotation tracker is primary for EQ too (2026-07-19)
+
+Reviewing the EQ scalar path after the alt/az work found the same class of
+frame defect, twice:
+
+1. **IMU yaw offset corrupts the measured RA/Dec deltas.** The scalar EQ
+   tracker differences `raw_ra/raw_dec`, which are converted from the IMU's
+   OWN az (`altaz_to_radec(raw_alt, raw_az, dt)`). The imuplus yaw offset
+   makes that a conversion of the WRONG pointing, and the alt/az→RA/Dec map
+   is nonlinear, so the offset does not cancel in the difference. Measured at
+   the offset seen on hardware (−53 deg): a pure polar-axis hand rotation of
+   +15 deg RA is booked as **+11.45 RA / +9.91 Dec** — a ~10 deg fake Dec
+   component, the EQ twin of the below-horizon dive. (The alt/az COMPONENT
+   path never had this problem: Δaz/Δalt are invariant under a constant az
+   offset. The equatorial components are not, because the frame offset is an
+   az rotation, not an RA rotation.)
+2. **Celestial-pole singularity.** RA is the atan2 of a vanishing component
+   at dec ±90 — structurally identical to az at the zenith — so a swing near
+   the pole books garbage ΔRA.
+
+Fix: the rotation tracker is mount-type agnostic — it follows the scope's
+physical rotation (psi0-mapped) and applies it to the mount pointing vector,
+never decomposing along mount axes for the OUTPUT — so it is now the
+preferred path for **every** mount type. The scalar EQ component formula
+remains only as the no-context fallback. `fusion_frame` metadata still
+reports the mount's native frame (`equatorial` on an EQ mount) with
+`fusion_method = rotation`. Regression test:
+`test_eq_mount_uses_rotation_tracker_and_survives_imu_yaw_offset` (a +15 deg
+polar-axis rotation under a −53 deg yaw offset must land within 1 deg of
+(mount_ra + 15, mount_dec)).
 
 ### IMU-delta rate gate (added 2026-07-12)
 
@@ -745,3 +780,6 @@ Test coverage includes:
 - Alt/az mount: a hand swing over the zenith is followed by the rotation
   tracker (`test_altaz_rotation_tracker_survives_zenith_crossing`, added
   2026-07-19).
+- EQ mount: the rotation tracker recovers a polar-axis rotation under an IMU
+  yaw offset (`test_eq_mount_uses_rotation_tracker_and_survives_imu_yaw_offset`,
+  added 2026-07-19).

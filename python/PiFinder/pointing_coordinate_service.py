@@ -882,19 +882,23 @@ class PointingCoordinateService:
         frame_metadata: dict[str, Any] = {}
         gate_state = ""
         imu_rate = 0.0
-        frame = self._mount_axis_frame()
-        if frame == "altaz":
-            # Preferred: rotation-frame fusion (gimbal-lock free; see
-            # _tick_altaz_rotation_tracker). Falls through to the scalar
-            # component path when its prerequisites are missing.
-            fused_radec = self._fuse_altaz_rotation(
-                mount_radec, imu, frame_metadata
+        # Preferred for EVERY mount type: rotation-frame fusion (see
+        # _tick_altaz_rotation_tracker). The rotation tracker follows the
+        # scope's PHYSICAL rotation and applies it to the mount pointing
+        # vector, so it needs no mount-axis assumption. In particular the EQ
+        # scalar path is NOT safe as a primary: its RA/Dec deltas are
+        # converted from the IMU's own az frame, whose arbitrary imuplus yaw
+        # offset bends a pure polar-axis rotation into a large fake Dec
+        # component (measured: a +15 deg RA-axis move read as +11.4 RA /
+        # +9.9 Dec at the -53 deg offset seen on hardware), and RA is
+        # atan2-singular near the celestial pole. Falls through to the scalar
+        # component paths only when the rotation prerequisites are missing.
+        fused_radec = self._fuse_altaz_rotation(mount_radec, imu, frame_metadata)
+        if fused_radec is not None:
+            gate_state = str(frame_metadata.get("imu_delta_gate", ""))
+            imu_rate = float(
+                frame_metadata.get("imu_delta_rate_deg_per_sec", 0.0)
             )
-            if fused_radec is not None:
-                gate_state = str(frame_metadata.get("imu_delta_gate", ""))
-                imu_rate = float(
-                    frame_metadata.get("imu_delta_rate_deg_per_sec", 0.0)
-                )
         if fused_radec is None:
             coords, frame = self._imu_tracker_coords(imu)
             applied_1, applied_2, gate_state, imu_rate = self._gated_imu_delta(
@@ -1300,12 +1304,15 @@ class PointingCoordinateService:
         imu: CoordinateSample,
         frame_metadata: dict[str, Any],
     ) -> Optional[Tuple[float, float]]:
-        """Rotation-frame fusion for an alt/az mount (see the tracker above).
+        """Rotation-frame fusion — valid for ANY mount type.
 
-        Applies the accumulated offset rotation to the live mount readback in
-        alt/az space and converts back to RA/Dec differentially (same bias
-        cancellation as _apply_altaz_delta). Returns None when the rotation
-        tracker cannot run; the caller falls back to the component path.
+        The tracker follows the scope's physical rotation (working in alt/az
+        space, psi0-mapped onto the mount frame) and this applies it to the
+        live mount readback's pointing vector, so no mount-axis assumption is
+        involved: it serves alt/az and EQ mounts alike. Converts back to
+        RA/Dec differentially (same bias cancellation as _apply_altaz_delta).
+        Returns None when the rotation tracker cannot run; the caller falls
+        back to the scalar component paths.
         """
         tracker = self._tick_altaz_rotation_tracker(mount_radec, imu)
         if tracker is None:
@@ -1342,7 +1349,7 @@ class PointingCoordinateService:
 
         frame_metadata.update(
             {
-                "fusion_frame": "altaz",
+                "fusion_frame": self._mount_axis_frame(),
                 "fusion_method": "rotation",
                 "imu_delta_gate": tracker["gate"],
                 "imu_delta_rate_deg_per_sec": tracker["rate_deg_s"],
@@ -1376,16 +1383,14 @@ class PointingCoordinateService:
             return
         if self._mount_imu_anchor_should_reset(mount, imu):
             self._mount_imu_anchor = self._new_mount_imu_anchor(mount, imu)
-        if self._mount_axis_frame() == "altaz":
-            # Rotation tracker first (same preference as the fusion itself);
-            # its reference vector must keep following the mount-driven motion.
-            if (
-                self._tick_altaz_rotation_tracker(
-                    mount_radec, imu, accumulate=False
-                )
-                is not None
-            ):
-                return
+        # Rotation tracker first (same preference as the fusion itself, for
+        # every mount type); its reference vector must keep following the
+        # mount-driven motion.
+        if (
+            self._tick_altaz_rotation_tracker(mount_radec, imu, accumulate=False)
+            is not None
+        ):
+            return
         coords, frame = self._imu_tracker_coords(imu)
         self._gated_imu_delta(coords, frame=frame, accumulate=False)
 
