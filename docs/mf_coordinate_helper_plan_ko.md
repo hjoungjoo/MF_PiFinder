@@ -329,6 +329,46 @@ equatorial 프레임은 `imu_delta_applied_ra/dec`(기존 키 유지).
 `test_altaz_mount_hand_swing_applies_delta_in_altaz_space`,
 `test_eq_mount_delta_stays_component_additive_without_cos_rescale`.
 
+#### 회전(쿼터니언) tracker 업그레이드 (2026-07-19, 같은 날 후속)
+
+성분 (az, alt) tracker에는 특이점이 남는다: az는 천정에서 수평 성분이 0으로
+수렴하는 atan2라 alt 90° 근처에서 측정 az가 noise이고, 천정을 넘는 스윙은 az가
+정당하게 ~180° 뒤집힌다 — 성분 누적은 이를 쓰레기로 기록한다. 그래서 alt/az
+프레임 tracker를 스칼라 성분에서 **회전(쿼터니언) tracker**로 업그레이드했다
+(`_tick_altaz_rotation_tracker`, 우선 경로; 성분 경로는 폴백으로 유지):
+
+```text
+1. raw IMU boresight를 각도 차분 없이 **단위벡터** v로 유지한다.
+2. psi0 — IMU의 임의 yaw 오프셋(imuplus, 자기센서 미사용)과 마운트 az 프레임의
+   차이 — 는 tracker 초기화 시점(applied = 0, 정의상 fused == mount readback)에
+   한 번 측정한다:
+     psi0 = mount_az − imu_raw_az
+   (실측: psi0 = −53.4°가 측정됐고, 이는 누적돼 있던 ~52° IMU↔mount 괴리와
+   일치 — 즉 그 괴리의 정체가 yaw 오프셋이었다.)
+3. 게이트를 통과한 각 스텝은 작은 회전이 되며, 스텝마다 방식을 선택한다:
+   - |alt| ≤ 80 (ALTAZ_ROTATION_ZENITH_GUARD_ALT_DEG): 정확한 마운트 축 분해
+       q_step = R_az(Δaz) ∘ R_altaxis(az_prev + psi0, Δalt)
+     R_az(Δaz)(−z축 회전: az는 북→동 시계방향)는 **IMU↔mount 괴리 크기와
+     무관하게** az축에 대해 정확하다 — 여기서 단일 min-arc 회전을 쓰면
+     ~Δaz·sin(alt)·sin(괴리)의 전송 오차가 생긴다.
+   - |alt| > 80: boresight 벡터 간 최소회전(min-arc)을 psi0로 마운트 프레임에
+     켤레변환 — Δaz가 무의미한 천정 통과 구간에서도 조건이 좋다.
+4. 스텝은 오프셋 쿼터니언으로 합성된다: q_off ← q_step ∘ q_off
+   (fast_follow에서만; hold는 q_off 유지; suspended는 기준만 전진).
+5. 적용: v_fused = q_off · v_mount(라이브 readback) → alt/az → RA/Dec는 성분
+   경로와 같은 차분 변환.
+```
+
+metadata: `fusion_method` = `rotation`(폴백 경로는 `component`), `psi0_deg`.
+snapshot/rollback은 q_off 참조를 저장한다(교체만 하고 제자리 변경 없음).
+프레임 전환(성분 ↔ 회전, 또는 새 anchor)은 tracker를 리셋한다.
+
+실장비 검증 (2026-07-19): 손 스윙·GoTo·외란 복구까지 회전 경로에서 전 구간
+정상 확인; 지평선 아래 fused 샘플 0건; alt 12~78° 범위에서 fused-vs-IMU 추종
+median 0.38/0.94°(alt/az). 천정 케이스 회귀 테스트:
+`test_altaz_rotation_tracker_survives_zenith_crossing`(자오선을 따라 천정을
+넘는 20° 스윙이 반대편에 착지해야 한다).
+
 ### IMU delta 속도 게이트 (2026-07-12 추가)
 
 추적 중 실장비에서 발견: mount가 사이드리얼 추적을 하면 readback RA/Dec는 target에
@@ -678,3 +718,5 @@ python -m pytest \
 - EQ 마운트: delta가 cos(dec) 재스케일 없는 성분별 가산 유지
   (`test_eq_mount_delta_stays_component_additive_without_cos_rescale`,
   2026-07-19 추가)
+- Alt/Az 마운트: 천정을 넘는 손 스윙을 회전 tracker가 추종
+  (`test_altaz_rotation_tracker_survives_zenith_crossing`, 2026-07-19 추가)

@@ -332,6 +332,52 @@ below-horizon samples**. Regression tests:
 `test_altaz_mount_hand_swing_applies_delta_in_altaz_space`,
 `test_eq_mount_delta_stays_component_additive_without_cos_rescale`.
 
+#### Rotation-tracker upgrade (2026-07-19, later the same day)
+
+The component (az, alt) tracker has a residual singularity: az is the atan2 of
+a vanishing horizontal component at the zenith, so near alt 90 the measured az
+is noise and a swing passing over the top legitimately flips az by ~180 —
+which component accumulation books as garbage. The alt/az-frame tracker was
+therefore upgraded from scalar components to a **rotation (quaternion)
+tracker** (`_tick_altaz_rotation_tracker`, preferred path; the component path
+remains as fallback):
+
+```text
+1. The raw IMU boresight is kept as a UNIT VECTOR v (no angle differencing).
+2. psi0 — the IMU's arbitrary yaw offset (imuplus, no magnetometer) versus the
+   mount's az frame — is measured once at tracker init, where applied = 0 and
+   fused == mount readback by construction:
+     psi0 = mount_az − imu_raw_az
+   (hardware: psi0 = −53.4 deg was measured, matching the standing ~52 deg
+   IMU-vs-mount separation — i.e. the separation WAS the yaw offset.)
+3. Each gated step becomes a small rotation, chosen per step:
+   - |alt| ≤ 80 (ALTAZ_ROTATION_ZENITH_GUARD_ALT_DEG): exact mount-axis
+     decomposition
+       q_step = R_az(Δaz) ∘ R_altaxis(az_prev + psi0, Δalt)
+     R_az(Δaz) (rotation about −z: az runs north→east, clockwise from above)
+     is exact for the az axis at ANY IMU-vs-mount separation — a single
+     minimal-arc rotation here would transplant-err by ~Δaz·sin(alt)·sin(sep).
+   - |alt| > 80: minimal-arc rotation between the boresight vectors,
+     conjugated into the mount frame by psi0 — well-conditioned through the
+     pole where Δaz is meaningless.
+4. Steps compose into the offset quaternion: q_off ← q_step ∘ q_off
+   (fast_follow only; hold keeps q_off; suspended advances the reference).
+5. Application: v_fused = q_off · v_mount(live readback) → alt/az → RA/Dec via
+   the same differential conversion as the component path.
+```
+
+Metadata: `fusion_method` = `rotation` (or `component` on the fallback path),
+`psi0_deg`. Snapshot/rollback store the q_off reference (replaced, never
+mutated). A frame change (component ↔ rotation, or a new anchor) resets the
+tracker.
+
+Hardware verification (2026-07-19): hand swings, GoTos, and disturbance
+recovery all validated end-to-end on the rotation path; zero below-horizon
+fused samples; fused-vs-IMU tracking median 0.38/0.94 deg (alt/az) across a
+12–78 deg altitude range. Regression test for the zenith case:
+`test_altaz_rotation_tracker_survives_zenith_crossing` (a 20-deg meridian
+swing over the zenith must land the fused pointing on the far side).
+
 ### IMU-delta rate gate (added 2026-07-12)
 
 Found on hardware while tracking: with the mount tracking sidereal, the readback
@@ -695,4 +741,7 @@ Test coverage includes:
   2026-07-19).
 - EQ mount: the delta stays component-additive with no cos(dec) rescale
   (`test_eq_mount_delta_stays_component_additive_without_cos_rescale`, added
+  2026-07-19).
+- Alt/az mount: a hand swing over the zenith is followed by the rotation
+  tracker (`test_altaz_rotation_tracker_survives_zenith_crossing`, added
   2026-07-19).

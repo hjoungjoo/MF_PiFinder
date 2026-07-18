@@ -814,3 +814,63 @@ def test_eq_mount_delta_stays_component_additive_without_cos_rescale():
     )
     # +10 deg RA at the IMU must be +10 deg RA on the mount, dec unchanged.
     assert moved.radec() == pytest.approx((20.0, 10.0), abs=1e-6)
+
+
+def test_altaz_rotation_tracker_survives_zenith_crossing():
+    """The az-component tracker is singular at the zenith — a small physical
+    motion over the top legitimately flips az by ~180, which component
+    accumulation books as garbage. The rotation tracker must follow the swing
+    over the zenith and land the fused pointing on the far side."""
+    import math as m
+
+    from PiFinder.calc_utils import sf_utils
+
+    dt = datetime.datetime(2026, 7, 18, 15, 0, tzinfo=datetime.timezone.utc)
+    location = SimpleNamespace(lat=37.527, lon=127.109, altitude=50.0)
+    sf_utils.set_location(location.lat, location.lon, location.altitude)
+
+    service = PointingCoordinateService()
+    service._fusion_context = {
+        "dt": dt,
+        "location": location,
+        "mount_type": "Alt/Az",
+    }
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    mount_ra, mount_dec = sf_utils.altaz_to_radec(75.0, 0.0, dt)
+    mount = _fused_mount(mount_ra % 360.0, mount_dec)
+
+    # Hand swing along the meridian over the zenith: 20 deg of physical arc.
+    path = [
+        (80.0, 0.0),
+        (85.0, 0.0),
+        (89.0, 0.0),
+        (89.0, 180.0),
+        (85.0, 180.0),
+        (80.0, 180.0),
+    ]
+    current = None
+    for alt, az in path:
+        current = service._select_current(
+            solved, _fused_imu_altaz(alt, az, dt), mount, CoordinateHealth()
+        )
+
+    assert current is not None
+    assert current.metadata["fusion_method"] == "rotation"
+    ra, dec = current.radec()
+    alt_f, az_f = sf_utils.radec_to_altaz(ra, dec, dt, atmos=False)
+    # Mount at (75, az 0) carried 20 deg over the top must land at (85, az 180).
+    sep = m.degrees(
+        m.acos(
+            max(
+                -1.0,
+                min(
+                    1.0,
+                    m.sin(m.radians(alt_f)) * m.sin(m.radians(85.0))
+                    + m.cos(m.radians(alt_f))
+                    * m.cos(m.radians(85.0))
+                    * m.cos(m.radians(az_f - 180.0)),
+                ),
+            )
+        )
+    )
+    assert sep < 2.0

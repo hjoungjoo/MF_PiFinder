@@ -87,6 +87,12 @@ IMU_DELTA_EXIT_RATE_DEG_PER_SEC = 0.015
 # MOUNT_IMU_DELTA_HOLD_SECONDS this sets the total quiet time after a slew
 # before IMU disturbance detection re-arms (~3 s).
 IMU_DELTA_POST_MOTION_QUIET_SECONDS = 1.5
+# Above this IMU altitude a rotation-tracker step switches from the exact
+# mount-axis decomposition (Rz(daz) then the alt axis) to the minimal-arc
+# rotation between boresight vectors: near the zenith the measured azimuth is
+# the ill-conditioned atan2 of a tiny horizontal component, so daz is noise
+# while the boresight vector remains well-defined.
+ALTAZ_ROTATION_ZENITH_GUARD_ALT_DEG = 80.0
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -109,6 +115,71 @@ def _as_float_vector(value: Any) -> Optional[list[float]]:
 
 def _wrap_angle_delta_degrees(delta: float) -> float:
     return ((delta + 180.0) % 360.0) - 180.0
+
+
+def _altaz_unit_vector(alt_deg: float, az_deg: float) -> "np.ndarray":
+    """(east, north, up) unit vector of an alt/az pointing — the same ENU
+    convention as imu_altaz_degrees (az measured from north toward east)."""
+    alt = math.radians(alt_deg)
+    az = math.radians(az_deg)
+    cos_alt = math.cos(alt)
+    return np.array(
+        [cos_alt * math.sin(az), cos_alt * math.cos(az), math.sin(alt)]
+    )
+
+
+def _unit_vector_altaz(vector: "np.ndarray") -> Tuple[float, float]:
+    """Inverse of _altaz_unit_vector; az of the exact zenith/nadir is 0."""
+    up = max(-1.0, min(1.0, float(vector[2])))
+    alt = math.degrees(math.asin(up))
+    az = math.degrees(math.atan2(float(vector[0]), float(vector[1]))) % 360.0
+    return alt, az
+
+
+def _min_arc_quaternion(
+    v_from: "np.ndarray", v_to: "np.ndarray"
+) -> "quaternion.quaternion":
+    """Minimal (great-circle, roll-free) rotation taking v_from onto v_to.
+
+    Boresight vectors carry no roll, so the minimal rotation is the only
+    physically meaningful one between two pointings. Antiparallel inputs pick
+    an arbitrary perpendicular axis (a 0.2 s tracker step is never antipodal
+    in practice)."""
+    axis = np.cross(v_from, v_to)
+    sin_angle = float(np.linalg.norm(axis))
+    cos_angle = float(np.dot(v_from, v_to))
+    if sin_angle < 1e-12:
+        if cos_angle >= 0.0:
+            return quaternion.one
+        # Antiparallel: rotate 180 deg about any axis perpendicular to v_from.
+        helper = (
+            np.array([1.0, 0.0, 0.0])
+            if abs(float(v_from[0])) < 0.9
+            else np.array([0.0, 1.0, 0.0])
+        )
+        axis = np.cross(v_from, helper)
+        axis /= np.linalg.norm(axis)
+        return quaternion.from_rotation_vector(axis * math.pi)
+    angle = math.atan2(sin_angle, cos_angle)
+    return quaternion.from_rotation_vector(axis / sin_angle * angle)
+
+
+def _az_rotation_quaternion(daz_deg: float) -> "quaternion.quaternion":
+    """Rotation that INCREASES azimuth by daz_deg.
+
+    Azimuth runs north -> east (clockwise seen from above), which in the
+    right-handed ENU frame (x=east, y=north, z=up) is a rotation about -z.
+    """
+    return quaternion.from_rotation_vector(
+        np.array([0.0, 0.0, -math.radians(daz_deg)])
+    )
+
+
+def _rotate_vector(
+    q: "quaternion.quaternion", vector: "np.ndarray"
+) -> "np.ndarray":
+    rotated = q * quaternion.quaternion(0.0, *vector) * q.conjugate()
+    return np.array([rotated.x, rotated.y, rotated.z])
 
 
 def clamp_altitude_degrees(altitude: float) -> float:
@@ -256,7 +327,9 @@ class PointingCoordinateService:
         self._mount_motion_hold_until = 0.0
         self._last_mount_motion_radec: Optional[Tuple[float, float]] = None
         self._last_mount_sample_ts: Optional[float] = None
-        self._imu_delta_applied_snapshot: Optional[Tuple[float, float]] = None
+        # Scalar tracker: (applied_ra, applied_dec); rotation tracker:
+        # ("q_off", quaternion).
+        self._imu_delta_applied_snapshot: Optional[Tuple[Any, Any]] = None
         # Frame context for the mount+IMU-delta fusion (dt, location,
         # mount_type), refreshed by current_state(). None (e.g. direct
         # _select_current calls in tests) falls back to the equatorial frame.
@@ -805,27 +878,55 @@ class PointingCoordinateService:
         #   angle at any declination, and the dec-axis changes dec alone, so
         #   the delta is (RA, Dec) added component-wise WITHOUT any cos(dec)
         #   rescaling.
-        coords, frame = self._imu_tracker_coords(imu)
-        applied_1, applied_2, gate_state, imu_rate = self._gated_imu_delta(
-            coords, frame=frame
-        )
-
         fused_radec: Optional[Tuple[float, float]] = None
-        frame_metadata: dict[str, Any] = {"fusion_frame": frame}
+        frame_metadata: dict[str, Any] = {}
+        gate_state = ""
+        imu_rate = 0.0
+        frame = self._mount_axis_frame()
         if frame == "altaz":
-            fused_radec = self._apply_altaz_delta(
-                mount_radec, applied_1, applied_2, frame_metadata, anchor, imu
+            # Preferred: rotation-frame fusion (gimbal-lock free; see
+            # _tick_altaz_rotation_tracker). Falls through to the scalar
+            # component path when its prerequisites are missing.
+            fused_radec = self._fuse_altaz_rotation(
+                mount_radec, imu, frame_metadata
             )
-            if fused_radec is None:
-                # Conversion failed (location/time raced away): fall back to
-                # the equatorial component addition rather than dropping the
-                # fused source entirely.
-                frame = "equatorial"
-                frame_metadata["fusion_frame"] = "equatorial_fallback"
+            if fused_radec is not None:
+                gate_state = str(frame_metadata.get("imu_delta_gate", ""))
+                imu_rate = float(
+                    frame_metadata.get("imu_delta_rate_deg_per_sec", 0.0)
+                )
         if fused_radec is None:
-            dec_deg = max(-89.9, min(89.9, mount_radec[1] + applied_2))
-            ra_deg = (mount_radec[0] + applied_1) % 360.0
-            fused_radec = (ra_deg, dec_deg)
+            coords, frame = self._imu_tracker_coords(imu)
+            applied_1, applied_2, gate_state, imu_rate = self._gated_imu_delta(
+                coords, frame=frame
+            )
+            frame_metadata["fusion_frame"] = frame
+            frame_metadata["fusion_method"] = "component"
+            if frame == "altaz":
+                fused_radec = self._apply_altaz_delta(
+                    mount_radec,
+                    applied_1,
+                    applied_2,
+                    frame_metadata,
+                    anchor,
+                    imu,
+                )
+                if fused_radec is None:
+                    # Conversion failed (location/time raced away): fall back
+                    # to the equatorial component addition rather than
+                    # dropping the fused source entirely.
+                    frame = "equatorial"
+                    frame_metadata["fusion_frame"] = "equatorial_fallback"
+            if fused_radec is None:
+                dec_deg = max(-89.9, min(89.9, mount_radec[1] + applied_2))
+                ra_deg = (mount_radec[0] + applied_1) % 360.0
+                fused_radec = (ra_deg, dec_deg)
+                frame_metadata.setdefault(
+                    "imu_delta_applied_ra", applied_1
+                )
+                frame_metadata.setdefault(
+                    "imu_delta_applied_dec", applied_2
+                )
 
         return CoordinateSample(
             ra_deg=fused_radec[0],
@@ -848,17 +949,8 @@ class PointingCoordinateService:
                 "anchor_imu_dec": anchor["imu_dec"],
                 "imu_delta_ra": imu_delta_ra,
                 "imu_delta_dec": imu_delta_dec,
-                # Frame-specific applied keys: ra/dec for the equatorial frame
-                # (kept for compatibility), az/alt for the alt/az frame (set in
-                # frame_metadata by _apply_altaz_delta).
-                **(
-                    {
-                        "imu_delta_applied_ra": applied_1,
-                        "imu_delta_applied_dec": applied_2,
-                    }
-                    if frame == "equatorial"
-                    else {}
-                ),
+                # Frame-specific applied keys (ra/dec on an EQ mount, az/alt on
+                # an alt/az mount) arrive via **frame_metadata below.
                 "imu_delta_gate": gate_state,
                 "imu_delta_rate_deg_per_sec": imu_rate,
                 "mount_ra": mount_radec[0],
@@ -1010,12 +1102,36 @@ class PointingCoordinateService:
         )
         rate = step_deg / dt
 
+        gate_state = self._gate_decision(tracker, rate, now, accumulate)
+        if gate_state == "fast_follow":
+            tracker["applied_ra"] += step_ra
+            tracker["applied_dec"] += step_dec
+
+        tracker["imu_ra"] = coords[0]
+        tracker["imu_dec"] = coords[1]
+        tracker["t"] = now
+        return (
+            tracker["applied_ra"],
+            tracker["applied_dec"],
+            gate_state,
+            rate,
+        )
+
+    def _gate_decision(
+        self, tracker: dict[str, Any], rate: float, now: float, accumulate: bool
+    ) -> str:
+        """Shared rate-hysteresis gate for the scalar and rotation trackers.
+
+        Mutates episode/settle_pending/quiet_since on the tracker and returns
+        the gate state; on "fast_follow" the caller applies the step (scalar
+        addition or rotation composition).
+        """
         if not accumulate:
             tracker["episode"] = False
             tracker["settle_pending"] = True
             tracker["quiet_since"] = None
-            gate_state = "suspended_mount_motion"
-        elif tracker.get("settle_pending"):
+            return "suspended_mount_motion"
+        if tracker.get("settle_pending"):
             # Post-motion settle: the BNO055 orientation keeps sliding after a
             # slew; wait for a sustained quiet stretch before booking anything
             # as a disturbance again.
@@ -1030,31 +1146,218 @@ class PointingCoordinateService:
                     tracker["quiet_since"] = None
             else:
                 tracker["quiet_since"] = None
-            gate_state = "post_motion_settle"
-        else:
-            threshold = (
-                IMU_DELTA_EXIT_RATE_DEG_PER_SEC
-                if tracker.get("episode")
-                else IMU_DELTA_ENTER_RATE_DEG_PER_SEC
-            )
-            if rate >= threshold:
-                tracker["applied_ra"] += step_ra
-                tracker["applied_dec"] += step_dec
-                tracker["episode"] = True
-                gate_state = "fast_follow"
-            else:
-                tracker["episode"] = False
-                gate_state = "hold"
-
-        tracker["imu_ra"] = coords[0]
-        tracker["imu_dec"] = coords[1]
-        tracker["t"] = now
-        return (
-            tracker["applied_ra"],
-            tracker["applied_dec"],
-            gate_state,
-            rate,
+            return "post_motion_settle"
+        threshold = (
+            IMU_DELTA_EXIT_RATE_DEG_PER_SEC
+            if tracker.get("episode")
+            else IMU_DELTA_ENTER_RATE_DEG_PER_SEC
         )
+        if rate >= threshold:
+            tracker["episode"] = True
+            return "fast_follow"
+        tracker["episode"] = False
+        return "hold"
+
+    def _tick_altaz_rotation_tracker(
+        self,
+        mount_radec: Tuple[float, float],
+        imu: CoordinateSample,
+        *,
+        accumulate: bool = True,
+    ) -> Optional[dict[str, Any]]:
+        """Advance the rotation-based delta tracker for an alt/az mount.
+
+        Gimbal-lock-free upgrade of the component (az, alt) tracker: the raw
+        IMU boresight is kept as a UNIT VECTOR, each tick's motion is the
+        minimal (roll-free) rotation between successive boresight vectors, and
+        gated steps compose into an offset quaternion ``q_off`` expressed in
+        the mount's az frame:
+
+            v_fused = q_off · v_mount(live readback)
+
+        Differencing rotations instead of az angles removes the atan2(az)
+        singularity at the zenith (where a tiny physical motion legitimately
+        flips az by ~180 and the scalar tracker books garbage). Composing the
+        SMALL per-tick steps (rather than one anchor->now rotation) keeps the
+        parallel-transport error negligible, because the fused pointing stays
+        within the held-drift distance of the physical pointing.
+
+        ``psi0`` maps the IMU's arbitrary yaw frame (imuplus, no magnetometer)
+        onto the mount's az frame. It is measured at tracker init — where the
+        applied delta is zero, so fused == mount readback corresponds to the
+        IMU boresight by construction: psi0 = mount_az - imu_raw_az. Gravity
+        pins both frames' "up", so a pure z-conjugation is the full mapping;
+        each step is conjugated: q_step_mount = Rz(psi0) q_step_imu Rz(-psi0).
+
+        Returns the tracker (with "gate" and "rate_deg_s" fields refreshed),
+        or None when the prerequisites (fusion context, IMU alt/az, mount
+        alt/az conversion) are missing — the caller falls back to the scalar
+        component tracker.
+        """
+        ctx = self._fusion_context or {}
+        dt_ctx = ctx.get("dt")
+        location = ctx.get("location")
+        imu_altaz = self._imu_raw_altaz(imu)
+        if dt_ctx is None or location is None or imu_altaz is None:
+            return None
+
+        now = time.monotonic()
+        v_now = _altaz_unit_vector(imu_altaz[0], imu_altaz[1])
+        tracker = self._imu_delta_tracker
+        if (
+            tracker is None
+            or tracker.get("anchor") is not self._mount_imu_anchor
+            or tracker.get("frame") != "altaz_rot"
+        ):
+            try:
+                sf_utils.set_location(
+                    location.lat, location.lon, location.altitude
+                )
+                mount_alt, mount_az = sf_utils.radec_to_altaz(
+                    mount_radec[0], mount_radec[1], dt_ctx, atmos=False
+                )
+            except Exception:
+                logger.debug(
+                    "Mount alt/az conversion failed at rotation-tracker init",
+                    exc_info=True,
+                )
+                return None
+            if mount_alt is None or mount_az is None:
+                return None
+            tracker = {
+                "anchor": self._mount_imu_anchor,
+                "frame": "altaz_rot",
+                "v_prev": v_now,
+                "altaz_prev": imu_altaz,
+                "t": now,
+                "q_off": quaternion.one,
+                "psi0": _wrap_angle_delta_degrees(mount_az - imu_altaz[1]),
+                "episode": False,
+                "settle_pending": False,
+                "quiet_since": None,
+                "gate": "init",
+                "rate_deg_s": 0.0,
+            }
+            self._imu_delta_tracker = tracker
+            self._imu_delta_applied_snapshot = None
+            self._snapshot_imu_delta_applied()
+            return tracker
+
+        dt = max(1e-3, now - tracker["t"])
+        v_prev = tracker["v_prev"]
+        cos_step = max(-1.0, min(1.0, float(np.dot(v_prev, v_now))))
+        step_deg = math.degrees(math.acos(cos_step))
+        rate = step_deg / dt
+
+        gate_state = self._gate_decision(tracker, rate, now, accumulate)
+        if gate_state == "fast_follow":
+            alt_prev, az_prev = tracker["altaz_prev"]
+            alt_now, az_now = imu_altaz
+            psi0 = tracker["psi0"]
+            if (
+                max(abs(alt_prev), abs(alt_now))
+                <= ALTAZ_ROTATION_ZENITH_GUARD_ALT_DEG
+            ):
+                # Normal altitudes: build the step from the exact mount-axis
+                # decomposition. Rz(daz) is exact for the az axis at ANY
+                # IMU-vs-mount separation; the alt-axis rotation uses the
+                # horizontal axis at the (psi0-mapped) azimuth, matching the
+                # fused pointing's azimuth to within the tracked mismatch.
+                daz = _wrap_angle_delta_degrees(az_now - az_prev)
+                dalt = alt_now - alt_prev
+                axis_az_mount = math.radians(az_prev + psi0)
+                alt_axis = np.array(
+                    [math.cos(axis_az_mount), -math.sin(axis_az_mount), 0.0]
+                )
+                q_step_mount = _az_rotation_quaternion(
+                    daz
+                ) * quaternion.from_rotation_vector(
+                    alt_axis * math.radians(dalt)
+                )
+            else:
+                # Near the zenith the measured azimuth is noise; use the
+                # minimal-arc rotation between the boresight VECTORS, which
+                # stays well-conditioned through the pole, conjugated into the
+                # mount frame by psi0.
+                q_step = _min_arc_quaternion(v_prev, v_now)
+                q_step_mount = (
+                    _az_rotation_quaternion(psi0)
+                    * q_step
+                    * _az_rotation_quaternion(-psi0)
+                )
+            tracker["q_off"] = (q_step_mount * tracker["q_off"]).normalized()
+
+        tracker["v_prev"] = v_now
+        tracker["altaz_prev"] = imu_altaz
+        tracker["t"] = now
+        tracker["gate"] = gate_state
+        tracker["rate_deg_s"] = rate
+        return tracker
+
+    def _fuse_altaz_rotation(
+        self,
+        mount_radec: Tuple[float, float],
+        imu: CoordinateSample,
+        frame_metadata: dict[str, Any],
+    ) -> Optional[Tuple[float, float]]:
+        """Rotation-frame fusion for an alt/az mount (see the tracker above).
+
+        Applies the accumulated offset rotation to the live mount readback in
+        alt/az space and converts back to RA/Dec differentially (same bias
+        cancellation as _apply_altaz_delta). Returns None when the rotation
+        tracker cannot run; the caller falls back to the component path.
+        """
+        tracker = self._tick_altaz_rotation_tracker(mount_radec, imu)
+        if tracker is None:
+            return None
+
+        ctx = self._fusion_context or {}
+        try:
+            sf_utils.set_location(
+                ctx["location"].lat, ctx["location"].lon, ctx["location"].altitude
+            )
+            mount_alt, mount_az = sf_utils.radec_to_altaz(
+                mount_radec[0], mount_radec[1], ctx["dt"], atmos=False
+            )
+            if mount_alt is None or mount_az is None:
+                return None
+            v_mount = _altaz_unit_vector(mount_alt, mount_az)
+            v_fused = _rotate_vector(tracker["q_off"], v_mount)
+            fused_alt, fused_az = _unit_vector_altaz(v_fused)
+            base_ra, base_dec = sf_utils.altaz_to_radec(
+                mount_alt, mount_az, ctx["dt"]
+            )
+            moved_ra, moved_dec = sf_utils.altaz_to_radec(
+                fused_alt, fused_az, ctx["dt"]
+            )
+            ra_deg = (
+                mount_radec[0] + _wrap_angle_delta_degrees(moved_ra - base_ra)
+            ) % 360.0
+            dec_deg = max(
+                -89.9, min(89.9, mount_radec[1] + (moved_dec - base_dec))
+            )
+        except Exception:
+            logger.debug("Alt/Az rotation fusion failed", exc_info=True)
+            return None
+
+        frame_metadata.update(
+            {
+                "fusion_frame": "altaz",
+                "fusion_method": "rotation",
+                "imu_delta_gate": tracker["gate"],
+                "imu_delta_rate_deg_per_sec": tracker["rate_deg_s"],
+                "psi0_deg": tracker["psi0"],
+                "mount_alt": mount_alt,
+                "mount_az": mount_az,
+                "fused_alt": fused_alt,
+                "fused_az": fused_az,
+                "imu_delta_applied_az": _wrap_angle_delta_degrees(
+                    fused_az - mount_az
+                ),
+                "imu_delta_applied_alt": fused_alt - mount_alt,
+            }
+        )
+        return ra_deg % 360.0, dec_deg
 
     def _track_imu_reference_without_accumulation(
         self, mount: CoordinateSample, imu: CoordinateSample
@@ -1073,6 +1376,16 @@ class PointingCoordinateService:
             return
         if self._mount_imu_anchor_should_reset(mount, imu):
             self._mount_imu_anchor = self._new_mount_imu_anchor(mount, imu)
+        if self._mount_axis_frame() == "altaz":
+            # Rotation tracker first (same preference as the fusion itself);
+            # its reference vector must keep following the mount-driven motion.
+            if (
+                self._tick_altaz_rotation_tracker(
+                    mount_radec, imu, accumulate=False
+                )
+                is not None
+            ):
+                return
         coords, frame = self._imu_tracker_coords(imu)
         self._gated_imu_delta(coords, frame=frame, accumulate=False)
 
@@ -1347,10 +1660,15 @@ class PointingCoordinateService:
     def _snapshot_imu_delta_applied(self) -> None:
         tracker = self._imu_delta_tracker
         if tracker is not None and tracker.get("anchor") is self._mount_imu_anchor:
-            self._imu_delta_applied_snapshot = (
-                tracker["applied_ra"],
-                tracker["applied_dec"],
-            )
+            if tracker.get("frame") == "altaz_rot":
+                # q_off is replaced (never mutated in place) on each step, so
+                # storing the reference is a safe snapshot.
+                self._imu_delta_applied_snapshot = ("q_off", tracker["q_off"])
+            else:
+                self._imu_delta_applied_snapshot = (
+                    tracker["applied_ra"],
+                    tracker["applied_dec"],
+                )
         else:
             self._imu_delta_applied_snapshot = None
 
@@ -1358,10 +1676,17 @@ class PointingCoordinateService:
         tracker = self._imu_delta_tracker
         snapshot = self._imu_delta_applied_snapshot
         if (
-            tracker is not None
-            and snapshot is not None
-            and tracker.get("anchor") is self._mount_imu_anchor
+            tracker is None
+            or snapshot is None
+            or tracker.get("anchor") is not self._mount_imu_anchor
         ):
+            return
+        if tracker.get("frame") == "altaz_rot":
+            if isinstance(snapshot, tuple) and snapshot[0] == "q_off":
+                tracker["q_off"] = snapshot[1]
+                tracker["episode"] = False
+            return
+        if isinstance(snapshot, tuple) and snapshot[0] != "q_off":
             tracker["applied_ra"], tracker["applied_dec"] = snapshot
             tracker["episode"] = False
 
