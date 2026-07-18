@@ -25,8 +25,8 @@ from PiFinder import utils
 
 logger = logging.getLogger("MountControl.Indi.Backlash")
 
-STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
-POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
+STOP_REQUEST_FILE = utils.runtime_dir / "mount_control_stop_request.json"
+POINTING_STATUS_FILE = utils.runtime_dir / "pointing_coordinate_status.json"
 BACKLASH_MIN_VALUE = 0
 BACKLASH_MAX_VALUE = 3600
 BACKLASH_SOLVED_STATUS_MAX_AGE_SECONDS = 10.0

@@ -65,8 +65,8 @@ except ImportError:  # pragma: no cover - exercised only on INDI installs
 logger = logging.getLogger("MountControl.Indi")
 clientlogger = logging.getLogger("MountControl.Indi.Client")
 
-STATUS_FILE = utils.data_dir / "mount_control_status.json"
-STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
+STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
+STOP_REQUEST_FILE = utils.runtime_dir / "mount_control_stop_request.json"
 POSITION_STATUS_MIN_INTERVAL = 0.5
 STATUS_HEARTBEAT_INTERVAL = 5.0
 AUTO_CONNECT_START_DELAY = 5.0
@@ -159,7 +159,7 @@ def shortest_ra_delta_deg(target_ra_deg: float, current_ra_deg: float) -> float:
 def _write_status(state: str, message: str = "", **extra: Any) -> None:
     """Persist a compact mount-control status snapshot for logs/web/debug."""
     try:
-        utils.create_path(utils.data_dir)
+        utils.create_path(utils.runtime_dir)
         payload = {
             "state": state,
             "message": message,
@@ -172,7 +172,6 @@ def _write_status(state: str, message: str = "", **extra: Any) -> None:
         with open(tmp_status, "w", encoding="utf-8") as status_out:
             json.dump(payload, status_out, indent=2, sort_keys=True)
             status_out.flush()
-            os.fsync(status_out.fileno())
         tmp_status.replace(STATUS_FILE)
     except Exception:
         logger.exception("Could not write mount-control status")
@@ -1235,6 +1234,66 @@ class MountControlIndi(BacklashCalibrationMixin):
             self._console("INDI connect\nfailed")
             return False
         return self.connect()
+
+    def reboot_mount(self) -> bool:
+        """Force-reboot the OnStep controller and reinitialize the mount.
+
+        Verified recovery for the wedged OnStepX state (sync/GoTo/tracking
+        refused while manual moves work) and for a controller that silently
+        rebooted and lost date/time. ``:ERESET#`` drops the controller for
+        ~35s; the follow-up ``connect()`` re-runs location/time sync, unpark,
+        and tracking enable so GoTo works again without a full restart.
+        """
+        onstep_cfg = self._onstep_connection_config()
+        logger.info("Rebooting OnStep mount controller via :ERESET#")
+        self._write_controller_status(
+            "rebooting", "Rebooting OnStep mount controller"
+        )
+        self._console("INDI mount\nrebooting")
+        self.disconnect()
+        self.client = None
+        self.device = None
+        try:
+            result = sys_utils.reboot_onstep_controller_exclusive(
+                connection_type=onstep_cfg["connection_type"],
+                network_host=onstep_cfg["network_host"],
+                network_port=onstep_cfg["network_port"],
+                serial_port=onstep_cfg["serial_port"],
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+            )
+        except Exception as exc:
+            logger.exception("OnStep controller reboot failed")
+            self._write_controller_status("reboot_failed", str(exc))
+            self._console("INDI reboot\nfailed")
+            return False
+
+        if not result.get("ok"):
+            error = (
+                result.get("stderr")
+                or result.get("stdout")
+                or "Could not reboot OnStep controller"
+            )
+            logger.error("OnStep controller reboot failed: %s", error)
+            self._write_controller_status("reboot_failed", error)
+            self._console("INDI reboot\nfailed")
+            return False
+
+        # The controller boots without date/time (no RTC); connect() re-runs
+        # location/time sync, unpark, and tracking enable.
+        if not self.connect(announce=False):
+            self._write_controller_status(
+                "reboot_failed", "Mount did not reconnect after reboot"
+            )
+            self._console("INDI reboot\nno reconnect")
+            return False
+
+        logger.info("OnStep controller rebooted and mount reinitialized")
+        self._write_controller_status(
+            "connected", "OnStep controller rebooted and reinitialized"
+        )
+        self._console("INDI mount\nrebooted")
+        return True
 
     def disconnect(self) -> None:
         if self.client is not None:
@@ -3183,6 +3242,8 @@ class MountControlIndi(BacklashCalibrationMixin):
             self.connect()
         elif command_type == "restart_driver":
             self.restart_driver()
+        elif command_type == "reboot_mount":
+            self.reboot_mount()
         elif command_type == "sync":
             self.sync_mount(float(command["ra"]), float(command["dec"]))
         elif command_type == "goto_target":

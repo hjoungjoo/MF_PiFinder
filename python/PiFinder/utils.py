@@ -23,6 +23,24 @@ debug_dump_dir = data_dir / "solver_debug_dumps"
 comet_file = astro_data_dir / Path("comets.txt")
 
 
+def _resolve_runtime_dir() -> Path:
+    """RAM-backed dir for volatile inter-process status/request files.
+
+    The mount/pointing/GoTo status files are rewritten continuously and are
+    meaningless after a reboot, so prefer /dev/shm (tmpfs — the same choice
+    as the single-instance lock) to spare the SD card. Falls back to the SD
+    data dir on platforms without a writable /dev/shm so development
+    environments keep working.
+    """
+    shm = Path("/dev/shm")
+    if shm.is_dir() and os.access(shm, os.W_OK):
+        return shm / "pifinder"
+    return data_dir
+
+
+runtime_dir = _resolve_runtime_dir()
+
+
 def create_dir(adir: str):
     create_path(Path(adir))
 

@@ -5,8 +5,12 @@ This module contains the UI Status class
 
 """
 
+import math
 import time
 
+import quaternion
+
+from PiFinder.pointing_model.imu_dead_reckoning import ImuDeadReckoning
 from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder import calc_utils
 from PiFinder import utils
@@ -42,6 +46,9 @@ class UIStatus(GuideKeyMixin, UIModule):
             "IMU CAL": "--",
             "IMU qw,qx": "--",
             "IMU qy,qz": "--",
+            "T.ALT": "--",
+            "T.TILT": "--",
+            "T.HDG": "--",
             "GPS": "--",
             "GPS ALT": "--",
             "GPS LCK": "--",
@@ -56,6 +63,8 @@ class UIStatus(GuideKeyMixin, UIModule):
 
         self.last_temp_time = 0
         self.last_IP_time = 0
+        self._q_imu2cam = None
+        self._q_imu2cam_direction = None
         self.net = sys_utils.Network()
         self.text_layout = TextLayouter(
             "",
@@ -138,11 +147,24 @@ class UIStatus(GuideKeyMixin, UIModule):
 
                 self.status_dict["IMU qw,qx"] = f"{imu.quat.w:>.2f},{imu.quat.x : >.2f}"
                 self.status_dict["IMU qy,qz"] = f"{imu.quat.y:>.2f},{imu.quat.z : >.2f}"
+                tube = self._tube_attitude_degrees(imu.quat)
+                if tube is None:
+                    self.status_dict["T.ALT"] = "--"
+                    self.status_dict["T.TILT"] = "--"
+                    self.status_dict["T.HDG"] = "--"
+                else:
+                    alt, tilt, hdg = tube
+                    self.status_dict["T.ALT"] = f"{alt:+.1f}"
+                    self.status_dict["T.TILT"] = f"{tilt:+.1f}"
+                    self.status_dict["T.HDG"] = f"{hdg:.1f}"
         else:
             self.status_dict["IMU"] = "--"
             self.status_dict["IMU CAL"] = "--"
             self.status_dict["IMU qw,qx"] = "--"
             self.status_dict["IMU qy,qz"] = "--"
+            self.status_dict["T.ALT"] = "--"
+            self.status_dict["T.TILT"] = "--"
+            self.status_dict["T.HDG"] = "--"
 
         location = self.shared_state.location()
         sats = self.shared_state.sats()
@@ -183,6 +205,39 @@ class UIStatus(GuideKeyMixin, UIModule):
                 self.status_dict["SSID"] = self.net.get_ap_name()
             else:
                 self.status_dict["SSID"] = self.net.get_connected_ssid()
+
+    def _tube_attitude_degrees(self, imu_quat):
+        """Gravity-referenced telescope-tube attitude from the IMU quaternion.
+
+        Applies the screen_direction mounting rotation, then reports the tube
+        boresight altitude/heading and the lateral tilt — the roll a spirit
+        level laid across the tube would show. Unlike body-frame Euler angles
+        these do not mix under pitch and stay finite near the zenith, so they
+        can be cross-checked directly against a phone level/compass on the
+        tube. Heading shares the IMU's relative yaw reference (no
+        magnetometer), so only heading *changes* are meaningful.
+        """
+        try:
+            screen_direction = self.config_object.get_option(
+                "screen_direction", "right"
+            )
+            if (
+                self._q_imu2cam is None
+                or self._q_imu2cam_direction != screen_direction
+            ):
+                self._q_imu2cam = ImuDeadReckoning._q_imu2cam(screen_direction)
+                self._q_imu2cam_direction = screen_direction
+            q = (imu_quat * self._q_imu2cam).normalized()
+            bore = q * quaternion.quaternion(0, 0, 0, 1) * q.conj()
+            lateral = q * quaternion.quaternion(0, 1, 0, 0) * q.conj()
+        except (ValueError, ZeroDivisionError):
+            return None
+        if not all(math.isfinite(v) for v in (bore.z, bore.x, bore.y, lateral.z)):
+            return None
+        alt = math.degrees(math.asin(max(-1.0, min(1.0, bore.z))))
+        hdg = math.degrees(math.atan2(bore.x, bore.y)) % 360.0
+        tilt = math.degrees(math.asin(max(-1.0, min(1.0, lateral.z))))
+        return alt, tilt, hdg
 
     def update(self, force=False):
         self.update_status_dict()

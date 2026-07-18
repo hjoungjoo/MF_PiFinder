@@ -353,14 +353,13 @@ def reset_pointing(ui_module: UIModule) -> None:
     aligned mount, else the IMU fallback.
     """
     try:
-        utils.create_path(utils.data_dir)
-        request_file = utils.data_dir / "pointing_reset_request.json"
+        utils.create_path(utils.runtime_dir)
+        request_file = utils.runtime_dir / "pointing_reset_request.json"
         payload = {"requested_at": time.time(), "source": "lcd"}
         tmp_path = request_file.with_name(f"{request_file.name}.{os.getpid()}.tmp")
         with open(tmp_path, "w", encoding="utf-8") as reset_out:
             json.dump(payload, reset_out)
             reset_out.flush()
-            os.fsync(reset_out.fileno())
         tmp_path.replace(request_file)
         ui_module.message(_("Pointing Reset"), 1)
     except OSError:

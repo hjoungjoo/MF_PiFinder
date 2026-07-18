@@ -1399,6 +1399,122 @@ def reset_onstep_alignment_exclusive(
     return result
 
 
+# OnStepX reboot (:ERESET#) timing, measured 2026-07-18: the controller drops
+# off the network for ~35s. Wait for it to actually go down before probing so
+# a not-yet-rebooted controller cannot answer the readiness probe.
+ONSTEP_REBOOT_SETTLE_SECONDS = 10.0
+ONSTEP_REBOOT_WAIT_SECONDS = 90.0
+
+
+def _wait_for_onstep_network_ready(
+    host: str,
+    port: int,
+    timeout: float = ONSTEP_REBOOT_WAIT_SECONDS,
+) -> bool:
+    """Wait for the OnStep TCP command port to accept connections again."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, int(port)), timeout=2.0):
+                return True
+        except OSError:
+            time.sleep(2.0)
+    return False
+
+
+def reboot_onstep_controller_exclusive(
+    connection_type: str,
+    network_host: str = "",
+    network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
+    serial_port: str = "",
+    server_host: str = DEFAULT_INDI_SERVER_HOST,
+    server_port: int = DEFAULT_INDI_SERVER_PORT,
+) -> dict[str, Any]:
+    """
+    Stop INDI, send the OnStepX ``:ERESET#`` reboot command directly, wait for
+    the controller to come back, then restart INDI and reconnect the driver.
+
+    This is the verified recovery for the wedged OnStepX state where
+    sync/GoTo/tracking commands are refused while manual moves still work (see
+    docs/mf_goto_tracking_recovery_analysis_ko.md). The controller loses
+    date/time on reboot (no RTC), so the caller must re-run the mount init
+    (location/time sync, unpark, tracking) after this returns.
+    """
+    commands = [":ERESET#"]
+    result: dict[str, Any] = {
+        "ok": False,
+        "commands": commands,
+        "responses": [],
+        "stop_result": None,
+        "start_result": None,
+        "connect_result": None,
+    }
+
+    stop_result = set_indi_web_manager_running("stop")
+    result["stop_result"] = stop_result
+    if not stop_result["ok"]:
+        result["stderr"] = (
+            stop_result.get("stderr") or "Could not stop INDI Web Manager"
+        )
+        return result
+
+    try:
+        time.sleep(1.0)
+        connection_type = connection_type.strip().lower()
+        if connection_type == ONSTEP_CONNECTION_USB:
+            if not serial_port:
+                raise RuntimeError("No OnStep serial port configured")
+            # :ERESET# has no reply; the controller reboots immediately.
+            result["responses"] = _send_onstep_lx200_serial_commands(
+                serial_port, commands
+            )
+            time.sleep(ONSTEP_REBOOT_SETTLE_SECONDS + ONSTEP_REBOOT_WAIT_SECONDS / 2)
+        else:
+            if not network_host:
+                raise RuntimeError("No OnStep network host configured")
+            result["responses"] = _send_onstep_lx200_network_commands(
+                network_host,
+                int(network_port),
+                commands,
+            )
+            time.sleep(ONSTEP_REBOOT_SETTLE_SECONDS)
+            if not _wait_for_onstep_network_ready(
+                network_host, int(network_port)
+            ):
+                raise RuntimeError(
+                    "OnStep controller did not come back after reboot "
+                    f"({network_host}:{network_port})"
+                )
+        result["ok"] = True
+    except Exception as exc:
+        result["stderr"] = str(exc)
+    finally:
+        start_result = set_indi_web_manager_running("start")
+        result["start_result"] = start_result
+        if start_result["ok"]:
+            time.sleep(3.0)
+            result["connect_result"] = connect_indi_onstep_driver(
+                server_host=server_host,
+                server_port=server_port,
+            )
+
+    if not result["ok"]:
+        return result
+    if result["start_result"] and not result["start_result"].get("ok"):
+        result["ok"] = False
+        result["stderr"] = (
+            result["start_result"].get("stderr") or "Could not restart INDI"
+        )
+    elif result["connect_result"] and not result["connect_result"].get("ok"):
+        result["ok"] = False
+        result["stderr"] = (
+            result["connect_result"].get("stderr")
+            or result["connect_result"].get("stdout")
+            or "Could not reconnect INDI OnStep driver"
+        )
+    return result
+
+
 def connect_indi_onstep_driver(
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
