@@ -215,6 +215,9 @@ anchor_imu    = IMU fallback RA/Dec at sync time (delta reference)
 
 applied_delta = IMU delta accumulated through the rate gate (see below)
 current       = live mount readback + applied_delta
+                (applied in the mount's NATIVE AXIS FRAME — alt/az mount in
+                alt/az space, EQ mount in RA/Dec space; see "Delta application
+                frame" below)
 ```
 
 (Changed 2026-07-16: the base moved from the anchor-time mount snapshot to the
@@ -231,6 +234,103 @@ Intent:
 The anchor (and with it the applied disturbance offset) is reset only when no
 anchor exists or the sync key changes — i.e. a sync re-established the mount
 frame. Mount readback movement alone no longer resets it.
+
+### Delta application frame — mount-type dependent (fixed 2026-07-19)
+
+**Hardware reproduction (indoor, no plate solve, hand-only az swing):** with a
+standing IMU-vs-mount separation of ~52 deg, an az-only hand swing (alt stayed
+7–17 deg the whole time) drove the fused coordinate to RA 301 / Dec −46 — a
+position that never rises above the horizon at the observing site. In SkySafari
+the telescope marker dove below the ground while the physical scope pointed
+well above the horizon. The rate gate was NOT the culprit (the delta was
+accumulating correctly in `fast_follow`); the defect was in how the applied
+delta was converted into the fused RA/Dec.
+
+**Old (broken) application** — a component-wise RA/Dec transplant:
+
+```text
+east_delta = applied_ra × cos(dec_imu)          # on-sky angle at the IMU's dec (~60°)
+fused_dec  = mount_dec + applied_dec            # added at the mount's dec (~20°)
+fused_ra   = mount_ra + east_delta / cos(fused_dec)
+```
+
+This is a first-order tangent-plane approximation: it measures a spherical
+displacement at the IMU's pointing (declination ~60 in the repro) and re-plants
+it at the mount's pointing (declination ~20). It is fine for the deltas it was
+designed for (arcminute guide pulses, small bumps) but diverges wildly when the
+delta reaches tens of degrees across a large IMU↔mount separation — an az-only
+physical rotation then produces a huge false Dec component and the fused
+coordinate leaves the physically reachable sky.
+
+**New application — the delta is tracked and applied in the MOUNT'S NATIVE
+AXIS FRAME**, selected from the `mount_type` config (`"alt" and "az" in
+mount_type` → alt/az frame, anything else → equatorial frame):
+
+Calculation order, alt/az mount (`fusion_frame = "altaz"`):
+
+```text
+1. Context: current_state() stores (dt, observer location, mount_type) as the
+   fusion context. Missing dt/location → fall back to the equatorial branch.
+2. Tracker coords: raw (unsmoothed) IMU alt/az from imu.metadata
+   raw_az/raw_alt, ordered (az, alt) — longitude-like axis first, mirroring
+   (ra, dec).
+3. Rate gate (unchanged logic, shared code):
+     step_az  = wrap180(az_t − az_(t−1))
+     step_alt = alt_t − alt_(t−1)
+     rate     = great_circle_sep(prev, now) / dt      # same spherical formula
+   fast_follow episodes accumulate (applied_az, applied_alt); hold keeps the
+   offset; a frame change resets the tracker (an offset accumulated in one
+   frame is meaningless in the other).
+4. Mount readback → alt/az:
+     (mount_alt, mount_az) = radec_to_altaz(mount_ra, mount_dec, dt, atmos=False)
+5. Apply the delta in alt/az:
+     fused_az  = (mount_az + applied_az) mod 360
+     fused_alt = mount_alt + applied_alt
+   Pole folding: if fused_alt > 90 → fused_alt = 180 − fused_alt, az += 180;
+   if fused_alt < −90 → fused_alt = −180 − fused_alt, az += 180.
+6. Back to RA/Dec **differentially** (bias cancellation):
+     (base_ra,  base_dec)  = altaz_to_radec(mount_alt, mount_az, dt)
+     (moved_ra, moved_dec) = altaz_to_radec(fused_alt, fused_az, dt)
+     fused_ra  = (mount_ra + wrap180(moved_ra − base_ra)) mod 360
+     fused_dec = clamp(mount_dec + (moved_dec − base_dec), ±89.9)
+   Why differential: radec_to_altaz (erfa atco13, ICRS in) and altaz_to_radec
+   (skyfield from_altaz, epoch-of-date out) are NOT exact inverses — the
+   absolute round trip carries a ~0.3 deg epoch/precession bias. The
+   differential form cancels it, and guarantees fused ≡ mount readback when
+   the applied delta is zero.
+7. Any conversion failure → equatorial fallback
+   (`fusion_frame = "equatorial_fallback"` in metadata) rather than dropping
+   the fused source.
+```
+
+Result: an az-only hand swing produces an az-only fused change, and the fused
+coordinate can never dive below the horizon-equivalent of where the scope
+physically points.
+
+Calculation order, EQ mount (`fusion_frame = "equatorial"`):
+
+```text
+fused_ra  = (mount_ra + applied_ra) mod 360     # NO cos(dec) rescale
+fused_dec = clamp(mount_dec + applied_dec, ±89.9)
+```
+
+A hand rotation about the polar axis changes the pointing's RA by the rotation
+angle at ANY declination, and a rotation about the dec axis changes dec alone —
+so on an EQ mount the component-wise addition IS the exact per-axis formula,
+and the old `cos(dec_imu)/cos(dec_mount)` rescaling was wrong there too (it is
+removed).
+
+Metadata: `fusion_frame` (`altaz` / `equatorial` / `equatorial_fallback`),
+`imu_delta_applied_az/alt` + `mount_alt/az` + `fused_alt/az` (alt/az frame),
+`imu_delta_applied_ra/dec` (equatorial frame, keys unchanged).
+
+**Hardware verification (2026-07-19, indoor, hand-only az swings after a
+pointing reset):** 8 swings up to −144 deg az with zero mount motion. The fused
+alt/az tracked the IMU alt/az with median error 0.11/0.13 deg (max 0.66/1.83);
+fused altitude stayed exactly in the IMU's 6.2–14.1 deg range with **zero
+below-horizon samples**. Regression tests:
+`test_altaz_mount_hand_swing_applies_delta_in_altaz_space`,
+`test_eq_mount_delta_stays_component_additive_without_cos_rescale`.
 
 ### IMU-delta rate gate (added 2026-07-12)
 
@@ -275,8 +375,9 @@ head/tail of a real event. Slips creeping entirely below 0.03 remain invisible
   continuously, absorbing the BNO055's post-slew re-convergence slide
   (added 2026-07-17, see "Mount-motion isolation hardening" below).
 - Only a sync (sync-key change) resets the tracker and the applied delta.
-- Diagnostics in metadata: `imu_delta_applied_ra/dec`, `imu_delta_gate`,
-  `imu_delta_rate_deg_per_sec`.
+- Diagnostics in metadata: `imu_delta_gate`, `imu_delta_rate_deg_per_sec`, and
+  frame-specific applied keys (`imu_delta_applied_az/alt` on an alt/az mount,
+  `imu_delta_applied_ra/dec` on an EQ mount — see "Delta application frame").
 - Limitation: a real external force slower than the enter gate (0.03 deg/s)
   is invisible without a solve. At night SOLVED_PRIMARY takes precedence
   anyway.
@@ -588,3 +689,10 @@ Test coverage includes:
 - SkySafari target/sync coordinates are used as requested.
 - SkySafari guide movement persists while keepalive is active and stops on stop
   commands.
+- Alt/az mount: an az-only hand swing applies the delta in alt/az space (fused
+  az follows, alt unchanged, never below horizon)
+  (`test_altaz_mount_hand_swing_applies_delta_in_altaz_space`, added
+  2026-07-19).
+- EQ mount: the delta stays component-additive with no cos(dec) rescale
+  (`test_eq_mount_delta_stays_component_additive_without_cos_rescale`, added
+  2026-07-19).

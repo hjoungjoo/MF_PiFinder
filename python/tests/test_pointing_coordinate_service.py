@@ -730,3 +730,87 @@ def test_gate_hysteresis_captures_weak_slip_head_and_tail(monkeypatch):
     # Applied dec offset = 0.033 + 0.060 + 0.020 only.
     assert released.metadata["imu_delta_applied_dec"] == pytest.approx(0.113)
     assert released.radec()[1] == pytest.approx(10.0 + 0.113)
+
+
+def _fused_imu_altaz(alt_deg, az_deg, dt):
+    """IMU sample carrying raw alt/az metadata, radec derived for consistency."""
+    from PiFinder.calc_utils import sf_utils
+
+    ra_deg, dec_deg = sf_utils.altaz_to_radec(alt_deg, az_deg, dt)
+    return CoordinateSample(
+        ra_deg=ra_deg % 360.0,
+        dec_deg=dec_deg,
+        alt_deg=alt_deg,
+        az_deg=az_deg,
+        source=SOURCE_IMU,
+        valid=True,
+        timestamp=100.0,
+        metadata={"raw_alt": alt_deg, "raw_az": az_deg},
+    )
+
+
+def test_altaz_mount_hand_swing_applies_delta_in_altaz_space():
+    """Regression for the 2026-07-19 hardware repro: on an alt/az mount an
+    az-only hand swing must produce an az-only fused change, never the
+    below-horizon dive of the old RA/Dec component transplant."""
+    from PiFinder.calc_utils import sf_utils
+
+    dt = datetime.datetime(2026, 7, 18, 15, 0, tzinfo=datetime.timezone.utc)
+    location = SimpleNamespace(lat=37.527, lon=127.109, altitude=50.0)
+    sf_utils.set_location(location.lat, location.lon, location.altitude)
+
+    service = PointingCoordinateService()
+    service._fusion_context = {
+        "dt": dt,
+        "location": location,
+        "mount_type": "Alt/Az",
+    }
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    # Mount synced somewhere in the west at alt ~20.
+    mount_ra, mount_dec = sf_utils.altaz_to_radec(20.0, 275.0, dt)
+    mount = _fused_mount(mount_ra % 360.0, mount_dec)
+
+    anchor = service._select_current(
+        solved, _fused_imu_altaz(15.0, 340.0, dt), mount, CoordinateHealth()
+    )
+    assert anchor.source == SOURCE_FUSED
+    assert anchor.metadata["fusion_frame"] == "altaz"
+    assert anchor.radec() == pytest.approx((mount_ra % 360.0, mount_dec))
+
+    # Hand-swing az by +60 deg at constant alt (fast: consecutive ticks).
+    moved = service._select_current(
+        solved, _fused_imu_altaz(15.0, 40.0, dt), mount, CoordinateHealth()
+    )
+    assert moved.source == SOURCE_FUSED
+    moved_ra, moved_dec = moved.radec()
+    moved_alt, moved_az = sf_utils.radec_to_altaz(moved_ra, moved_dec, dt, atmos=False)
+    # Az follows the swing; alt stays at the mount's altitude.
+    assert moved_az == pytest.approx((275.0 + 60.0) % 360.0, abs=1.5)
+    assert moved_alt == pytest.approx(20.0, abs=1.5)
+    # The old transplant dove far below the horizon on exactly this move.
+    assert moved_alt > 0.0
+
+
+def test_eq_mount_delta_stays_component_additive_without_cos_rescale():
+    """EQ mount: a polar-axis rotation is the same RA change at any dec, so
+    the delta must be added component-wise with no cos(dec) transplant."""
+    service = PointingCoordinateService()
+    service._fusion_context = {
+        "dt": None,
+        "location": None,
+        "mount_type": "Equatorial",
+    }
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    mount = _fused_mount(10.0, 10.0)
+
+    first = service._select_current(
+        solved, _fused_imu(100.0, 60.0), mount, CoordinateHealth()
+    )
+    assert first.metadata["fusion_frame"] == "equatorial"
+    assert first.radec() == pytest.approx((10.0, 10.0))
+
+    moved = service._select_current(
+        solved, _fused_imu(110.0, 60.0), mount, CoordinateHealth()
+    )
+    # +10 deg RA at the IMU must be +10 deg RA on the mount, dec unchanged.
+    assert moved.radec() == pytest.approx((20.0, 10.0), abs=1e-6)

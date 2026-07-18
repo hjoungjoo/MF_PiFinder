@@ -219,6 +219,8 @@ anchor_imu   = sync 시점 IMU fallback RA/Dec (delta 기준점)
 
 applied_delta = 속도 게이트를 통과해 누적된 IMU delta (아래 참조)
 current = 실시간 mount readback + applied_delta
+          (마운트의 네이티브 축 프레임에서 적용 — alt/az 마운트는 alt/az 공간,
+          EQ 마운트는 RA/Dec 공간; 아래 "delta 적용 프레임" 참조)
 ```
 
 (2026-07-16 수정: base가 anchor 시점의 mount 좌표 스냅숏에서 **실시간 mount
@@ -241,6 +243,91 @@ anchor reset 조건 (reset 시 applied 외란 오프셋도 함께 초기화):
 mount readback 이동은 더 이상 reset 사유가 아니다. fused의 base가 실시간
 readback이므로(아래 2026-07-16 수정) 펄스/슬루는 base를 통해 바로 반영되고,
 readback 이동으로 reset하면 실제 물리 외란 오프셋이 소리 없이 지워진다.
+
+### delta 적용 프레임 — 마운트 타입별 (2026-07-19 수정)
+
+**실장비 재현 (실내, plate solve 없음, 손으로만 az 스윙):** IMU↔mount 괴리가
+~52° 누적된 상태에서 az만 손으로 돌리자(스코프 alt는 내내 7~17° 유지), fused
+좌표가 RA 301 / Dec −46 — 관측지에서 **절대 지평선 위로 뜰 수 없는 좌표** —
+까지 갔다. 스카이사파리에선 스코프가 지평선 위를 가리키는데 마커가 땅속으로
+들어갔다. 속도 게이트는 무죄였다(`fast_follow`로 delta는 정상 누적) — 결함은
+누적된 delta를 fused RA/Dec로 **변환하는 수식**에 있었다.
+
+**구(결함) 적용식** — RA/Dec 성분별 이식:
+
+```text
+east_delta = applied_ra × cos(dec_imu)          # IMU가 있는 dec(~60°)에서 각도 환산
+fused_dec  = mount_dec + applied_dec            # mount의 dec(~20°)에 그대로 덧셈
+fused_ra   = mount_ra + east_delta / cos(fused_dec)
+```
+
+이건 1차 접평면 근사다: IMU의 지향점(재현에서 dec ~60)에서 잰 구면 변위를
+mount의 지향점(dec ~20)에 옮겨 심는다. 설계 의도였던 분각 수준 delta(가이드
+펄스, 작은 범프)에는 문제없지만, 큰 IMU↔mount 괴리 위에서 delta가 수십 도가
+되면 구면 왜곡이 폭발한다 — az만 도는 물리 회전이 거대한 가짜 Dec 성분을 만들어
+fused가 물리적으로 도달 불가능한 하늘 밖으로 나간다.
+
+**신 적용식 — delta를 마운트의 네이티브 축 프레임에서 추적·적용한다.**
+프레임은 `mount_type` config로 선택(`mount_type`에 "alt"와 "az"가 있으면
+alt/az 프레임, 아니면 equatorial 프레임):
+
+계산 순서, Alt/Az 마운트 (`fusion_frame = "altaz"`):
+
+```text
+1. 컨텍스트: current_state()가 (dt, 관측지 location, mount_type)을 융합
+   컨텍스트로 저장. dt/location 없으면 equatorial 분기로 폴백.
+2. tracker 좌표: imu.metadata의 raw(비스무딩) alt/az를 (az, alt) 순서로 사용
+   — 경도형 축 먼저, (ra, dec) 순서와 대응.
+3. 속도 게이트(로직 동일, 코드 공유):
+     step_az  = wrap180(az_t − az_(t−1))
+     step_alt = alt_t − alt_(t−1)
+     rate     = 대원거리(prev, now) / dt          # 같은 구면 공식
+   fast_follow 에피소드가 (applied_az, applied_alt)를 누적; hold는 오프셋
+   유지; 프레임이 바뀌면 tracker 리셋(다른 프레임에서 누적한 오프셋은 무의미).
+4. mount readback → alt/az 변환:
+     (mount_alt, mount_az) = radec_to_altaz(mount_ra, mount_dec, dt, atmos=False)
+5. alt/az 공간에서 delta 적용:
+     fused_az  = (mount_az + applied_az) mod 360
+     fused_alt = mount_alt + applied_alt
+   천정/천저 폴딩: fused_alt > 90 → fused_alt = 180 − fused_alt, az += 180;
+   fused_alt < −90 → fused_alt = −180 − fused_alt, az += 180.
+6. RA/Dec 복귀는 **차분식** (편향 상쇄):
+     (base_ra,  base_dec)  = altaz_to_radec(mount_alt, mount_az, dt)
+     (moved_ra, moved_dec) = altaz_to_radec(fused_alt, fused_az, dt)
+     fused_ra  = (mount_ra + wrap180(moved_ra − base_ra)) mod 360
+     fused_dec = clamp(mount_dec + (moved_dec − base_dec), ±89.9)
+   차분을 쓰는 이유: radec_to_altaz(erfa atco13, ICRS 입력)와
+   altaz_to_radec(skyfield from_altaz, epoch-of-date 출력)는 정확한 역함수가
+   아니어서 절대 왕복에 ~0.3°의 세차/epoch 편향이 실린다. 차분식은 이를
+   상쇄하고, applied delta = 0이면 fused ≡ mount readback을 보장한다.
+7. 변환 예외 발생 시 equatorial 폴백(metadata
+   `fusion_frame = "equatorial_fallback"`) — fused 소스를 버리지 않는다.
+```
+
+결과: az-only 손 스윙은 az-only fused 변화가 되고, fused 좌표는 스코프의
+물리적 지향 고도 아래로 절대 내려갈 수 없다.
+
+계산 순서, EQ 마운트 (`fusion_frame = "equatorial"`):
+
+```text
+fused_ra  = (mount_ra + applied_ra) mod 360     # cos(dec) 재스케일 없음
+fused_dec = clamp(mount_dec + applied_dec, ±89.9)
+```
+
+극축 주위 손 회전은 **어느 dec에서든** 회전각만큼 지향 RA를 바꾸고, dec축
+회전은 dec만 바꾼다 — EQ 마운트에서는 성분별 가산이 곧 축별 정확식이며, 구
+공식의 `cos(dec_imu)/cos(dec_mount)` 재스케일은 여기서도 틀린 것이라 제거했다.
+
+metadata: `fusion_frame`(`altaz` / `equatorial` / `equatorial_fallback`),
+alt/az 프레임은 `imu_delta_applied_az/alt` + `mount_alt/az` + `fused_alt/az`,
+equatorial 프레임은 `imu_delta_applied_ra/dec`(기존 키 유지).
+
+**실장비 검증 (2026-07-19, 실내, pointing reset 후 손 az 스윙만):** 마운트
+모션 0건으로 최대 −144° az 스윙 8회. fused alt/az가 IMU alt/az를 median
+0.11/0.13°(max 0.66/1.83°) 오차로 추종했고, fused 고도는 IMU 고도 범위
+6.2~14.1°와 정확히 일치 — **지평선 아래 샘플 0건**. 회귀 테스트:
+`test_altaz_mount_hand_swing_applies_delta_in_altaz_space`,
+`test_eq_mount_delta_stays_component_additive_without_cos_rescale`.
 
 ### IMU delta 속도 게이트 (2026-07-12 추가)
 
@@ -279,8 +366,9 @@ head/tail까지 포착한다. 0.03 미만으로만 기어가는 극미세 슬립
   흡수하기 위해 rate가 탈출 속도 미만으로 1.5초 연속 유지될 때까지 누적을
   보류한다 (2026-07-17 추가, 아래 "마운트 이동 격리 보강" 참고).
 - sync(sync key 변경) 시에만 tracker와 applied가 초기화된다.
-- 진단 metadata: `imu_delta_applied_ra/dec`, `imu_delta_gate`,
-  `imu_delta_rate_deg_per_sec`.
+- 진단 metadata: `imu_delta_gate`, `imu_delta_rate_deg_per_sec`, 그리고
+  프레임별 applied 키(alt/az 마운트는 `imu_delta_applied_az/alt`, EQ 마운트는
+  `imu_delta_applied_ra/dec` — "delta 적용 프레임" 참조).
 - 한계: 진입 게이트(0.03 deg/s)보다 느린 실제 외력은 solve 없이는 보이지
   않는다. 야간에는 solve(SOLVED_PRIMARY)가 우선되므로 영향 없다.
 - 실장비 end-to-end 검증(2026-07-12, 사용자가 경통을 실제로 밀어 테스트): 밀기
@@ -584,3 +672,9 @@ python -m pytest \
 - IMU 작은 흔들림 smoothing 적용
 - SkySafari target/sync 좌표는 요청 좌표 그대로 사용
 - SkySafari guide move는 keepalive 중에는 지속되고 stop command에서 정지
+- Alt/Az 마운트: az-only 손 스윙이 alt/az 공간에서 적용됨(fused az 추종, alt
+  불변, 지평선 아래 불가)
+  (`test_altaz_mount_hand_swing_applies_delta_in_altaz_space`, 2026-07-19 추가)
+- EQ 마운트: delta가 cos(dec) 재스케일 없는 성분별 가산 유지
+  (`test_eq_mount_delta_stays_component_additive_without_cos_rescale`,
+  2026-07-19 추가)

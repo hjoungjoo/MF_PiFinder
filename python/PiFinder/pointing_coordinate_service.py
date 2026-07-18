@@ -257,6 +257,10 @@ class PointingCoordinateService:
         self._last_mount_motion_radec: Optional[Tuple[float, float]] = None
         self._last_mount_sample_ts: Optional[float] = None
         self._imu_delta_applied_snapshot: Optional[Tuple[float, float]] = None
+        # Frame context for the mount+IMU-delta fusion (dt, location,
+        # mount_type), refreshed by current_state(). None (e.g. direct
+        # _select_current calls in tests) falls back to the equatorial frame.
+        self._fusion_context: Optional[dict[str, Any]] = None
         self._last_health_mount_radec: Optional[Tuple[float, float]] = None
         self._last_health_imu_altaz: Optional[Tuple[float, float]] = None
         self._state_lock = threading.RLock()
@@ -608,6 +612,18 @@ class PointingCoordinateService:
         mount_status = mount_status_provider() if mount_enabled and mount_status_provider else {}
         mount = self.mount_sample_from_status(mount_status)
 
+        # Context for the mount+IMU-delta fusion: the delta must be applied in
+        # the mount's native axis frame (alt/az mount -> alt/az space, EQ mount
+        # -> RA/Dec space), and the alt/az branch needs location + time for the
+        # RA/Dec <-> alt/az conversions.
+        self._fusion_context = {
+            "dt": dt,
+            "location": self.observer_location(
+                shared_state, default_location_provider
+            ),
+            "mount_type": str(config_get("mount_type", "Alt/Az")),
+        }
+
         health = CoordinateHealth()
         current = self._select_current(solved, imu, mount, health)
         mode, weights = self._mode_and_weights(solved, imu, mount, current)
@@ -773,17 +789,47 @@ class PointingCoordinateService:
         # base is the LIVE mount readback (not the anchor snapshot), so guide
         # pulses and slews move the fused coordinate directly and never need a
         # re-anchor that would wipe the disturbance offset.
-        applied_ra, applied_dec, gate_state, imu_rate = self._gated_imu_delta(
-            self._imu_tracker_radec(imu)
+        #
+        # The delta is tracked and applied in the MOUNT'S NATIVE AXIS FRAME
+        # (frame chosen from the mount_type config):
+        # - alt/az mount: a hand push rotates about the alt/az axes, so the
+        #   delta is (az, alt) and is added to the mount readback's alt/az. An
+        #   az-only push then stays az-only in the fused coordinate. The old
+        #   approach (component-wise RA/Dec addition) linearized a spherical
+        #   displacement measured at the IMU's declination onto the mount's
+        #   declination; for a large hand swing across a big IMU-vs-mount
+        #   separation this produced impossible below-horizon coordinates
+        #   (reproduced on hardware 2026-07-19: scope alt never below 7 deg,
+        #   fused dec dove to -46).
+        # - EQ mount: a rotation about the polar axis changes RA by the same
+        #   angle at any declination, and the dec-axis changes dec alone, so
+        #   the delta is (RA, Dec) added component-wise WITHOUT any cos(dec)
+        #   rescaling.
+        coords, frame = self._imu_tracker_coords(imu)
+        applied_1, applied_2, gate_state, imu_rate = self._gated_imu_delta(
+            coords, frame=frame
         )
-        east_delta = applied_ra * math.cos(math.radians(imu_radec[1]))
-        dec_deg = max(-89.9, min(89.9, mount_radec[1] + applied_dec))
-        cos_dec = max(0.05, abs(math.cos(math.radians(dec_deg))))
-        ra_deg = (mount_radec[0] + east_delta / cos_dec) % 360.0
+
+        fused_radec: Optional[Tuple[float, float]] = None
+        frame_metadata: dict[str, Any] = {"fusion_frame": frame}
+        if frame == "altaz":
+            fused_radec = self._apply_altaz_delta(
+                mount_radec, applied_1, applied_2, frame_metadata, anchor, imu
+            )
+            if fused_radec is None:
+                # Conversion failed (location/time raced away): fall back to
+                # the equatorial component addition rather than dropping the
+                # fused source entirely.
+                frame = "equatorial"
+                frame_metadata["fusion_frame"] = "equatorial_fallback"
+        if fused_radec is None:
+            dec_deg = max(-89.9, min(89.9, mount_radec[1] + applied_2))
+            ra_deg = (mount_radec[0] + applied_1) % 360.0
+            fused_radec = (ra_deg, dec_deg)
 
         return CoordinateSample(
-            ra_deg=ra_deg,
-            dec_deg=dec_deg,
+            ra_deg=fused_radec[0],
+            dec_deg=fused_radec[1],
             epoch="session",
             source=SOURCE_FUSED,
             quality=QUALITY_MEDIUM,
@@ -802,8 +848,17 @@ class PointingCoordinateService:
                 "anchor_imu_dec": anchor["imu_dec"],
                 "imu_delta_ra": imu_delta_ra,
                 "imu_delta_dec": imu_delta_dec,
-                "imu_delta_applied_ra": applied_ra,
-                "imu_delta_applied_dec": applied_dec,
+                # Frame-specific applied keys: ra/dec for the equatorial frame
+                # (kept for compatibility), az/alt for the alt/az frame (set in
+                # frame_metadata by _apply_altaz_delta).
+                **(
+                    {
+                        "imu_delta_applied_ra": applied_1,
+                        "imu_delta_applied_dec": applied_2,
+                    }
+                    if frame == "equatorial"
+                    else {}
+                ),
                 "imu_delta_gate": gate_state,
                 "imu_delta_rate_deg_per_sec": imu_rate,
                 "mount_ra": mount_radec[0],
@@ -813,15 +868,103 @@ class PointingCoordinateService:
                 "absolute_mount_imu_separation_degrees": separation,
                 "sync_key": anchor["sync_key"],
                 "motion_active": False,
+                **frame_metadata,
             },
         )
 
+    def _apply_altaz_delta(
+        self,
+        mount_radec: Tuple[float, float],
+        applied_az: float,
+        applied_alt: float,
+        frame_metadata: dict[str, Any],
+        anchor: dict[str, Any],
+        imu: CoordinateSample,
+    ) -> Optional[Tuple[float, float]]:
+        """Add the (az, alt) delta to the mount readback in alt/az space.
+
+        Returns the fused RA/Dec, or None when the required location/time
+        context is unavailable or a conversion fails (caller falls back to the
+        equatorial component addition).
+
+        The RA/Dec is produced DIFFERENTIALLY: fused = mount_radec +
+        (radec(mount_altaz + delta) - radec(mount_altaz)). radec_to_altaz and
+        altaz_to_radec are not exact inverses (epoch/precession handling
+        differs by ~0.3 deg), so an absolute round trip would shift the fused
+        coordinate off the mount readback even at zero delta; the differential
+        form cancels that bias and guarantees fused == mount when the applied
+        delta is zero. atmos=False keeps the conversions refraction-free.
+        """
+        ctx = self._fusion_context or {}
+        dt = ctx.get("dt")
+        location = ctx.get("location")
+        if dt is None or location is None:
+            return None
+        try:
+            sf_utils.set_location(location.lat, location.lon, location.altitude)
+            mount_alt, mount_az = sf_utils.radec_to_altaz(
+                mount_radec[0], mount_radec[1], dt, atmos=False
+            )
+            if mount_alt is None or mount_az is None:
+                return None
+            fused_az = (mount_az + applied_az) % 360.0
+            fused_alt = mount_alt + applied_alt
+            # Pole crossing: fold the altitude back into [-90, 90] and swing
+            # the azimuth to the far side.
+            if fused_alt > 90.0:
+                fused_alt = 180.0 - fused_alt
+                fused_az = (fused_az + 180.0) % 360.0
+            elif fused_alt < -90.0:
+                fused_alt = -180.0 - fused_alt
+                fused_az = (fused_az + 180.0) % 360.0
+            base_ra, base_dec = sf_utils.altaz_to_radec(mount_alt, mount_az, dt)
+            moved_ra, moved_dec = sf_utils.altaz_to_radec(fused_alt, fused_az, dt)
+            ra_deg = (
+                mount_radec[0] + _wrap_angle_delta_degrees(moved_ra - base_ra)
+            ) % 360.0
+            dec_deg = max(
+                -89.9, min(89.9, mount_radec[1] + (moved_dec - base_dec))
+            )
+        except Exception:
+            logger.debug("Alt/Az fusion conversion failed", exc_info=True)
+            return None
+
+        frame_metadata.update(
+            {
+                "mount_alt": mount_alt,
+                "mount_az": mount_az,
+                "fused_alt": fused_alt,
+                "fused_az": fused_az,
+                "imu_delta_applied_az": applied_az,
+                "imu_delta_applied_alt": applied_alt,
+            }
+        )
+        anchor_alt = anchor.get("imu_alt")
+        anchor_az = anchor.get("imu_az")
+        imu_altaz = self._imu_raw_altaz(imu)
+        if anchor_alt is not None and anchor_az is not None and imu_altaz is not None:
+            frame_metadata["imu_delta_az"] = _wrap_angle_delta_degrees(
+                imu_altaz[1] - anchor_az
+            )
+            frame_metadata["imu_delta_alt"] = imu_altaz[0] - anchor_alt
+        return ra_deg % 360.0, dec_deg
+
     def _gated_imu_delta(
-        self, imu_radec: Tuple[float, float], *, accumulate: bool = True
+        self,
+        coords: Tuple[float, float],
+        *,
+        frame: str = "equatorial",
+        accumulate: bool = True,
     ) -> Tuple[float, float, str, float]:
         """Accumulate only fast IMU motion into the applied fusion delta.
 
-        Returns (applied_delta_ra, applied_delta_dec, gate_state, rate_deg_s).
+        ``coords`` are in the mount's native axis frame: (ra, dec) for the
+        equatorial frame, (az, alt) for the alt/az frame — longitude-like axis
+        first in both, so the wrap and spherical-rate math is shared. A frame
+        change resets the tracker (the accumulated offset is meaningless in
+        the other frame).
+
+        Returns (applied_delta_1, applied_delta_2, gate_state, rate_deg_s).
         The gate uses rate hysteresis: an accumulation episode starts above
         IMU_DELTA_ENTER_RATE_DEG_PER_SEC and keeps accumulating until the rate
         drops below IMU_DELTA_EXIT_RATE_DEG_PER_SEC, so a weak slip's slow
@@ -836,11 +979,16 @@ class PointingCoordinateService:
         """
         now = time.monotonic()
         tracker = self._imu_delta_tracker
-        if tracker is None or tracker.get("anchor") is not self._mount_imu_anchor:
+        if (
+            tracker is None
+            or tracker.get("anchor") is not self._mount_imu_anchor
+            or tracker.get("frame") != frame
+        ):
             self._imu_delta_tracker = {
                 "anchor": self._mount_imu_anchor,
-                "imu_ra": imu_radec[0],
-                "imu_dec": imu_radec[1],
+                "frame": frame,
+                "imu_ra": coords[0],
+                "imu_dec": coords[1],
                 "t": now,
                 "applied_ra": 0.0,
                 "applied_dec": 0.0,
@@ -852,10 +1000,13 @@ class PointingCoordinateService:
             return 0.0, 0.0, "init", 0.0
 
         dt = max(1e-3, now - tracker["t"])
-        step_ra = _wrap_angle_delta_degrees(imu_radec[0] - tracker["imu_ra"])
-        step_dec = imu_radec[1] - tracker["imu_dec"]
+        step_ra = _wrap_angle_delta_degrees(coords[0] - tracker["imu_ra"])
+        step_dec = coords[1] - tracker["imu_dec"]
+        # Same spherical separation formula for both frames: axis 1 is the
+        # longitude-like coordinate (ra or az), axis 2 the latitude-like one
+        # (dec or alt).
         step_deg = angular_separation_degrees(
-            tracker["imu_ra"], tracker["imu_dec"], imu_radec[0], imu_radec[1]
+            tracker["imu_ra"], tracker["imu_dec"], coords[0], coords[1]
         )
         rate = step_deg / dt
 
@@ -895,8 +1046,8 @@ class PointingCoordinateService:
                 tracker["episode"] = False
                 gate_state = "hold"
 
-        tracker["imu_ra"] = imu_radec[0]
-        tracker["imu_dec"] = imu_radec[1]
+        tracker["imu_ra"] = coords[0]
+        tracker["imu_dec"] = coords[1]
         tracker["t"] = now
         return (
             tracker["applied_ra"],
@@ -922,7 +1073,8 @@ class PointingCoordinateService:
             return
         if self._mount_imu_anchor_should_reset(mount, imu):
             self._mount_imu_anchor = self._new_mount_imu_anchor(mount, imu)
-        self._gated_imu_delta(self._imu_tracker_radec(imu), accumulate=False)
+        coords, frame = self._imu_tracker_coords(imu)
+        self._gated_imu_delta(coords, frame=frame, accumulate=False)
 
     def _imu_tracker_radec(self, imu: CoordinateSample) -> Tuple[float, float]:
         """RA/Dec the delta tracker should difference: raw (unsmoothed) when
@@ -935,6 +1087,49 @@ class PointingCoordinateService:
         assert radec is not None
         return radec
 
+    def _imu_raw_altaz(self, imu: CoordinateSample) -> Optional[Tuple[float, float]]:
+        """(alt, az) the delta tracker should difference in the alt/az frame:
+        raw (unsmoothed) when available, mirroring _imu_tracker_radec."""
+        raw_alt = _as_float(imu.metadata.get("raw_alt"))
+        raw_az = _as_float(imu.metadata.get("raw_az"))
+        if raw_alt is not None and raw_az is not None:
+            return raw_alt, raw_az % 360.0
+        alt = _as_float(imu.alt_deg)
+        az = _as_float(imu.az_deg)
+        if alt is not None and az is not None:
+            return alt, az % 360.0
+        return None
+
+    def _mount_axis_frame(self) -> str:
+        """The mount's native axis frame from the mount_type config:
+        'altaz' for an alt/az mount, 'equatorial' otherwise (EQ/GEM)."""
+        ctx = self._fusion_context or {}
+        mount_type = str(ctx.get("mount_type", "")).lower()
+        if "alt" in mount_type and "az" in mount_type:
+            return "altaz"
+        return "equatorial"
+
+    def _imu_tracker_coords(
+        self, imu: CoordinateSample
+    ) -> Tuple[Tuple[float, float], str]:
+        """(coords, frame) for the delta tracker in the mount's native frame.
+
+        alt/az frame coords are ordered (az, alt) — longitude-like axis first,
+        matching the (ra, dec) ordering of the equatorial frame — and require
+        the fusion context (dt + location) plus an IMU alt/az; anything missing
+        falls back to the equatorial frame.
+        """
+        if self._mount_axis_frame() == "altaz":
+            ctx = self._fusion_context or {}
+            imu_altaz = self._imu_raw_altaz(imu)
+            if (
+                ctx.get("dt") is not None
+                and ctx.get("location") is not None
+                and imu_altaz is not None
+            ):
+                return (imu_altaz[1], imu_altaz[0]), "altaz"
+        return self._imu_tracker_radec(imu), "equatorial"
+
     def _new_mount_imu_anchor(
         self, mount: CoordinateSample, imu: CoordinateSample
     ) -> dict[str, Any]:
@@ -942,11 +1137,14 @@ class PointingCoordinateService:
         imu_radec = imu.radec()
         assert mount_radec is not None
         assert imu_radec is not None
+        imu_altaz = self._imu_raw_altaz(imu)
         return {
             "mount_ra": mount_radec[0],
             "mount_dec": mount_radec[1],
             "imu_ra": imu_radec[0],
             "imu_dec": imu_radec[1],
+            "imu_alt": imu_altaz[0] if imu_altaz is not None else None,
+            "imu_az": imu_altaz[1] if imu_altaz is not None else None,
             "mount_timestamp": mount.timestamp,
             "sync_key": self._mount_sync_key(mount),
             "created_at": time.time(),
