@@ -65,8 +65,8 @@ except ImportError:  # pragma: no cover - exercised only on INDI installs
 logger = logging.getLogger("MountControl.Indi")
 clientlogger = logging.getLogger("MountControl.Indi.Client")
 
-STATUS_FILE = utils.data_dir / "mount_control_status.json"
-STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
+STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
+STOP_REQUEST_FILE = utils.runtime_dir / "mount_control_stop_request.json"
 POSITION_STATUS_MIN_INTERVAL = 0.5
 STATUS_HEARTBEAT_INTERVAL = 5.0
 AUTO_CONNECT_START_DELAY = 5.0
@@ -159,7 +159,7 @@ def shortest_ra_delta_deg(target_ra_deg: float, current_ra_deg: float) -> float:
 def _write_status(state: str, message: str = "", **extra: Any) -> None:
     """Persist a compact mount-control status snapshot for logs/web/debug."""
     try:
-        utils.create_path(utils.data_dir)
+        utils.create_path(utils.runtime_dir)
         payload = {
             "state": state,
             "message": message,
@@ -172,7 +172,6 @@ def _write_status(state: str, message: str = "", **extra: Any) -> None:
         with open(tmp_status, "w", encoding="utf-8") as status_out:
             json.dump(payload, status_out, indent=2, sort_keys=True)
             status_out.flush()
-            os.fsync(status_out.fileno())
         tmp_status.replace(STATUS_FILE)
     except Exception:
         logger.exception("Could not write mount-control status")

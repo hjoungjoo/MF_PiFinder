@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 # geometry value — it must NOT scale with display resolution (it previously
 # read as a bare ``128`` which looked resolution-derived).
 GPS_ANIM_RATE = 128
-INDI_STATUS_FILE = utils.data_dir / "mount_control_status.json"
+INDI_STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
 INDI_OK_STATES = {"connected", "moving", "slewing", "stopped"}
 INDI_PROBLEM_STATES = {
     "backlash_failed",

@@ -19,7 +19,7 @@ from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.ui.camera_render import resize_for_display
 
 
-STATUS_FILE = utils.data_dir / "mount_control_status.json"
+STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
 
 SLEW_STEPS = [
     "Off",

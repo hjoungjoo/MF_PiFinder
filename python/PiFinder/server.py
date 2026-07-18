@@ -61,8 +61,8 @@ WEB_BACKLASH_MAX_VALUE = 3600
 WEB_BACKLASH_DEFAULT_REPEATS = 10
 WEB_BACKLASH_MIN_REPEATS = 1
 WEB_BACKLASH_MAX_REPEATS = 50
-WEB_BACKLASH_STOP_REQUEST_FILE = utils.data_dir / "mount_control_stop_request.json"
-WEB_POINTING_RESET_REQUEST_FILE = utils.data_dir / "pointing_reset_request.json"
+WEB_BACKLASH_STOP_REQUEST_FILE = utils.runtime_dir / "mount_control_stop_request.json"
+WEB_POINTING_RESET_REQUEST_FILE = utils.runtime_dir / "pointing_reset_request.json"
 DEFAULT_WEB_LANGUAGE = "en"
 
 
@@ -1273,7 +1273,7 @@ class Server:
         def _mount_control_status():
             try:
                 with open(
-                    utils.data_dir / "mount_control_status.json",
+                    utils.runtime_dir / "mount_control_status.json",
                     encoding="utf-8",
                 ) as status_in:
                     return json.load(status_in)
@@ -1283,7 +1283,7 @@ class Server:
         def _goto_guide_status():
             try:
                 with open(
-                    utils.data_dir / "indi_goto_guide_status.json",
+                    utils.runtime_dir / "indi_goto_guide_status.json",
                     encoding="utf-8",
                 ) as status_in:
                     return json.load(status_in)
@@ -1299,7 +1299,7 @@ class Server:
             """
             try:
                 with open(
-                    utils.data_dir / "pointing_coordinate_status.json",
+                    utils.runtime_dir / "pointing_coordinate_status.json",
                     encoding="utf-8",
                 ) as status_in:
                     raw = json.load(status_in)
@@ -1346,7 +1346,7 @@ class Server:
             }
 
         def _write_backlash_stop_request():
-            utils.create_path(utils.data_dir)
+            utils.create_path(utils.runtime_dir)
             payload = {"requested_at": time.time(), "source": "web"}
             tmp_path = WEB_BACKLASH_STOP_REQUEST_FILE.with_name(
                 f"{WEB_BACKLASH_STOP_REQUEST_FILE.name}.{os.getpid()}.tmp"
@@ -1354,11 +1354,10 @@ class Server:
             with open(tmp_path, "w", encoding="utf-8") as stop_out:
                 json.dump(payload, stop_out)
                 stop_out.flush()
-                os.fsync(stop_out.fileno())
             tmp_path.replace(WEB_BACKLASH_STOP_REQUEST_FILE)
 
         def _write_pointing_reset_request():
-            utils.create_path(utils.data_dir)
+            utils.create_path(utils.runtime_dir)
             payload = {"requested_at": time.time(), "source": "web"}
             tmp_path = WEB_POINTING_RESET_REQUEST_FILE.with_name(
                 f"{WEB_POINTING_RESET_REQUEST_FILE.name}.{os.getpid()}.tmp"
@@ -1366,7 +1365,6 @@ class Server:
             with open(tmp_path, "w", encoding="utf-8") as reset_out:
                 json.dump(payload, reset_out)
                 reset_out.flush()
-                os.fsync(reset_out.fileno())
             tmp_path.replace(WEB_POINTING_RESET_REQUEST_FILE)
 
         def _parse_backlash_value(value):
