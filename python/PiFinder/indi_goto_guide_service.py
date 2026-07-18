@@ -41,11 +41,15 @@ from PiFinder.multiproclogging import MultiprocLogging
 
 logger = logging.getLogger("IndiGotoGuideService")
 
-STATUS_FILE = utils.data_dir / "indi_goto_guide_status.json"
-MOUNT_STATUS_FILE = utils.data_dir / "mount_control_status.json"
-POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
+STATUS_FILE = utils.runtime_dir / "indi_goto_guide_status.json"
+MOUNT_STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
+POINTING_STATUS_FILE = utils.runtime_dir / "pointing_coordinate_status.json"
 
 HEARTBEAT_SECONDS = 1.0
+# Status-file writes go to the tmpfs runtime dir; the web UI is the only
+# latency-sensitive consumer, so persist at most every 2s while keeping the
+# service loop (and command reactivity) on the 1s heartbeat.
+STATUS_WRITE_SECONDS = 2.0
 CONFIG_RELOAD_SECONDS = 5.0
 POINTING_STATUS_MAX_AGE_SECONDS = 5.0
 # A GoTo is "complete" once the mount reports no motion continuously for this
@@ -1490,16 +1494,15 @@ class IndiGotoGuideService:
 
     def _write_status(self, *, force: bool = False) -> None:
         now = time.monotonic()
-        if not force and now - self.updated_at < HEARTBEAT_SECONDS:
+        if not force and now - self.updated_at < STATUS_WRITE_SECONDS:
             return
 
-        utils.create_path(utils.data_dir)
+        utils.create_path(utils.runtime_dir)
         payload = self._status_payload()
         tmp_path = STATUS_FILE.with_name(f"{STATUS_FILE.name}.{os.getpid()}.tmp")
         with open(tmp_path, "w", encoding="utf-8") as status_out:
             json.dump(payload, status_out, indent=2, sort_keys=True)
             status_out.flush()
-            os.fsync(status_out.fileno())
         tmp_path.replace(STATUS_FILE)
         self.updated_at = now
 

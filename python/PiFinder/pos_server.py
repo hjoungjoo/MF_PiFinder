@@ -90,13 +90,13 @@ _guide_motion_state = {
     "next_restart_at": 0.0,
 }
 _coordinate_service = PointingCoordinateService()
-_POINTING_STATUS_FILE = utils.data_dir / "pointing_coordinate_status.json"
+_POINTING_STATUS_FILE = utils.runtime_dir / "pointing_coordinate_status.json"
 # Cross-process "Reset Pointing" request. The web server (server.py) and the
 # LCD UI (main.py) run in separate processes and share no queue with the
 # pointing coordinate service, so they drop this request file (mirroring the
 # backlash stop-request pattern) and the coordinate-service loop below polls
 # for it and calls clear_state(). See mf_coordinate_helper_plan.
-_POINTING_RESET_REQUEST_FILE = utils.data_dir / "pointing_reset_request.json"
+_POINTING_RESET_REQUEST_FILE = utils.runtime_dir / "pointing_reset_request.json"
 _pointing_reset_last_at = 0.0
 
 def _get_config_option(option: str, default):
@@ -148,7 +148,7 @@ def _sample_status_payload(sample) -> dict:
 
 def _write_pointing_status(state) -> None:
     try:
-        utils.create_path(utils.data_dir)
+        utils.create_path(utils.runtime_dir)
         payload = {
             "updated": time.time(),
             "last_reset_at": _pointing_reset_last_at,
@@ -178,7 +178,6 @@ def _write_pointing_status(state) -> None:
         with open(tmp_status, "w", encoding="utf-8") as status_out:
             json.dump(payload, status_out, indent=2, sort_keys=True)
             status_out.flush()
-            os.fsync(status_out.fileno())
         tmp_status.replace(_POINTING_STATUS_FILE)
     except Exception:
         logger.exception("Could not write SkySafari pointing status")
@@ -214,9 +213,14 @@ def _log_pointing_state(state) -> None:
         tuple(health.warnings),
     )
     now = time.monotonic()
-    if signature == _pointing_debug_last["signature"] and (
-        now - _pointing_debug_last["time"] < 2.0
-    ):
+    # Hard write throttle: the signature includes IMU alt/az at 0.01deg
+    # resolution, so sensor jitter changes it nearly every 0.2s tick and,
+    # ungated, this status write ran ~4x/second all
+    # day. Consumers tolerate 5s staleness (POINTING_STATUS_MAX_AGE_SECONDS
+    # in the GoTo/Guide service; the web UI only displays it), so cap
+    # writes at one per 2s. Reset paths still force an immediate write via
+    # _invalidate_pointing_cache() zeroing the timestamp.
+    if now - _pointing_debug_last["time"] < 2.0:
         return
     _write_pointing_status(state)
     _pointing_debug_last = {
@@ -588,7 +592,7 @@ def _mount_control_status() -> dict:
     if now - _mount_status_cache["time"] <= _MOUNT_STATUS_CACHE_SECONDS:
         return _mount_status_cache["value"] or {}
 
-    status_file = utils.data_dir / "mount_control_status.json"
+    status_file = utils.runtime_dir / "mount_control_status.json"
     try:
         with open(status_file, encoding="utf-8") as status_in:
             status = json.load(status_in)
