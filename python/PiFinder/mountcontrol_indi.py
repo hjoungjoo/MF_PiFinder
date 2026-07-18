@@ -182,11 +182,20 @@ if PyIndi is not None:
     class PiFinderIndiClient(PyIndi.BaseClient):  # type: ignore[misc]
         """Minimal INDI client that finds a telescope-like device."""
 
+        # Emit at most one disconnect WARNING per this many seconds. A dead
+        # INDI server makes the client library fire serverDisconnected on a
+        # tight reconnect loop; logging every event streams WARNINGs into
+        # pifinder.log (SD-card writes) for as long as the mount is down.
+        _DISCONNECT_LOG_INTERVAL_S = 60.0
+
         def __init__(self, mount_control=None):
             super().__init__()
             self.telescope_device = None
             self.mount_control = mount_control
             self.preferred_device_name = sys_utils.get_indi_profile_device_name()
+            # Monotonic timestamp of the last disconnect WARNING we emitted,
+            # so repeats within _DISCONNECT_LOG_INTERVAL_S drop to DEBUG.
+            self._last_disconnect_log_monotonic: Optional[float] = None
 
         def get_telescope_device(self):
             return self.telescope_device
@@ -390,7 +399,13 @@ if PyIndi is not None:
             clientlogger.info("Connected to INDI server")
 
         def serverDisconnected(self, code):
-            clientlogger.warning("Disconnected from INDI server: %s", code)
+            now = time.monotonic()
+            last = self._last_disconnect_log_monotonic
+            if last is None or now - last >= self._DISCONNECT_LOG_INTERVAL_S:
+                clientlogger.warning("Disconnected from INDI server: %s", code)
+                self._last_disconnect_log_monotonic = now
+            else:
+                clientlogger.debug("Disconnected from INDI server: %s", code)
             if self.mount_control is not None:
                 self.mount_control.mark_disconnected(
                     f"INDI server disconnected: {code}"

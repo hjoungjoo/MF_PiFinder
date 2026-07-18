@@ -32,7 +32,16 @@ from PiFinder import utils
 logger = logging.getLogger("GPS.TimeSync")
 
 DATA_DIR = Path(os.environ.get("PIFINDER_DATA_DIR", utils.data_dir))
-STATUS_FILE = DATA_DIR / "gps_time_status.json"
+# STATUS_FILE is rewritten every few seconds while time sync is active and is
+# meaningless after a reboot, so it lives on the tmpfs runtime dir (/dev/shm)
+# to spare the SD card -- the same treatment as the other volatile status
+# files (pointing / mount / GoTo). REQUEST_FILE and HELPER_STATUS_FILE are
+# deliberately kept on the SD data dir: they are low-frequency AND shared with
+# the privileged helper that runs as root (pifinder_gps_time_sync.service).
+# Keeping them under the pifinder-owned home dir avoids a /dev/shm/pifinder
+# directory-ownership race (whoever creates the tmpfs dir first owns it, and a
+# root-owned 0755 dir would block the pifinder user from writing REQUEST_FILE).
+STATUS_FILE = utils.runtime_dir / "gps_time_status.json"
 REQUEST_FILE = DATA_DIR / "gps_time_sync_request.json"
 HELPER_STATUS_FILE = DATA_DIR / "gps_time_sync_helper_status.json"
 NTP_EPOCH_DELTA = 2_208_988_800
