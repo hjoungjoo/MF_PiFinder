@@ -34,6 +34,7 @@
     <div class="row">
       <a href="#" id="indi_web_manager_link" class="btn">{{ _('INDI Web Manager') }}</a>
       <button type="button" id="restart_indi_button" class="btn">{{ _('Restart INDI') }}</button>
+      <button type="button" id="reboot_indi_button" class="btn red darken-3">{{ _('REBOOT INDI') }}</button>
     </div>
     <table class="striped grey-text">
       <tbody>
@@ -564,6 +565,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var connectionType = document.getElementById('connection_type');
   var managerLink = document.getElementById('indi_web_manager_link');
   var restartIndiButton = document.getElementById('restart_indi_button');
+  var rebootIndiButton = document.getElementById('reboot_indi_button');
   var networkHost = document.getElementById('network_host');
   var networkManual = document.getElementById('network_manual');
   var networkSettings = document.getElementById('network_settings');
@@ -1565,6 +1567,20 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(function() { setActionStatus('{{ _("Restart requested") }}'); })
         .catch(function(error) { setActionStatus(error.message); })
         .finally(function() { restartIndiButton.disabled = false; });
+    });
+  }
+  if (rebootIndiButton) {
+    rebootIndiButton.addEventListener('click', function(event) {
+      event.preventDefault();
+      if (!window.confirm('{{ _("Force-reboot the OnStep mount controller? The mount will be offline for about a minute.") }}')) {
+        return;
+      }
+      setActionStatus('{{ _("Rebooting mount controller") }}');
+      rebootIndiButton.disabled = true;
+      postIndiAction('/indi/reboot_mount', {})
+        .then(function() { setActionStatus('{{ _("Reboot requested") }}'); })
+        .catch(function(error) { setActionStatus(error.message); })
+        .finally(function() { rebootIndiButton.disabled = false; });
     });
   }
   setInterval(function() {

@@ -1765,6 +1765,26 @@ class Server:
                     return _indi_json_response(ok=False, error=str(e))
                 return _render_indi_page(error_message=str(e))
 
+        @app.route("/indi/reboot_mount", methods=["POST"])
+        @auth_required
+        def indi_reboot_mount():
+            # The reboot takes ~60s (controller off-network ~35s plus INDI
+            # restart), so it runs in the mount-control process; this request
+            # only queues it. Progress shows up in the driver state card as
+            # rebooting -> connected (or reboot_failed).
+            try:
+                if self.mountcontrol_queue is None:
+                    raise RuntimeError(_("Mount-control process is not available"))
+                self.mountcontrol_queue.put({"type": "reboot_mount"})
+                message = _("Mount controller reboot requested")
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _indi_json_response(message=message)
+                return _render_indi_page(message)
+            except RuntimeError as e:
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return _indi_json_response(ok=False, error=str(e))
+                return _render_indi_page(error_message=str(e))
+
         @app.route("/indi/park", methods=["POST"])
         @auth_required
         def indi_park():

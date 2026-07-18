@@ -128,7 +128,7 @@ class UIIndiInit(UIIndiBase):
             _("3 Park   6 Unpark"),
             _("4 Home   5 Return"),
             _("7 SetPark"),
-            _("8 Restart"),
+            _("8 Restart 9 Reboot"),
         ]
         hint_y = max(y + 4, self.display_class.resY - (len(hints) * hint_line_h) - 2)
         for hint in hints:
@@ -164,6 +164,9 @@ class UIIndiInit(UIIndiBase):
         elif number == 8:
             if self._send_mount({"type": "restart_driver"}):
                 self.message(_("INDI Restart"), 1)
+        elif number == 9:
+            if self._send_mount({"type": "reboot_mount"}):
+                self.message(_("Mount Reboot"), 1)
 
     def key_square(self):
         self.key_number(1)
