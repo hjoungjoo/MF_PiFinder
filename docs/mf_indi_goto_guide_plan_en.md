@@ -1,9 +1,13 @@
-# MF PiFinder INDI GoTo / Guide Settings Draft
+# MF PiFinder INDI GoTo / Guide Settings and Implementation
 
-Baseline: `mf_pifinder` branch, 2026-07-08.
+Baseline: `main` branch, updated against the 2026-07-18 source.
 
-This document is a design draft for adding INDI mount `GoTo/Guide` settings
-before implementation.
+This document describes the INDI mount `GoTo/Guide` settings UI and behavior. It
+began as a pre-implementation design draft, but the features below are all
+implemented (`indi_goto_guide_service.py`, `mountcontrol_indi.py`, the web/LCD
+UI) and this document is kept in sync with that source. Every threshold and time
+here matches the source constants and config defaults. A consolidated table is
+in [Constants and Timing (from source)](#constants-and-timing-from-source).
 
 ## Purpose
 
@@ -184,13 +188,114 @@ updated
 - OnStepX-specific behavior must be gated by driver name/capability detection;
   generic INDI mounts should use only standard INDI primitives.
 
+## Constants and Timing (from source)
+
+These are internal constants and cadences that are NOT config-editable. Values
+are matched 1:1 to the source (update this table when they change), with the
+source file noted.
+
+`indi_goto_guide_service.py` (orchestration service):
+
+```text
+HEARTBEAT_SECONDS = 1.0
+  Service-loop / command-reactivity cadence. A queued command (e.g. Stop) wakes
+  the wait immediately. The sync + GoTo and pulse-align waits both run on this
+  1 s tick.
+STATUS_WRITE_SECONDS = 1.0
+  Minimum interval between indi_goto_guide_status.json writes (tmpfs). The web UI
+  polls it ~every 1 s, so matched to that (2.0 -> 1.0); the loop is also 1 s, so
+  writing faster is pointless, and tmpfs means no SD wear.
+CONFIG_RELOAD_SECONDS = 2.0
+  Config auto-reload cadence. The service handles no explicit reload command, so
+  this is the only path a setting change reaches it. load_config only reads
+  config.json (no write), so a shorter cadence costs a cheap re-parse, not SD
+  wear; lowered 5.0 -> 2.0 for snappier settings response.
+POINTING_STATUS_MAX_AGE_SECONDS = 5.0
+  Beyond this age pointing_coordinate_status.json is treated as stale and
+  usable_for_goto goes False (no GoTo/correction off an old coordinate).
+PIFINDER_FINAL_GOTO_SETTLE_SECONDS = 1.0
+  GoTo-completion settle time. Serves two roles: (1) minimum wait after the
+  command, (2) continuous no-motion window. Shared by the PiFinder sync + GoTo
+  waits and the tracking-guide recovery GoTo wait. Tuned 2.0 -> 1.0 from a
+  6-slew OnStepX field test; mount-control only clears its flags after its own
+  GOTO_COMPLETE_STABLE_SECONDS window (4 s at measurement, since lowered to 2.5),
+  so by then the mount is already settled (see "Field measurement of settle
+  time" below).
+PIFINDER_DEFAULT_MAX_GOTOS = 10
+  Fallback cap when indi_pifinder_goto_max_gotos is missing from config.
+PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
+  If a sync + GoTo step does not cut the error by at least this (1 arcmin) vs the
+  previous, stop early (no-convergence guard).
+PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
+  Time limit for the PiFinder GoTo pulse-guide fine alignment. If it does not
+  converge to the target accuracy within this, it stops in error (mount pulses
+  roughly every ~6 s off each fresh solve).
+TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 5
+  Max sync + GoTo recovery attempts per disturbance in the tracking guide;
+  beyond this it goes to failed.
+TRACKING_TARGET_MIN_ALT_DEFAULT_DEG = 10.0
+  Default for indi_tracking_guide_min_target_alt_deg (minimum-altitude guard).
+TRACKING_TARGET_ALT_CACHE_SECONDS = 10.0
+  Target-altitude computation cache lifetime (keyed by target coordinates;
+  altitude changes slowly at sidereal rate).
+TRACKING_IMU_QUIET_OVERRIDE_MULTIPLE = 2.0
+  Once the coordinate has been still for settle_seconds x 2 (default 8 s), the
+  IMU moving flag alone no longer holds off recovery (prevents post-release
+  micro-sway from delaying recovery indefinitely).
+```
+
+`mountcontrol_indi.py` (the actual pulse-guide / GoTo execution layer):
+
+```text
+GOTO_COMPLETE_STABLE_SECONDS = 2.5
+  Primary GoTo-completion window. goto_motion ends (flags drop) only once the
+  completion conditions (INDI busy=False, OnStep `:GU#` 'N', within 0.5 deg of
+  target = GOTO_COMPLETE_TARGET_TOLERANCE_DEG, position change <0.02 deg =
+  GOTO_COMPLETE_POSITION_STABLE_DEG) hold continuously for this long; any failing
+  condition resets the timer. Tuned 4.0 -> 2.5 from the field test (conditions
+  harden ~1.2 s after the stop, ~1 s margin). Min wait
+  GOTO_COMPLETE_MIN_SECONDS=1.0; hard fallback when status is unreadable
+  GOTO_COMPLETE_FALLBACK_SECONDS=180.0.
+GUIDE_CORRECTION_INTERVAL_SECONDS = 6.0
+  Closed-loop guide-correction cadence. It only pulses when a fresh plate solve
+  is available (never twice off the same solve), so this is a damping/settle
+  floor on top of the solve rate (~0.5-1 s on-sky at the 400 ms default
+  exposure). Lowered 10.0 -> 6.0 (~2x faster convergence). It is a
+  proportional-control cadence (gain 0.5); going shorter risks oscillation on
+  solve noise / backlash, so verify monotonic on-sky convergence before reducing
+  further.
+GUIDE_CORRECTION_PULSE_SECONDS = 0.4
+  Manual-move fallback lease length for drivers without timed guide pulses.
+SIDEREAL_ARCSEC_PER_SEC = 15.041
+  Sidereal rate (arcsec/s) used in the pulse-duration math.
+DEFAULT_GUIDE_RATE_X = 0.5
+  Default guide rate (multiple of sidereal) when the driver does not report
+  GUIDE_RATE.
+GUIDE_RATE_FAST_X = 1.0 / GUIDE_RATE_FINE_X = 0.5
+  Recovery (fast) / precision (fine) guide rates. 1.0x while the error exceeds
+  accuracy x GUIDE_RATE_FAST_MIN_ERROR_MULTIPLE (=2.0), 0.5x inside the band.
+GUIDE_PULSE_AGGRESSIVENESS = 0.5
+  Conservative factor closing half the error per pulse (actual motion measured at
+  ~1.6x the nominal rate).
+GUIDE_PULSE_MIN_MS = 20 / GUIDE_PULSE_MAX_MS = 2500
+  Clamp range for a single pulse duration (ms).
+component_threshold = max(0.5, accuracy_arcmin / 2.0)
+  Per-axis (NS/WE) deadband; no pulse is sent on an axis whose error is smaller.
+DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 6.0
+  Solve-refine target accuracy when a caller passes none (= 0.1 deg).
+GOTO_REFINE_DELAY_SECONDS = 8.0 / GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
+  Wait / solve timeout for the INDI Mount one-shot refine.
+```
+
 ## Proposed Config Keys
 
-The settings should persist across service restarts.
+The settings persist across service restarts. The values below match the
+defaults in `default_config.json`.
 
 ```text
 indi_goto_method = "indi_mount" | "pifinder"
   default: "indi_mount"
+  web UI label: **GoTo Type** (renamed from "GoTo Method" 2026-07-17)
 
 indi_tracking_guide_enabled = false | true
   default: false
@@ -228,7 +333,12 @@ indi_pifinder_goto_max_gotos = 10
   does not keep slewing without converging.
 
 indi_tracking_guide_threshold_arcmin = 10.0
-  Error threshold where Tracking Guide starts pulse-guide correction.
+  The target accuracy band Tracking Guide hands to pulse guide. mountcontrol's
+  guide correction pulses while the error exceeds this and reports "settled"
+  (stops pulsing) at or below it. So it is both the precision pulse guide holds
+  the target to and the correction trigger boundary. (Also used as the accuracy
+  when re-arming guide correction on the new target right after a manual
+  re-target.)
 
 indi_tracking_guide_settle_seconds = 4.0
   The scope must stay STILL this long after an external disturbance before
@@ -322,55 +432,61 @@ Settings
     Goto/Guide
 ```
 
-Draft screen:
+Screen (current `menu_structure.py` implementation):
 
 ```text
 Goto/Guide
-  GoTo Type
-    INDI Mount
-    PiFinder
-
-  Tracking Guide
-    Off
-    On
+  GoTo Type           -> indi_goto_method            [INDI Mount | PiFinder]
+  Tracking Guide      -> indi_tracking_guide_enabled           [Off | On]
+  GoTo Recovery       -> indi_tracking_guide_goto_recovery_enabled  [Off | On]
+  Recovery Range      -> indi_tracking_guide_goto_threshold_deg
+                         [0.25 | 0.5 | 1 | 2 | 3 deg]
+  Manual Re-target    -> indi_tracking_guide_manual_retarget_enabled [Off | On]
+  Max GoTos           -> indi_pifinder_goto_max_gotos [3 | 5 | 10 | 15 | 20]
+  Invert Guide RA/Az  -> indi_guide_pulse_invert_we             [Off | On]
+  Invert Guide Dec/Alt-> indi_guide_pulse_invert_ns             [Off | On]
 ```
 
 Rules:
 
 - Use left/right/square controls for selection and value changes.
-- Save changes to config and send `reload_config`.
-- Settings should be editable even when the INDI mount is disconnected.
-- If tracking guide is running and the user switches it Off, send
-  `toggle_guide_correction(false)` or equivalent stop behavior immediately.
+- Each item's `post_callback = reload_config` saves config and signals an
+  immediate reload; even without the signal the service re-reads config every
+  `CONFIG_RELOAD_SECONDS` (5 s), so a change applies within 5 s.
+- Settings are editable regardless of INDI mount connection state.
+- If tracking guide is running and the user switches it Off, the service sends
+  `toggle_guide_correction(false)` once on the next tick and goes to `off`.
 
 ### Web
 
-Location:
+Location: the `GoTo / Guide Settings` card at the bottom of `/indi`
+(`views/indi_mount.html`, form action `/indi/goto_guide`).
+
+Fields (current implementation):
 
 ```text
-/indi
-  ...
-  [bottom] GoTo / Guide Settings
+GoTo Type                          select  -> indi_goto_method [INDI Mount | PiFinder]
+Tracking Guide                     checkbox-> indi_tracking_guide_enabled
+Tracking Guide GoTo Recovery       checkbox-> indi_tracking_guide_goto_recovery_enabled
+Manual Re-target                   checkbox-> indi_tracking_guide_manual_retarget_enabled
+Invert guide pulse RA/Az (WE)      checkbox-> indi_guide_pulse_invert_we
+Invert guide pulse Dec/Alt (NS)    checkbox-> indi_guide_pulse_invert_ns
+Max GoTos                          select  -> indi_pifinder_goto_max_gotos
+[Apply GoTo / Guide Settings] button
 ```
 
-Fields:
+Note: the web has no `Recovery Range` (goto_threshold_deg) control — that is
+LCD-only. The web `GoTo Recovery` checkbox label "re-slew when off target by more
+than 3 deg" is fixed helper text; the actual re-slew boundary follows Recovery
+Range (default 0.5 deg). (The label text is due for cleanup.)
 
-```text
-GoTo Type
-  radio or select:
-    INDI Mount
-    PiFinder
+Read-only `GoTo / Guide Status` panel: reads `indi_goto_guide_status.json`
+through the `/indi/current_values` poll and shows service_state/phase,
+tracking_guide_state, recovery mode+count, and last action.
 
-Tracking Guide
-  checkbox or switch:
-    On / Off
-
-Apply button
-```
-
-This card should remain separate from the existing `SkySafari Mount Mode` card.
-SkySafari settings control protocol forwarding, while `GoTo/Guide` controls the
-INDI mount GoTo and correction policy.
+This card is separate from the existing `SkySafari Mount Mode` card. SkySafari
+settings control protocol forwarding, while `GoTo/Guide` controls the INDI mount
+GoTo and correction policy.
 
 ## GoTo Type: INDI Mount
 
@@ -448,7 +564,13 @@ Detailed procedure:
 - **error < 1 degree**: switch from mount slew to pulse guide, correcting until
   the error is below the target accuracy (`indi_goto_refine_accuracy_arcmin`,
   0.1 deg = 6 arcmin). This pulse-guide correction reuses the same correction
-  logic as Tracking Guide.
+  logic as Tracking Guide. This stage has a
+  `PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS` (90 s) limit; if it does not converge
+  in that time it stops in error (`pulse align did not converge`) — the mount
+  pulses roughly every ~6 s off each fresh solve, so a few pulses normally
+  suffice.
+- **error already below the target accuracy (0.1 deg) right off the slew**: skip
+  the pulse-guide stage and go straight to the final sync.
 - **error < target accuracy (0.1 deg)**: sync/align the mount once more to the
   final target coordinate and advance to `complete`. This final sync improves
   tracking precision afterward.
@@ -470,7 +592,7 @@ Procedure:
 
 1. **Record the command time**: when a GoTo is sent, record `final_goto_sent_at`
    as now and reset the idle timer (`final_goto_idle_since`) to 0.
-2. **Minimum wait**: for `PIFINDER_FINAL_GOTO_SETTLE_SECONDS` (currently 2.0 s)
+2. **Minimum wait**: for `PIFINDER_FINAL_GOTO_SETTLE_SECONDS` (currently 1.0 s)
    after the command, completion is not evaluated — a minimum window so the brief
    idle just before the mount starts slewing is not misread as "complete".
 3. **Motion poll**: each tick, read the mount status summary; if any of the
@@ -482,10 +604,12 @@ Procedure:
    - the state string contains `slew` / `goto` / `moving` / `motion`
 4. **Idle settle window**: when the mount looks stopped (all of the above false),
    start the idle timer on the first idle sample and accept completion only when
-   the idle state holds for `PIFINDER_FINAL_GOTO_SETTLE_SECONDS` (2.0 s)
+   the idle state holds for `PIFINDER_FINAL_GOTO_SETTLE_SECONDS` (1.0 s)
    continuously. If motion is detected again, reset the timer — this avoids
    misreading a mount like OnStepX (which pauses briefly between the near move and
-   its fine adjustment) as complete.
+   its fine adjustment) as complete. (In the field test no such mid-slew idle was
+   observed, and mount-control only clears its flags after its own 4 s stable
+   window, so this window is safe to keep short — see the measurement below.)
 5. **Error measurement after completion**: once idle has settled, re-read
    `PointingCoordinateService`, confirm `usable_for_goto` (error out if not), and
    measure the error to the target. That error drives the sync + GoTo repeat /
@@ -499,6 +623,45 @@ Safety guards during the wait (each stops immediately in error):
 
 `PIFINDER_FINAL_GOTO_SETTLE_SECONDS` is the settle time shared by the final and
 corrective GoTo waits and the Tracking Guide sync + GoTo recovery wait.
+
+### Field measurement of settle time (2026-07-18)
+
+To choose the `PIFINDER_FINAL_GOTO_SETTLE_SECONDS` value, **6 GoTos** to left/right
+stars (slews of 12-56 deg) were run on real hardware (OnStepX, wedge) while the
+`mount_control_status.json` motion flags were captured at 7 Hz.
+
+Results:
+
+```text
+- All 6 slews physically moved and converged to ~0 deg error.
+- Mid-slew idle (motion flag 1->0->1 bounce): 0 occurrences.
+  The "OnStepX coarse-then-fine pause" the comment guards against never appeared.
+- Physical stop -> motion-flag clear lag: 4.2-5.3 s (mean ~4.8 s).
+  = mount-control's own GOTO_COMPLETE_STABLE_SECONDS (4 s at measurement) window.
+- The completion conditions (INDI not busy, OnStep 'N', within 0.5 deg of target,
+  position stable <0.02 deg) were all met within ~1.2 s of the physical stop —
+  only the first ~1 s of the 4 s window was doing real work.
+- So by the time this service sees "no motion", the mount has already been
+  physically stopped ~5 s.
+- Readback right after flag-clear is immediately stable (paused-slew vmax ~ sidereal).
+```
+
+Conclusion (two constants tuned):
+
+- **`PIFINDER_FINAL_GOTO_SETTLE_SECONDS` 2.0 -> 1.0 s**: the completion idle
+  window can be short — there is no bounce and mount-control already guarantees
+  the settle. It only has to absorb the command->slew-start latency (measured
+  <0.15 s in a standalone :MS test), leaving 3x+ margin.
+- **`GOTO_COMPLETE_STABLE_SECONDS` 4.0 -> 2.5 s** (mount-control's primary
+  settle-guarantee window): the completion conditions harden within ~1.2 s of
+  the stop, so keep ~1 s margin (against near-arrival OnStep status jitter) and
+  drop the rest, saving ~1.5 s per GoTo/corrective/recovery slew. Unlike the
+  goto_guide idle window, a premature completion here measures error mid-motion
+  and can drive a bad final sync, so — given none of the 6 slews showed a
+  two-stage (arrive, pause, re-move) case — it was not taken below 2.5 s. A more
+  aggressive drop (2.0 s) is safe only after a follow-up measurement of the raw
+  signals (INDI busy, OnStep `:GU#`, per-tick position change) on long /
+  near-meridian / cold-start slews confirms no mid-slew lull.
 
 Safety notes:
 
@@ -566,7 +729,7 @@ button); a timed guide pulse moves at the guide rate for a specified **duration
   (`TIMED_GUIDE_W` / `TIMED_GUIDE_E`). The two axes are corrected independently.
 - **Duration**: the time to move the axis error at that axis's guide rate.
   `duration_ms = |error_arcsec| / (guide_rate_x × 15.041 arcsec/s) × aggressiveness`.
-  Only a fraction of the error (e.g. 70%) is closed per pulse and the 10 s loop
+  Only a fraction of the error (e.g. 70%) is closed per pulse and the ~6 s loop
   converges; clamped to a min/max ms.
 - **Guide rate**: read the driver's `GUIDE_RATE` (multiples of sidereal); fall
   back to a default (0.5×) if it is not reported.
@@ -733,6 +896,14 @@ GoTo step exists so a large displacement is closed in one slew instead of being
 crawled by pulses. The GoTo recovery reuses the existing sync + `goto_target()` +
 settle/verify machinery already built for the final PiFinder GoTo, then hands back
 to pulse-guide near the target.
+
+The recovery GoTo is bounded to `TRACKING_GUIDE_MAX_RECOVERY_GOTOS` (5) per
+disturbance event. If it cannot converge into the pulse band within 5, it goes to
+`failed` (`goto recovery limit reached`) to prevent endless re-slewing. Each
+recovery GoTo uses the same completion logic as the PiFinder GoTo
+(`PIFINDER_FINAL_GOTO_SETTLE_SECONDS` = 1 s no-motion window). The recovery
+attempt counter resets to 0 each time the coordinate settles again (i.e. each new
+disturbance).
 
 ### On/Off gating rules
 

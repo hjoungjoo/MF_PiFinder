@@ -1,9 +1,12 @@
-# MF PiFinder INDI GoTo / Guide 설정 설계 초안
+# MF PiFinder INDI GoTo / Guide 설정 설계 및 구현
 
-작성 기준: `mf_pifinder` 브랜치, 2026-07-08.
+작성 기준: `main` 브랜치, 2026-07-18 소스와 대조해 갱신.
 
-이 문서는 INDI 마운트 기능에 추가할 `Goto/Guide` 설정 UI와 동작 방식을
-구현 전에 정리하기 위한 설계 초안이다.
+이 문서는 INDI 마운트의 `Goto/Guide` 설정 UI와 동작 방식을 기술한다. 최초에는
+구현 전 설계 초안이었으나, 아래 기능은 모두 구현되어 있고(`indi_goto_guide_service.py`,
+`mountcontrol_indi.py`, 웹/LCD UI) 이 문서는 그 소스에 맞춰 유지한다. 문서의
+모든 임계값·시간은 소스의 상수 및 config 기본값과 일치시켰다. 한곳에 모은
+"상수와 타이밍" 표는 [상수와 타이밍 (소스 기준)](#상수와-타이밍-소스-기준)에 있다.
 
 ## 목적
 
@@ -177,9 +180,95 @@ updated
 - OnStepX 전용 기능은 driver 이름/기능 감지 후에만 사용하고, 일반 INDI 마운트에서는
   표준 INDI primitive만 사용한다.
 
+## 상수와 타이밍 (소스 기준)
+
+아래는 config로 바꿀 수 없는 내부 상수와 주기다. 값은 소스와 1:1로 맞춰 두었다
+(바뀌면 이 표도 같이 갱신). 출처 파일을 함께 적는다.
+
+`indi_goto_guide_service.py` (오케스트레이션 서비스):
+
+```text
+HEARTBEAT_SECONDS = 1.0
+  서비스 루프/명령 반응 주기. 큐에 명령(예: Stop)이 들어오면 이 대기는 즉시
+  깨어난다. sync + GoTo 대기와 pulse-align 대기 모두 이 1초 tick으로 돈다.
+STATUS_WRITE_SECONDS = 1.0
+  indi_goto_guide_status.json 기록 최소 간격(tmpfs). 웹이 ~1초로 폴링하므로 거기
+  맞춰 2.0→1.0 하향(루프도 1초라 그 이상은 무의미, tmpfs라 SD 마모 없음).
+CONFIG_RELOAD_SECONDS = 2.0
+  config 자동 재로딩 주기. 서비스는 명시적 reload 명령을 받지 않으므로 이 자동
+  재로딩이 설정 반영의 유일 경로다. load_config는 읽기 전용(되쓰기 없음)이라
+  주기 단축 비용은 값싼 재파싱뿐 → 설정 체감 개선 위해 5.0→2.0 하향.
+POINTING_STATUS_MAX_AGE_SECONDS = 5.0
+  pointing_coordinate_status.json이 이 나이를 넘으면 stale로 보고 usable_for_goto를
+  False로 만든다(오래된 좌표로 GoTo/보정하지 않음).
+PIFINDER_FINAL_GOTO_SETTLE_SECONDS = 1.0
+  GoTo 완료 판정 정착 시간. (1) 명령 후 최소 대기, (2) 무모션 연속 유지 창 두
+  용도로 쓰이고, PiFinder sync+GoTo 대기와 추적 가이드 복구 GoTo 대기가 공유한다.
+  실장비 OnStepX 6회 슬루 측정(12~56°, 2026-07-18)으로 2.0→1.0s 하향: 중간
+  idle/bounce 0건, mount_control이 자체 GOTO_COMPLETE_STABLE_SECONDS(측정 당시
+  4초, 이후 2.5초로 하향) 창을 거친 뒤에만 모션 플래그를 내려 이 서비스가 무모션을
+  보는 시점엔 마운트가 이미 물리적으로 정지한 상태였다. 1.0s는 명령 픽업 지연·단일
+  샘플 글리치만 흡수하면 되므로 안전 마진이 충분하다(상세: [실장비 정착 시간 측정](#실장비-정착-시간-측정-2026-07-18)).
+PIFINDER_DEFAULT_MAX_GOTOS = 10
+  config에 indi_pifinder_goto_max_gotos가 없을 때의 상한 폴백.
+PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
+  한 sync+GoTo 스텝이 직전보다 이만큼(1분각) 오차를 줄이지 못하면 상한 전이라도
+  조기 중단(수렴 실패 가드).
+PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
+  PiFinder GoTo의 pulse-guide 미세정렬 제한시간. 이 시간 안에 목표 정확도로
+  수렴하지 못하면 error로 중단한다(마운트 펄스가 fresh solve마다 ~6초 간격).
+TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 5
+  추적 가이드의 외란 복구 sync+GoTo 최대 시도 횟수. 초과하면 failed로 간다.
+TRACKING_TARGET_MIN_ALT_DEFAULT_DEG = 10.0
+  indi_tracking_guide_min_target_alt_deg의 기본값(최소 고도 가드).
+TRACKING_TARGET_ALT_CACHE_SECONDS = 10.0
+  타겟 고도 계산 캐시 유효시간(타겟 좌표로 키잉, 항성시라 서서히 변함).
+TRACKING_IMU_QUIET_OVERRIDE_MULTIPLE = 2.0
+  좌표가 settle_seconds x 2(기본 8초) 동안 정지하면 IMU moving 플래그 단독으로는
+  더 이상 복구를 막지 못한다(릴리즈 후 micro-sway 무한 지연 방지).
+```
+
+`mountcontrol_indi.py` (실제 펄스가이드/GoTo 실행 계층):
+
+```text
+GOTO_COMPLETE_STABLE_SECONDS = 2.5
+  GoTo 완료 1차 판정 창. 완료 조건(INDI busy=False, OnStep `:GU#` 'N', 타겟
+  0.5°(GOTO_COMPLETE_TARGET_TOLERANCE_DEG) 이내, 위치 변화<0.02°
+  (GOTO_COMPLETE_POSITION_STABLE_DEG))이 이 시간 연속 참이어야 goto_motion을
+  종료(플래그 해제)한다. 조건 하나라도 깨지면 타이머 리셋. 실측(2026-07-18)으로
+  4.0→2.5 하향(조건이 정지 후 ~1.2초에 굳음, ~1초 마진). 최소 대기
+  GOTO_COMPLETE_MIN_SECONDS=1.0, 상태 못 읽을 때의 하드 폴백
+  GOTO_COMPLETE_FALLBACK_SECONDS=180.0.
+GUIDE_CORRECTION_INTERVAL_SECONDS = 6.0
+  guide correction 닫힌 루프 주기. fresh plate solve가 있을 때만 펄스(같은 solve로
+  두 번 안 쏨)이므로 solve 속도(온스카이 ~0.5~1초) 위의 댐핑/정착 마진이다.
+  10.0→6.0 하향(수렴 ~2배 가속). 비례 제어(gain 0.5) 주기라 더 줄이면 solve
+  노이즈·백래시 진동 위험 → 추가 하향 전 온스카이 단조 수렴 검증 필요.
+GUIDE_CORRECTION_PULSE_SECONDS = 0.4
+  timed guide pulse 미지원 드라이버의 manual-move fallback lease 길이.
+SIDEREAL_ARCSEC_PER_SEC = 15.041
+  펄스 시간 계산에 쓰는 항성 속도(arcsec/s).
+DEFAULT_GUIDE_RATE_X = 0.5
+  드라이버가 GUIDE_RATE를 못 주면 쓰는 기본 가이드레이트(sidereal 배수).
+GUIDE_RATE_FAST_X = 1.0 / GUIDE_RATE_FINE_X = 0.5
+  복귀(fast) / 정밀(fine) 가이드레이트. 오차가 정확도 x
+  GUIDE_RATE_FAST_MIN_ERROR_MULTIPLE(=2.0)를 넘는 동안 1.0x, 밴드 안에서는 0.5x.
+GUIDE_PULSE_AGGRESSIVENESS = 0.5
+  한 펄스로 오차의 절반만 닫는 보수 계수(실이동이 공칭 레이트의 ~1.6배로 측정됨).
+GUIDE_PULSE_MIN_MS = 20 / GUIDE_PULSE_MAX_MS = 2500
+  한 펄스 지속시간(ms) clamp 범위.
+component_threshold = max(0.5, accuracy_arcmin / 2.0)
+  축별(NS/WE) 데드밴드. 이보다 작은 축 오차에는 그 축 펄스를 보내지 않는다.
+DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 6.0
+  caller가 정확도를 안 주면 쓰는 solve 보정 목표 정확도(= 0.1도).
+GOTO_REFINE_DELAY_SECONDS = 8.0 / GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
+  INDI Mount refine(1회 solve 보정)의 대기/솔브 타임아웃.
+```
+
 ## 제안 설정 키
 
 새 설정은 장치 재시작 후에도 유지되어야 하므로 config option으로 관리한다.
+아래 값들은 `default_config.json`의 기본값과 일치한다.
 
 ```text
 indi_goto_method = "indi_mount" | "pifinder"
@@ -218,7 +307,10 @@ indi_pifinder_goto_max_gotos = 10
   채로 계속 슬루하는 것을 막는다.
 
 indi_tracking_guide_threshold_arcmin = 10.0
-  추적 가이드가 pulse guide 보정을 시작할 오차 기준.
+  추적 가이드가 pulse guide에 넘겨주는 목표 정확도(accuracy) 밴드. mountcontrol의
+  guide correction은 오차가 이 값을 넘으면 펄스를 쏘고, 이하이면 "정착"으로 보고
+  펄스를 멈춘다. 즉 pulse guide가 타겟을 유지하는 정밀도이자 보정 발동 경계다.
+  (수동 재타겟 직후 새 타겟에 guide correction을 재-arm할 때의 accuracy로도 쓰인다.)
 
 indi_tracking_guide_settle_seconds = 4.0
   외란 이후 망원경이 이 시간만큼 정지해 있어야 추적 가이드가 다시 오차를
@@ -301,51 +393,57 @@ Settings
     Goto/Guide
 ```
 
-화면 구성 초안:
+화면 구성 (현재 `menu_structure.py` 구현):
 
 ```text
 Goto/Guide
-  GoTo Type
-    INDI Mount
-    PiFinder
-
-  Tracking Guide
-    Off
-    On
+  GoTo Type           -> indi_goto_method            [INDI Mount | PiFinder]
+  Tracking Guide      -> indi_tracking_guide_enabled           [Off | On]
+  GoTo Recovery       -> indi_tracking_guide_goto_recovery_enabled  [Off | On]
+  Recovery Range      -> indi_tracking_guide_goto_threshold_deg
+                         [0.25° | 0.5° | 1° | 2° | 3°]
+  Manual Re-target    -> indi_tracking_guide_manual_retarget_enabled [Off | On]
+  Max GoTos           -> indi_pifinder_goto_max_gotos [3 | 5 | 10 | 15 | 20]
+  Invert Guide RA/Az  -> indi_guide_pulse_invert_we             [Off | On]
+  Invert Guide Dec/Alt-> indi_guide_pulse_invert_ns             [Off | On]
 ```
 
 조작 원칙:
 
 - 좌우/사각 버튼으로 항목 선택과 값 변경.
-- 값 변경 시 config에 저장하고 `reload_config`를 보낸다.
-- 장비 연결 상태와 무관하게 설정은 변경 가능해야 한다.
-- 실제 동작 중인 추적 가이드는 Off로 바꾸면 즉시 `toggle_guide_correction(false)`
-  또는 동등한 stop 명령을 보낸다.
+- 값 변경 시 각 항목의 `post_callback = reload_config`로 config를 저장하고 즉시
+  재로딩 신호를 보낸다. 신호가 없어도 서비스는 `CONFIG_RELOAD_SECONDS`(5초)마다
+  config를 다시 읽으므로 최대 5초 안에 반영된다.
+- 장비 연결 상태와 무관하게 설정은 변경 가능하다.
+- 실제 동작 중인 추적 가이드를 Off로 바꾸면 서비스가 다음 tick에서
+  `toggle_guide_correction(false)`를 한 번 보내고 `off`로 간다.
 
 ### Web
 
-위치:
+위치: `/indi` 페이지 제일 하단 `GoTo / Guide Settings` 카드
+(`views/indi_mount.html`, form action `/indi/goto_guide`).
+
+표시 항목 (현재 구현):
 
 ```text
-/indi
-  ...
-  [제일 하단] GoTo / Guide Settings
+GoTo Type                          select  -> indi_goto_method [INDI Mount | PiFinder]
+Tracking Guide                     checkbox-> indi_tracking_guide_enabled
+Tracking Guide GoTo Recovery       checkbox-> indi_tracking_guide_goto_recovery_enabled
+Manual Re-target                   checkbox-> indi_tracking_guide_manual_retarget_enabled
+Invert guide pulse RA/Az (WE)      checkbox-> indi_guide_pulse_invert_we
+Invert guide pulse Dec/Alt (NS)    checkbox-> indi_guide_pulse_invert_ns
+Max GoTos                          select  -> indi_pifinder_goto_max_gotos
+[Apply GoTo / Guide Settings] 버튼
 ```
 
-표시 항목:
+주의: 웹에는 `Recovery Range`(goto_threshold_deg) 선택이 없다 — LCD 메뉴에서만
+바꾼다. 웹 `GoTo Recovery` 체크박스 라벨의 "re-slew when off target by more than
+3 deg" 문구는 고정 안내 텍스트로, 실제 재슬루 경계는 Recovery Range(기본 0.5도)를
+따른다. (라벨 문구는 정리 대상.)
 
-```text
-GoTo Type
-  radio 또는 select:
-    INDI Mount
-    PiFinder
-
-Tracking Guide
-  checkbox 또는 switch:
-    On / Off
-
-Apply 버튼
-```
+읽기전용 상태 패널 `GoTo / Guide Status`: `indi_goto_guide_status.json`을
+`/indi/current_values` 폴링으로 읽어 service_state/phase, tracking_guide_state,
+recovery mode+count, last action을 표시한다.
 
 Web UI는 기존 `SkySafari Mount Mode` 카드와 구분한다. SkySafari 설정은
 SkySafari protocol forwarding 정책이고, `Goto/Guide`는 INDI 마운트 자체의
@@ -424,6 +522,11 @@ flowchart TD
 - **오차 < 1도**: 마운트 슬루 대신 pulse guide로 전환해, 목표 정확도
   (`indi_goto_refine_accuracy_arcmin`, 0.1도 = 6분각) 미만이 될 때까지 미세
   보정한다. 이 pulse guide 보정은 추적 가이드와 같은 보정 로직을 재사용한다.
+  이 단계는 `PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS`(90초) 제한이 있고, 그 안에
+  수렴하지 못하면 `pulse align did not converge` error로 중단한다(마운트 펄스가
+  fresh solve마다 ~6초 간격이라 정상 수렴에는 몇 번의 펄스면 충분하다).
+- **완료 직후 오차가 이미 목표 정확도(0.1도) 미만**이면 pulse guide 단계를 건너뛰고
+  바로 final sync로 넘어간다.
 - **오차 < 목표 정확도(0.1도)**: 최종 target 좌표로 다시 sync/alignment하고
   `complete`로 넘어간다. 이 마지막 동기화는 이후 tracking 정밀도를 높이기 위한
   절차다.
@@ -442,7 +545,7 @@ flowchart TD
 
 1. **명령 시점 기록**: GoTo를 보낼 때 `final_goto_sent_at`을 현재 시각으로 기록하고
    idle 타이머(`final_goto_idle_since`)를 0으로 리셋한다.
-2. **최소 대기**: 명령 후 `PIFINDER_FINAL_GOTO_SETTLE_SECONDS`(현재 2.0초) 동안은
+2. **최소 대기**: 명령 후 `PIFINDER_FINAL_GOTO_SETTLE_SECONDS`(현재 1.0초) 동안은
    완료 판정을 보류한다. 마운트가 슬루를 시작하기 직전의 잠깐 idle 상태를 "완료"로
    오판하지 않기 위한 최소 창이다.
 3. **모션 폴링**: 매 tick마다 마운트 상태 요약을 읽어 아래 중 하나라도 참이면
@@ -454,9 +557,11 @@ flowchart TD
    - 상태 문자열에 `slew` / `goto` / `moving` / `motion` 포함
 4. **idle 정착 창(settle window)**: 마운트가 정지(위 조건 모두 거짓)로 보이면 첫
    idle 샘플에서 idle 타이머를 시작하고, idle 상태가
-   `PIFINDER_FINAL_GOTO_SETTLE_SECONDS`(2.0초) 연속 유지될 때만 완료로 인정한다.
+   `PIFINDER_FINAL_GOTO_SETTLE_SECONDS`(1.0초) 연속 유지될 때만 완료로 인정한다.
    중간에 다시 모션이 감지되면 타이머를 리셋한다 — OnStepX처럼 "근처 이동 후
    미세조정"으로 모션이 잠깐 멈췄다 재개하는 마운트를 완료로 오판하지 않는다.
+   (실장비 측정에서 이런 중간 idle은 관측되지 않았고, mount_control이 자체 4초
+   안정 창을 거친 뒤 플래그를 내리므로 이 창은 짧아도 안전하다 — 아래 측정 참고.)
 5. **완료 후 오차 측정**: idle이 정착하면 `PointingCoordinateService`를 다시 읽어
    `usable_for_goto`를 확인하고(불가하면 error), target과의 오차를 측정한다. 이
    오차로 sync + GoTo 반복 / pulse guide / complete 분기를 결정한다.
@@ -469,6 +574,41 @@ flowchart TD
 
 `PIFINDER_FINAL_GOTO_SETTLE_SECONDS`는 최종·보정 GoTo 대기와 추적 가이드의
 sync + GoTo 복구 대기가 공유하는 정착 시간이다.
+
+### 실장비 정착 시간 측정 (2026-07-18)
+
+`PIFINDER_FINAL_GOTO_SETTLE_SECONDS` 최적값을 정하려고 실장비(OnStepX, 웨지)에서
+좌우 별로 **6회 GoTo**(슬루각 12~56°)를 하며 `mount_control_status.json`의 모션
+플래그를 7Hz로 캡처해 분석했다.
+
+측정 결과:
+
+```text
+- 6회 모두 실제로 슬루하고 오차 0°로 수렴.
+- 슬루 중 중간 idle(모션 플래그 1→0→1 bounce): 0건.
+  코드 주석이 대비하던 "OnStepX 코스 이동 후 미세조정 일시정지"는 관측되지 않음.
+- 물리적 정지 → 모션 플래그 해제까지 지연: 4.2~5.3초(평균 ~4.8s).
+  = mount_control의 GOTO_COMPLETE_STABLE_SECONDS(측정 당시 4초) 안정 창 때문.
+- 완료 조건(INDI busy=False, OnStep 'N', 타겟 0.5° 이내, 위치 안정<0.02°)은
+  물리적 정지 후 ~1.2초 안에 모두 만족 — 4초 중 실제 판정에 쓰인 건 앞 ~1초뿐.
+- 즉 이 서비스가 "무모션"을 보는 시점엔 마운트가 이미 ~5초 물리적으로 정지 상태.
+- 플래그 해제 직후 readback은 즉시 안정(정지 구간 vmax ≈ 항성시 수준).
+```
+
+결론(두 상수 조정):
+
+- **`PIFINDER_FINAL_GOTO_SETTLE_SECONDS` 2.0 → 1.0s**: 완료 판정용 idle 창은
+  bounce가 없고 mount_control이 이미 정착을 보장하므로 짧아도 안전하다. 명령→슬루
+  시작 지연(단독 :MS 테스트에서 <0.15s)만 흡수하면 된다(안전 마진 3배 이상).
+- **`GOTO_COMPLETE_STABLE_SECONDS` 4.0 → 2.5s** (mount_control의 1차 정착 보증
+  창): 완료 조건이 정지 후 ~1.2초 안에 굳으므로, 그 위에 ~1초 마진(도착 부근
+  OnStep 상태 떨림 대비)만 남기고 하향. GoTo·보정·복구 슬루마다 ~1.5초 절약.
+  이 창은 goto_guide의 idle 창과 달리 조기 완료 시 "움직이는 중 오차 측정"으로
+  잘못된 final sync를 유발할 수 있는 1차 보증이라, 이번 6회 슬루에 2단(도착 후
+  일시정지→재이동) 케이스가 없었던 점을 감안해 1.0초까지는 내리지 않고 2.5초에서
+  멈췄다. 더 공격적(2.0초) 하향은 긴 슬루·자오선 근처·콜드 스타트에서 원신호
+  (INDI busy, OnStep `:GU#`, tick당 위치변화)를 추가 실측해 중간 lull이 없음을
+  확인한 뒤가 안전하다.
 
 주의 사항:
 
@@ -533,7 +673,7 @@ flowchart TD
 - **지속시간 계산**: 축 오차를 그 축의 가이드레이트로 이동하는 데 필요한 시간으로
   계산한다.
   `duration_ms = |오차_arcsec| / (guide_rate_x × 15.041 arcsec/s) × aggressiveness`.
-  한 번에 오차의 일부(예: 70%)만 닫고 10초 주기 루프로 수렴시키며, 최소·최대
+  한 번에 오차의 일부(예: 70%)만 닫고 6초 주기 루프로 수렴시키며, 최소·최대
   ms로 clamp한다.
 - **가이드레이트**: 드라이버의 `GUIDE_RATE`(sidereal 배수)를 읽어 사용하고,
   못 읽으면 기본값(0.5×)으로 폴백한다.
@@ -685,6 +825,12 @@ pulse guide는 여전히 마지막 작은 오차를 닫는 수단이고, sync + 
 변위를 pulse로 기어가는 대신 한 번의 슬루로 닫기 위해 존재한다. GoTo 복구는 최종
 PiFinder GoTo용으로 이미 만든 sync + `goto_target()` + 정착/검증 로직을 재사용한 뒤
 target 근처에서 pulse guide로 넘긴다.
+
+복구 GoTo는 한 외란 이벤트당 `TRACKING_GUIDE_MAX_RECOVERY_GOTOS`(5회)로 제한된다.
+5회 안에 pulse 밴드로 수렴하지 못하면 `goto recovery limit reached`로 `failed`
+상태에 들어간다(무한 재슬루 방지). 각 복구 GoTo의 완료 판정은 PiFinder GoTo와 같은
+정착 로직(`PIFINDER_FINAL_GOTO_SETTLE_SECONDS` = 1초 무모션 창)을 쓴다. 복구 시도
+카운터는 좌표가 다시 정착할 때(외란이 새로 끝날 때)마다 0으로 리셋된다.
 
 ### On/Off 게이트 규칙
 

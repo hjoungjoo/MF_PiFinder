@@ -46,18 +46,29 @@ MOUNT_STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
 POINTING_STATUS_FILE = utils.runtime_dir / "pointing_coordinate_status.json"
 
 HEARTBEAT_SECONDS = 1.0
-# Status-file writes go to the tmpfs runtime dir; the web UI is the only
-# latency-sensitive consumer, so persist at most every 2s while keeping the
-# service loop (and command reactivity) on the 1s heartbeat.
-STATUS_WRITE_SECONDS = 2.0
-CONFIG_RELOAD_SECONDS = 5.0
+# Status-file writes go to the tmpfs runtime dir; the web UI polls it ~every 1s,
+# so match that cadence (the service loop is also 1s, so writing faster is
+# pointless). Cheap on tmpfs -- no SD wear.
+STATUS_WRITE_SECONDS = 1.0
+# How fast a config change (LCD/Web setting) reaches this service. The service
+# does not handle an explicit reload command, so this auto-reload is the only
+# path. load_config only READS config.json (no write), so a shorter cadence
+# costs a cheap re-parse, not SD wear. Lowered 5.0 -> 2.0 for snappier settings.
+CONFIG_RELOAD_SECONDS = 2.0
 POINTING_STATUS_MAX_AGE_SECONDS = 5.0
 # A GoTo is "complete" once the mount reports no motion continuously for this
 # long, and only after the same minimum settle since the command was sent. This
 # keeps a brief mid-slew idle -- or an OnStepX near-move/fine-adjust pause --
 # from being misread as arrival. Shared by the PiFinder sync + GoTo waits and the
 # tracking-guide recovery GoTo wait.
-PIFINDER_FINAL_GOTO_SETTLE_SECONDS = 2.0
+#
+# Tuned to 1.0 s from a 6-slew OnStepX field test (12-56 deg slews, 2026-07-18):
+# zero mid-slew idle/bounce was observed, and mount-control only clears its
+# motion flags after its own GOTO_COMPLETE_STABLE_SECONDS (4 s) window, so by the
+# time this service sees no-motion the mount has already been physically stopped
+# ~4-5 s. 1.0 s therefore just absorbs command-pickup latency and single-sample
+# glitches while trimming per-iteration latency versus the old 2.0 s.
+PIFINDER_FINAL_GOTO_SETTLE_SECONDS = 1.0
 # Fallback cap on sync + GoTo iterations when indi_pifinder_goto_max_gotos is
 # missing from config.
 PIFINDER_DEFAULT_MAX_GOTOS = 10
@@ -67,7 +78,7 @@ PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
 # Give the pulse-guide fine-alignment stage this long to reach the final accuracy
 # before giving up (mount-control pulses about every 10 s off a fresh solve).
 PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
-TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 2
+TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 5
 # Once the tracking target sinks below this altitude the guide must never move
 # the mount toward it (overnight targets set below the horizon; a recovery slew
 # would drive the scope into the ground). Overridable via config.

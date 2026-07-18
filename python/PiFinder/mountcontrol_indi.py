@@ -68,7 +68,12 @@ clientlogger = logging.getLogger("MountControl.Indi.Client")
 STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
 STOP_REQUEST_FILE = utils.runtime_dir / "mount_control_stop_request.json"
 POSITION_STATUS_MIN_INTERVAL = 0.5
-STATUS_HEARTBEAT_INTERVAL = 5.0
+# Idle keepalive cadence for the tmpfs mount_control_status.json. State changes
+# and in-motion position updates are written promptly (POSITION_STATUS_MIN_INTERVAL),
+# so this only bounds idle-status freshness (park/connection/"updated"). Lowered
+# 5.0 -> 2.0 for fresher idle UI; tmpfs, so no SD wear and no effect on GoTo
+# completion detection.
+STATUS_HEARTBEAT_INTERVAL = 2.0
 AUTO_CONNECT_START_DELAY = 5.0
 AUTO_CONNECT_RETRY_INTERVAL = 10.0
 AUTO_CONNECT_DEVICE_WAIT_SECONDS = 20.0
@@ -87,7 +92,16 @@ GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
 # the documented PiFinder GoTo final-alignment accuracy; used as the fallback
 # when a caller does not pass an explicit accuracy.
 DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 6.0
-GUIDE_CORRECTION_INTERVAL_SECONDS = 10.0
+# Cadence of the closed-loop pulse-guide correction. The loop also gates on a
+# FRESH plate solve (it never pulses twice off the same solve), so this is a
+# damping/settle floor on top of the solve rate (~0.5-1 s on-sky at the 400 ms
+# default exposure). Lowered 10.0 -> 6.0 to roughly halve tracking-correction and
+# PiFinder pulse-align convergence time while keeping comfortable margin over the
+# solve latency and post-pulse settle. This is a proportional-control cadence
+# (gain GUIDE_PULSE_AGGRESSIVENESS = 0.5); going much shorter risks oscillation
+# on solve noise / mount backlash, so verify convergence stays monotonic on-sky
+# before reducing further.
+GUIDE_CORRECTION_INTERVAL_SECONDS = 6.0
 # Manual-move fallback lease used only when the driver does not expose the INDI
 # timed guide-pulse interface.
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4
@@ -124,7 +138,16 @@ GUIDE_PULSE_ELEMENTS: dict[str, tuple[str, str]] = {
     "west": ("TELESCOPE_TIMED_GUIDE_WE", "TIMED_GUIDE_W"),
 }
 GOTO_COMPLETE_MIN_SECONDS = 1.0
-GOTO_COMPLETE_STABLE_SECONDS = 4.0
+# A GoTo is declared complete once all completion conditions (INDI not busy,
+# OnStep ':GU#' reports no goto, within GOTO_COMPLETE_TARGET_TOLERANCE_DEG of
+# target, and position stable within GOTO_COMPLETE_POSITION_STABLE_DEG) hold
+# continuously for this long; any failing condition resets the timer. This is
+# the primary settle guarantee before the motion flags drop.
+# Tuned 4.0 -> 2.5 from the OnStepX field test (2026-07-18): the completion
+# conditions became stable within ~1.2 s of the physical stop across 6 slews,
+# so 2.5 s keeps ~1 s margin over that (and over the near-arrival OnStep status
+# jitter) while trimming ~1.5 s of dead time per GoTo/corrective/recovery slew.
+GOTO_COMPLETE_STABLE_SECONDS = 2.5
 GOTO_COMPLETE_POSITION_STABLE_DEG = 0.02
 GOTO_COMPLETE_TARGET_TOLERANCE_DEG = 0.5
 GOTO_ONSTEP_ACTIVE_OBSERVE_GRACE_SECONDS = 3.0
