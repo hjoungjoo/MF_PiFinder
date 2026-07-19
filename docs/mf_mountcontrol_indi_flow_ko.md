@@ -485,6 +485,11 @@ goto_motion_active = true
 
 ## GoTo refine와 guide correction
 
+참고(2026-07-19): `indi_goto_refine_once` 옵션이 제거되어 이제
+`refine_after_goto=true`를 보내는 호출자가 없다. GoTo 후 정밀 보정은
+GoTo/Guide 서비스(`indi_goto_method = pifinder`)가 담당하며, 아래 refine 로직은
+mount-control에 남아 있지만 휴면 상태다.
+
 GoTo refine:
 
 ```mermaid

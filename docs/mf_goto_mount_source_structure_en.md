@@ -536,20 +536,21 @@ Keys 2/4/6/8 move while held and stop on release (hold-to-move). The shared
 implementation lives in `_mount_key`/`_mount_command` in
 `python/PiFinder/ui/base.py`.
 
-Key `5` is the existing internal PiFinder target-to-INDI-GoTo path.
+Key `5` sends the current internal PiFinder target to the GoTo/Guide service.
+With `indi_goto_method = off` it only shows a "GoTo Off" message (the refine
+option passthrough was removed in the 2026-07-19 reorganization; GoTo method
+selection and tracking-target re-arming are owned by the GoTo/Guide service).
 
 ```python
-queue.put({
+command = {
     "type": "goto_target",
     "ra": target[0],
     "dec": target[1],
-    "refine_after_goto": self.config_object.get_option(
-        "indi_goto_refine_once", False
-    ),
-    "refine_accuracy_arcmin": self.config_object.get_option(
-        "indi_goto_refine_accuracy_arcmin", 10.0
-    ),
-})
+}
+if guide_queue is not None:
+    guide_queue.put(command)
+else:
+    queue.put(command)
 ```
 
 Therefore catalog objects, observing-list objects, and SkySafari `PUSH` objects can all use the same GoTo path once they are shown in Object Details.
@@ -579,8 +580,7 @@ SkySafari target selected
   -> LX200 :Sr / :Sd / :MS
   -> pos_server.handle_goto_command()
   -> normal Push-To target storage
-  -> goto_guide_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec,
-     "refine_after_goto": ..., "refine_accuracy_arcmin": ...}
+  -> goto_guide_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
   -> IndiGotoGuideService (forwards to mountcontrol_queue when indi_goto_method=indi_mount)
   -> MountControlIndi.goto_target()
   -> INDI EQUATORIAL_EOD_COORD
@@ -591,7 +591,8 @@ SkySafari target selected
 Requirements:
 
 - `mount_control` must be enabled.
-- SkySafari INDI GoTo forwarding (`skysafari_indi_goto`) must be enabled.
+- `indi_goto_method` (GoTo Type) must not be `off`. (The `skysafari_indi_goto`
+  option was removed on 2026-07-19 and folded into GoTo Type.)
 - The target coordinate is used exactly as received from SkySafari.
 - With `indi_goto_method = pifinder` the GoTo/Guide service runs the
   PiFinder-coordinate manual-approach loop instead of a direct INDI GoTo.
@@ -605,7 +606,7 @@ SkySafari :CM#
   -> pos_server.handle_sync_command()
   -> choose current :Sr/:Sd or last target coordinate
   -> PiFinder solved/IMU alignment handling
-  -> if enabled, mountcontrol_queue {"type": "sync", ...}
+  -> if `skysafari_indi_sync` (default on) is enabled, mountcontrol_queue {"type": "sync", ...}
 ```
 
 This is the normal Sync/Align flow when Multi Align is inactive. When Multi
@@ -632,15 +633,17 @@ PushTo screen. The active session is detected from
 ```text
 PiFinder Object Details target
   -> number key 5
-  -> mountcontrol_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
+  -> goto_guide_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
+  -> IndiGotoGuideService (forwards to INDI Mount or runs the PiFinder loop per indi_goto_method)
   -> MountControlIndi.goto_target()
   -> INDI EQUATORIAL_EOD_COORD
   -> LX200 OnStep driver
   -> OnStep mount GoTo
 ```
 
-Object Details key `5` remains the PiFinder internal target-to-mount path and is
-separate from SkySafari forwarding.
+Object Details key `5` now uses the same GoTo/Guide service path as SkySafari
+forwarding (2026-07-19). It falls back to the mount-control queue only when the
+service queue is unavailable.
 
 ## Future Extension Points
 

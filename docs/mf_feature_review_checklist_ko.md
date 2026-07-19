@@ -503,7 +503,7 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - [ ] INIT menu 항목이 화면을 넘지 않는가
 - [ ] Restart action이 INIT에서 보이는가
 - [ ] STATUS가 주기적으로 갱신되는가
-- [ ] Guide overlay 안내(`2/4/6/8` 이동, `9/3` 속도, `5` Refine, `0` Guide)가 실제 동작과 일치하는가
+- [ ] Guide overlay 안내(`2/4/6/8` 이동, `9/3` 속도, `0` Guide)가 실제 동작과 일치하는가
 - [ ] 5키는 guide motion에 사용되지 않는가
 - [ ] motion 중 key release 누락 시 timeout stop이 동작하는가
 - [ ] Bluetooth keyboard로 start/stop 모두 동작하는가

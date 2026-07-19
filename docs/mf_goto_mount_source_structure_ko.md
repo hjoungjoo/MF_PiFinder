@@ -540,20 +540,21 @@ Mount Control이 켜져 있으면 Object Details 숫자 키가 mountcontrol comm
 2/4/6/8은 누르는 동안 이동하고 떼면 정지한다(hold-to-move). 실제 구현은
 `python/PiFinder/ui/base.py`의 `_mount_key`/`_mount_command`에 있다.
 
-`5`가 현재 내부 PiFinder target을 INDI GoTo로 보내는 지점이다.
+`5`가 현재 내부 PiFinder target을 GoTo/Guide 서비스로 보내는 지점이다.
+`indi_goto_method = off`이면 GoTo 없이 "GoTo Off" 메시지만 표시한다
+(2026-07-19 개편으로 refine 옵션 전달은 제거되었고, GoTo 방식 선택과 추적
+타깃 재장전은 GoTo/Guide 서비스가 담당한다).
 
 ```python
-queue.put({
+command = {
     "type": "goto_target",
     "ra": target[0],
     "dec": target[1],
-    "refine_after_goto": self.config_object.get_option(
-        "indi_goto_refine_once", False
-    ),
-    "refine_accuracy_arcmin": self.config_object.get_option(
-        "indi_goto_refine_accuracy_arcmin", 10.0
-    ),
-})
+}
+if guide_queue is not None:
+    guide_queue.put(command)
+else:
+    queue.put(command)
 ```
 
 따라서 PiFinder 내부 catalog object, observing list object, SkySafari에서 PUSH된 object는 모두 Object Details에 올라온 뒤 `5`를 누르면 같은 GoTo 경로를 사용할 수 있다.
@@ -583,8 +584,7 @@ SkySafari target selected
   -> LX200 :Sr / :Sd / :MS
   -> pos_server.handle_goto_command()
   -> 기본 Push-To target 저장
-  -> goto_guide_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec,
-     "refine_after_goto": ..., "refine_accuracy_arcmin": ...}
+  -> goto_guide_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
   -> IndiGotoGuideService (indi_goto_method=indi_mount이면 mountcontrol_queue로 전달)
   -> MountControlIndi.goto_target()
   -> INDI EQUATORIAL_EOD_COORD
@@ -595,7 +595,8 @@ SkySafari target selected
 조건:
 
 - `mount_control`이 켜져 있어야 한다.
-- SkySafari INDI GoTo forwarding 설정(`skysafari_indi_goto`)이 켜져 있어야 한다.
+- `indi_goto_method`(GoTo Type)가 `off`가 아니어야 한다. (`skysafari_indi_goto`
+  옵션은 2026-07-19에 제거되어 GoTo Type 하나로 통합되었다.)
 - target 좌표는 SkySafari에서 받은 RA/Dec를 그대로 사용한다.
 - `indi_goto_method`가 `pifinder`이면 GoTo/Guide service가 INDI GoTo 대신
   PiFinder 좌표 기반 수동 접근 loop를 실행한다.
@@ -609,7 +610,7 @@ SkySafari :CM#
   -> pos_server.handle_sync_command()
   -> 최신 :Sr/:Sd 또는 last target 좌표 선택
   -> PiFinder solved/IMU align 처리
-  -> 설정이 켜져 있으면 mountcontrol_queue {"type": "sync", ...}
+  -> `skysafari_indi_sync`(기본 켜짐)가 켜져 있으면 mountcontrol_queue {"type": "sync", ...}
 ```
 
 Multi Align이 active가 아닐 때는 일반 Sync/Align 흐름이다. Multi Align active 중에는
@@ -635,15 +636,16 @@ SkySafari :CM#
 ```text
 PiFinder Object Details target
   -> number key 5
-  -> mountcontrol_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
+  -> goto_guide_queue {"type": "goto_target", "ra": target.ra, "dec": target.dec}
+  -> IndiGotoGuideService (indi_goto_method에 따라 INDI Mount 전달 또는 PiFinder loop)
   -> MountControlIndi.goto_target()
   -> INDI EQUATORIAL_EOD_COORD
   -> LX200 OnStep driver
   -> OnStep mount GoTo
 ```
 
-Object Details의 `5` GoTo는 SkySafari forwarding과 별개로 동작하는 PiFinder 내부
-target-to-mount 경로이다.
+Object Details의 `5` GoTo도 SkySafari forwarding과 같은 GoTo/Guide 서비스 경로를
+사용한다(2026-07-19 개편). 서비스 큐가 없을 때만 mountcontrol로 직접 보낸다.
 
 ## 앞으로 GoTo 편의 기능을 붙일 수 있는 지점
 

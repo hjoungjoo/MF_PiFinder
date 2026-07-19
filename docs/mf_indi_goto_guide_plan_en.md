@@ -1,6 +1,6 @@
 # MF PiFinder INDI GoTo / Guide Settings and Implementation
 
-Baseline: `main` branch, updated against the 2026-07-18 source.
+Baseline: `main` branch, updated against the 2026-07-19 source.
 
 This document describes the INDI mount `GoTo/Guide` settings UI and behavior. It
 began as a pre-implementation design draft, but the features below are all
@@ -8,6 +8,21 @@ implemented (`indi_goto_guide_service.py`, `mountcontrol_indi.py`, the web/LCD
 UI) and this document is kept in sync with that source. Every threshold and time
 here matches the source constants and config defaults. A consolidated table is
 in [Constants and Timing (from source)](#constants-and-timing-from-source).
+
+2026-07-19 settings reorganization summary:
+
+- `indi_goto_method` (GoTo Type) gained an `off` value, which is now where GoTo
+  forwarding is disabled.
+- The `skysafari_indi_goto` and `indi_goto_refine_once` options and the LCD
+  guide-screen number-5 Refine toggle were removed.
+- `skysafari_indi_sync` now defaults to on and is the sole control for
+  SkySafari Align/Sync forwarding. IMU alignment from a SkySafari Align before
+  the first solve is always enabled.
+- The `indi_goto_refine_accuracy_arcmin` input moved to the GoTo / Guide
+  Settings card in the web UI, and the SkySafari Mount Mode card now sits
+  directly above GoTo / Guide Settings.
+- The Object Details number-5 GoTo is routed through the GoTo/Guide service
+  queue instead of going straight to mount control.
 
 ## Purpose
 
@@ -23,6 +38,7 @@ First-pass settings:
 
 ```text
 GoTo Type  (web UI label; renamed from "GoTo Method" 2026-07-17)
+  - Off
   - INDI Mount
   - PiFinder
 
@@ -57,15 +73,15 @@ python/PiFinder/mountcontrol_indi.py
 
 python/PiFinder/ui/indi.py
   UIIndiGuide
-  number 5: toggles indi_goto_refine_once
   number 0: toggle_guide_correction
 
 python/PiFinder/server.py
 python/views/indi_mount.html
   SkySafari Mount Mode settings
-  skysafari_indi_goto
+  skysafari_lx200_mount_code
   skysafari_indi_sync
-  indi_goto_refine_once
+  GoTo / Guide settings
+  indi_goto_method (off | indi_mount | pifinder)
   indi_goto_refine_accuracy_arcmin
 
 python/PiFinder/pointing_coordinate_service.py
@@ -173,8 +189,9 @@ updated
 - Stop/Abort commands must take priority in every phase.
 - The existing `goto_target()` path must remain unchanged for
   `GoTo Type = INDI Mount`.
-- `skysafari_indi_goto` controls whether SkySafari GoTo is forwarded to mount
-  features, while `indi_goto_method` controls how a forwarded GoTo is executed.
+- `indi_goto_method` decides both whether GoTo is forwarded (`off`) and how a
+  forwarded GoTo is executed (`indi_mount` / `pifinder`); `skysafari_indi_goto`
+  was removed on 2026-07-19.
 - `PointingCoordinateService` is the single coordinate-selection source.
 - PiFinder GoTo must not start while the mount is parked or location/time is
   invalid.
@@ -302,10 +319,11 @@ indi_tracking_guide_enabled = false | true
 
 indi_goto_refine_accuracy_arcmin = 6.0
   Target accuracy (arcmin) for solve-based fine correction. Default 6' = 0.1 deg
-  to match the docs (lowered from 10'). Shared by: INDI Mount refine
-  (`indi_goto_refine_once`), PiFinder GoTo final pulse-guide alignment, SkySafari
-  GoTo refine, and the LCD manual "Guide Correction". (The automatic tracking
-  guide band uses a separate key, `indi_tracking_guide_threshold_arcmin`.)
+  to match the docs (lowered from 10'). Shared by: PiFinder GoTo final
+  pulse-guide alignment and the LCD manual "Guide Correction". (The
+  `indi_goto_refine_once`-based INDI Mount refine was removed on 2026-07-19.
+  The automatic tracking guide band uses a separate key,
+  `indi_tracking_guide_threshold_arcmin`.)
 
 indi_guide_pulse_invert_we = false | true
   default: false
@@ -507,8 +525,8 @@ Behavior:
 
 - The mount driver slews to the target coordinate.
 - PiFinder publishes mount readback to the coordinate service during motion.
-- If `indi_goto_refine_once` is enabled, a one-shot solve-based refine can run
-  after GoTo completes.
+- The one-shot solve-based refine option (`indi_goto_refine_once`) was removed
+  on 2026-07-19; use `GoTo Type = PiFinder` when a precise approach is needed.
 - If Tracking Guide is On, periodic guide correction can run against the target
   after GoTo.
 
@@ -1080,21 +1098,15 @@ tracking_guide_manual_retarget    (new) whether/when the last re-target happened
 
 ## Relationship to Existing Settings
 
-These existing settings overlap with the new UI:
+Resolved by the 2026-07-19 reorganization:
 
-```text
-indi_goto_refine_once
-indi_goto_refine_accuracy_arcmin
-```
-
-Cleanup direction:
-
-- `indi_goto_refine_accuracy_arcmin` can move into the `GoTo/Guide` card as the
-  shared accuracy setting.
-- `indi_goto_refine_once` can remain as an `INDI Mount` detail option, or be
-  reinterpreted as `PiFinder final refine` after PiFinder GoTo is implemented.
-- SkySafari forwarding settings (`skysafari_indi_goto`, `skysafari_indi_sync`)
-  remain separate because they define SkySafari protocol behavior.
+- `indi_goto_refine_accuracy_arcmin` moved into the `GoTo/Guide` card as the
+  shared accuracy setting (the web input lives in GoTo / Guide Settings).
+- `indi_goto_refine_once` was removed as redundant with the GoTo/Guide
+  service's PiFinder GoTo.
+- `skysafari_indi_goto` was removed and folded into the `off` value of
+  `indi_goto_method` (GoTo Type); only `skysafari_indi_sync` (default on)
+  remains as SkySafari protocol policy.
 
 ## Staged Implementation Plan and Checklists
 
@@ -1157,9 +1169,8 @@ Goal:
 
 Checklist:
 
-- If `skysafari_indi_goto = false`, SkySafari GoTo is not forwarded to the mount.
-- If `skysafari_indi_goto = true` and `indi_goto_method = indi_mount`, GoTo
-  behaves the same as before.
+- If `indi_goto_method = off`, SkySafari GoTo is not forwarded to the mount.
+- If `indi_goto_method = indi_mount`, GoTo behaves the same as before.
 - Existing Object Details / LCD / Web GoTo behavior is not broken.
 - Stop/Abort still reaches mountcontrol immediately through the new route.
 

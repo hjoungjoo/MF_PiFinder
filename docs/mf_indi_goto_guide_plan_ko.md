@@ -1,12 +1,24 @@
 # MF PiFinder INDI GoTo / Guide 설정 설계 및 구현
 
-작성 기준: `main` 브랜치, 2026-07-18 소스와 대조해 갱신.
+작성 기준: `main` 브랜치, 2026-07-19 소스와 대조해 갱신.
 
 이 문서는 INDI 마운트의 `Goto/Guide` 설정 UI와 동작 방식을 기술한다. 최초에는
 구현 전 설계 초안이었으나, 아래 기능은 모두 구현되어 있고(`indi_goto_guide_service.py`,
 `mountcontrol_indi.py`, 웹/LCD UI) 이 문서는 그 소스에 맞춰 유지한다. 문서의
 모든 임계값·시간은 소스의 상수 및 config 기본값과 일치시켰다. 한곳에 모은
 "상수와 타이밍" 표는 [상수와 타이밍 (소스 기준)](#상수와-타이밍-소스-기준)에 있다.
+
+2026-07-19 설정 개편 요약:
+
+- `indi_goto_method`(GoTo Type)에 `off`가 추가되어 GoTo 전달을 여기서 끈다.
+- `skysafari_indi_goto`, `indi_goto_refine_once` 옵션과 LCD 가이드 화면의
+  숫자 5 Refine 토글은 제거되었다.
+- `skysafari_indi_sync`는 기본 켜짐이며 SkySafari Align/Sync 전달을 단독으로
+  제어한다. solve 전 SkySafari Align의 IMU 정렬은 항상 켜져 있다.
+- `indi_goto_refine_accuracy_arcmin` 입력은 웹 UI에서 GoTo / Guide Settings로
+  이동했고, SkySafari Mount Mode 카드는 GoTo / Guide Settings 바로 위로 옮겨졌다.
+- Object Details 숫자 5 GoTo는 mountcontrol 직행 대신 GoTo/Guide 서비스 큐를
+  사용한다.
 
 ## 목적
 
@@ -21,6 +33,7 @@ INDI 마운트를 사용할 때 GoTo와 추적 보정 동작을 사용자가 명
 
 ```text
 Goto 진행방법
+  - Off
   - INDI Mount
   - PiFinder
 
@@ -54,15 +67,15 @@ python/PiFinder/mountcontrol_indi.py
 
 python/PiFinder/ui/indi.py
   UIIndiGuide
-  숫자 5: indi_goto_refine_once 토글
   숫자 0: toggle_guide_correction
 
 python/PiFinder/server.py
 python/views/indi_mount.html
   SkySafari Mount Mode 설정
-  skysafari_indi_goto
+  skysafari_lx200_mount_code
   skysafari_indi_sync
-  indi_goto_refine_once
+  GoTo / Guide 설정
+  indi_goto_method (off | indi_mount | pifinder)
   indi_goto_refine_accuracy_arcmin
 
 python/PiFinder/pointing_coordinate_service.py
@@ -167,8 +180,8 @@ updated
 - 새 서비스는 긴 blocking loop로 동작하지 않고 짧은 tick 단위 상태 머신으로 동작한다.
 - Stop/Abort 명령은 어느 phase에서도 최우선 처리한다.
 - 기존 `goto_target()` 경로는 `GoTo Type = INDI Mount`일 때 그대로 유지한다.
-- `skysafari_indi_goto`는 SkySafari GoTo를 mount 기능으로 전달할지 결정하는 설정이고,
-  `indi_goto_method`는 전달된 GoTo를 어떤 방식으로 실행할지 결정하는 설정이다.
+- `indi_goto_method`가 GoTo 전달 여부(`off`)와 실행 방식(`indi_mount` /
+  `pifinder`)을 함께 결정한다(`skysafari_indi_goto`는 2026-07-19에 제거).
 - `PointingCoordinateService`는 좌표 계산의 단일 기준으로 사용한다.
 - PiFinder GoTo는 mount가 Park 상태이거나 위치/시간이 유효하지 않으면 시작하지 않는다.
 - PiFinder GoTo 접근은 mount sync + `goto_target()` primitive를 반복 사용하고,
@@ -280,10 +293,10 @@ indi_tracking_guide_enabled = false | true
 
 indi_goto_refine_accuracy_arcmin = 6.0
   solve 기반 정밀 보정의 목표 정확도(분각). 기본 6′ = 0.1도로 문서와 일치시켰다
-  (이전 10′에서 하향). 공유 사용처: INDI Mount refine(`indi_goto_refine_once`),
-  PiFinder GoTo 최종 pulse guide 정렬, SkySafari GoTo refine, LCD 수동 "Guide
-  Correction". (자동 추적 가이드 밴드는 별도 키 `indi_tracking_guide_threshold_arcmin`
-  사용.)
+  (이전 10′에서 하향). 공유 사용처: PiFinder GoTo 최종 pulse guide 정렬, LCD 수동
+  "Guide Correction". (`indi_goto_refine_once` 기반 INDI Mount refine은
+  2026-07-19에 제거. 자동 추적 가이드 밴드는 별도 키
+  `indi_tracking_guide_threshold_arcmin` 사용.)
 
 indi_guide_pulse_invert_we = false | true
   기본값: false
@@ -468,8 +481,8 @@ flowchart TD
 
 - 마운트 driver가 target 좌표로 이동한다.
 - PiFinder는 진행 중 mount readback을 좌표 서비스에 제공한다.
-- `indi_goto_refine_once`가 켜져 있으면 GoTo 완료 후 solve 기반 1회 refine을
-  수행할 수 있다.
+- solve 기반 1회 refine 옵션(`indi_goto_refine_once`)은 2026-07-19에 제거되었다.
+  GoTo 후 정밀 접근이 필요하면 `GoTo Type = PiFinder`를 사용한다.
 - 추적 가이드가 On이면 GoTo 이후 target을 기준으로 주기적 guide correction을
   수행한다.
 
@@ -988,21 +1001,15 @@ tracking_guide_manual_retarget    (신규) 마지막 재타겟 발생 여부/시
 
 ## 기존 설정과의 관계
 
-현재 Web의 `SkySafari Mount Mode`에 있는 다음 항목은 의미가 겹칠 수 있다.
-
-```text
-indi_goto_refine_once
-indi_goto_refine_accuracy_arcmin
-```
-
-정리 방향:
+2026-07-19 개편으로 다음과 같이 정리되었다.
 
 - `indi_goto_refine_accuracy_arcmin`은 `Goto/Guide` 공통 accuracy 설정으로
-  이동할 수 있다.
-- `indi_goto_refine_once`는 `GoTo Type = INDI Mount`에서 사용할 세부 옵션으로
-  유지하거나, PiFinder GoTo 구현 후 `PiFinder final refine`로 의미를 바꿀 수 있다.
-- SkySafari forwarding 설정(`skysafari_indi_goto`, `skysafari_indi_sync`)은
-  SkySafari protocol 정책이므로 그대로 분리한다.
+  이동했다(웹 UI 입력도 GoTo / Guide Settings에 있다).
+- `indi_goto_refine_once`는 GoTo/Guide 서비스의 PiFinder GoTo와 중복이라
+  제거되었다.
+- `skysafari_indi_goto`는 `indi_goto_method`(GoTo Type)의 `off` 값으로
+  통합되어 제거되었고, `skysafari_indi_sync`(기본 켜짐)만 SkySafari protocol
+  정책으로 남았다.
 
 ## 단계별 구현 계획과 체크리스트
 
@@ -1065,9 +1072,8 @@ indi_goto_refine_accuracy_arcmin
 
 체크리스트:
 
-- `skysafari_indi_goto = false`이면 SkySafari GoTo가 기존처럼 mount로 전달되지 않는가.
-- `skysafari_indi_goto = true`, `indi_goto_method = indi_mount`이면 기존과 같은 GoTo가
-  수행되는가.
+- `indi_goto_method = off`이면 SkySafari GoTo가 mount로 전달되지 않는가.
+- `indi_goto_method = indi_mount`이면 기존과 같은 GoTo가 수행되는가.
 - Object Details / LCD / Web에서 기존 GoTo 동작이 깨지지 않는가.
 - Stop/Abort가 새 서비스 경유 후에도 즉시 mountcontrol로 전달되는가.
 

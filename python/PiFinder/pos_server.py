@@ -691,17 +691,10 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
     elif not _goto_guide_enabled():
         return False
 
-    if not _get_config_option("skysafari_indi_goto", False) and not multipoint_active:
-        logger.info("SkySafari INDI GoTo skipped; skysafari_indi_goto is off")
+    goto_method = str(_get_config_option("indi_goto_method", "indi_mount"))
+    if goto_method == "off" and not multipoint_active:
+        logger.info("SkySafari INDI GoTo skipped; GoTo Type is off")
         return False
-
-    has_solved_pointing = _has_solved_pointing(shared_state)
-    refine_after_goto = bool(_get_config_option("indi_goto_refine_once", False))
-    if multipoint_active:
-        refine_after_goto = False
-    if refine_after_goto and not has_solved_pointing:
-        logger.info("SkySafari INDI GoTo queued without refine; PiFinder is not solved")
-        refine_after_goto = False
 
     if multipoint_active:
         command = {
@@ -721,10 +714,6 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
             "type": "goto_target",
             "ra": ra_deg,
             "dec": dec_deg,
-            "refine_after_goto": refine_after_goto,
-            "refine_accuracy_arcmin": float(
-                _get_config_option("indi_goto_refine_accuracy_arcmin", 6.0)
-            ),
         }
         goto_guide_queue.put(command)
         logger.info(
@@ -738,10 +727,8 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
 def _queue_indi_sync_if_enabled(ra_deg: float, dec_deg: float) -> bool:
     if not _mount_control_enabled():
         return False
-    sync_enabled = bool(_get_config_option("skysafari_indi_sync", False))
-    goto_forwarding_enabled = bool(_get_config_option("skysafari_indi_goto", False))
-    if not (sync_enabled or goto_forwarding_enabled):
-        logger.info("SkySafari INDI sync skipped; SkySafari mount forwarding is off")
+    if not bool(_get_config_option("skysafari_indi_sync", True)):
+        logger.info("SkySafari INDI sync skipped; skysafari_indi_sync is off")
         return False
 
     mountcontrol_queue.put(
@@ -789,8 +776,8 @@ def _queue_multipoint_align_confirm_if_active(ra_deg: float, dec_deg: float) -> 
 def _set_imu_alignment_from_target_if_no_solve(
     shared_state, ra_deg: float, dec_deg: float
 ) -> bool:
-    if not _get_config_option("skysafari_imu_align_without_solve", True):
-        return False
+    # Always enabled: a SkySafari Align before the first plate solve is the
+    # supported way to bootstrap IMU-only pointing.
     if _has_solved_pointing(shared_state):
         return False
 

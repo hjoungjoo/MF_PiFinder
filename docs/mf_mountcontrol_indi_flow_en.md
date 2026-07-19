@@ -368,6 +368,11 @@ Completion requires stable conditions:
 GoTo refine waits for a fresh solve after a GoTo, syncs the mount to the solve
 coordinate, then sends a second GoTo if needed.
 
+Note (2026-07-19): no caller sends `refine_after_goto=true` any more — the
+`indi_goto_refine_once` option was removed and post-GoTo refinement is owned by
+the GoTo/Guide service (`indi_goto_method = pifinder`). The refine machinery
+described here remains in mount-control but is dormant.
+
 Guide correction periodically compares fresh solved pointing with the target and
 sends a short manual motion pulse when the error exceeds the configured
 accuracy.

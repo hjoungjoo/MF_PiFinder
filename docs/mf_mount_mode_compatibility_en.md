@@ -98,10 +98,12 @@ When handling `CM#`, PiFinder prefers the most recently received `Sr/Sd`
 coordinates over the previous GoTo target. This prevents an Align/Sync on a new
 object from accidentally reusing the older GoTo target.
 
-When `skysafari_indi_goto` is enabled, SkySafari Align/Sync is forwarded to
-INDI/OnStep along with SkySafari GoTo. `skysafari_indi_sync` remains as an
-additional allow option for setups that want Align/Sync forwarding without
-GoTo forwarding.
+SkySafari GoTo forwarding is governed by the GoTo / Guide setting
+`indi_goto_method` (GoTo Type: `off` / `indi_mount` / `pifinder`; reorganized
+2026-07-19). Unless it is `off`, SkySafari GoTo is forwarded to the GoTo/Guide
+service. SkySafari Align/Sync forwarding is controlled solely by
+`skysafari_indi_sync` (default on). Using a SkySafari Align to calibrate the
+IMU before the first solve is always enabled and no longer an option.
 
 ## Implementation Checklist
 

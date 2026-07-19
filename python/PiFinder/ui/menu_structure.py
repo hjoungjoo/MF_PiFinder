@@ -1137,6 +1137,10 @@ pifinder_menu = {
                                     "post_callback": callbacks.reload_config,
                                     "items": [
                                         {
+                                            "name": _("Off"),
+                                            "value": "off",
+                                        },
+                                        {
                                             "name": _("INDI Mount"),
                                             "value": "indi_mount",
                                         },

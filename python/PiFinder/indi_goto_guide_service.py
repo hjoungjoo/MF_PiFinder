@@ -8,6 +8,7 @@ owns the higher-level GoTo/Guide policy and state machine.
 
 Responsibilities:
 
+- ``indi_goto_method = off``: reject GoTo requests (Stop/Abort still works).
 - ``indi_goto_method = indi_mount``: forward accepted GoTo/abort requests
   straight to the mount-control executor.
 - ``indi_goto_method = pifinder``: sync the mount to the current
@@ -225,9 +226,10 @@ class IndiGotoGuideService:
             logger.info("Tracking target cleared by request")
             return True
         if command_type == "set_tracking_target":
-            # Re-arm the tracking-guide target for a GoTo the UI sent straight to
-            # mount control (e.g. Object Details key 5). Does not move the mount;
-            # it just lets the tracking guide resume auto-correction.
+            # Re-arm the tracking-guide target for a GoTo issued outside this
+            # service (fallback path when a UI sends goto_target straight to
+            # mount control). Does not move the mount; it just lets the
+            # tracking guide resume auto-correction.
             try:
                 self.tracking_target_ra = float(command["ra"]) % 360.0
                 self.tracking_target_dec = float(command["dec"])
@@ -282,6 +284,18 @@ class IndiGotoGuideService:
             self.last_action = "goto rejected"
             return
 
+        if self.config_values.get("indi_goto_method", "indi_mount") == "off":
+            self.service_state = "idle"
+            self.phase = "idle"
+            self.wait_reason = "goto disabled (GoTo Type off)"
+            self.last_action = "goto rejected: GoTo Type off"
+            logger.info(
+                "INDI GoTo rejected; indi_goto_method is off (RA %.4f Dec %.4f)",
+                target_ra,
+                target_dec,
+            )
+            return
+
         self.active_target_ra = target_ra
         self.active_target_dec = target_dec
 
@@ -302,17 +316,14 @@ class IndiGotoGuideService:
         goto_method = self.config_values.get("indi_goto_method", "indi_mount")
 
         if goto_method == "indi_mount":
+            # No refine_after_goto passthrough: post-GoTo refinement is this
+            # service's job (indi_goto_method = pifinder), not mount-control's
+            # legacy one-shot solve refine.
             forwarded = self._forward_to_mountcontrol(
                 {
                     "type": "goto_target",
                     "ra": target_ra,
                     "dec": target_dec,
-                    "refine_after_goto": bool(
-                        command.get("refine_after_goto", False)
-                    ),
-                    "refine_accuracy_arcmin": command.get(
-                        "refine_accuracy_arcmin"
-                    ),
                 }
             )
             if not forwarded:

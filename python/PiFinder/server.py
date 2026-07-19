@@ -1068,20 +1068,11 @@ class Server:
                 "server_host": cfg.get_option("mount_control_indi_host", "localhost"),
                 "server_port": int(cfg.get_option("mount_control_indi_port", 7624)),
                 "mount_type": cfg.get_option("mount_type", "Alt/Az"),
-                "skysafari_imu_align_without_solve": bool(
-                    cfg.get_option("skysafari_imu_align_without_solve", True)
-                ),
                 "skysafari_lx200_mount_code": cfg.get_option(
                     "skysafari_lx200_mount_code", "auto"
                 ),
-                "skysafari_indi_goto": bool(
-                    cfg.get_option("skysafari_indi_goto", False)
-                ),
                 "skysafari_indi_sync": bool(
-                    cfg.get_option("skysafari_indi_sync", False)
-                ),
-                "indi_goto_refine_once": bool(
-                    cfg.get_option("indi_goto_refine_once", False)
+                    cfg.get_option("skysafari_indi_sync", True)
                 ),
                 "indi_goto_refine_accuracy_arcmin": float(
                     cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
@@ -1573,53 +1564,41 @@ class Server:
                     error_message=_("Invalid SkySafari mount status code")
                 )
 
+            cfg = config.Config()
+            cfg.load_config()
+            cfg.set_option("skysafari_lx200_mount_code", mount_code)
+            cfg.set_option(
+                "skysafari_indi_sync",
+                request.form.get("skysafari_indi_sync") == "on",
+            )
+            self.ui_queue.put("reload_config")
+            return _render_indi_page(_("SkySafari mount settings applied"))
+
+        @app.route("/indi/goto_guide", methods=["POST"])
+        @auth_required
+        def indi_goto_guide_update():
+            goto_method = (request.form.get("indi_goto_method") or "").strip()
+            if goto_method not in ("off", "indi_mount", "pifinder"):
+                return _render_indi_page(
+                    error_message=_("Invalid INDI GoTo method")
+                )
+
             try:
                 refine_accuracy_arcmin = float(
                     request.form.get("indi_goto_refine_accuracy_arcmin") or "6.0"
                 )
                 if refine_accuracy_arcmin <= 0:
                     raise ValueError("Refine accuracy must be greater than zero")
-
-                cfg = config.Config()
-                cfg.load_config()
-                cfg.set_option(
-                    "skysafari_imu_align_without_solve",
-                    request.form.get("skysafari_imu_align_without_solve") == "on",
-                )
-                cfg.set_option("skysafari_lx200_mount_code", mount_code)
-                cfg.set_option(
-                    "skysafari_indi_goto",
-                    request.form.get("skysafari_indi_goto") == "on",
-                )
-                cfg.set_option(
-                    "skysafari_indi_sync",
-                    request.form.get("skysafari_indi_sync") == "on",
-                )
-                cfg.set_option(
-                    "indi_goto_refine_once",
-                    request.form.get("indi_goto_refine_once") == "on",
-                )
-                cfg.set_option(
-                    "indi_goto_refine_accuracy_arcmin", refine_accuracy_arcmin
-                )
-                self.ui_queue.put("reload_config")
-                return _render_indi_page(_("SkySafari mount settings applied"))
             except ValueError as e:
-                logger.warning("Could not apply SkySafari mount settings: %s", e)
+                logger.warning("Could not apply GoTo / Guide settings: %s", e)
                 return _render_indi_page(error_message=str(e))
-
-        @app.route("/indi/goto_guide", methods=["POST"])
-        @auth_required
-        def indi_goto_guide_update():
-            goto_method = (request.form.get("indi_goto_method") or "").strip()
-            if goto_method not in ("indi_mount", "pifinder"):
-                return _render_indi_page(
-                    error_message=_("Invalid INDI GoTo method")
-                )
 
             cfg = config.Config()
             cfg.load_config()
             cfg.set_option("indi_goto_method", goto_method)
+            cfg.set_option(
+                "indi_goto_refine_accuracy_arcmin", refine_accuracy_arcmin
+            )
             cfg.set_option(
                 "indi_tracking_guide_enabled",
                 request.form.get("indi_tracking_guide_enabled") == "on",

@@ -792,29 +792,24 @@ class UIModule:
             # target (plain menus / status) the key is unused.
             if target is None:
                 return False
-            queue.put(
-                {
-                    "type": "goto_target",
-                    "ra": target[0],
-                    "dec": target[1],
-                    "refine_after_goto": self.config_object.get_option(
-                        "indi_goto_refine_once", False
-                    ),
-                    "refine_accuracy_arcmin": self.config_object.get_option(
-                        "indi_goto_refine_accuracy_arcmin", 6.0
-                    ),
-                }
-            )
-            # Re-arm the tracking-guide target so auto-correction can resume for
-            # this GoTo (if the tracking guide is enabled).
+            if (
+                self.config_object.get_option("indi_goto_method", "indi_mount")
+                == "off"
+            ):
+                self.message(_("GoTo Off"), 1)
+                return True
+            command = {
+                "type": "goto_target",
+                "ra": target[0],
+                "dec": target[1],
+            }
             if guide_queue is not None:
-                guide_queue.put(
-                    {
-                        "type": "set_tracking_target",
-                        "ra": target[0],
-                        "dec": target[1],
-                    }
-                )
+                # GoTo policy (INDI Mount forward vs PiFinder sync + GoTo loop)
+                # lives in the GoTo/Guide service; it also re-arms the
+                # tracking-guide target itself.
+                guide_queue.put(command)
+            else:
+                queue.put(command)
             self.message(_("Mount GoTo"), 1)
         elif number == 7:
             pointing = self._mount_pointing_radec()

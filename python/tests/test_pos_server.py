@@ -361,20 +361,14 @@ def test_skysafari_guide_move_ignored_when_mount_control_disabled(monkeypatch):
         commands.get_nowait()
 
 
-def test_skysafari_goto_queues_indi_goto_when_enabled_and_solved(monkeypatch):
-    commands = queue.Queue()
-    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+def test_skysafari_goto_routes_to_goto_guide_by_default(monkeypatch):
+    guide_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", queue.Queue())
     monkeypatch.setattr(
         pos_server,
         "pos_server_config",
-        DummyConfig(
-            {
-                "mount_control": True,
-                "skysafari_indi_goto": True,
-                "indi_goto_refine_once": True,
-                "indi_goto_refine_accuracy_arcmin": 4.5,
-            }
-        ),
+        DummyConfig({"mount_control": True}),
     )
 
     queued = pos_server._queue_indi_goto_if_enabled(
@@ -382,48 +376,37 @@ def test_skysafari_goto_queues_indi_goto_when_enabled_and_solved(monkeypatch):
     )
 
     assert queued is True
-    assert commands.get_nowait() == {
+    assert guide_commands.get_nowait() == {
         "type": "goto_target",
         "ra": 12.5,
         "dec": -34.25,
-        "refine_after_goto": True,
-        "refine_accuracy_arcmin": 4.5,
     }
 
 
-def test_skysafari_goto_queues_indi_goto_without_refine_until_solved(monkeypatch):
-    commands = queue.Queue()
-    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+def test_skysafari_goto_skipped_when_goto_method_off(monkeypatch):
+    guide_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", queue.Queue())
     monkeypatch.setattr(
         pos_server,
         "pos_server_config",
-        DummyConfig(
-            {
-                "mount_control": True,
-                "skysafari_indi_goto": True,
-                "indi_goto_refine_once": True,
-            }
-        ),
+        DummyConfig({"mount_control": True, "indi_goto_method": "off"}),
     )
 
     queued = pos_server._queue_indi_goto_if_enabled(
-        DummyState(None, DummySolution(False)), 12.5, -34.25
+        DummyState(None, DummySolution(True)), 12.5, -34.25
     )
 
-    assert queued is True
-    assert commands.get_nowait() == {
-        "type": "goto_target",
-        "ra": 12.5,
-        "dec": -34.25,
-        "refine_after_goto": False,
-        "refine_accuracy_arcmin": 10.0,
-    }
+    assert queued is False
+    with pytest.raises(queue.Empty):
+        guide_commands.get_nowait()
 
 
 def test_skysafari_ms_command_triggers_indi_goto(monkeypatch):
-    commands = queue.Queue()
+    guide_commands = queue.Queue()
     ui_commands = queue.Queue()
-    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", queue.Queue())
     monkeypatch.setattr(pos_server, "ui_queue", ui_commands, raising=False)
     monkeypatch.setattr(pos_server, "is_stellarium", True)
     monkeypatch.setattr(pos_server, "sr_result", None)
@@ -431,23 +414,21 @@ def test_skysafari_ms_command_triggers_indi_goto(monkeypatch):
     monkeypatch.setattr(
         pos_server,
         "pos_server_config",
-        DummyConfig({"mount_control": True, "skysafari_indi_goto": True}),
+        DummyConfig({"mount_control": True}),
     )
 
     assert pos_server.parse_sr_command(None, ":Sr12:30:00#") == "1"
     assert pos_server.parse_sd_command(DummyState(None), ":Sd-34*15:00#") == "1"
 
     with pytest.raises(queue.Empty):
-        commands.get_nowait()
+        guide_commands.get_nowait()
 
     assert pos_server.handle_slew_command(DummyState(None), ":MS#") == "0"
     assert ui_commands.get_nowait() == "push_object"
-    assert commands.get_nowait() == {
+    assert guide_commands.get_nowait() == {
         "type": "goto_target",
         "ra": 187.5,
         "dec": -34.25,
-        "refine_after_goto": False,
-        "refine_accuracy_arcmin": 10.0,
     }
 
 
@@ -467,7 +448,7 @@ def test_skysafari_ms_command_does_not_push_ui_during_multipoint_align(monkeypat
     monkeypatch.setattr(
         pos_server,
         "pos_server_config",
-        DummyConfig({"mount_control": True, "skysafari_indi_goto": False}),
+        DummyConfig({"mount_control": True, "indi_goto_method": "off"}),
     )
 
     assert pos_server.parse_sr_command(None, ":Sr12:30:00#") == "1"
@@ -639,7 +620,7 @@ def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
     }
 
 
-def test_skysafari_sync_queues_indi_sync_when_goto_forwarding_enabled(monkeypatch):
+def test_skysafari_sync_queues_indi_sync_by_default(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
     monkeypatch.setattr(pos_server, "align_command_queue", None)
@@ -653,8 +634,6 @@ def test_skysafari_sync_queues_indi_sync_when_goto_forwarding_enabled(monkeypatc
         DummyConfig(
             {
                 "mount_control": True,
-                "skysafari_indi_goto": True,
-                "skysafari_indi_sync": False,
                 "skysafari_pifinder_align": False,
             }
         ),
@@ -669,6 +648,34 @@ def test_skysafari_sync_queues_indi_sync_when_goto_forwarding_enabled(monkeypatc
         "ra": 42.0,
         "dec": 15.5,
     }
+
+
+def test_skysafari_sync_skipped_when_sync_disabled(monkeypatch):
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "align_command_queue", None)
+    monkeypatch.setattr(pos_server, "align_response_queue", None)
+    monkeypatch.setattr(pos_server, "last_target_coordinates", (42.0, 15.5))
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig(
+            {
+                "mount_control": True,
+                "skysafari_indi_sync": False,
+                "skysafari_pifinder_align": False,
+            }
+        ),
+    )
+
+    assert pos_server.handle_sync_command(DummyState(None), ":CM#") == (
+        "Coordinates matched."
+    )
+
+    with pytest.raises(queue.Empty):
+        commands.get_nowait()
 
 
 def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
@@ -688,7 +695,6 @@ def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
                 "mount_control": True,
                 "skysafari_indi_sync": True,
                 "skysafari_pifinder_align": False,
-                "skysafari_imu_align_without_solve": False,
             }
         ),
     )
@@ -733,7 +739,6 @@ def test_skysafari_sync_sets_imu_alignment_without_plate_solve(monkeypatch):
         DummyConfig(
             {
                 "mount_control": False,
-                "skysafari_imu_align_without_solve": True,
                 "skysafari_pifinder_align": True,
                 "skysafari_indi_sync": False,
             }

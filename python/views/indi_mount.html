@@ -152,64 +152,6 @@
 </div>
 {% endif %}
 
-<div class="card grey darken-2">
-  <div class="card-content">
-    <h5 class="grey-text">{{ _('SkySafari Mount Mode') }}</h5>
-    <form action="/indi/skysafari" method="post" id="skysafari_mount_form" class="col s12">
-      <div class="row">
-        <div class="input-field col s12 m4">
-          <input value="{{ mount_type }}" id="pifinder_mount_type" type="text" readonly>
-          <label for="pifinder_mount_type" class="active">{{ _('PiFinder Mount Type') }}</label>
-        </div>
-        <div class="input-field col s12 m4">
-          <select id="skysafari_lx200_mount_code" name="skysafari_lx200_mount_code">
-            <option value="auto" {% if skysafari_lx200_mount_code == "auto" %}selected{% endif %}>{{ _('Auto') }}</option>
-            <option value="A" {% if skysafari_lx200_mount_code == "A" %}selected{% endif %}>{{ _('Alt/Az') }}</option>
-            <option value="P" {% if skysafari_lx200_mount_code == "P" %}selected{% endif %}>{{ _('Polar / EQ') }}</option>
-            <option value="G" {% if skysafari_lx200_mount_code == "G" %}selected{% endif %}>{{ _('German EQ') }}</option>
-          </select>
-          <label class="active">{{ _('SkySafari LX200 Mount Code') }}</label>
-        </div>
-        <div class="input-field col s12 m4">
-          <input value="{{ indi_goto_refine_accuracy_arcmin }}" id="indi_goto_refine_accuracy_arcmin" type="number" min="0.1" step="0.1" name="indi_goto_refine_accuracy_arcmin">
-          <label for="indi_goto_refine_accuracy_arcmin" class="active">{{ _('Refine Accuracy arcmin') }}</label>
-        </div>
-      </div>
-      <div class="row">
-        <div class="col s12 m6">
-          <label>
-            <input type="checkbox" name="skysafari_imu_align_without_solve" {% if skysafari_imu_align_without_solve %}checked{% endif %}>
-            <span>{{ _('Use SkySafari Align to calibrate IMU before solve') }}</span>
-          </label>
-        </div>
-        <div class="col s12 m6">
-          <label>
-            <input type="checkbox" name="skysafari_indi_goto" {% if skysafari_indi_goto %}checked{% endif %}>
-            <span>{{ _('Forward SkySafari GoTo and Align/Sync to INDI') }}</span>
-          </label>
-        </div>
-      </div>
-      <div class="row">
-        <div class="col s12 m6">
-          <label>
-            <input type="checkbox" name="skysafari_indi_sync" {% if skysafari_indi_sync %}checked{% endif %}>
-            <span>{{ _('Forward SkySafari Align/Sync to INDI even when GoTo forwarding is off') }}</span>
-          </label>
-        </div>
-        <div class="col s12 m6">
-          <label>
-            <input type="checkbox" name="indi_goto_refine_once" {% if indi_goto_refine_once %}checked{% endif %}>
-            <span>{{ _('One-shot solve refine after INDI GoTo') }}</span>
-          </label>
-        </div>
-      </div>
-      <div class="row">
-        <button type="submit" class="btn">{{ _('Apply SkySafari Settings') }}</button>
-      </div>
-    </form>
-  </div>
-</div>
-
 {% if is_onstepx_driver %}
 <div class="card grey darken-2">
   <div class="card-content">
@@ -478,15 +420,54 @@
 
 <div class="card grey darken-2">
   <div class="card-content">
+    <h5 class="grey-text">{{ _('SkySafari Mount Mode') }}</h5>
+    <form action="/indi/skysafari" method="post" id="skysafari_mount_form" class="col s12">
+      <div class="row">
+        <div class="input-field col s12 m6">
+          <input value="{{ mount_type }}" id="pifinder_mount_type" type="text" readonly>
+          <label for="pifinder_mount_type" class="active">{{ _('PiFinder Mount Type') }}</label>
+        </div>
+        <div class="input-field col s12 m6">
+          <select id="skysafari_lx200_mount_code" name="skysafari_lx200_mount_code">
+            <option value="auto" {% if skysafari_lx200_mount_code == "auto" %}selected{% endif %}>{{ _('Auto') }}</option>
+            <option value="A" {% if skysafari_lx200_mount_code == "A" %}selected{% endif %}>{{ _('Alt/Az') }}</option>
+            <option value="P" {% if skysafari_lx200_mount_code == "P" %}selected{% endif %}>{{ _('Polar / EQ') }}</option>
+            <option value="G" {% if skysafari_lx200_mount_code == "G" %}selected{% endif %}>{{ _('German EQ') }}</option>
+          </select>
+          <label class="active">{{ _('SkySafari LX200 Mount Code') }}</label>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col s12">
+          <label>
+            <input type="checkbox" name="skysafari_indi_sync" {% if skysafari_indi_sync %}checked{% endif %}>
+            <span>{{ _('Forward SkySafari Align/Sync to INDI') }}</span>
+          </label>
+        </div>
+      </div>
+      <div class="row">
+        <button type="submit" class="btn">{{ _('Apply SkySafari Settings') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card grey darken-2">
+  <div class="card-content">
     <h5 class="grey-text">{{ _('GoTo / Guide Settings') }}</h5>
     <form action="/indi/goto_guide" method="post" id="indi_goto_guide_form" class="col s12">
       <div class="row">
         <div class="input-field col s12 m6">
           <select id="indi_goto_method" name="indi_goto_method">
+            <option value="off" {% if indi_goto_method == "off" %}selected{% endif %}>{{ _('Off') }}</option>
             <option value="indi_mount" {% if indi_goto_method == "indi_mount" %}selected{% endif %}>{{ _('INDI Mount') }}</option>
             <option value="pifinder" {% if indi_goto_method == "pifinder" %}selected{% endif %}>{{ _('PiFinder') }}</option>
           </select>
           <label class="active">{{ _('GoTo Type') }}</label>
+        </div>
+        <div class="input-field col s12 m6">
+          <input value="{{ indi_goto_refine_accuracy_arcmin }}" id="indi_goto_refine_accuracy_arcmin" type="number" min="0.1" step="0.1" name="indi_goto_refine_accuracy_arcmin">
+          <label for="indi_goto_refine_accuracy_arcmin" class="active">{{ _('Refine Accuracy arcmin') }}</label>
         </div>
       </div>
       <div class="row">

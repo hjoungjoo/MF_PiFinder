@@ -440,7 +440,7 @@ class UIIndiGuide(UIIndiBase):
 
         bottom_hint_y = max(
             self.display_class.titlebar_height + 1,
-            self.display_class.resY - (line_h * 4) - 2,
+            self.display_class.resY - (line_h * 3) - 2,
         )
 
         overlay_text(4, bottom_hint_y, _("2/4/6/8 : Move"))
@@ -450,16 +450,10 @@ class UIIndiGuide(UIIndiBase):
             bottom_hint_y + line_h,
             _("9/3 : Speed {label}").format(label=compact_label),
         )
-        refine = self.config_object.get_option("indi_goto_refine_once", False)
-        overlay_text(
-            4,
-            bottom_hint_y + (line_h * 2),
-            _("5 : Refine {state}").format(state="On" if refine else "off"),
-        )
         guide_corr = status.get("guide_correction_enabled", False)
         overlay_text(
             4,
-            bottom_hint_y + (line_h * 3),
+            bottom_hint_y + (line_h * 2),
             _("0 : Guide {state}").format(state="On" if guide_corr else "off"),
         )
 
@@ -499,11 +493,6 @@ class UIIndiGuide(UIIndiBase):
                 }
             )
             self.message(_("Guide Correction"), 1)
-        elif number == 5:
-            enabled = not self.config_object.get_option("indi_goto_refine_once", False)
-            self.config_object.set_option("indi_goto_refine_once", enabled)
-            self.command_queues["ui_queue"].put("reload_config")
-            self.message(_("Refine On") if enabled else _("Refine Off"), 1)
         elif number == 9:
             self._send_mount({"type": "increase_slew_rate"})
             self.message(_("Speed +"), 0.5)
@@ -514,7 +503,7 @@ class UIIndiGuide(UIIndiBase):
     def key_number_press(self, number=None):
         if number is None:
             return
-        if number in (0, 3, 5, 9):
+        if number in (0, 3, 9):
             self.key_number(number)
             return
         direction = self._number_direction.get(number)
@@ -524,7 +513,7 @@ class UIIndiGuide(UIIndiBase):
     def key_number_release(self, number=None):
         if number is None:
             return
-        if number in (0, 3, 5, 9):
+        if number in (0, 3, 9):
             return
         if number in self._number_direction:
             self._move("stop")

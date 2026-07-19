@@ -504,7 +504,7 @@ Review points:
 - [ ] INIT menu fits the screen
 - [ ] Restart action appears in INIT
 - [ ] STATUS updates periodically
-- [ ] Guide overlay hints (`2/4/6/8` move, `9/3` speed, `5` refine, `0` guide) match actual behavior
+- [ ] Guide overlay hints (`2/4/6/8` move, `9/3` speed, `0` guide) match actual behavior
 - [ ] Key 5 is not used for guide motion
 - [ ] Timeout stop works on missed key release
 - [ ] Bluetooth keyboard starts and stops motion
