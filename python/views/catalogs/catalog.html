@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ catalog_code }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/css/catalogs.css?v=4">
+<div class="pfcat"
+     data-catalog="{{ catalog_code }}"
+     data-alt-enabled="{{ 1 if alt_enabled else 0 }}">
+  <div class="pfcat-crumb"><a href="/catalogs">{{ _('Catalogs') }}</a> / {{ catalog_code }}</div>
+  <h4 class="pfcat-title">{{ catalog_code }}</h4>
+  <p class="pfcat-sub">{{ catalog_desc }} · {{ "{:,}".format(object_count) }} {{ _('objects') }}</p>
+
+  <div class="pfcat-filterbar">
+    <input type="search" class="browser-default" id="pfcat-q" placeholder="{{ _('Filter by name…') }}" autocomplete="off">
+    <select class="browser-default" id="pfcat-type">
+      <option value="">{{ _('Type: All') }}</option>
+      {% for t in obj_types %}
+      <option value="{{ t.code }}">{{ t.label }}</option>
+      {% endfor %}
+    </select>
+    <select class="browser-default" id="pfcat-const">
+      <option value="">{{ _('Constellation: All') }}</option>
+      {% for c in constellations %}
+      <option value="{{ c }}">{{ c }}</option>
+      {% endfor %}
+    </select>
+    <select class="browser-default" id="pfcat-mag">
+      <option value="">{{ _('Mag: All') }}</option>
+      <option value="7">≤ 7</option>
+      <option value="9">≤ 9</option>
+      <option value="11">≤ 11</option>
+      <option value="13">≤ 13</option>
+    </select>
+    <select class="browser-default" id="pfcat-observed">
+      <option value="">{{ _('Observed: All') }}</option>
+      <option value="yes">{{ _('Observed') }}</option>
+      <option value="no">{{ _('Not observed') }}</option>
+    </select>
+    <button class="pfcat-chip" id="pfcat-upnow" aria-pressed="false"
+            {% if not alt_enabled %}disabled title="{{ _('Disabled for large catalogs or without GPS lock') }}"{% endif %}>
+      {{ _('Up now') }}</button>
+    <select class="browser-default" id="pfcat-sort">
+      <option value="seq">{{ _('Sort: Number') }}</option>
+      {% if alt_enabled %}<option value="alt">{{ _('Sort: Altitude') }}</option>{% endif %}
+      <option value="mag">{{ _('Sort: Magnitude') }}</option>
+    </select>
+    <span class="pfcat-spacer"></span>
+    <span id="pfcat-shown" class="pfcat-muted"></span>
+  </div>
+
+  <div class="pfcat-tablewrap">
+    <table class="pfcat-table">
+      <thead>
+        <tr>
+          <th>{{ _('Object') }}</th>
+          <th>{{ _('Type') }}</th>
+          <th>{{ _('Const') }}</th>
+          <th class="num">{{ _('Mag') }}</th>
+          <th class="num">{{ _('Size') }}</th>
+          <th class="num">{{ _('Alt') }}</th>
+          <th>{{ _('Obs') }}</th>
+        </tr>
+      </thead>
+      <tbody id="pfcat-rows">
+        <tr><td colspan="7" class="pfcat-muted">{{ _('Loading…') }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pfcat-tablefoot">
+    <span id="pfcat-foot-note" class="pfcat-muted"></span>
+    <div class="pfcat-pages" id="pfcat-pages"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/js/catalogs.js?v=4"></script>
+<script>pfcatInitCatalog();</script>
+{% endblock %}

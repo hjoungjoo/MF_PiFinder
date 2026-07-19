@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ obj.display }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/css/catalogs.css?v=4">
+<div class="pfcat"
+     {% if obj.planet %}data-planet="{{ obj.planet | lower }}"{% else %}data-object-id="{{ obj.object_id }}"{% endif %}>
+  <div class="pfcat-crumb">
+    <a href="/catalogs">{{ _('Catalogs') }}</a> /
+    <a href="/catalogs/{{ obj.catalog_code }}">{{ obj.catalog_code }}</a> /
+    {{ obj.display }}
+  </div>
+
+  <div class="pfcat-detailgrid">
+    <div>
+      {% if not obj.planet %}
+      <div class="pfcat-imgcard">
+        <img id="pfcat-obj-image" src="/catalogs/image/{{ obj.object_id }}"
+             alt="{{ obj.display }}"
+             onerror="this.parentElement.classList.add('noimg'); this.remove();">
+        <div class="pfcat-credit">POSS — Palomar Observatory Sky Survey</div>
+      </div>
+      {% endif %}
+      <div class="pfcat-altcard">
+        <div class="pfcat-k">{{ _('Altitude (next 18h)') }}</div>
+        <canvas id="pfcat-altchart" width="600" height="220"
+                aria-label="{{ _('Altitude curve') }}"></canvas>
+        <div id="pfcat-alt-note" class="pfcat-muted"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="pfcat-titleline">
+        <h4>{{ obj.display }}</h4>
+        {% if obj.names %}<span class="pfcat-common">{{ obj.names | join(' · ') }}</span>{% endif %}
+      </div>
+      <div class="pfcat-badges">
+        <span class="pfcat-badge">{{ obj.type_label }}</span>
+        <span class="pfcat-badge">{{ obj.const }}</span>
+        {% if obj.observed %}<span class="pfcat-badge">{{ _('Observed') }} ✓</span>{% endif %}
+      </div>
+
+      <div class="pfcat-facts">
+        <div class="pfcat-fact"><div class="pfcat-k">RA / Dec (J2000)</div>
+          <div class="pfcat-v mono">{{ obj.ra_str }} · {{ obj.dec_str }}</div></div>
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('Magnitude') }}</div>
+          <div class="pfcat-v mono">{{ obj.mag_str }}</div></div>
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('Size') }}</div>
+          <div class="pfcat-v mono">{{ obj.size_str }}</div></div>
+        {% if obj.surface_brightness %}
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('Surface Br.') }}</div>
+          <div class="pfcat-v mono">{{ obj.surface_brightness }}</div></div>
+        {% endif %}
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('Now') }}</div>
+          <div class="pfcat-v mono" id="pfcat-now-altaz">
+            {% if obj.alt is not none %}Alt {{ obj.alt }}° · Az {{ obj.az }}°{% else %}—{% endif %}
+          </div></div>
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('Transit') }}</div>
+          <div class="pfcat-v mono" id="pfcat-transit">—</div></div>
+        {% if obj.track %}
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('Track rate') }}</div>
+          <div class="pfcat-v mono">dRA/dt {{ obj.track.offset_arcsec_per_s }}″/s
+            → {{ obj.track.hz }} Hz</div></div>
+        {% endif %}
+      </div>
+
+      <div class="pfcat-actions">
+        <button class="pfcat-btn primary" id="pfcat-push">{{ _('Push to PiFinder') }}</button>
+        <span id="pfcat-push-result" class="pfcat-muted"></span>
+      </div>
+
+      {% if obj.description %}
+      <p class="pfcat-desc">{{ obj.description }}</p>
+      {% endif %}
+      {% for entry in obj.other_entries %}
+      <p class="pfcat-desc">
+        <span class="pfcat-muted">{{ _('Also') }} {{ entry.display }}:</span>
+        {{ entry.description }}
+      </p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/js/catalogs.js?v=4"></script>
+<script>pfcatInitObject();</script>
+{% endblock %}
