@@ -520,6 +520,7 @@
       </div>
       <div class="row">
         <button type="submit" class="btn">{{ _('Apply GoTo / Guide Settings') }}</button>
+        <button type="button" class="btn" id="tracking_guide_suspend_button" data-action="suspend">{{ _('Pause Guide') }}</button>
       </div>
     </form>
     <h6 class="grey-text">{{ _('GoTo / Guide Status') }}</h6>
@@ -1160,6 +1161,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     setText('tracking_guide_recovery_value', mode);
     setText('goto_guide_last_action_value', status.last_action || '-');
+    var suspendButton = document.getElementById('tracking_guide_suspend_button');
+    if (suspendButton) {
+      var suspended = !!status.tracking_guide_suspended;
+      suspendButton.textContent = suspended
+        ? '{{ _("Resume Guide") }}'
+        : '{{ _("Pause Guide") }}';
+      suspendButton.dataset.action = suspended ? 'resume' : 'suspend';
+    }
   }
 
   function updatePointingCoordinateStatus(status) {
@@ -1333,6 +1342,21 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(function(error) {
           if (pcsStatus) { pcsStatus.textContent = error.message; }
+        });
+    });
+  }
+
+  var trackingGuideSuspendButton = document.getElementById('tracking_guide_suspend_button');
+  if (trackingGuideSuspendButton) {
+    trackingGuideSuspendButton.addEventListener('click', function(event) {
+      event.preventDefault();
+      var action = trackingGuideSuspendButton.dataset.action || 'suspend';
+      postIndiAction('/indi/goto_guide/suspend', {action: action})
+        .then(function() {
+          refreshIndiState(false);
+        })
+        .catch(function(error) {
+          setText('goto_guide_last_action_value', error.message);
         });
     });
   }

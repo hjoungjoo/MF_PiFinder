@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-19 11:07+0900\n"
+"POT-Creation-Date: 2026-07-19 12:15+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: Jens Scheidtmann\n"
 "Language: de_DE\n"
@@ -22,7 +22,7 @@ msgstr ""
 msgid "No Image"
 msgstr "Kein Bild"
 
-#: PiFinder/main.py:807
+#: PiFinder/main.py:808
 msgid ""
 "Degraded\n"
 "Check Status"
@@ -30,7 +30,7 @@ msgstr ""
 "Eingeschränkt\n"
 "Status checken"
 
-#: PiFinder/main.py:904
+#: PiFinder/main.py:905
 msgid ""
 "Catalogs\n"
 "Fully Loaded"
@@ -38,14 +38,14 @@ msgstr ""
 "Kataloge\n"
 "geladen"
 
-#: PiFinder/main.py:1114 PiFinder/main.py:1124
+#: PiFinder/main.py:1115 PiFinder/main.py:1125
 #, fuzzy
 msgid ""
 "INDI Mount\n"
 "restarting"
 msgstr "Ok! Neustart..."
 
-#: PiFinder/main.py:1136 PiFinder/main.py:1145
+#: PiFinder/main.py:1137 PiFinder/main.py:1146
 msgid ""
 "INDI GoTo/Guide\n"
 "restarting"
@@ -125,312 +125,333 @@ msgstr "Komet"
 msgid "Unkn"
 msgstr "Unbkt"
 
-#: PiFinder/server.py:273
+#: PiFinder/server.py:275
 msgid "Locked"
 msgstr "Gesperrt"
 
-#: PiFinder/server.py:273
+#: PiFinder/server.py:275
 msgid "Not Locked"
 msgstr "Nicht gesperrt"
 
-#: PiFinder/server.py:295 views/base.html:60 views/base.html:73
+#: PiFinder/server.py:297 views/base.html:60 views/base.html:73
 msgid "Home"
 msgstr "Home"
 
-#: PiFinder/server.py:323 PiFinder/server.py:331 views/login.html:31
+#: PiFinder/server.py:325 PiFinder/server.py:333 views/login.html:31
 msgid "Login"
 msgstr "Einloggen"
 
-#: PiFinder/server.py:325
+#: PiFinder/server.py:327
 msgid "Invalid Password"
 msgstr "Falsches Passwort"
 
-#: PiFinder/server.py:337 views/base.html:61 views/base.html:74
+#: PiFinder/server.py:339 views/base.html:61 views/base.html:74
 msgid "Remote"
 msgstr "Fernsteuerung"
 
-#: PiFinder/server.py:343 PiFinder/ui/menu_structure.py:1271
+#: PiFinder/server.py:345 PiFinder/ui/menu_structure.py:1271
 msgid "Advanced"
 msgstr "Erweitert"
 
-#: PiFinder/server.py:357
+#: PiFinder/server.py:359
 #, fuzzy
 msgid "Wi-Fi scan failed"
 msgstr "Speichern fehlgeschlagen"
 
-#: PiFinder/server.py:360 PiFinder/server.py:611 PiFinder/server.py:650
+#: PiFinder/server.py:362 PiFinder/server.py:613 PiFinder/server.py:652
 msgid "Network"
 msgstr "Netzwerk"
 
-#: PiFinder/server.py:380 PiFinder/ui/menu_structure.py:1463
+#: PiFinder/server.py:382 PiFinder/ui/menu_structure.py:1463
 msgid "GPS"
 msgstr "GPS"
 
-#: PiFinder/server.py:414 PiFinder/server.py:503 PiFinder/server.py:554
+#: PiFinder/server.py:416 PiFinder/server.py:505 PiFinder/server.py:556
 #: views/base.html:64 views/base.html:77
 msgid "Locations"
 msgstr "Orte"
 
-#: PiFinder/server.py:469 PiFinder/server.py:528
+#: PiFinder/server.py:471 PiFinder/server.py:530
 msgid "Location name is required"
 msgstr "Ortname ist erforderlich"
 
-#: PiFinder/server.py:471 PiFinder/server.py:530
+#: PiFinder/server.py:473 PiFinder/server.py:532
 msgid "Latitude must be between -90 and 90"
 msgstr "Höhe muss zwischen -90 und 90 sein"
 
-#: PiFinder/server.py:473 PiFinder/server.py:532
+#: PiFinder/server.py:475 PiFinder/server.py:534
 msgid "Longitude must be between -180 and 180"
 msgstr "Breite muss zwischen -180 und 180 sein"
 
-#: PiFinder/server.py:476 PiFinder/server.py:535
+#: PiFinder/server.py:478 PiFinder/server.py:537
 msgid "Altitude must be between -1000 and 10000 meters"
 msgstr "Höhe muss zwischen -1000 und 10000 Metern sein"
 
-#: PiFinder/server.py:479 PiFinder/server.py:538
+#: PiFinder/server.py:481 PiFinder/server.py:540
 msgid "Error must be between 0 and 10000 meters"
 msgstr "Unsicherheit muss zwichen 0 und 10000 Metern liegen"
 
-#: PiFinder/server.py:646 PiFinder/ui/menu_structure.py:1858
+#: PiFinder/server.py:648 PiFinder/ui/menu_structure.py:1858
 msgid "Restart"
 msgstr "Neu starten"
 
-#: PiFinder/server.py:667 PiFinder/server.py:676 PiFinder/server.py:680
-#: PiFinder/server.py:684 PiFinder/server.py:1039
+#: PiFinder/server.py:669 PiFinder/server.py:678 PiFinder/server.py:682
+#: PiFinder/server.py:686 PiFinder/server.py:1041
 #: PiFinder/ui/menu_structure.py:1705 views/base.html:67 views/base.html:80
 #: views/tools.html:6
 msgid "Tools"
 msgstr "Werkzeuge"
 
-#: PiFinder/server.py:668
+#: PiFinder/server.py:670
 msgid "You must fill in all password fields"
 msgstr "All Passwortfelder müssen gefüllt werden"
 
-#: PiFinder/server.py:676
+#: PiFinder/server.py:678
 msgid "Password Changed"
 msgstr "Passwort geändert"
 
-#: PiFinder/server.py:680
+#: PiFinder/server.py:682
 msgid "Incorrect current password"
 msgstr "Falsches aktuelles Passwort"
 
-#: PiFinder/server.py:684
+#: PiFinder/server.py:686
 msgid "New passwords do not match"
 msgstr "Neue Passwörter sind unterschiedlich"
 
-#: PiFinder/server.py:709 PiFinder/server.py:720 PiFinder/server.py:737
-#: PiFinder/server.py:819 PiFinder/server.py:875 PiFinder/server.py:888
-#: PiFinder/server.py:961 PiFinder/server.py:974
+#: PiFinder/server.py:711 PiFinder/server.py:722 PiFinder/server.py:739
+#: PiFinder/server.py:821 PiFinder/server.py:877 PiFinder/server.py:890
+#: PiFinder/server.py:963 PiFinder/server.py:976
 #: PiFinder/ui/menu_structure.py:1710 views/base.html:65 views/base.html:78
 #: views/equipment.html:6
 msgid "Equipment"
 msgstr "Ausrüstung"
 
-#: PiFinder/server.py:726
+#: PiFinder/server.py:728
 msgid "set as active instrument."
 msgstr "als aktives Instrument gesetzt."
 
-#: PiFinder/server.py:743
+#: PiFinder/server.py:745
 msgid "set as active eyepiece."
 msgstr "Als aktives Okular gesetzt."
 
-#: PiFinder/server.py:822
+#: PiFinder/server.py:824
 msgid "Equipment Imported, restart your PiFinder to use this new data"
 msgstr "Ausrüstung importiert, bitte PiFinder neustarten"
 
-#: PiFinder/server.py:837
+#: PiFinder/server.py:839
 msgid "Edit Eyepiece"
 msgstr "Okular editieren"
 
-#: PiFinder/server.py:877
+#: PiFinder/server.py:879
 msgid "Eyepiece added, restart your PiFinder to use"
 msgstr "Okular hinzugefügt, bitte PiFinder neustarten"
 
-#: PiFinder/server.py:891
+#: PiFinder/server.py:893
 msgid "Eyepiece Deleted, restart your PiFinder to remove from menu"
 msgstr "Okular gelöscht, bitte PiFinder neustarten"
 
-#: PiFinder/server.py:915
+#: PiFinder/server.py:917
 msgid "Edit Instrument"
 msgstr "Instrument editieren"
 
-#: PiFinder/server.py:963
+#: PiFinder/server.py:965
 msgid "Instrument Added, restart your PiFinder to use"
 msgstr "Instrument hinzugefügt, bitte PiFinder neustarten"
 
-#: PiFinder/server.py:977
+#: PiFinder/server.py:979
 msgid "Instrument Deleted, restart your PiFinder to remove from menu"
 msgstr "Instrument gelöscht, bitte PiFinder neustarten"
 
-#: PiFinder/server.py:1004 views/base.html:63 views/base.html:76
+#: PiFinder/server.py:1006 views/base.html:63 views/base.html:76
 msgid "Observations"
 msgstr "Beobachtungen"
 
-#: PiFinder/server.py:1033
+#: PiFinder/server.py:1035
 msgid "Session Log"
 msgstr "Log speichern"
 
-#: PiFinder/server.py:1048 views/base.html:68 views/base.html:81
+#: PiFinder/server.py:1050 views/base.html:68 views/base.html:81
 #: views/livecam.html:125
 msgid "LiveCam"
 msgstr ""
 
-#: PiFinder/server.py:1120
+#: PiFinder/server.py:1122
 #, python-format
 msgid ""
 "This INDI profile uses %(driver)s. OnStepX controls are available only "
 "when the active profile driver is LX200 OnStepX."
 msgstr ""
 
-#: PiFinder/server.py:1123
+#: PiFinder/server.py:1125
 #, fuzzy
 msgid "unknown driver"
 msgstr "Unbkt"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1414
+#: PiFinder/server.py:1416
 #, fuzzy
 msgid "Backlash must be a number"
 msgstr "Muss eine gültige Zahl sein"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1417
+#: PiFinder/server.py:1419
 #, fuzzy, python-format
 msgid "Backlash must be between 0 and %(max)d"
 msgstr "Muss zwischen -90 und 90 liegen"
 
-#: PiFinder/server.py:1429 PiFinder/server.py:1754 PiFinder/server.py:2078
-#: PiFinder/server.py:2095
+#: PiFinder/server.py:1431 PiFinder/server.py:1771 PiFinder/server.py:2095
+#: PiFinder/server.py:2112
 msgid "Mount-control process is not available"
 msgstr ""
 
-#: PiFinder/server.py:1461 PiFinder/ui/menu_structure.py:80 views/base.html:66
+#: PiFinder/server.py:1463 PiFinder/ui/menu_structure.py:80 views/base.html:66
 #: views/base.html:79 views/indi_mount.html:11
 msgid "INDI"
 msgstr ""
 
-#: PiFinder/server.py:1564
+#: PiFinder/server.py:1566
 msgid "Invalid SkySafari mount status code"
 msgstr ""
 
-#: PiFinder/server.py:1575
+#: PiFinder/server.py:1577
 msgid "SkySafari mount settings applied"
 msgstr ""
 
-#: PiFinder/server.py:1583
+#: PiFinder/server.py:1585
 msgid "Invalid INDI GoTo method"
 msgstr ""
 
-#: PiFinder/server.py:1630
+#: PiFinder/server.py:1632
 msgid "INDI GoTo / Guide settings applied"
 msgstr ""
 
-#: PiFinder/server.py:1677
+#: PiFinder/server.py:1639
+# AI-TRANSLATED (claude): needs human review
+msgid "Invalid action"
+msgstr "Ungültige Aktion"
+
+#: PiFinder/server.py:1642
+# AI-TRANSLATED (claude): needs human review
+msgid "GoTo/Guide service unavailable"
+msgstr "GoTo/Guide-Dienst nicht verfügbar"
+
+#: PiFinder/server.py:1646
+# AI-TRANSLATED (claude): needs human review
+msgid "Guide paused"
+msgstr "Guide pausiert"
+
+# AI-TRANSLATED (claude): needs human review
+#: PiFinder/server.py:1646
+# AI-TRANSLATED (claude): needs human review
+msgid "Guide resumed"
+msgstr "Guide fortgesetzt"
+
+#: PiFinder/server.py:1694
 msgid "INDI OnStep settings applied"
 msgstr ""
 
-#: PiFinder/server.py:1736
+#: PiFinder/server.py:1753
 msgid "INDI server restarted and driver connected"
 msgstr ""
 
-#: PiFinder/server.py:1756
+#: PiFinder/server.py:1773
 #, fuzzy
 msgid "Mount controller reboot requested"
 msgstr "Justage fertig"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1889
+#: PiFinder/server.py:1906
 #, fuzzy
 msgid "Motion command sent"
 msgstr "Ortsverwaltung"
 
-#: PiFinder/server.py:1950
+#: PiFinder/server.py:1967
 msgid "Location and UTC time sent via INDI"
 msgstr ""
 
-#: PiFinder/server.py:1967
+#: PiFinder/server.py:1984
 #, fuzzy
 msgid "Invalid alignment mode"
 msgstr "Justage fertig"
 
-#: PiFinder/server.py:1971 PiFinder/server.py:1988
+#: PiFinder/server.py:1988 PiFinder/server.py:2005
 msgid "Select a valid alignment star"
 msgstr ""
 
-#: PiFinder/server.py:1980
+#: PiFinder/server.py:1997
 msgid "Multi-point alignment started"
 msgstr ""
 
-#: PiFinder/server.py:1996
+#: PiFinder/server.py:2013
 #, fuzzy
 msgid "Alignment star GoTo requested"
 msgstr "Justage fertig"
 
-#: PiFinder/server.py:2005
+#: PiFinder/server.py:2022
 #, fuzzy
 msgid "Alignment point confirmed"
 msgstr "Justage abgebrochen"
 
-#: PiFinder/server.py:2012
+#: PiFinder/server.py:2029
 msgid "Multi-point alignment cancelled"
 msgstr ""
 
-#: PiFinder/server.py:2017
+#: PiFinder/server.py:2034
 #, fuzzy
 msgid "Invalid alignment action"
 msgstr "Justage abgebrochen"
 
-#: PiFinder/server.py:2046
+#: PiFinder/server.py:2063
 msgid "Backlash settings saved"
 msgstr ""
 
-#: PiFinder/server.py:2060
+#: PiFinder/server.py:2077
 msgid "Invalid backlash auto mode"
 msgstr ""
 
-#: PiFinder/server.py:2067
+#: PiFinder/server.py:2084
 msgid "Motion test repeats must be a number"
 msgstr ""
 
-#: PiFinder/server.py:2074
+#: PiFinder/server.py:2091
 #, fuzzy, python-format
 msgid "Motion test repeats must be between 1 and %(max)d"
 msgstr "Breite muss zwischen -180 und 180 sein"
 
-#: PiFinder/server.py:2083
+#: PiFinder/server.py:2100
 msgid "Solved GoTo motion test started"
 msgstr ""
 
-#: PiFinder/server.py:2098
+#: PiFinder/server.py:2115
 msgid "Solved GoTo loop continue requested"
 msgstr ""
 
-#: PiFinder/server.py:2121 views/indi_mount.html:1377
+#: PiFinder/server.py:2138 views/indi_mount.html:1401
 msgid "Backlash motion test stop requested"
 msgstr ""
 
-#: PiFinder/server.py:2128
+#: PiFinder/server.py:2145
 msgid "Backlash stop requested; waiting for mount-control process stop"
 msgstr ""
 
-#: PiFinder/server.py:2143 views/indi_mount.html:1330
+#: PiFinder/server.py:2160 views/indi_mount.html:1339
 msgid "Pointing reset requested"
 msgstr ""
 
-#: PiFinder/server.py:2150 PiFinder/server.py:2248 views/base.html:69
+#: PiFinder/server.py:2167 PiFinder/server.py:2265 views/base.html:69
 #: views/base.html:82
 msgid "Logs"
 msgstr "Logs"
 
-#: PiFinder/server.py:2248
+#: PiFinder/server.py:2265
 msgid "Error creating log archive"
 msgstr "Fehler beim zippen der Logs"
 
-#: PiFinder/server.py:2305 views/restart_pifinder.html:6
+#: PiFinder/server.py:2322 views/restart_pifinder.html:6
 msgid "Restarting PiFinder"
 msgstr "PiFinder Neustart..."
 
-#: PiFinder/server.py:2367
+#: PiFinder/server.py:2384
 msgid "Restart PiFinder"
 msgstr "PiFinder Neustart..."
 
@@ -528,7 +549,6 @@ msgstr "Montierungsart"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/base.py:799
-# AI-TRANSLATED (claude): needs human review
 msgid "GoTo Off"
 msgstr "GoTo Aus"
 
@@ -1405,7 +1425,7 @@ msgid "Mount Reboot"
 msgstr "Montierungsart"
 
 #: PiFinder/ui/indi.py:284 PiFinder/ui/indi.py:776 views/indi_mount.html:285
-#: views/indi_mount.html:1140
+#: views/indi_mount.html:1141
 #, fuzzy
 msgid "Idle"
 msgstr "Filter"
@@ -2353,7 +2373,7 @@ msgid "Multi Align"
 msgstr "Polausricht."
 
 #: PiFinder/ui/menu_structure.py:1124 views/indi_mount.html:336
-#: views/indi_mount.html:579
+#: views/indi_mount.html:580
 #, fuzzy
 msgid "Backlash"
 msgstr "ZURÜCK"
@@ -3993,8 +4013,8 @@ msgid "PiFinder Screen"
 msgstr "PiFinder Display"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/index.html:14 views/indi_mount.html:200 views/indi_mount.html:1063
-#: views/indi_mount.html:1101
+#: views/index.html:14 views/indi_mount.html:200 views/indi_mount.html:1064
+#: views/indi_mount.html:1102
 msgid "Mode"
 msgstr "Modus"
 
@@ -4300,7 +4320,7 @@ msgstr "GPS Status"
 msgid "Raw Mount Status"
 msgstr ""
 
-#: views/indi_mount.html:237 views/indi_mount.html:584
+#: views/indi_mount.html:237 views/indi_mount.html:585
 #, fuzzy
 msgid "At Home"
 msgstr "Home"
@@ -4471,12 +4491,12 @@ msgstr ""
 msgid "%(axis)s Backlash"
 msgstr ""
 
-#: views/indi_mount.html:403 views/indi_mount.html:580
+#: views/indi_mount.html:403 views/indi_mount.html:581
 msgid "Start Motion Test"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:404 views/indi_mount.html:581
+#: views/indi_mount.html:404 views/indi_mount.html:582
 #, fuzzy
 msgid "Continue Motion Test"
 msgstr "Länge Minuten"
@@ -4522,8 +4542,8 @@ msgstr "Deutsch"
 msgid "SkySafari LX200 Mount Code"
 msgstr ""
 
-#: views/indi_mount.html:444
 # AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:444
 msgid "Forward SkySafari Align/Sync to INDI"
 msgstr "SkySafari Align/Sync an INDI weiterleiten"
 
@@ -4567,215 +4587,227 @@ msgstr ""
 msgid "Apply GoTo / Guide Settings"
 msgstr ""
 
-#: views/indi_mount.html:525
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:523 views/indi_mount.html:1169
+# AI-TRANSLATED (claude): needs human review
+msgid "Pause Guide"
+msgstr "Guide pausieren"
+
+#: views/indi_mount.html:526
 msgid "GoTo / Guide Status"
 msgstr ""
 
-#: views/indi_mount.html:526
+#: views/indi_mount.html:527
 #, fuzzy
 msgid "Service"
 msgstr "beobachtet"
 
-#: views/indi_mount.html:528
+#: views/indi_mount.html:529
 msgid "Guide State"
 msgstr ""
 
-#: views/indi_mount.html:530
+#: views/indi_mount.html:531
 #, fuzzy
 msgid "Guide Error"
 msgstr "Fehler"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:532
+#: views/indi_mount.html:533
 #, fuzzy
 msgid "Recovery"
 msgstr "Aufnahme"
 
-#: views/indi_mount.html:534
+#: views/indi_mount.html:535
 #, fuzzy
 msgid "Last Action"
 msgstr "Ort setzen"
 
-#: views/indi_mount.html:582
+#: views/indi_mount.html:583
 #, fuzzy
 msgid "STOP"
 msgstr "RA/Dec"
 
-#: views/indi_mount.html:585
+#: views/indi_mount.html:586
 #, fuzzy
 msgid "Not at Home"
 msgstr "Kein Update"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:586
+#: views/indi_mount.html:587
 #, fuzzy
 msgid "Waiting at Home"
 msgstr "warte auf"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:587
+#: views/indi_mount.html:588
 #, fuzzy
 msgid "Parked"
 msgstr "Hersteller"
 
-#: views/indi_mount.html:588
+#: views/indi_mount.html:589
 msgid "Unparked"
 msgstr ""
 
-#: views/indi_mount.html:589
+#: views/indi_mount.html:590
 #, fuzzy
 msgid "Parking"
 msgstr "Suche"
 
-#: views/indi_mount.html:590
+#: views/indi_mount.html:591
 #, fuzzy
 msgid "Parking Failed"
 msgstr "Justage abgebrochen"
 
-#: views/indi_mount.html:591
+#: views/indi_mount.html:592
 msgid "Unknown"
 msgstr "Unbkt"
 
-#: views/indi_mount.html:893
+#: views/indi_mount.html:894
 #, fuzzy
 msgid "Estimated"
 msgstr "Rest Zeit/Datum"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1064
+#: views/indi_mount.html:1065
 #, fuzzy
 msgid "Records"
 msgstr "Aufnahme"
 
-#: views/indi_mount.html:1076 views/indi_mount.html:1089
+#: views/indi_mount.html:1077 views/indi_mount.html:1090
 #, fuzzy
 msgid "calculated"
 msgstr "berechne..."
 
-#: views/indi_mount.html:1077 views/indi_mount.html:1090
+#: views/indi_mount.html:1078 views/indi_mount.html:1091
 #, fuzzy
 msgid "filtered"
 msgstr "Filter"
 
-#: views/indi_mount.html:1081
+#: views/indi_mount.html:1082
 msgid "By movement direction"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1102
+#: views/indi_mount.html:1103
 #, fuzzy
 msgid "Confidence"
 msgstr "Löschen bestätigen"
 
-#: views/indi_mount.html:1103
+#: views/indi_mount.html:1104
 #, fuzzy
 msgid "Filtered"
 msgstr "Filter"
 
-#: views/indi_mount.html:1104
+#: views/indi_mount.html:1105
 msgid "warm-up"
 msgstr ""
 
-#: views/indi_mount.html:1105
+#: views/indi_mount.html:1106
 msgid "excluded"
 msgstr ""
 
-#: views/indi_mount.html:1106
+#: views/indi_mount.html:1107
 msgid "Spread"
 msgstr ""
 
-#: views/indi_mount.html:1107
+#: views/indi_mount.html:1108
 msgid "direction delta"
 msgstr ""
 
-#: views/indi_mount.html:1198
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:1168
+# AI-TRANSLATED (claude): needs human review
+msgid "Resume Guide"
+msgstr "Guide fortsetzen"
+
+#: views/indi_mount.html:1207
 #, fuzzy
 msgid "Reading"
 msgstr "Suche"
 
-#: views/indi_mount.html:1205
+#: views/indi_mount.html:1214
 msgid "Could not read current values"
 msgstr ""
 
-#: views/indi_mount.html:1212
+#: views/indi_mount.html:1221
 #, fuzzy
 msgid "Updated"
 msgstr "Kein Update"
 
-#: views/indi_mount.html:1303
+#: views/indi_mount.html:1312
 #, fuzzy
 msgid "Setting"
 msgstr "Einstellungen"
 
-#: views/indi_mount.html:1305
+#: views/indi_mount.html:1314
 #, fuzzy
 msgid "Applied"
 msgstr "Justiert!"
 
-#: views/indi_mount.html:1315
+#: views/indi_mount.html:1324
 msgid "Command sent"
 msgstr ""
 
-#: views/indi_mount.html:1325
+#: views/indi_mount.html:1334
 #, fuzzy
 msgid "Resetting..."
 msgstr "Neustart..."
 
-#: views/indi_mount.html:1344
+#: views/indi_mount.html:1368
 msgid "Starting auto calculation"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1353
+#: views/indi_mount.html:1377
 #, fuzzy
 msgid "Auto calculation requested"
 msgstr "Ort zurücksetzen"
 
-#: views/indi_mount.html:1371
+#: views/indi_mount.html:1395
 msgid "Stopping motion test"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1391 views/indi_mount.html:1397
+#: views/indi_mount.html:1415 views/indi_mount.html:1421
 #, fuzzy
 msgid "Continue requested"
 msgstr "Anmeldung erforderlich"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1418
+#: views/indi_mount.html:1442
 #, fuzzy
 msgid "Working"
 msgstr "Netzwerkeinstellungen"
 
-#: views/indi_mount.html:1507
+#: views/indi_mount.html:1531
 #, fuzzy
 msgid "Stop"
 msgstr "RA/Dec"
 
-#: views/indi_mount.html:1545
+#: views/indi_mount.html:1569
 #, fuzzy
 msgid "Restarting INDI"
 msgstr "PiFinder Neustart..."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1548
+#: views/indi_mount.html:1572
 #, fuzzy
 msgid "Restart requested"
 msgstr "Vom Ende neu starten"
 
-#: views/indi_mount.html:1556
+#: views/indi_mount.html:1580
 msgid ""
 "Force-reboot the OnStep mount controller? The mount will be offline for "
 "about a minute."
 msgstr ""
 
-#: views/indi_mount.html:1559
+#: views/indi_mount.html:1583
 #, fuzzy
 msgid "Rebooting mount controller"
 msgstr "Montierungsart"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1562
+#: views/indi_mount.html:1586
 #, fuzzy
 msgid "Reboot requested"
 msgstr "Vom Ende neu starten"

@@ -130,12 +130,14 @@ class Server:
         mountcontrol_queue=None,
         shared_state=None,
         is_debug=False,
+        goto_guide_queue=None,
     ):
         self.version_txt = f"{utils.pifinder_dir}/version.txt"
         self.keyboard_queue = keyboard_queue or multiprocessing.Queue()
         self.ui_queue = ui_queue or multiprocessing.Queue()
         self.gps_queue = gps_queue or multiprocessing.Queue()
         self.mountcontrol_queue = mountcontrol_queue
+        self.goto_guide_queue = goto_guide_queue
         self.shared_state = shared_state or MockSharedState()
         if hasattr(self.shared_state, "set_livecam_settings"):
             self.shared_state.set_livecam_settings(
@@ -1629,6 +1631,21 @@ class Server:
             self.ui_queue.put("reload_config")
             return _render_indi_page(_("INDI GoTo / Guide settings applied"))
 
+        @app.route("/indi/goto_guide/suspend", methods=["POST"])
+        @auth_required
+        def indi_goto_guide_suspend():
+            action = (request.form.get("action") or "suspend").strip()
+            if action not in ("suspend", "resume"):
+                return _indi_json_response(ok=False, error=_("Invalid action"))
+            if self.goto_guide_queue is None:
+                return _indi_json_response(
+                    ok=False, error=_("GoTo/Guide service unavailable")
+                )
+            self.goto_guide_queue.put({"type": f"{action}_tracking_guide"})
+            return _indi_json_response(
+                message=_("Guide paused") if action == "suspend" else _("Guide resumed")
+            )
+
         @app.route("/indi/driver", methods=["POST"])
         @auth_required
         def indi_mount_update():
@@ -2495,6 +2512,7 @@ def run_server(
     log_queue,
     verbose=False,
     mountcontrol_queue=None,
+    goto_guide_queue=None,
 ):
     MultiprocLogging.configurer(log_queue)
     server = Server(
@@ -2504,6 +2522,7 @@ def run_server(
         mountcontrol_queue,
         shared_state,
         verbose,
+        goto_guide_queue=goto_guide_queue,
     )
     server.run()
 

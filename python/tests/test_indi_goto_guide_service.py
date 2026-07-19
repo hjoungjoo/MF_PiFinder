@@ -183,3 +183,44 @@ def test_clear_tracking_target_command(monkeypatch):
     assert service.tracking_target_dec is None
     service._tick_tracking_guide()
     assert service.tracking_guide_state == "waiting_target"
+
+
+def test_suspend_blocks_corrections_until_new_goto(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+
+    assert service.handle_command({"type": "suspend_tracking_guide"}) is True
+    assert service.tracking_guide_suspended is True
+
+    # Stationary through a full settle window: no recovery or pulse commands
+    # may be issued while suspended.
+    service._tick_tracking_guide()
+    for _ in range(5):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+
+    assert service.tracking_guide_state == "suspended"
+    assert service.mountcontrol_queue.commands == []
+
+    # A new GoTo lifts the suspension.
+    service._handle_goto_target({"type": "goto_target", "ra": 100.0, "dec": 20.0})
+    assert service.tracking_guide_suspended is False
+
+
+def test_suspend_lifts_after_manual_move_settles(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service.handle_command({"type": "suspend_tracking_guide"})
+
+    # Baseline tick, then a user manual move ends (the motion branch arms this
+    # flag in production; set it directly here) and the coordinate settles.
+    service._tick_tracking_guide()
+    service.manual_retarget_pending = True
+    for _ in range(5):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+
+    assert service.tracking_guide_suspended is False
+    # Manual re-target is disabled in this config, so after the suspension
+    # lifts the 2 deg error goes straight to GoTo recovery.
+    assert service.tracking_guide_state == "recovering_goto"

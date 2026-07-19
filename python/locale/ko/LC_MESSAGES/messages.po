@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-19 11:07+0900\n"
+"POT-Creation-Date: 2026-07-19 12:15+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -22,7 +22,7 @@ msgstr ""
 msgid "No Image"
 msgstr "이미지 없음"
 
-#: PiFinder/main.py:807
+#: PiFinder/main.py:808
 msgid ""
 "Degraded\n"
 "Check Status"
@@ -30,7 +30,7 @@ msgstr ""
 "상태 확인\n"
 "필요"
 
-#: PiFinder/main.py:904
+#: PiFinder/main.py:905
 msgid ""
 "Catalogs\n"
 "Fully Loaded"
@@ -38,7 +38,7 @@ msgstr ""
 "카탈로그\n"
 "로드 완료"
 
-#: PiFinder/main.py:1114 PiFinder/main.py:1124
+#: PiFinder/main.py:1115 PiFinder/main.py:1125
 msgid ""
 "INDI Mount\n"
 "restarting"
@@ -47,7 +47,7 @@ msgstr ""
 "재시작 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/main.py:1136 PiFinder/main.py:1145
+#: PiFinder/main.py:1137 PiFinder/main.py:1146
 msgid ""
 "INDI GoTo/Guide\n"
 "restarting"
@@ -129,159 +129,159 @@ msgstr "혜성"
 msgid "Unkn"
 msgstr "미상"
 
-#: PiFinder/server.py:273
+#: PiFinder/server.py:275
 msgid "Locked"
 msgstr "고정됨"
 
-#: PiFinder/server.py:273
+#: PiFinder/server.py:275
 msgid "Not Locked"
 msgstr "고정 안됨"
 
-#: PiFinder/server.py:295 views/base.html:60 views/base.html:73
+#: PiFinder/server.py:297 views/base.html:60 views/base.html:73
 msgid "Home"
 msgstr "Home"
 
-#: PiFinder/server.py:323 PiFinder/server.py:331 views/login.html:31
+#: PiFinder/server.py:325 PiFinder/server.py:333 views/login.html:31
 msgid "Login"
 msgstr "Login"
 
-#: PiFinder/server.py:325
+#: PiFinder/server.py:327
 msgid "Invalid Password"
 msgstr "Invalid Password"
 
-#: PiFinder/server.py:337 views/base.html:61 views/base.html:74
+#: PiFinder/server.py:339 views/base.html:61 views/base.html:74
 msgid "Remote"
 msgstr "Remote"
 
-#: PiFinder/server.py:343 PiFinder/ui/menu_structure.py:1271
+#: PiFinder/server.py:345 PiFinder/ui/menu_structure.py:1271
 msgid "Advanced"
 msgstr "고급"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:357
+#: PiFinder/server.py:359
 msgid "Wi-Fi scan failed"
 msgstr "Wi-Fi 검색 실패"
 
-#: PiFinder/server.py:360 PiFinder/server.py:611 PiFinder/server.py:650
+#: PiFinder/server.py:362 PiFinder/server.py:613 PiFinder/server.py:652
 msgid "Network"
 msgstr "네트워크"
 
-#: PiFinder/server.py:380 PiFinder/ui/menu_structure.py:1463
+#: PiFinder/server.py:382 PiFinder/ui/menu_structure.py:1463
 msgid "GPS"
 msgstr "GPS"
 
-#: PiFinder/server.py:414 PiFinder/server.py:503 PiFinder/server.py:554
+#: PiFinder/server.py:416 PiFinder/server.py:505 PiFinder/server.py:556
 #: views/base.html:64 views/base.html:77
 msgid "Locations"
 msgstr "위치"
 
-#: PiFinder/server.py:469 PiFinder/server.py:528
+#: PiFinder/server.py:471 PiFinder/server.py:530
 msgid "Location name is required"
 msgstr "Location name is required"
 
-#: PiFinder/server.py:471 PiFinder/server.py:530
+#: PiFinder/server.py:473 PiFinder/server.py:532
 msgid "Latitude must be between -90 and 90"
 msgstr "Latitude must be between -90 and 90"
 
-#: PiFinder/server.py:473 PiFinder/server.py:532
+#: PiFinder/server.py:475 PiFinder/server.py:534
 msgid "Longitude must be between -180 and 180"
 msgstr "Longitude must be between -180 and 180"
 
-#: PiFinder/server.py:476 PiFinder/server.py:535
+#: PiFinder/server.py:478 PiFinder/server.py:537
 msgid "Altitude must be between -1000 and 10000 meters"
 msgstr "Altitude must be between -1000 and 10000 meters"
 
-#: PiFinder/server.py:479 PiFinder/server.py:538
+#: PiFinder/server.py:481 PiFinder/server.py:540
 msgid "Error must be between 0 and 10000 meters"
 msgstr "Error must be between 0 and 10000 meters"
 
-#: PiFinder/server.py:646 PiFinder/ui/menu_structure.py:1858
+#: PiFinder/server.py:648 PiFinder/ui/menu_structure.py:1858
 msgid "Restart"
 msgstr "재시작"
 
-#: PiFinder/server.py:667 PiFinder/server.py:676 PiFinder/server.py:680
-#: PiFinder/server.py:684 PiFinder/server.py:1039
+#: PiFinder/server.py:669 PiFinder/server.py:678 PiFinder/server.py:682
+#: PiFinder/server.py:686 PiFinder/server.py:1041
 #: PiFinder/ui/menu_structure.py:1705 views/base.html:67 views/base.html:80
 #: views/tools.html:6
 msgid "Tools"
 msgstr "도구"
 
-#: PiFinder/server.py:668
+#: PiFinder/server.py:670
 msgid "You must fill in all password fields"
 msgstr "You must fill in all password fields"
 
-#: PiFinder/server.py:676
+#: PiFinder/server.py:678
 msgid "Password Changed"
 msgstr "Password Changed"
 
-#: PiFinder/server.py:680
+#: PiFinder/server.py:682
 msgid "Incorrect current password"
 msgstr "Incorrect current password"
 
-#: PiFinder/server.py:684
+#: PiFinder/server.py:686
 msgid "New passwords do not match"
 msgstr "New passwords do not match"
 
-#: PiFinder/server.py:709 PiFinder/server.py:720 PiFinder/server.py:737
-#: PiFinder/server.py:819 PiFinder/server.py:875 PiFinder/server.py:888
-#: PiFinder/server.py:961 PiFinder/server.py:974
+#: PiFinder/server.py:711 PiFinder/server.py:722 PiFinder/server.py:739
+#: PiFinder/server.py:821 PiFinder/server.py:877 PiFinder/server.py:890
+#: PiFinder/server.py:963 PiFinder/server.py:976
 #: PiFinder/ui/menu_structure.py:1710 views/base.html:65 views/base.html:78
 #: views/equipment.html:6
 msgid "Equipment"
 msgstr "장비"
 
-#: PiFinder/server.py:726
+#: PiFinder/server.py:728
 msgid "set as active instrument."
 msgstr "set as active instrument."
 
-#: PiFinder/server.py:743
+#: PiFinder/server.py:745
 msgid "set as active eyepiece."
 msgstr "set as active eyepiece."
 
-#: PiFinder/server.py:822
+#: PiFinder/server.py:824
 msgid "Equipment Imported, restart your PiFinder to use this new data"
 msgstr "Equipment Imported, restart your PiFinder to use this new data"
 
-#: PiFinder/server.py:837
+#: PiFinder/server.py:839
 msgid "Edit Eyepiece"
 msgstr "Edit Eyepiece"
 
-#: PiFinder/server.py:877
+#: PiFinder/server.py:879
 msgid "Eyepiece added, restart your PiFinder to use"
 msgstr "Eyepiece added, restart your PiFinder to use"
 
-#: PiFinder/server.py:891
+#: PiFinder/server.py:893
 msgid "Eyepiece Deleted, restart your PiFinder to remove from menu"
 msgstr "Eyepiece Deleted, restart your PiFinder to remove from menu"
 
-#: PiFinder/server.py:915
+#: PiFinder/server.py:917
 msgid "Edit Instrument"
 msgstr "Edit Instrument"
 
-#: PiFinder/server.py:963
+#: PiFinder/server.py:965
 msgid "Instrument Added, restart your PiFinder to use"
 msgstr "Instrument Added, restart your PiFinder to use"
 
-#: PiFinder/server.py:977
+#: PiFinder/server.py:979
 msgid "Instrument Deleted, restart your PiFinder to remove from menu"
 msgstr "Instrument Deleted, restart your PiFinder to remove from menu"
 
-#: PiFinder/server.py:1004 views/base.html:63 views/base.html:76
+#: PiFinder/server.py:1006 views/base.html:63 views/base.html:76
 msgid "Observations"
 msgstr "관측기록"
 
-#: PiFinder/server.py:1033
+#: PiFinder/server.py:1035
 msgid "Session Log"
 msgstr "세션 로그"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1048 views/base.html:68 views/base.html:81
+#: PiFinder/server.py:1050 views/base.html:68 views/base.html:81
 #: views/livecam.html:125
 msgid "LiveCam"
 msgstr "LiveCam"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1120
+#: PiFinder/server.py:1122
 #, python-format
 msgid ""
 "This INDI profile uses %(driver)s. OnStepX controls are available only "
@@ -291,173 +291,196 @@ msgstr ""
 "OnStepX일 때만 사용할 수 있습니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1123
+#: PiFinder/server.py:1125
 msgid "unknown driver"
 msgstr "알 수 없는 드라이버"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1414
+#: PiFinder/server.py:1416
 msgid "Backlash must be a number"
 msgstr "백래시는 숫자여야 합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1417
+#: PiFinder/server.py:1419
 #, python-format
 msgid "Backlash must be between 0 and %(max)d"
 msgstr "백래시는 0에서 %(max)d 사이여야 합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1429 PiFinder/server.py:1754 PiFinder/server.py:2078
-#: PiFinder/server.py:2095
+#: PiFinder/server.py:1431 PiFinder/server.py:1771 PiFinder/server.py:2095
+#: PiFinder/server.py:2112
 msgid "Mount-control process is not available"
 msgstr "마운트 제어 프로세스를 사용할 수 없습니다"
 
-#: PiFinder/server.py:1461 PiFinder/ui/menu_structure.py:80 views/base.html:66
+#: PiFinder/server.py:1463 PiFinder/ui/menu_structure.py:80 views/base.html:66
 #: views/base.html:79 views/indi_mount.html:11
 msgid "INDI"
 msgstr "INDI"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1564
+#: PiFinder/server.py:1566
 msgid "Invalid SkySafari mount status code"
 msgstr "잘못된 SkySafari 마운트 상태 코드"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1575
+#: PiFinder/server.py:1577
 msgid "SkySafari mount settings applied"
 msgstr "SkySafari 마운트 설정을 적용했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1583
+#: PiFinder/server.py:1585
 msgid "Invalid INDI GoTo method"
 msgstr "잘못된 INDI GoTo 방식"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1630
+#: PiFinder/server.py:1632
 msgid "INDI GoTo / Guide settings applied"
 msgstr "INDI GoTo / Guide 설정을 적용했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1677
+#: PiFinder/server.py:1639
+# AI-TRANSLATED (claude): needs human review
+msgid "Invalid action"
+msgstr "잘못된 동작"
+
+#: PiFinder/server.py:1642
+# AI-TRANSLATED (claude): needs human review
+msgid "GoTo/Guide service unavailable"
+msgstr "GoTo/Guide 서비스를 사용할 수 없음"
+
+# AI-TRANSLATED (claude): needs human review
+#: PiFinder/server.py:1646
+# AI-TRANSLATED (claude): needs human review
+msgid "Guide paused"
+msgstr "가이드 일시정지됨"
+
+# AI-TRANSLATED (claude): needs human review
+#: PiFinder/server.py:1646
+# AI-TRANSLATED (claude): needs human review
+msgid "Guide resumed"
+msgstr "가이드 재개됨"
+
+# AI-TRANSLATED (claude): needs human review
+#: PiFinder/server.py:1694
 msgid "INDI OnStep settings applied"
 msgstr "INDI OnStep 설정을 적용했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1736
+#: PiFinder/server.py:1753
 msgid "INDI server restarted and driver connected"
 msgstr "INDI 서버를 재시작하고 드라이버를 연결했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1756
+#: PiFinder/server.py:1773
 #, fuzzy
 msgid "Mount controller reboot requested"
 msgstr "좌표 초기화를 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1889
+#: PiFinder/server.py:1906
 msgid "Motion command sent"
 msgstr "이동 명령을 전송했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1950
+#: PiFinder/server.py:1967
 msgid "Location and UTC time sent via INDI"
 msgstr "INDI로 위치와 UTC 시간을 전송했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1967
+#: PiFinder/server.py:1984
 msgid "Invalid alignment mode"
 msgstr "잘못된 정렬 모드"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1971 PiFinder/server.py:1988
+#: PiFinder/server.py:1988 PiFinder/server.py:2005
 msgid "Select a valid alignment star"
 msgstr "유효한 정렬 별을 선택하세요"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1980
+#: PiFinder/server.py:1997
 msgid "Multi-point alignment started"
 msgstr "다지점 정렬을 시작했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1996
+#: PiFinder/server.py:2013
 msgid "Alignment star GoTo requested"
 msgstr "정렬 별 GoTo를 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2005
+#: PiFinder/server.py:2022
 msgid "Alignment point confirmed"
 msgstr "정렬점을 확정했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2012
+#: PiFinder/server.py:2029
 msgid "Multi-point alignment cancelled"
 msgstr "다지점 정렬을 취소했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2017
+#: PiFinder/server.py:2034
 msgid "Invalid alignment action"
 msgstr "잘못된 정렬 동작"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2046
+#: PiFinder/server.py:2063
 msgid "Backlash settings saved"
 msgstr "백래시 설정을 저장했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2060
+#: PiFinder/server.py:2077
 msgid "Invalid backlash auto mode"
 msgstr "잘못된 백래시 자동 모드"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2067
+#: PiFinder/server.py:2084
 msgid "Motion test repeats must be a number"
 msgstr "이동 테스트 반복 횟수는 숫자여야 합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2074
+#: PiFinder/server.py:2091
 #, python-format
 msgid "Motion test repeats must be between 1 and %(max)d"
 msgstr "이동 테스트 반복 횟수는 1에서 %(max)d 사이여야 합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2083
+#: PiFinder/server.py:2100
 msgid "Solved GoTo motion test started"
 msgstr "해석 좌표 GoTo 이동 테스트를 시작했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2098
+#: PiFinder/server.py:2115
 msgid "Solved GoTo loop continue requested"
 msgstr "해석 좌표 GoTo 루프 계속을 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2121 views/indi_mount.html:1377
+#: PiFinder/server.py:2138 views/indi_mount.html:1401
 msgid "Backlash motion test stop requested"
 msgstr "백래시 이동 테스트 정지를 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2128
+#: PiFinder/server.py:2145
 msgid "Backlash stop requested; waiting for mount-control process stop"
 msgstr "백래시 정지를 요청했습니다. 마운트 제어 프로세스 종료를 기다리는 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2143 views/indi_mount.html:1330
+#: PiFinder/server.py:2160 views/indi_mount.html:1339
 msgid "Pointing reset requested"
 msgstr "좌표 초기화를 요청했습니다"
 
-#: PiFinder/server.py:2150 PiFinder/server.py:2248 views/base.html:69
+#: PiFinder/server.py:2167 PiFinder/server.py:2265 views/base.html:69
 #: views/base.html:82
 msgid "Logs"
 msgstr "로그"
 
-#: PiFinder/server.py:2248
+#: PiFinder/server.py:2265
 msgid "Error creating log archive"
 msgstr "로그 압축 오류"
 
-#: PiFinder/server.py:2305 views/restart_pifinder.html:6
+#: PiFinder/server.py:2322 views/restart_pifinder.html:6
 msgid "Restarting PiFinder"
 msgstr "PiFinder 재시작 중"
 
-#: PiFinder/server.py:2367
+#: PiFinder/server.py:2384
 msgid "Restart PiFinder"
 msgstr "PiFinder 재시작"
 
@@ -545,8 +568,8 @@ msgstr "속도 -"
 msgid "Mount Stop"
 msgstr "마운트 정지"
 
-#: PiFinder/ui/base.py:799
 # AI-TRANSLATED (claude): needs human review
+#: PiFinder/ui/base.py:799
 msgid "GoTo Off"
 msgstr "GoTo 끔"
 
@@ -1407,7 +1430,7 @@ msgid "Mount Reboot"
 msgstr "마운트 GoTo"
 
 #: PiFinder/ui/indi.py:284 PiFinder/ui/indi.py:776 views/indi_mount.html:285
-#: views/indi_mount.html:1140
+#: views/indi_mount.html:1141
 msgid "Idle"
 msgstr "대기"
 
@@ -2300,7 +2323,7 @@ msgid "Multi Align"
 msgstr "멀티 정렬"
 
 #: PiFinder/ui/menu_structure.py:1124 views/indi_mount.html:336
-#: views/indi_mount.html:579
+#: views/indi_mount.html:580
 msgid "Backlash"
 msgstr "백래시"
 
@@ -3789,8 +3812,8 @@ msgid "PiFinder Screen"
 msgstr "PiFinder Screen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/index.html:14 views/indi_mount.html:200 views/indi_mount.html:1063
-#: views/indi_mount.html:1101
+#: views/index.html:14 views/indi_mount.html:200 views/indi_mount.html:1064
+#: views/indi_mount.html:1102
 msgid "Mode"
 msgstr "모드"
 
@@ -4108,7 +4131,7 @@ msgid "Raw Mount Status"
 msgstr "원시 마운트 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:237 views/indi_mount.html:584
+#: views/indi_mount.html:237 views/indi_mount.html:585
 msgid "At Home"
 msgstr "홈 위치"
 
@@ -4279,12 +4302,12 @@ msgid "%(axis)s Backlash"
 msgstr "%(axis)s 백래시"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:403 views/indi_mount.html:580
+#: views/indi_mount.html:403 views/indi_mount.html:581
 msgid "Start Motion Test"
 msgstr "이동 테스트 시작"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:404 views/indi_mount.html:581
+#: views/indi_mount.html:404 views/indi_mount.html:582
 msgid "Continue Motion Test"
 msgstr "이동 테스트 계속"
 
@@ -4340,7 +4363,6 @@ msgstr "SkySafari LX200 마운트 코드"
 
 # AI-TRANSLATED (claude): needs human review
 #: views/indi_mount.html:444
-# AI-TRANSLATED (claude): needs human review
 msgid "Forward SkySafari Align/Sync to INDI"
 msgstr "SkySafari 정렬/동기화를 INDI로 전달"
 
@@ -4387,217 +4409,227 @@ msgstr "PiFinder GoTo: 최대 sync + GoTo 반복 횟수"
 msgid "Apply GoTo / Guide Settings"
 msgstr "GoTo / Guide 설정 적용"
 
+#: views/indi_mount.html:523 views/indi_mount.html:1169
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:525
+msgid "Pause Guide"
+msgstr "가이드 일시정지"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:526
 msgid "GoTo / Guide Status"
 msgstr "GoTo / Guide 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:526
+#: views/indi_mount.html:527
 msgid "Service"
 msgstr "서비스"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:528
+#: views/indi_mount.html:529
 msgid "Guide State"
 msgstr "가이드 상태"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:530
+#: views/indi_mount.html:531
 msgid "Guide Error"
 msgstr "가이드 오차"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:532
+#: views/indi_mount.html:533
 msgid "Recovery"
 msgstr "복구"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:534
+#: views/indi_mount.html:535
 msgid "Last Action"
 msgstr "마지막 동작"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:582
+#: views/indi_mount.html:583
 msgid "STOP"
 msgstr "정지"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:585
+#: views/indi_mount.html:586
 msgid "Not at Home"
 msgstr "홈 위치 아님"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:586
+#: views/indi_mount.html:587
 msgid "Waiting at Home"
 msgstr "홈에서 대기 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:587
+#: views/indi_mount.html:588
 msgid "Parked"
 msgstr "파크됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:588
+#: views/indi_mount.html:589
 msgid "Unparked"
 msgstr "언파크됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:589
+#: views/indi_mount.html:590
 msgid "Parking"
 msgstr "파크 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:590
+#: views/indi_mount.html:591
 msgid "Parking Failed"
 msgstr "파크 실패"
 
-#: views/indi_mount.html:591
+#: views/indi_mount.html:592
 msgid "Unknown"
 msgstr "미상"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:893
+#: views/indi_mount.html:894
 msgid "Estimated"
 msgstr "추정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1064
+#: views/indi_mount.html:1065
 msgid "Records"
 msgstr "기록"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1076 views/indi_mount.html:1089
+#: views/indi_mount.html:1077 views/indi_mount.html:1090
 msgid "calculated"
 msgstr "계산됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1077 views/indi_mount.html:1090
+#: views/indi_mount.html:1078 views/indi_mount.html:1091
 msgid "filtered"
 msgstr "필터됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1081
+#: views/indi_mount.html:1082
 msgid "By movement direction"
 msgstr "이동 방향별"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1102
+#: views/indi_mount.html:1103
 msgid "Confidence"
 msgstr "신뢰도"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1103
+#: views/indi_mount.html:1104
 msgid "Filtered"
 msgstr "필터됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1104
+#: views/indi_mount.html:1105
 msgid "warm-up"
 msgstr "워밍업"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1105
+#: views/indi_mount.html:1106
 msgid "excluded"
 msgstr "제외"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1106
+#: views/indi_mount.html:1107
 msgid "Spread"
 msgstr "산포"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1107
+#: views/indi_mount.html:1108
 msgid "direction delta"
 msgstr "방향 편차"
 
+#: views/indi_mount.html:1168
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1198
+msgid "Resume Guide"
+msgstr "가이드 재개"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:1207
 msgid "Reading"
 msgstr "읽는 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1205
+#: views/indi_mount.html:1214
 msgid "Could not read current values"
 msgstr "현재 값을 읽을 수 없습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1212
+#: views/indi_mount.html:1221
 msgid "Updated"
 msgstr "업데이트됨"
 
-#: views/indi_mount.html:1303
+#: views/indi_mount.html:1312
 msgid "Setting"
 msgstr "설정"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1305
+#: views/indi_mount.html:1314
 msgid "Applied"
 msgstr "적용됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1315
+#: views/indi_mount.html:1324
 msgid "Command sent"
 msgstr "명령을 전송했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1325
+#: views/indi_mount.html:1334
 msgid "Resetting..."
 msgstr "초기화 중..."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1344
+#: views/indi_mount.html:1368
 msgid "Starting auto calculation"
 msgstr "자동 계산 시작"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1353
+#: views/indi_mount.html:1377
 msgid "Auto calculation requested"
 msgstr "자동 계산을 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1371
+#: views/indi_mount.html:1395
 msgid "Stopping motion test"
 msgstr "이동 테스트 정지 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1391 views/indi_mount.html:1397
+#: views/indi_mount.html:1415 views/indi_mount.html:1421
 msgid "Continue requested"
 msgstr "계속을 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1418
+#: views/indi_mount.html:1442
 msgid "Working"
 msgstr "처리 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1507
+#: views/indi_mount.html:1531
 msgid "Stop"
 msgstr "정지"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1545
+#: views/indi_mount.html:1569
 msgid "Restarting INDI"
 msgstr "INDI 재시작 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1548
+#: views/indi_mount.html:1572
 msgid "Restart requested"
 msgstr "재시작을 요청했습니다"
 
-#: views/indi_mount.html:1556
+#: views/indi_mount.html:1580
 msgid ""
 "Force-reboot the OnStep mount controller? The mount will be offline for "
 "about a minute."
 msgstr ""
 
-#: views/indi_mount.html:1559
+#: views/indi_mount.html:1583
 #, fuzzy
 msgid "Rebooting mount controller"
 msgstr "마운트 제어"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1562
+#: views/indi_mount.html:1586
 #, fuzzy
 msgid "Reboot requested"
 msgstr "재시작을 요청했습니다"

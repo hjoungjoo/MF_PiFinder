@@ -157,6 +157,10 @@ class IndiGotoGuideService:
         # and settled, adopts the stopped position as the new target.
         self.manual_retarget_pending = False
         self.manual_retarget_count = 0
+        # User-requested pause of tracking guide + GoTo recovery. Runtime-only
+        # (config checkboxes untouched); cleared by the next GoTo or once a
+        # manual move ends and settles.
+        self.tracking_guide_suspended = False
         self.last_action = "startup"
         self.pointing_status: dict[str, Any] = {"available": False}
 
@@ -237,6 +241,21 @@ class IndiGotoGuideService:
             except (KeyError, TypeError, ValueError):
                 logger.warning("Invalid set_tracking_target command: %r", command)
             return True
+        if command_type == "suspend_tracking_guide":
+            self.tracking_guide_suspended = True
+            self._disable_tracking_guide("suspended by user")
+            self._reset_tracking_recovery()
+            self.tracking_guide_state = "suspended"
+            self.tracking_guide_last_action = "suspended until next GoTo or manual move"
+            self.last_action = "tracking guide suspended"
+            logger.info("Tracking guide suspended by user request")
+            return True
+        if command_type == "resume_tracking_guide":
+            self.tracking_guide_suspended = False
+            self.tracking_guide_last_action = "resumed by user"
+            self.last_action = "tracking guide resumed"
+            logger.info("Tracking guide resumed by user request")
+            return True
         if command_type == "stop_movement":
             self._forward_to_mountcontrol({"type": "stop_movement"})
             self.active_target_ra = None
@@ -253,6 +272,7 @@ class IndiGotoGuideService:
             self._disable_pulse_align()
             self._disable_tracking_guide("stop command")
             self._reset_tracking_recovery()
+            self.tracking_guide_suspended = False
             # Clear the tracking target so auto-correction stays off until the
             # next GoTo / tracking start re-arms it.
             self.tracking_target_ra = None
@@ -295,6 +315,10 @@ class IndiGotoGuideService:
                 target_dec,
             )
             return
+
+        if self.tracking_guide_suspended:
+            self.tracking_guide_suspended = False
+            logger.info("Tracking guide suspension cleared by new GoTo")
 
         self.active_target_ra = target_ra
         self.active_target_dec = target_dec
@@ -927,6 +951,11 @@ class IndiGotoGuideService:
         # (which return to the original target).
         if self.manual_retarget_pending:
             self.manual_retarget_pending = False
+            if self.tracking_guide_suspended:
+                self.tracking_guide_suspended = False
+                logger.info(
+                    "Tracking guide suspension cleared; manual move ended"
+                )
             manual_retarget_enabled = bool(
                 self.config_values.get(
                     "indi_tracking_guide_manual_retarget_enabled", True
@@ -963,6 +992,19 @@ class IndiGotoGuideService:
         if self.tracking_guide_error_arcmin is None:
             self.tracking_guide_state = "waiting_coordinate"
             self.tracking_guide_last_action = "tracking error unavailable"
+            return
+
+        # User pause gate: no pulse or recovery correction while suspended.
+        # Sits after motion/settle handling so a user manual move still arms
+        # manual_retarget_pending and its completion lifts the suspension.
+        if self.tracking_guide_suspended:
+            self._disable_tracking_guide("suspended by user")
+            self.tracking_recovery_attempts = 0
+            self.tracking_guide_recovery_mode = "none"
+            self.tracking_guide_state = "suspended"
+            self.tracking_guide_last_action = (
+                "suspended until next GoTo or manual move"
+            )
             return
 
         goto_threshold_arcmin = (
@@ -1491,6 +1533,7 @@ class IndiGotoGuideService:
             "tracking_target_ra": self.tracking_target_ra,
             "tracking_target_dec": self.tracking_target_dec,
             "tracking_guide_state": self.tracking_guide_state,
+            "tracking_guide_suspended": self.tracking_guide_suspended,
             "tracking_guide_active_sent": self.tracking_guide_active_sent,
             "tracking_guide_last_action": self.tracking_guide_last_action,
             "tracking_guide_error_arcmin": self.tracking_guide_error_arcmin,

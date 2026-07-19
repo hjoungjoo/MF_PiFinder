@@ -555,6 +555,7 @@ def main(
                 server_logqueue,
                 verbose,
                 mountcontrol_queue,
+                goto_guide_queue,
             ),
         )
         server_process.start()
