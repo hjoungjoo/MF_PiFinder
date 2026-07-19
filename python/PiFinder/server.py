@@ -1081,10 +1081,10 @@ class Server:
                     "indi_goto_method", "indi_mount"
                 ),
                 "indi_tracking_guide_enabled": bool(
-                    cfg.get_option("indi_tracking_guide_enabled", False)
+                    cfg.get_option("indi_tracking_guide_enabled", True)
                 ),
                 "indi_tracking_guide_goto_recovery_enabled": bool(
-                    cfg.get_option("indi_tracking_guide_goto_recovery_enabled", False)
+                    cfg.get_option("indi_tracking_guide_goto_recovery_enabled", True)
                 ),
                 "indi_tracking_guide_manual_retarget_enabled": bool(
                     cfg.get_option(

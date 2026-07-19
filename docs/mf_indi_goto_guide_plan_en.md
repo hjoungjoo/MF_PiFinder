@@ -315,7 +315,7 @@ indi_goto_method = "indi_mount" | "pifinder"
   web UI label: **GoTo Type** (renamed from "GoTo Method" 2026-07-17)
 
 indi_tracking_guide_enabled = false | true
-  default: false
+  default: true (changed from false on 2026-07-19)
 
 indi_goto_refine_accuracy_arcmin = 6.0
   Target accuracy (arcmin) for solve-based fine correction. Default 6' = 0.1 deg
@@ -413,7 +413,7 @@ recovery GoTo ~3-4 s AFTER the scope was released, then returned to `enabled`.
 Previously it looped recovery slews throughout the interaction.
 
 indi_tracking_guide_goto_recovery_enabled = false | true
-  default: false
+  default: true (changed from false on 2026-07-19)
   Allow the sync + GoTo recovery motion for large post-disturbance errors.
   When Off, Tracking Guide corrects with pulse-guide only, regardless of
   error size (large errors are reported in status); it never slews the mount.
@@ -1154,7 +1154,7 @@ Goal:
 Checklist:
 
 - `indi_goto_method` defaults to `indi_mount`.
-- `indi_tracking_guide_enabled` defaults to `false`.
+- `indi_tracking_guide_enabled` defaults to `true` (changed 2026-07-19).
 - Web settings persist after page reload.
 - LCD settings persist after service restart.
 - Red Night theme does not introduce white controls.

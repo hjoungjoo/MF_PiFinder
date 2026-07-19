@@ -745,7 +745,7 @@ class IndiGotoGuideService:
             )
 
     def _tick_tracking_guide_states(self) -> None:
-        enabled = bool(self.config_values.get("indi_tracking_guide_enabled", False))
+        enabled = bool(self.config_values.get("indi_tracking_guide_enabled", True))
         if not enabled:
             self._disable_tracking_guide("disabled in config")
             self._reset_tracking_recovery()
@@ -970,7 +970,7 @@ class IndiGotoGuideService:
             * 60.0
         )
         goto_recovery_enabled = bool(
-            self.config_values.get("indi_tracking_guide_goto_recovery_enabled", False)
+            self.config_values.get("indi_tracking_guide_goto_recovery_enabled", True)
         )
 
         # Large error with recovery enabled: sync mount to current, GoTo target.
@@ -1413,7 +1413,7 @@ class IndiGotoGuideService:
                 cfg.get_option("indi_goto_method", "indi_mount")
             ),
             "indi_tracking_guide_enabled": bool(
-                cfg.get_option("indi_tracking_guide_enabled", False)
+                cfg.get_option("indi_tracking_guide_enabled", True)
             ),
             "indi_pifinder_goto_near_threshold_deg": float(
                 cfg.get_option("indi_pifinder_goto_near_threshold_deg", 1.0)
@@ -1436,7 +1436,7 @@ class IndiGotoGuideService:
                 cfg.get_option("indi_tracking_guide_motion_arcmin", 15.0)
             ),
             "indi_tracking_guide_goto_recovery_enabled": bool(
-                cfg.get_option("indi_tracking_guide_goto_recovery_enabled", False)
+                cfg.get_option("indi_tracking_guide_goto_recovery_enabled", True)
             ),
             "indi_tracking_guide_goto_threshold_deg": float(
                 cfg.get_option("indi_tracking_guide_goto_threshold_deg", 0.5)
@@ -1501,7 +1501,7 @@ class IndiGotoGuideService:
             "tracking_guide_settle_remaining": self.tracking_guide_settle_remaining,
             "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
             "tracking_guide_enabled": self.config_values.get(
-                "indi_tracking_guide_enabled", False
+                "indi_tracking_guide_enabled", True
             ),
             "last_error_arcmin": self.last_error_arcmin,
             "goto_plan": self.goto_plan,

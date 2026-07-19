@@ -289,7 +289,7 @@ indi_goto_method = "indi_mount" | "pifinder"
   웹 UI 라벨: **GoTo Type** (2026-07-17에 "GoTo Method"에서 변경)
 
 indi_tracking_guide_enabled = false | true
-  기본값: false
+  기본값: true (2026-07-19에 false에서 변경)
 
 indi_goto_refine_accuracy_arcmin = 6.0
   solve 기반 정밀 보정의 목표 정확도(분각). 기본 6′ = 0.1도로 문서와 일치시켰다
@@ -372,7 +372,7 @@ indi_tracking_guide_motion_arcmin = 15.0
 발동한 뒤 `enabled`로 복귀. 이전엔 조작 내내 recovery 슬루가 반복됐다.
 
 indi_tracking_guide_goto_recovery_enabled = false | true
-  기본값: false
+  기본값: true (2026-07-19에 false에서 변경)
   외란 후 큰 오차에 대한 sync + GoTo 복구 동작 허용 여부.
   Off이면 오차 크기와 관계없이 pulse guide로만 보정하고(큰 오차는 상태에
   표시), 마운트를 절대 슬루하지 않는다.
@@ -1057,7 +1057,7 @@ tracking_guide_manual_retarget    (신규) 마지막 재타겟 발생 여부/시
 체크리스트:
 
 - `indi_goto_method` 기본값이 `indi_mount`인가.
-- `indi_tracking_guide_enabled` 기본값이 `false`인가.
+- `indi_tracking_guide_enabled` 기본값이 `true`인가(2026-07-19에 변경).
 - Web에서 설정 변경 후 재로딩해도 값이 유지되는가.
 - LCD에서 설정 변경 후 재시작해도 값이 유지되는가.
 - Red Night 테마에서 새 UI가 흰색 계열을 사용하지 않는가.
