@@ -988,6 +988,91 @@ def register_api_routes(app, server_instance, require_auth=False):
             {"success": True, "note": "Shutting down PiFinder", "delay": delay}
         )
 
+    @app.route("/api/mount/track_freq", methods=["GET", "POST"])
+    def api_mount_track_freq():
+        """Get or set the mount's non-sidereal tracking frequency.
+
+        GET returns the desired frequency from the mount-control status file
+        plus conversion constants.
+
+        POST accepts one of (first match wins), all with optional "label":
+          {"reset": true}                    -> back to sidereal
+          {"hz": 66.0}                       -> frequency directly
+          {"arcsec_per_s": 15.09}            -> absolute RA tracking rate
+          {"offset_arcsec_per_s": 0.05}      -> target dRA/dt relative to stars
+
+        The command is queued to the mount-control process; the applied state
+        appears in GET / the status file once processed.
+        """
+        from PiFinder import nonsidereal
+
+        status_path = utils.runtime_dir / "mount_control_status.json"
+
+        def _mount_status() -> dict:
+            try:
+                with open(status_path, "r", encoding="utf-8") as status_in:
+                    return json.load(status_in)
+            except (OSError, ValueError):
+                return {}
+
+        if request.method == "GET":
+            status = _mount_status()
+            hz = status.get("track_freq_hz")
+            return _json_response(
+                {
+                    "active": hz is not None,
+                    "hz": hz,
+                    "arcsec_per_s": status.get("track_freq_arcsec_s"),
+                    "label": status.get("track_freq_label"),
+                    "sidereal_hz": nonsidereal.SIDEREAL_FREQ_HZ,
+                    "sidereal_arcsec_per_s": nonsidereal.SIDEREAL_RATE_ARCSEC_S,
+                    "accepted_hz_range": [
+                        nonsidereal.MIN_FREQ_HZ,
+                        nonsidereal.MAX_FREQ_HZ,
+                    ],
+                    "mount_state": status.get("state"),
+                }
+            )
+
+        mount_queue = getattr(server_instance, "mountcontrol_queue", None)
+        if mount_queue is None:
+            return _json_response({"error": "Mount control not available"}, 503)
+
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label", ""))
+
+        if body.get("reset"):
+            mount_queue.put({"type": "reset_track_freq"})
+            return _json_response({"success": True, "queued": "reset_track_freq"})
+
+        if "hz" in body:
+            hz = float(body["hz"])
+        elif "arcsec_per_s" in body:
+            hz = nonsidereal.hz_from_rate(float(body["arcsec_per_s"]))
+        elif "offset_arcsec_per_s" in body:
+            hz = nonsidereal.hz_from_offset(float(body["offset_arcsec_per_s"]))
+        else:
+            return _json_response(
+                {
+                    "error": "Provide one of: reset, hz, arcsec_per_s, "
+                    "offset_arcsec_per_s"
+                },
+                400,
+            )
+
+        clamped, was_clamped = nonsidereal.clamp_hz(hz)
+        mount_queue.put({"type": "set_track_freq", "hz": clamped, "label": label})
+        return _json_response(
+            {
+                "success": True,
+                "queued": "set_track_freq",
+                "hz": clamped,
+                "arcsec_per_s": nonsidereal.rate_from_hz(clamped),
+                "clamped": was_clamped,
+                "label": label,
+            }
+        )
+
     logger.info(
         "PiFinder API extensions registered (%s auth)",
         "with" if require_auth else "without",

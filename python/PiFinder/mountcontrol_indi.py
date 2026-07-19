@@ -21,6 +21,7 @@ from multiprocessing import Queue
 from typing import Any, Optional
 
 from PiFinder import calc_utils, config
+from PiFinder import nonsidereal
 from PiFinder import sys_utils, utils
 from PiFinder.indi_align import (
     ALIGN_STAR_MAX_ALTITUDE_DEG,
@@ -74,6 +75,11 @@ POSITION_STATUS_MIN_INTERVAL = 0.5
 # 5.0 -> 2.0 for fresher idle UI; tmpfs, so no SD wear and no effect on GoTo
 # completion detection.
 STATUS_HEARTBEAT_INTERVAL = 2.0
+
+# Re-assert a non-sidereal tracking frequency at this interval. The write is
+# idempotent and cheap; it exists because a driver reconnect re-selects
+# TRACK_SIDEREAL (:TQ#), which silently resets the frequency to sidereal.
+TRACK_FREQ_REASSERT_INTERVAL = 60.0
 AUTO_CONNECT_START_DELAY = 5.0
 AUTO_CONNECT_RETRY_INTERVAL = 10.0
 AUTO_CONNECT_DEVICE_WAIT_SECONDS = 20.0
@@ -497,6 +503,12 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._multipoint_align_controller = MultiPointAlignController()
         self._multipoint_align: Optional[dict[str, Any]] = None
         self._coordinate_sync: Optional[dict[str, Any]] = None
+        # Non-sidereal tracking frequency (None = sidereal firmware default).
+        # The target is kept so the frequency can be re-asserted after a
+        # driver reconnect resets it (see _reassert_track_frequency).
+        self._track_freq_target_hz: Optional[float] = None
+        self._track_freq_label: str = ""
+        self._track_freq_last_assert_at = 0.0
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -606,6 +618,13 @@ class MountControlIndi(BacklashCalibrationMixin):
             payload["goto_motion_active"] = True
             payload["target_ra"] = self._goto_motion.get("target_ra")
             payload["target_dec"] = self._goto_motion.get("target_dec")
+        if self._track_freq_target_hz is not None:
+            payload["track_freq_hz"] = self._track_freq_target_hz
+            payload["track_freq_arcsec_s"] = nonsidereal.rate_from_hz(
+                self._track_freq_target_hz
+            )
+            if self._track_freq_label:
+                payload["track_freq_label"] = self._track_freq_label
         payload["guide_correction_enabled"] = self._guide_correction_enabled
         if self._guide_correction_target is not None:
             payload["guide_correction_target_ra"] = self._guide_correction_target[0]
@@ -2411,6 +2430,87 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._console(f"INDI speed\n{self.slew_rate}")
         return True
 
+    def set_track_frequency(self, hz: float, label: str = "") -> bool:
+        """Set a non-sidereal tracking frequency for the current target.
+
+        Writes the INDI ``Tracking Frequency.trackFreq`` number, which the
+        LX200 OnStep driver forwards as ``:ST<Hz>#``. Verified on OnStepX
+        10.28q: the frequency survives GoTo slews and is only reset by an
+        actual track-mode change, so it is periodically re-asserted while a
+        target frequency is active (see _reassert_track_frequency).
+        """
+        clamped, was_clamped = nonsidereal.clamp_hz(hz)
+        if was_clamped:
+            logger.warning(
+                "Track frequency %.5f Hz outside accepted window, clamped to %.5f",
+                hz,
+                clamped,
+            )
+        if not self._write_track_frequency(clamped):
+            self._write_controller_status(
+                "track_freq_failed", f"Could not set tracking frequency {clamped:.5f}"
+            )
+            self._console("INDI trackrate\nfailed")
+            return False
+        self._track_freq_target_hz = clamped
+        self._track_freq_label = label
+        self._write_controller_status(
+            "connected" if self.connected else "idle",
+            f"Tracking frequency {clamped:.5f} Hz"
+            + (f" for {label}" if label else ""),
+        )
+        self._console(f"INDI trackrate\n{clamped:.3f} Hz")
+        logger.info(
+            "Tracking frequency set to %.5f Hz%s",
+            clamped,
+            f" for {label}" if label else "",
+        )
+        return True
+
+    def reset_track_frequency(self) -> bool:
+        """Restore sidereal tracking frequency.
+
+        Writes the sidereal frequency explicitly instead of re-selecting
+        TRACK_SIDEREAL: re-asserting an already-on mode switch is a driver
+        no-op and does not reset the firmware frequency (measured).
+        """
+        if not self._write_track_frequency(nonsidereal.SIDEREAL_FREQ_HZ):
+            self._console("INDI trackrate\nreset failed")
+            return False
+        self._track_freq_target_hz = None
+        self._track_freq_label = ""
+        self._write_controller_status(
+            "connected" if self.connected else "idle",
+            "Tracking frequency reset to sidereal",
+        )
+        self._console("INDI trackrate\nsidereal")
+        logger.info("Tracking frequency reset to sidereal")
+        return True
+
+    def _write_track_frequency(self, hz: float) -> bool:
+        if not self.connect() or self.client is None or self.device is None:
+            return False
+        if not self.client.set_number(
+            self.device, "Tracking Frequency", {"trackFreq": float(hz)}
+        ):
+            return False
+        self._track_freq_last_assert_at = time.monotonic()
+        return True
+
+    def _reassert_track_frequency(self) -> None:
+        if self._track_freq_target_hz is None or not self.connected:
+            return
+        if (
+            time.monotonic() - self._track_freq_last_assert_at
+            < TRACK_FREQ_REASSERT_INTERVAL
+        ):
+            return
+        if not self._write_track_frequency(self._track_freq_target_hz):
+            logger.warning(
+                "Tracking frequency re-assert failed (%.5f Hz)",
+                self._track_freq_target_hz,
+            )
+
     def _read_driver_guide_rate(self) -> Optional[tuple[float, float]]:
         properties = sys_utils.get_indi_onstep_properties(
             server_host=self.indi_host,
@@ -3316,6 +3416,13 @@ class MountControlIndi(BacklashCalibrationMixin):
             self.change_slew_rate(-1)
         elif command_type == "set_slew_rate":
             self.set_slew_rate(int(command.get("rate", self.slew_rate)))
+        elif command_type == "set_track_freq":
+            self.set_track_frequency(
+                float(command["hz"]),
+                str(command.get("label", "")),
+            )
+        elif command_type == "reset_track_freq":
+            self.reset_track_frequency()
         elif command_type == "refresh_slew_rate":
             self.refresh_slew_rate()
         elif command_type == "refresh_backlash":
@@ -3399,6 +3506,7 @@ class MountControlIndi(BacklashCalibrationMixin):
                 self._check_goto_motion()
                 self._check_pending_goto_refine()
                 self._check_guide_correction()
+                self._reassert_track_frequency()
                 now = time.monotonic()
                 if not self.connected and now >= next_auto_connect_at:
                     logger.info("Attempting automatic INDI mount connection")
