@@ -1,0 +1,183 @@
+/* PiFinder Web Catalogs — uses the --pf-* theme tokens from style.css */
+
+.pfcat { padding: 4px 0 30px; }
+.pfcat .mono { font-family: ui-monospace, "Cascadia Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+.pfcat-title { margin: 8px 0 2px; font-size: 1.6rem; font-weight: 600; }
+.pfcat-sub { color: var(--pf-text-muted); font-size: 0.9rem; margin: 0 0 18px; }
+.pfcat-crumb { font-size: 1.05rem; color: var(--pf-text-muted); margin: 14px 0 6px; }
+.pfcat-crumb a { color: var(--pf-link); text-decoration: none; }
+.pfcat-crumb a:hover { text-decoration: underline; }
+.pfcat-muted { color: var(--pf-text-muted); font-size: 0.85rem; }
+
+/* home: search */
+.pfcat-bigsearch { position: relative; margin: 0 0 20px; }
+.pfcat-bigsearch input {
+  width: 100%; box-sizing: border-box;
+  background: var(--pf-input-bg); border: 1px solid var(--pf-border);
+  color: var(--pf-text); border-radius: 6px; padding: 12px 14px; font-size: 1rem;
+}
+.pfcat-search-results {
+  position: absolute; left: 0; right: 0; top: 100%; z-index: 30;
+  background: var(--pf-surface); border: 1px solid var(--pf-border);
+  border-radius: 0 0 8px 8px; max-height: 320px; overflow-y: auto;
+}
+.pfcat-search-results a {
+  display: block; padding: 9px 14px; color: var(--pf-text);
+  border-bottom: 1px solid var(--pf-border); font-size: 0.9rem;
+}
+.pfcat-search-results a:hover { background: var(--pf-surface-alt); }
+.pfcat-search-results .hit-name { color: var(--pf-text-muted); margin-left: 8px; }
+
+/* home: cards */
+.pfcat-grouplabel {
+  font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--pf-text-muted); margin: 22px 0 10px;
+}
+.pfcat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+.pfcat-card {
+  background: var(--pf-surface); border: 1px solid var(--pf-border); border-radius: 8px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; color: var(--pf-text);
+}
+.pfcat-card:hover { background: var(--pf-surface-alt); }
+.pfcat-code { font-weight: 700; font-size: 1.1rem; }
+.pfcat-desc { font-size: 0.8rem; color: var(--pf-text-muted); line-height: 1.4; }
+.pfcat-count { font-size: 0.8rem; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* list: filter bar */
+.pfcat-filterbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  background: var(--pf-surface); border: 1px solid var(--pf-border); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 14px;
+}
+.pfcat-filterbar input[type="search"],
+.pfcat-filterbar select {
+  background: var(--pf-input-bg); border: 1px solid var(--pf-border); color: var(--pf-text);
+  border-radius: 6px; padding: 7px 10px; font-size: 0.85rem; height: auto; width: auto;
+  margin: 0; box-shadow: none;
+}
+.pfcat-filterbar input[type="search"] { min-width: 150px; flex: 1 1 150px; }
+.pfcat-chip {
+  border: 1px solid var(--pf-border); background: var(--pf-button); color: var(--pf-text);
+  border-radius: 999px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer;
+}
+.pfcat-chip[aria-pressed="true"] { background: var(--pf-text); color: var(--pf-bg); border-color: var(--pf-text); }
+.pfcat-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.pfcat-spacer { flex: 1; }
+
+/* browser-default opts out of Materialize's input/select skin; give focus a
+   theme-colored ring instead of the browser's default white/blue one. */
+.pfcat input.browser-default:focus,
+.pfcat select.browser-default:focus {
+  outline: none; border-color: var(--pf-link);
+  box-shadow: 0 0 0 1px var(--pf-link);
+}
+.pfcat select.browser-default option {
+  background: var(--pf-input-bg); color: var(--pf-text);
+}
+
+/* Kill every remaining browser-default white: placeholders, the search
+   clear (X) button, select arrow, and scrollbars inside the table wrap. */
+.pfcat input.browser-default {
+  background: var(--pf-input-bg); border: 1px solid var(--pf-border);
+  color: var(--pf-text); box-shadow: none; height: auto;
+}
+.pfcat input.browser-default::placeholder { color: var(--pf-text-muted); opacity: 1; }
+.pfcat input.browser-default::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.pfcat select.browser-default {
+  -webkit-appearance: none; appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--pf-text-muted) 50%),
+    linear-gradient(135deg, var(--pf-text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 26px;
+}
+.pfcat, .pfcat select.browser-default, .pfcat input.browser-default { color-scheme: dark; }
+.pfcat-tablewrap::-webkit-scrollbar { height: 8px; background: var(--pf-surface); }
+.pfcat-tablewrap::-webkit-scrollbar-thumb { background: var(--pf-border); border-radius: 4px; }
+.pfcat-tablewrap { scrollbar-color: var(--pf-border) var(--pf-surface); }
+.pfcat-search-results { scrollbar-color: var(--pf-border) var(--pf-surface); }
+.pfcat a:focus-visible, .pfcat button:focus-visible {
+  outline: 2px solid var(--pf-link); outline-offset: 2px;
+}
+
+/* list: table */
+.pfcat-tablewrap { overflow-x: auto; border: 1px solid var(--pf-border); border-radius: 8px; }
+.pfcat-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; min-width: 640px; }
+.pfcat-table th {
+  text-align: left; font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--pf-text-muted); background: var(--pf-surface);
+  padding: 9px 12px; border-bottom: 1px solid var(--pf-border); white-space: nowrap;
+}
+.pfcat-table td {
+  padding: 8px 12px; white-space: nowrap;
+  border-bottom: 1px solid color-mix(in srgb, var(--pf-border) 45%, transparent);
+}
+.pfcat-table tr:last-child td { border-bottom: none; }
+.pfcat-table tbody tr { cursor: pointer; }
+.pfcat-table tbody tr:hover { background: var(--pf-surface-alt); }
+.pfcat-table th.num, .pfcat-table td.num {
+  text-align: right;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.pfcat-objname { font-weight: 600; }
+.pfcat-objalias { color: var(--pf-text-muted); font-size: 0.78rem; margin-left: 6px; }
+.pfcat-typechip {
+  display: inline-block; border: 1px solid var(--pf-border); border-radius: 4px;
+  padding: 1px 6px; font-size: 0.74rem; color: var(--pf-text-muted);
+}
+.pfcat-alt-up { color: var(--pf-text); }
+.pfcat-alt-down { color: var(--pf-text-muted); }
+
+.pfcat-tablefoot { display: flex; align-items: center; gap: 12px; padding: 12px 2px 0; flex-wrap: wrap; }
+.pfcat-pages { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
+.pfcat-pages button {
+  background: var(--pf-button); color: var(--pf-text); border: 1px solid var(--pf-border);
+  border-radius: 5px; padding: 4px 10px; font-size: 0.8rem; cursor: pointer;
+}
+.pfcat-pages button[aria-current="true"] { background: var(--pf-text); color: var(--pf-bg); }
+
+/* detail */
+.pfcat-detailgrid { display: grid; grid-template-columns: 300px 1fr; gap: 18px; align-items: start; }
+@media (max-width: 720px) { .pfcat-detailgrid { grid-template-columns: 1fr; } }
+.pfcat-imgcard { background: #000; border: 1px solid var(--pf-border); border-radius: 8px; overflow: hidden; }
+.pfcat-imgcard img { display: block; width: 100%; height: auto; }
+/* Red Night: POSS thumbnails are grayscale (bright white) — render them in
+   red only, like the LCD's red-channel night-vision display. */
+html[data-theme="red"] .pfcat-imgcard img {
+  filter: grayscale(1) brightness(0.8) sepia(1) saturate(5) hue-rotate(-40deg);
+}
+.pfcat-imgcard.noimg::before {
+  content: "No image"; display: flex; align-items: center; justify-content: center;
+  height: 160px; color: var(--pf-text-muted); font-size: 0.85rem;
+}
+.pfcat-credit { font-size: 0.7rem; color: var(--pf-text-muted); padding: 6px 10px; }
+.pfcat-altcard {
+  background: var(--pf-surface); border: 1px solid var(--pf-border); border-radius: 8px;
+  padding: 12px 14px; margin-top: 14px;
+}
+.pfcat-altcard canvas { width: 100%; height: 110px; display: block; }
+.pfcat-k {
+  font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--pf-text-muted); margin-bottom: 4px;
+}
+.pfcat-titleline { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pfcat-titleline h4 { margin: 0; font-size: 1.5rem; }
+.pfcat-common { color: var(--pf-text-muted); font-size: 0.95rem; }
+.pfcat-badges { display: flex; gap: 6px; margin: 8px 0 2px; flex-wrap: wrap; }
+.pfcat-badge {
+  border: 1px solid var(--pf-border); border-radius: 4px; padding: 2px 8px;
+  font-size: 0.76rem; color: var(--pf-text-muted);
+}
+.pfcat-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin: 14px 0; }
+.pfcat-fact { background: var(--pf-surface); border: 1px solid var(--pf-border); border-radius: 7px; padding: 9px 12px; }
+.pfcat-v { font-size: 0.92rem; }
+.pfcat-actions { display: flex; gap: 10px; align-items: center; margin: 16px 0 6px; flex-wrap: wrap; }
+.pfcat-btn {
+  background: var(--pf-button); border: 1px solid var(--pf-border); color: var(--pf-text);
+  border-radius: 6px; padding: 9px 16px; font-size: 0.88rem; cursor: pointer;
+}
+.pfcat-btn:hover { background: var(--pf-button-hover); }
+.pfcat-btn.primary { font-weight: 600; }
+.pfcat-desc { font-size: 0.88rem; line-height: 1.6; max-width: 68ch; margin-top: 12px; white-space: pre-line; }

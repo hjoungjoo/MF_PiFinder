@@ -2445,6 +2445,13 @@ class Server:
         except Exception:
             logger.exception("Failed to register API extension routes")
 
+        try:
+            from PiFinder.web_catalogs import register_catalog_routes
+
+            register_catalog_routes(app, self)
+        except Exception:
+            logger.exception("Failed to register web catalog routes")
+
         @auth_required
         def gps_lock(lat: float = 50, lon: float = 3, altitude: float = 10):
             msg = (

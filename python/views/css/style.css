@@ -572,3 +572,15 @@ html[data-theme="red"] table.striped > tbody > tr:nth-child(even) {
     margin-bottom: 1.25rem;
   }
 }
+
+/* Red Night: Materialize text inputs keep a light-grey underline that reads
+   as white on the dark red theme (e.g. the login password field). */
+html[data-theme="red"] input:not([type]):not(.browser-default),
+html[data-theme="red"] input[type=text]:not(.browser-default),
+html[data-theme="red"] input[type=password]:not(.browser-default),
+html[data-theme="red"] input[type=email]:not(.browser-default),
+html[data-theme="red"] input[type=number]:not(.browser-default),
+html[data-theme="red"] input[type=search]:not(.browser-default),
+html[data-theme="red"] textarea.materialize-textarea {
+  border-bottom-color: var(--pf-border);
+}
