@@ -78,7 +78,7 @@ def test_lingering_imu_flag_cannot_delay_recovery_indefinitely(monkeypatch):
     assert service.tracking_guide_state == "disturbed"
 
     # Coordinate is perfectly still but the IMU flag stays set (micro-sway):
-    # the flag blocks recovery only up to 2x the settle window (8 s).
+    # the flag blocks recovery only up to 2x the settle window (8 s here).
     for _ in range(7):
         clock[0] += 1.0
         service._tick_tracking_guide()

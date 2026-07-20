@@ -92,7 +92,7 @@ TRACKING_TARGET_ALT_CACHE_SECONDS = 10.0
 # tens of seconds of micro-sway after the scope is released. Without a bound it
 # resets the settle window every tick and delays recovery indefinitely. Once
 # the fused coordinate has been still for this many settle windows, the IMU
-# flag alone no longer holds off recovery.
+# flag alone no longer holds off recovery (2x the 1 s settle default = 2 s cap).
 TRACKING_IMU_QUIET_OVERRIDE_MULTIPLE = 2.0
 
 
@@ -894,7 +894,7 @@ class IndiGotoGuideService:
             self.tracking_last_imu_motion_at = now
 
         settle_seconds = float(
-            self.config_values.get("indi_tracking_guide_settle_seconds", 4.0)
+            self.config_values.get("indi_tracking_guide_settle_seconds", 1.0)
         )
         coord_quiet = (
             now - self.tracking_last_motion_at
@@ -932,9 +932,10 @@ class IndiGotoGuideService:
             )
             return
 
-        # Settle wait: the scope must stay still before we correct again. Kept
-        # comfortably longer than a reflexive nudge so a brief pause between
-        # pushes does not trigger a recovery slew (Option A).
+        # Settle wait: the scope must stay still before we correct again. The
+        # window is short (1 s default) for fast recovery; a pause between
+        # pushes is still covered because the IMU moving flag keeps re-arming
+        # the window while the scope is being handled.
         stable_for = coord_quiet if ignore_imu_flag else min(coord_quiet, imu_quiet)
         self.tracking_guide_settle_remaining = max(0.0, settle_seconds - stable_for)
         if stable_for < settle_seconds:
@@ -1472,7 +1473,7 @@ class IndiGotoGuideService:
                 cfg.get_option("indi_tracking_guide_threshold_arcmin", 10.0)
             ),
             "indi_tracking_guide_settle_seconds": float(
-                cfg.get_option("indi_tracking_guide_settle_seconds", 4.0)
+                cfg.get_option("indi_tracking_guide_settle_seconds", 1.0)
             ),
             "indi_tracking_guide_motion_arcmin": float(
                 cfg.get_option("indi_tracking_guide_motion_arcmin", 15.0)
