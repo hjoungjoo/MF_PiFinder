@@ -30,8 +30,8 @@
   `skysafari_planet_track_freq`(기본 켜짐)로 끌 수 있다. 엄폐/합에서 행성과 항성이
   좌표를 공유하므로 이 추정은 선택적이며, `obj_type`을 아는 경로는 사용하지 않는다.
 - 상세 설계·실기기 검증·미해결 사항은 `mf_web_catalogs_dev_ko.md` P6/P6-1/P6-2 참고.
-  **P6-2에 미해결 결함이 있다**: SkySafari 좌표는 JNow인데 `calc_planets()`는 J2000을
-  반환해 세차 22′ 때문에 매칭이 실패한다.
+  P6-2는 SkySafari 좌표(JNow)와 `calc_planets()`(J2000)의 분점 불일치로 세차 22′ 때문에
+  매칭이 실패하던 결함과 그 수정(`planet_positions_of_date()`)을 기록한다.
 - `_queue_indi_goto_if_enabled`는 경로별로 필요한 큐만 검사한다. 두 큐를 모두 요구하면
   GoTo/Guide 서비스가 없을 때 multi-point align GoTo가 조용히 사라진다(2026-07-20 수정).
 

@@ -65,11 +65,14 @@ def test_no_object_behaves_like_static(monkeypatch):
 
 
 def _stub_planets(monkeypatch, planets):
-    """Pin the ephemeris so tolerance behaviour does not depend on today's sky."""
+    """Pin the ephemeris so tolerance behaviour does not depend on today's sky.
+
+    ``planets`` maps body name to an (ra_deg, dec_deg) pair.
+    """
     monkeypatch.setattr(
         track_freq_policy,
-        "_ephemeris",
-        lambda shared_state: SimpleNamespace(calc_planets=lambda dt: planets),
+        "planet_positions_of_date",
+        lambda shared_state: planets,
     )
 
 
@@ -78,8 +81,8 @@ def test_coordinates_on_a_planet_are_identified(monkeypatch):
     _stub_planets(
         monkeypatch,
         {
-            "JUPITER": {"radec": (120.0, 20.0)},
-            "MARS": {"radec": (200.0, -10.0)},
+            "JUPITER": (120.0, 20.0),
+            "MARS": (200.0, -10.0),
         },
     )
     assert (
@@ -90,7 +93,7 @@ def test_coordinates_on_a_planet_are_identified(monkeypatch):
 
 @pytest.mark.unit
 def test_coordinates_just_outside_tolerance_are_not_a_planet(monkeypatch):
-    _stub_planets(monkeypatch, {"JUPITER": {"radec": (120.0, 20.0)}})
+    _stub_planets(monkeypatch, {"JUPITER": (120.0, 20.0)})
     inside = 0.9 * track_freq_policy.PLANET_MATCH_TOLERANCE_DEG
     outside = 1.1 * track_freq_policy.PLANET_MATCH_TOLERANCE_DEG
 
@@ -106,17 +109,23 @@ def test_coordinates_just_outside_tolerance_are_not_a_planet(monkeypatch):
     )
 
 
-@pytest.mark.unit
-def test_lx200_coordinate_quantization_still_matches_the_planet():
-    """SkySafari's :Sr/:Sd carry 1s of RA and 1" of Dec, so a real GoTo target
-    arrives truncated. The match tolerance must absorb that."""
+def _located_shared_state():
     from PiFinder.calc_utils import sf_utils
 
     shared_state = FakeSharedState()
     location = shared_state.location()
     sf_utils.set_location(location.lat, location.lon, location.altitude)
-    dt = track_freq_policy._observation_time(shared_state)
-    ra_deg, dec_deg = sf_utils.calc_planets(dt)["JUPITER"]["radec"]
+    return shared_state
+
+
+@pytest.mark.unit
+def test_lx200_coordinate_quantization_still_matches_the_planet():
+    """SkySafari's :Sr/:Sd carry 1s of RA and 1" of Dec, so a real GoTo target
+    arrives truncated. The match tolerance must absorb that."""
+    shared_state = _located_shared_state()
+    ra_deg, dec_deg = track_freq_policy.planet_positions_of_date(shared_state)[
+        "JUPITER"
+    ]
 
     # Truncate exactly as the LX200 target commands do.
     ra_quantized = math.floor(ra_deg / 15.0 * 3600.0) / 3600.0 * 15.0
@@ -131,8 +140,28 @@ def test_lx200_coordinate_quantization_still_matches_the_planet():
 
 
 @pytest.mark.unit
+def test_matching_uses_equinox_of_date_not_j2000():
+    """LX200 clients speak the mount's frame (equinox of date). Matching a
+    SkySafari coordinate against J2000 positions is off by precession -- 22'
+    in 2026 -- which silently reset a real Venus GoTo to sidereal."""
+    from PiFinder.calc_utils import sf_utils
+
+    shared_state = _located_shared_state()
+    dt = track_freq_policy._observation_time(shared_state)
+    of_date = track_freq_policy.planet_positions_of_date(shared_state)["VENUS"]
+    j2000 = sf_utils.calc_planets(dt)["VENUS"]["radec"]
+
+    separation = track_freq_policy._angular_separation_deg(*of_date, *j2000)
+    # The two frames must actually differ, or this test proves nothing.
+    assert separation > track_freq_policy.PLANET_MATCH_TOLERANCE_DEG
+
+    assert track_freq_policy.planet_at_coordinates(*of_date, shared_state) == "VENUS"
+    assert track_freq_policy.planet_at_coordinates(*j2000, shared_state) != "VENUS"
+
+
+@pytest.mark.unit
 def test_coordinate_policy_feeds_forward_planet_rate(monkeypatch):
-    _stub_planets(monkeypatch, {"MOON": {"radec": (120.0, 20.0)}})
+    _stub_planets(monkeypatch, {"MOON": (120.0, 20.0)})
     # The stub returns one fixed position, so pin the rate separately; the
     # finite-difference path itself is covered by the real-ephemeris tests.
     monkeypatch.setattr(track_freq_policy, "planet_dra_dt", lambda name, state: 0.55)
@@ -147,7 +176,7 @@ def test_coordinate_policy_feeds_forward_planet_rate(monkeypatch):
 
 @pytest.mark.unit
 def test_coordinate_policy_resets_static_target(monkeypatch):
-    _stub_planets(monkeypatch, {"JUPITER": {"radec": (120.0, 20.0)}})
+    _stub_planets(monkeypatch, {"JUPITER": (120.0, 20.0)})
     monkeypatch.setattr(
         track_freq_policy, "_mount_status", lambda: {"track_freq_hz": 60.12627}
     )

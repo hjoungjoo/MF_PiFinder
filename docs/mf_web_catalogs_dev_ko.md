@@ -225,7 +225,7 @@ Push 대상이 행성/혜성일 때 트래킹 속도를 INDI로 넘기는 방안
   끄면 SkySafari 대상은 전부 sidereal로 처리한다. `obj_type`을 아는 웹/LCD 경로는
   **좌표 추정을 사용하지 않는다** — 선언된 타입이 항상 우선이다.
 
-### P6-2 미해결: SkySafari 좌표는 JNow, `calc_planets()`는 J2000 (2026-07-20 실측)
+### P6-2 해결: SkySafari 좌표는 JNow, `calc_planets()`는 J2000 (2026-07-20 실측·수정)
 
 웹에서 달 GoTo(주파수 정상 적용) → SkySafari에서 금성 GoTo 시 **60.16427 Hz(sidereal)로
 리셋**되는 현상. 원인은 **좌표 분점(epoch) 불일치**다.
@@ -242,19 +242,29 @@ Push 대상이 행성/혜성일 때 트래킹 속도를 INDI로 넘기는 방안
 - 세차 오차 22.2′가 허용오차 6′를 넘겨 매칭 실패 → "행성 아님" 판정 → sidereal 리셋.
 - **주의: "GoTo가 잘 맞으니 양쪽 다 J2000"은 틀린 추론이다.** 양쪽이 일관되게 JNow였을 뿐이다.
 
-**수정 방향** (미구현, 착수 전 결정 필요):
+**채택한 수정 (2안)**: `track_freq_policy.planet_positions_of_date()` — 매칭 전용으로
+equinox-of-date 위치를 직접 계산한다. `calc_planets()`는 J2000 그대로 두어
+카탈로그·차트·플롯 호출자에 회귀가 없다.
 
-1. `calc_planets()`에 분점 옵션을 추가하고 매칭에서만 JNow를 사용 —
-   기존 호출자(카탈로그·차트·플롯)는 J2000 그대로 유지해야 하므로 회귀 범위가 넓다.
-2. `track_freq_policy` 안에서 매칭 전용으로 JNow를 직접 계산 — `calc_planets()`를
-   건드리지 않아 안전하나 계산이 일부 중복된다. **현재 이쪽을 우선 검토 중.**
+`calc_planets()`에 분점 옵션을 추가하는 1안은 호출자 범위가 넓어 채택하지 않았다.
 
-어느 쪽이든 **PiFinder 내부 좌표 규약(J2000)과 LX200 프로토콜 경계(JNow)의 경계를
-어디에 둘지**가 본질이므로, `mf_coordinate_helper_plan`의 좌표 규약과 함께 결정한다.
+**`mf_coordinate_helper_plan`의 원칙과의 관계**: "요청 좌표를 J2000/JNow 같은 epoch
+이름으로 재해석하거나 변환하지 않는다"를 지킨다 — SkySafari가 보낸 좌표는 손대지 않고,
+**에페메리스 쪽만 요청 좌표의 프레임으로 맞춘다.** 즉 프레임 경계는 좌표 서비스가 아니라
+매칭 함수 안에 둔다.
 
-부수 확인: 매칭 실패 시 분리 각도를 남기는 진단 로그를 `planet_at_coordinates`에 넣어
-두었으나 **INFO 레벨이라 현재 로그 설정에서 기록되지 않는다** — 실패 시 아무것도 남지
-않으므로 레벨/로그 설정도 함께 손봐야 한다.
+주의: `planet_positions_of_date()`는 지심이 아닌 **지평 시차 포함 topocentric** 값이므로
+관측지 위치가 없거나 틀리면 달이 최대 ~1° 어긋나 허용오차를 벗어난다.
+
+검증 (2026-07-20): 사용자의 실제 금성 GoTo 좌표(RA 163.5792 Dec 7.9008)로 재현 →
+`VENUS` 매칭, `set_track_freq 60.00012 Hz` 산출. 현재 하늘의 10개 천체 전부 왕복 통과.
+회귀 테스트 `test_matching_uses_equinox_of_date_not_j2000`이 두 프레임의 분리가 허용오차를
+넘는지 먼저 확인한 뒤 of-date는 매칭·J2000은 비매칭임을 검사한다.
+
+부수 수정: 진단 로그(`TrackFreqPolicy`)가 INFO라 기본 설정에서 기록되지 않아 정작 실패했을
+때 침묵했다. SD 쓰기를 늘리지 않도록 기본(`logconf_default.json`)은 ERROR로 두고,
+진단용 `logconf_indi.json`에만 `TrackFreqPolicy: INFO`를 추가했다 — 웹 Logs 페이지에서
+"Indi"로 전환하면 매칭 결과와 기각된 근접 후보의 분리 각도가 남는다.
 
 ---
 

@@ -37,9 +37,9 @@ in [Constants and Timing (from source)](#constants-and-timing-from-source).
   is a guess -- a planet and a star share coordinates during an occultation or
   conjunction -- so paths that know `obj_type` never use it.
 - Design, on-hardware verification, and open issues: see
-  `mf_web_catalogs_dev_ko.md` P6/P6-1/P6-2. **P6-2 records an open defect**:
-  SkySafari sends JNow coordinates while `calc_planets()` returns J2000, so
-  precession (~22') makes the match fail.
+  `mf_web_catalogs_dev_ko.md` P6/P6-1/P6-2. P6-2 records the equinox mismatch
+  that made the match fail (SkySafari sends JNow, `calc_planets()` returns
+  J2000, ~22' of precession) and its fix, `planet_positions_of_date()`.
 - `_queue_indi_goto_if_enabled` guards only the queue each path actually uses.
   Requiring both silently dropped multi-point align GoTos whenever the
   GoTo/Guide service was absent (fixed 2026-07-20).

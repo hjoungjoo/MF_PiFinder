@@ -35,9 +35,10 @@ PLANET_RATE_SAMPLE_SECONDS = 600.0
 # the widest body, is only 30' across, making 6' both generous and unable to
 # collide with a neighbouring catalog object.
 PLANET_MATCH_TOLERANCE_DEG = 0.1
-# Log (without matching) anything this close, so a systematic offset -- a
-# J2000/JNow epoch mismatch between SkySafari and PiFinder shows up as ~0.36
-# deg in 2026 -- is visible as repeated near-misses instead of silence.
+# Log (without matching) anything this close, so a systematic offset stays
+# visible as repeated near-misses instead of silence. This is how the
+# J2000/JNow mismatch was meant to surface; it caught nothing because the
+# logger sits at ERROR by default (raise it via logconf_indi.json).
 PLANET_MATCH_DIAGNOSTIC_DEG = 1.0
 
 
@@ -99,6 +100,35 @@ def _angular_separation_deg(
     return math.degrees(math.acos(max(-1.0, min(1.0, cos_sep))))
 
 
+def planet_positions_of_date(shared_state) -> Dict[str, Any]:
+    """Apparent RA/Dec of every solar-system body in the **equinox of date**.
+
+    Matching-only counterpart to ``sf_utils.calc_planets()``, which returns
+    J2000 (``radec()`` with no epoch). LX200 clients speak the mount's frame:
+    SkySafari and OnStep are both on equinox-of-date, so comparing their
+    coordinates against J2000 positions is off by precession -- 22' in 2026,
+    far outside the match tolerance (measured 2026-07-20, see
+    mf_web_catalogs_dev_ko P6-2).
+
+    This deliberately does not convert the *incoming* coordinate: per
+    mf_coordinate_helper_plan, a requested RA/Dec is used as given and never
+    reinterpreted by epoch name. Only the ephemeris side is moved to meet it.
+
+    Positions are topocentric, so an unusable observer location shifts the
+    Moon by up to ~1 deg (parallax) and will make it miss the tolerance.
+    """
+    sf_utils = _ephemeris(shared_state)
+    if sf_utils is None:
+        return {}
+    dt = _observation_time(shared_state)
+    positions: Dict[str, Any] = {}
+    observer = sf_utils.observer_loc.at(sf_utils.ts.from_datetime(dt))
+    for name, planet in zip(sf_utils.planet_names, sf_utils.planets):
+        ra, dec, _ = observer.observe(planet).apparent().radec(epoch="date")
+        positions[name] = (ra._degrees, dec.degrees)
+    return positions
+
+
 def planet_at_coordinates(
     ra_deg: float,
     dec_deg: float,
@@ -110,21 +140,15 @@ def planet_at_coordinates(
     SkySafari sends bare RA/Dec with no object type, so comparing against the
     ephemeris is the only way to tell a planet GoTo from a static one.
     """
-    sf_utils = _ephemeris(shared_state)
-    if sf_utils is None:
-        return None
     try:
-        planets = sf_utils.calc_planets(_observation_time(shared_state))
+        planets = planet_positions_of_date(shared_state)
     except Exception:
         logger.exception("Planet lookup failed for RA %.4f Dec %.4f", ra_deg, dec_deg)
         return None
 
     nearest_name: Optional[str] = None
     nearest_sep: Optional[float] = None
-    for name, data in planets.items():
-        radec = data.get("radec")
-        if not radec:
-            continue
+    for name, radec in planets.items():
         separation = _angular_separation_deg(ra_deg, dec_deg, radec[0], radec[1])
         if nearest_sep is None or separation < nearest_sep:
             nearest_name, nearest_sep = name, separation
@@ -151,7 +175,12 @@ def planet_at_coordinates(
 
 def planet_dra_dt(name: str, shared_state) -> Optional[float]:
     """Finite-difference dRA/dt (RA-coordinate arcsec/s) for a solar-system
-    body by name, or None if it cannot be computed."""
+    body by name, or None if it cannot be computed.
+
+    Uses J2000 positions: a *rate* is barely affected by the equinox choice
+    (precession adds ~1.5e-6 arcsec/s, against 0.0095 for Jupiter), so unlike
+    the position match this needs no equinox-of-date treatment.
+    """
     sf_utils = _ephemeris(shared_state)
     if sf_utils is None:
         return None

@@ -64,6 +64,12 @@
         "PointingCoordinateService": {
             "level": "INFO"
         },
+        // Which body a GoTo target was identified as, and -- the reason this
+        // is here -- the separation of near-misses that were rejected, which
+        // is what a systematic coordinate offset looks like.
+        "TrackFreqPolicy": {
+            "level": "INFO"
+        },
 
         /////////////////////////////////////////////////////////////////
         ////// Flask Framework (used for webserver)
