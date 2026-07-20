@@ -114,7 +114,7 @@ class UITextEntry(UIModule):
 
         self.last_key = None
         self.KEYPRESS_TIMEOUT = 1
-        self.last_key_press_time = 0
+        self.last_key_press_time = 0.0
         self.char_index = 0
         self.search_results: List[CompositeObject] = []
         self.search_results_len_str = "0"

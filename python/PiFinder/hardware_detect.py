@@ -13,7 +13,7 @@ import logging
 try:
     from PiFinder.i2c_bus import get_i2c
 except Exception:
-    get_i2c = None
+    get_i2c = None  # type: ignore[assignment]
 
 
 logger = logging.getLogger("HardwareDetect")

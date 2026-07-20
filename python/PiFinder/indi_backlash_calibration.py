@@ -18,7 +18,7 @@ import statistics
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from PiFinder import calc_utils, config, sys_utils
 from PiFinder import utils
@@ -52,6 +52,11 @@ BACKLASH_GOTO_MAX_RETRIES = 3
 GOTO_COMPLETE_MIN_SECONDS = 1.0
 
 
+def _as_float(value: Any) -> float:
+    """float() over an Any/Optional value; raises TypeError/ValueError as float()."""
+    return float(value)
+
+
 def radec_separation_arcmin(
     ra_a_deg: float, dec_a_deg: float, ra_b_deg: float, dec_b_deg: float
 ) -> float:
@@ -72,6 +77,38 @@ def shortest_ra_delta_deg(target_ra_deg: float, current_ra_deg: float) -> float:
 
 class BacklashCalibrationMixin:
     """Mixin that owns INDI backlash read/write and automatic calibration."""
+
+    # State this mixin owns; the host initializes it in __init__.
+    backlash_ra: Optional[int]
+    backlash_de: Optional[int]
+    _backlash_auto: Optional[dict[str, Any]]
+    _backlash_stop_seen_at: float
+
+    if TYPE_CHECKING:
+        # Provided by the host class (MountControlIndi); declared for the type
+        # checker only. The mixin is never instantiated on its own.
+        indi_host: str
+        indi_port: int
+        connected: bool
+        _console: Callable[..., Any]
+        _write_controller_status: Callable[..., Any]
+        _home_park_status_fields: Callable[..., Any]
+        _indi_device_name: Callable[..., Any]
+        _indi_property_name: Callable[..., Any]
+        _indi_mount_is_busy: Callable[..., Any]
+        _apply_indi_backlash: Callable[..., Any]
+        _read_current_position: Callable[..., Any]
+        _read_tracking_enabled: Callable[..., Any]
+        _shared_location_time_values: Callable[..., Any]
+        _goto_motion: Optional[dict[str, Any]]
+        _goto_completion_ready: Callable[..., Any]
+        _complete_goto_motion: Callable[..., Any]
+        set_tracking: Callable[..., Any]
+        stop_mount: Callable[..., Any]
+        goto_target: Callable[..., Any]
+        sync_mount: Callable[..., Any]
+        connect: Callable[..., Any]
+        update: Callable[..., Any]
 
     def _backlash_stop_request_file(self):
         for module_name in (type(self).__module__, "PiFinder.mountcontrol_indi"):
@@ -99,7 +136,7 @@ class BacklashCalibrationMixin:
                 value = properties.get(self._indi_property_name(property_name))
                 if value in (None, ""):
                     continue
-                return int(float(value))
+                return int(_as_float(value))
             except (TypeError, ValueError):
                 continue
         return None
@@ -259,8 +296,8 @@ class BacklashCalibrationMixin:
         if not isinstance(solved, dict) or not bool(solved.get("valid")):
             return None
         try:
-            ra = float(solved.get("ra"))
-            dec = float(solved.get("dec"))
+            ra = _as_float(solved.get("ra"))
+            dec = _as_float(solved.get("dec"))
         except (TypeError, ValueError):
             return None
         if not math.isfinite(ra) or not math.isfinite(dec) or dec < -90.0 or dec > 90.0:
@@ -270,7 +307,7 @@ class BacklashCalibrationMixin:
         if timestamp in (None, ""):
             timestamp = status.get("updated")
         try:
-            timestamp = float(timestamp)
+            timestamp = _as_float(timestamp)
         except (TypeError, ValueError):
             return None
         now = time.time()
@@ -282,11 +319,11 @@ class BacklashCalibrationMixin:
         alt = solved.get("alt")
         az = solved.get("az")
         try:
-            alt = None if alt in (None, "") else float(alt)
+            alt = None if alt in (None, "") else _as_float(alt)
         except (TypeError, ValueError):
             alt = None
         try:
-            az = None if az in (None, "") else float(az) % 360.0
+            az = None if az in (None, "") else _as_float(az) % 360.0
         except (TypeError, ValueError):
             az = None
 
@@ -335,7 +372,9 @@ class BacklashCalibrationMixin:
         )
         return int(sorted_values[index])
 
-    def _spread_percent(self, min_value: int, max_value: int, base_value: int) -> float:
+    def _spread_percent(
+        self, min_value: float, max_value: float, base_value: float
+    ) -> float:
         if base_value <= 0:
             return 0.0
         return round(((max_value - min_value) / base_value) * 100.0, 1)
@@ -1272,10 +1311,10 @@ class BacklashCalibrationMixin:
             elif solved_valid:
                 solved_sep_deg = (
                     radec_separation_arcmin(
-                        float(solved_start_ra),
-                        float(solved_start_dec),
-                        float(solved_end_ra),
-                        float(solved_end_dec),
+                        _as_float(solved_start_ra),
+                        _as_float(solved_start_dec),
+                        _as_float(solved_end_ra),
+                        _as_float(solved_end_dec),
                     )
                     / 60.0
                 )
@@ -1382,9 +1421,11 @@ class BacklashCalibrationMixin:
             motion_backlash_az_arcsec = None
             if solved_valid:
                 solved_delta_ra = shortest_ra_delta_deg(
-                    float(solved_end_ra), float(solved_start_ra)
+                    _as_float(solved_end_ra), _as_float(solved_start_ra)
                 )
-                solved_delta_dec = float(solved_end_dec) - float(solved_start_dec)
+                solved_delta_dec = _as_float(solved_end_dec) - _as_float(
+                    solved_start_dec
+                )
                 motion_difference_ra_deg = mount_delta_ra - solved_delta_ra
                 motion_difference_dec_deg = mount_delta_dec - solved_delta_dec
                 motion_backlash_ra_arcsec = backlash_arcsec_from_signed(
@@ -2073,12 +2114,12 @@ class BacklashCalibrationMixin:
                 active_axes=list(active_axes),
                 start_ra=start_ra % 360.0,
                 start_dec=start_dec,
-                start_altitude=plan.get("start_altitude"),
-                start_azimuth=plan.get("start_azimuth"),
-                target_ra=plan.get("target_ra"),
-                target_dec=plan.get("target_dec"),
-                target_altitude=plan.get("target_altitude"),
-                target_azimuth=plan.get("target_azimuth"),
+                start_altitude=(plan or {}).get("start_altitude"),
+                start_azimuth=(plan or {}).get("start_azimuth"),
+                target_ra=(plan or {}).get("target_ra"),
+                target_dec=(plan or {}).get("target_dec"),
+                target_altitude=(plan or {}).get("target_altitude"),
+                target_azimuth=(plan or {}).get("target_azimuth"),
                 offset_deg=offset_deg,
                 repeats=repeats,
                 solved_status=self._solved_status_payload(),

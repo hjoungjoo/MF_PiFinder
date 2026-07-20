@@ -1065,8 +1065,8 @@ def main(
                                 # Dump UI State
                                 with open(
                                     f"{utils.debug_dump_dir}/{uid}_uistate.pkl", "wb"
-                                ) as f:
-                                    pickle.dump(ui_state, f)
+                                ) as pkl_out:
+                                    pickle.dump(ui_state, pkl_out)
 
                                 console.write(f"Debug dump: {uid}")
                                 logger.info(f"Debug dump: {uid}")

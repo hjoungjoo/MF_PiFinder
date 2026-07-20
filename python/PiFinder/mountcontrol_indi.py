@@ -53,7 +53,7 @@ from PiFinder.indi_multipoint_align import (
 from PiFinder.multiproclogging import MultiprocLogging
 
 try:
-    import PyIndi  # type: ignore[import-untyped]
+    import PyIndi  # type: ignore
 except ImportError:  # pragma: no cover - exercised only on INDI installs
     PyIndi = None
 
@@ -203,7 +203,7 @@ def _write_status(state: str, message: str = "", **extra: Any) -> None:
 
 if PyIndi is not None:
 
-    class PiFinderIndiClient(PyIndi.BaseClient):  # type: ignore[misc]
+    class PiFinderIndiClient(PyIndi.BaseClient):
         """Minimal INDI client that finds a telescope-like device."""
 
         # Emit at most one disconnect WARNING per this many seconds. A dead
@@ -596,7 +596,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         }
 
     def _status_fields(self, state: str = "", **extra: Any) -> dict[str, Any]:
-        payload = {
+        payload: dict[str, Any] = {
             "slew_rate": self.slew_rate,
             "ra": self.current_ra,
             "dec": self.current_dec,
@@ -1044,8 +1044,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         now = time.monotonic()
         if (
             not force
-            and now - self._last_manual_motion_status_at
-            < POSITION_STATUS_MIN_INTERVAL
+            and now - self._last_manual_motion_status_at < POSITION_STATUS_MIN_INTERVAL
         ):
             return
         self._last_manual_motion_status_at = now
@@ -1329,9 +1328,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         """
         onstep_cfg = self._onstep_connection_config()
         logger.info("Rebooting OnStep mount controller via :ERESET#")
-        self._write_controller_status(
-            "rebooting", "Rebooting OnStep mount controller"
-        )
+        self._write_controller_status("rebooting", "Rebooting OnStep mount controller")
         self._console("INDI mount\nrebooting")
         self.disconnect()
         self.client = None
@@ -1618,6 +1615,8 @@ class MountControlIndi(BacklashCalibrationMixin):
             return None
 
         self.set_current_position(position[0], position[1], write_status=write_status)
+        if self.current_ra is None or self.current_dec is None:
+            return None
         return self.current_ra, self.current_dec
 
     def _read_current_position(
@@ -1681,10 +1680,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             ):
                 return True
 
-            if (
-                time.monotonic() - started_at
-                >= GOTO_TARGET_ACCEPT_TIMEOUT_SECONDS
-            ):
+            if time.monotonic() - started_at >= GOTO_TARGET_ACCEPT_TIMEOUT_SECONDS:
                 return False
 
             time.sleep(GOTO_TARGET_ACCEPT_POLL_SECONDS)
@@ -1957,6 +1953,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             self._console("Guide corr\nOff")
             return True
 
+        target: Optional[tuple[float, float]]
         try:
             target = (
                 float(target_ra) % 360.0,
@@ -2120,8 +2117,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         if self._guide_rate_writable is False:
             return
         fast_band_arcmin = (
-            self._guide_correction_accuracy_arcmin
-            * GUIDE_RATE_FAST_MIN_ERROR_MULTIPLE
+            self._guide_correction_accuracy_arcmin * GUIDE_RATE_FAST_MIN_ERROR_MULTIPLE
         )
         desired = (
             GUIDE_RATE_FAST_X
@@ -2157,9 +2153,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         if self._guide_rate_writable is False:
             return
         if self._set_guide_rate(GUIDE_RATE_FINE_X):
-            logger.info(
-                "Guide rate restored to %.2fx sidereal", GUIDE_RATE_FINE_X
-            )
+            logger.info("Guide rate restored to %.2fx sidereal", GUIDE_RATE_FINE_X)
 
     def _guide_pulse_ms(self, error_arcsec: float, guide_rate_x: float) -> int:
         rate_arcsec_per_sec = max(0.01, guide_rate_x) * SIDEREAL_ARCSEC_PER_SEC
@@ -2211,9 +2205,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         dec_arcsec = dec_delta_deg * 3600.0
         guide_we_x, guide_ns_x = self._current_guide_rate_x()
         invert_ns, invert_we = self._guide_pulse_inversions()
-        threshold_arcsec = (
-            max(0.5, self._guide_correction_accuracy_arcmin / 2.0) * 60.0
-        )
+        threshold_arcsec = max(0.5, self._guide_correction_accuracy_arcmin / 2.0) * 60.0
 
         pulses: list[str] = []
         if abs(dec_arcsec) > threshold_arcsec:
@@ -2482,8 +2474,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._track_freq_label = label
         self._write_controller_status(
             "connected" if self.connected else "idle",
-            f"Tracking frequency {clamped:.5f} Hz"
-            + (f" for {label}" if label else ""),
+            f"Tracking frequency {clamped:.5f} Hz" + (f" for {label}" if label else ""),
         )
         self._console(f"INDI trackrate\n{clamped:.3f} Hz")
         logger.info(
@@ -2738,13 +2729,10 @@ class MountControlIndi(BacklashCalibrationMixin):
                     exc_info=True,
                 )
 
-        imu_altaz = self._current_imu_altaz()
-        if imu_altaz is None:
-            return None
-        imu_radec = self._imu_altaz_to_radec(imu_altaz[0], imu_altaz[1])
-        if imu_radec is None:
-            return None
-        return "imu", imu_radec[0] % 360.0, imu_radec[1]
+        # No IMU fallback: the helpers it relied on were removed when backlash
+        # calibration moved to solved coordinates, and alignment needs solve
+        # accuracy anyway. Without a solve there is no pointing to align with.
+        return None
 
     def _sync_multipoint_location_time(self, session: dict[str, Any]) -> bool:
         if not self.sync_location_time(
@@ -2822,7 +2810,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         if pointing is None:
             self._align_session_status(
                 STATE_FAILED,
-                "No PiFinder solve or IMU pointing available for alignment sync",
+                "No PiFinder solve available for alignment sync",
             )
             return False
 
@@ -3027,11 +3015,7 @@ class MountControlIndi(BacklashCalibrationMixin):
                 alt, _az = calc_utils.sf_utils.radec_to_altaz(
                     float(star["ra"]), float(star["dec"]), dt
                 )
-                if (
-                    ALIGN_STAR_MIN_ALTITUDE_DEG
-                    <= alt
-                    <= ALIGN_STAR_MAX_ALTITUDE_DEG
-                ):
+                if ALIGN_STAR_MIN_ALTITUDE_DEG <= alt <= ALIGN_STAR_MAX_ALTITUDE_DEG:
                     visible_candidates.append((alt, star))
             if visible_candidates:
                 visible_stars = [star for _alt, star in visible_candidates]
@@ -3214,7 +3198,9 @@ class MountControlIndi(BacklashCalibrationMixin):
 
         star = get_align_star(star_name)
         if star is None:
-            self._align_session_status(STATE_FAILED, f"Unknown alignment star: {star_name}")
+            self._align_session_status(
+                STATE_FAILED, f"Unknown alignment star: {star_name}"
+            )
             return False
 
         session["mode"] = ALIGN_MODE_MANUAL
@@ -3296,7 +3282,9 @@ class MountControlIndi(BacklashCalibrationMixin):
                 ra_deg = float(ra_deg) % 360.0
                 dec_deg = float(dec_deg)
             except (TypeError, ValueError):
-                self._align_session_status(STATE_FAILED, "Invalid alignment coordinates")
+                self._align_session_status(
+                    STATE_FAILED, "Invalid alignment coordinates"
+                )
                 return False
             if not current_star:
                 current_star = self._set_current_align_star(

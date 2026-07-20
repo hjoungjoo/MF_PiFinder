@@ -74,7 +74,7 @@ class RawFrameInfo:
             p01, p50, p995 = [float(v) for v in np.percentile(arr, [1.0, 50.0, 99.5])]
         return cls(
             source=source,
-            shape=tuple(int(v) for v in arr.shape[:2]),
+            shape=(int(arr.shape[0]), int(arr.shape[1])),
             dtype=str(arr.dtype),
             raw_format=raw_format,
             rotation_90=rotation_90,
@@ -181,7 +181,9 @@ class DisplayFrameBuilder:
         self.raw_format = raw_format
 
     def build(self, frame: np.ndarray) -> Image.Image:
-        arr = _prepare_display_frame(np.asarray(frame), self.preview_mode, self.raw_format)
+        arr = _prepare_display_frame(
+            np.asarray(frame), self.preview_mode, self.raw_format
+        )
 
         scaled = _percentile_stretch(
             arr,
@@ -189,7 +191,9 @@ class DisplayFrameBuilder:
             high_percentile=self.high_percentile,
         )
         if self.color_mode == COLOR_MODE_THEME:
-            image = Image.fromarray(_theme_tint(_luminance(scaled), self.web_theme), mode="RGB")
+            image = Image.fromarray(
+                _theme_tint(_luminance(scaled), self.web_theme), mode="RGB"
+            )
         elif scaled.ndim == 3:
             image = Image.fromarray(scaled, mode="RGB")
         else:
@@ -233,7 +237,9 @@ class RawLiveStackProcessor:
 
     def status(self, shared_state, settings: dict[str, Any]) -> dict[str, Any]:
         normalized = normalize_settings(settings)
-        entry = _shared_entry(shared_state) if normalized["processing_enabled"] else None
+        entry = (
+            _shared_entry(shared_state) if normalized["processing_enabled"] else None
+        )
         info = entry.get("info") if entry else None
         return {
             "settings": normalized,
@@ -298,7 +304,10 @@ class RawLiveStackProcessor:
             display_source = frame
             self._last_frame_id = frame_id
 
-        if normalized["output_source"] == OUTPUT_LATEST or not normalized["stack_enabled"]:
+        if (
+            normalized["output_source"] == OUTPUT_LATEST
+            or not normalized["stack_enabled"]
+        ):
             display_source = frame
 
         builder = DisplayFrameBuilder(
@@ -311,7 +320,7 @@ class RawLiveStackProcessor:
             raw_format=info.get("raw_format"),
         )
         image = builder.build(display_source)
-        self._last_display_shape = tuple(int(v) for v in image.size[::-1])
+        self._last_display_shape = (int(image.size[1]), int(image.size[0]))
         return encode_image(image, image_format or normalized["web_image_format"])
 
     def _accept_frame(
@@ -319,7 +328,7 @@ class RawLiveStackProcessor:
     ) -> None:
         frame_id = info.get("frame_id")
         source = info.get("source")
-        shape = tuple(int(v) for v in frame.shape[:2])
+        shape = (int(frame.shape[0]), int(frame.shape[1]))
         mode = settings["stack_mode"]
         frame_limit = int(settings["stack_frame_limit"])
 
@@ -357,7 +366,7 @@ class RawLiveStackProcessor:
             old = self._frames.popleft()
             if mode == "max":
                 self._max_frame = _max_from_frames(self._frames)
-            else:
+            elif self._accumulator is not None:
                 self._accumulator -= old.astype(np.float32, copy=False)
 
         self._frame_count = len(self._frames)
@@ -500,7 +509,9 @@ def _percentile_stretch(
     arr = np.asarray(frame, dtype=np.float32)
     if arr.size == 0:
         return np.zeros((1, 1), dtype=np.uint8)
-    low, high = [float(v) for v in np.percentile(arr, [low_percentile, high_percentile])]
+    low, high = [
+        float(v) for v in np.percentile(arr, [low_percentile, high_percentile])
+    ]
     if not np.isfinite(low) or not np.isfinite(high) or high <= low:
         low = float(np.min(arr))
         high = float(np.max(arr))
@@ -528,12 +539,7 @@ def _bayer_2x2_average(frame: np.ndarray) -> np.ndarray:
     if h <= 0 or w <= 0:
         return arr
     arr = arr[:h, :w]
-    return (
-        arr[0::2, 0::2]
-        + arr[1::2, 0::2]
-        + arr[0::2, 1::2]
-        + arr[1::2, 1::2]
-    ) / 4.0
+    return (arr[0::2, 0::2] + arr[1::2, 0::2] + arr[0::2, 1::2] + arr[1::2, 1::2]) / 4.0
 
 
 def _optional_float(value: Any) -> float | None:

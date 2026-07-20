@@ -336,7 +336,9 @@ class GpsTimeSyncMonitor:
         ntp_async: bool = True,
     ):
         self.clock_manager = (
-            clock_manager if clock_manager in ("chrony", "pifinder", "off") else "chrony"
+            clock_manager
+            if clock_manager in ("chrony", "pifinder", "off")
+            else "chrony"
         )
         system_clock_sync_enabled = (
             system_clock_sync_enabled and self.clock_manager == "pifinder"
@@ -619,7 +621,8 @@ class GpsTimeSyncMonitor:
     def _prune_samples(self, now_monotonic: float) -> None:
         while (
             self.samples
-            and now_monotonic - self.samples[0]["monotonic"] > self.sample_window_seconds
+            and now_monotonic - self.samples[0]["monotonic"]
+            > self.sample_window_seconds
         ):
             self.samples.popleft()
 
@@ -889,14 +892,14 @@ class GpsTimeSyncMonitor:
     def _evaluate_selected_source(self) -> bool:
         candidates = self._candidate_for_mode()
         if candidates:
-            selected = min(
-                candidates,
-                key=lambda candidate: (
-                    candidate.get("quality_seconds")
-                    if isinstance(candidate.get("quality_seconds"), (int, float))
-                    else float("inf")
-                ),
-            )
+
+            def _quality_key(candidate: dict[str, Any]) -> float:
+                quality = candidate.get("quality_seconds")
+                if isinstance(quality, (int, float)):
+                    return float(quality)
+                return float("inf")
+
+            selected = min(candidates, key=_quality_key)
             changed = selected != self.selected_source
             self.selected_source = selected
             changed = (
@@ -1140,9 +1143,7 @@ class GpsTimeSyncMonitor:
             changed = self._set_ntp_state("stale", "NTP sample is stale") or changed
 
         if self.ntp_query_in_progress:
-            return (
-                self._set_ntp_state("querying", "Querying NTP server") or changed
-            )
+            return self._set_ntp_state("querying", "Querying NTP server") or changed
 
         due = (
             self.last_ntp_poll_monotonic is None
@@ -1384,7 +1385,9 @@ class GpsTimeSyncMonitor:
                     or changed
                 )
             if self.rtc_sync_enabled:
-                changed = self._set_rtc_sync_state(block_state, block_message) or changed
+                changed = (
+                    self._set_rtc_sync_state(block_state, block_message) or changed
+                )
             else:
                 changed = (
                     self._set_rtc_sync_state("disabled", "RTC sync disabled") or changed
@@ -1607,9 +1610,7 @@ class GpsTimeSyncMonitor:
                 "last_offset_seconds": chrony_latest.get("last_offset_seconds"),
                 "rms_offset_seconds": chrony_latest.get("rms_offset_seconds"),
                 "root_delay_seconds": chrony_latest.get("root_delay_seconds"),
-                "root_dispersion_seconds": chrony_latest.get(
-                    "root_dispersion_seconds"
-                ),
+                "root_dispersion_seconds": chrony_latest.get("root_dispersion_seconds"),
                 "skew_ppm": chrony_latest.get("skew_ppm"),
                 "age_seconds": chrony_age,
                 "poll_interval_seconds": self.chrony_poll_interval_seconds,

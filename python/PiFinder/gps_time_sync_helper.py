@@ -149,7 +149,7 @@ class GpsTimeSyncHelper:
         if boot_id != self.boot_id_fn():
             raise ValueError("request was created during a different boot")
 
-        created_monotonic = float(request.get("created_monotonic"))
+        created_monotonic = float(request.get("created_monotonic"))  # type: ignore[arg-type]
         age = self.monotonic_fn() - created_monotonic
         if age < 0:
             raise ValueError("request monotonic timestamp is in the future")
@@ -220,7 +220,10 @@ class GpsTimeSyncHelper:
         try:
             request = self._read_json_file(self.request_file)
             if request is None:
-                status = {"state": "idle", "message": "No sync request"}
+                status: dict[str, Any] = {
+                    "state": "idle",
+                    "message": "No sync request",
+                }
                 self._write_status(status)
                 return status
 
@@ -239,7 +242,7 @@ class GpsTimeSyncHelper:
 
         sync_dt = parsed["sync_dt"]
         actions = parsed["actions"]
-        results = {}
+        results: dict[str, Any] = {}
 
         if actions.get("system_clock", {}).get("enabled"):
             results["system_clock"] = self._process_system_clock(
@@ -250,7 +253,11 @@ class GpsTimeSyncHelper:
 
         result_states = [result.get("state") for result in results.values()]
         if any(state == "error" for state in result_states):
-            state = "partial_error" if any(state != "error" for state in result_states) else "error"
+            state = (
+                "partial_error"
+                if any(state != "error" for state in result_states)
+                else "error"
+            )
         elif results:
             state = "completed"
         else:
@@ -282,10 +289,18 @@ class GpsTimeSyncHelper:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--once", action="store_true", help="Process one request and exit")
-    parser.add_argument("--dry-run", action="store_true", help="Log commands without running them")
-    parser.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds")
-    parser.add_argument("--max-age", type=float, default=120.0, help="Maximum request age in seconds")
+    parser.add_argument(
+        "--once", action="store_true", help="Process one request and exit"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Log commands without running them"
+    )
+    parser.add_argument(
+        "--interval", type=float, default=1.0, help="Polling interval in seconds"
+    )
+    parser.add_argument(
+        "--max-age", type=float, default=120.0, help="Maximum request age in seconds"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

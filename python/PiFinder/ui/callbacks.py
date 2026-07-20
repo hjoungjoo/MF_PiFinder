@@ -32,6 +32,7 @@ from PiFinder.catalogs import CatalogFilter
 from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObject
 
 if TYPE_CHECKING:
+    from PiFinder.ui.text_menu import UITextMenu
 
     def _(a) -> Any:
         return a
@@ -154,12 +155,15 @@ def get_camera_profile_gain_display(ui_module: UIModule) -> str:
     return f" ({_format_gain(profile_gain)})"
 
 
-def set_gain(ui_module: UIModule) -> None:
+def set_gain(ui_module: UITextMenu) -> None:
     """
     Set runtime camera gain from the current Camera Gain menu item.
     """
     selected_item = ui_module._menu_items[ui_module._current_item_index]
     selected_item_definition = ui_module.get_item(selected_item)
+    if selected_item_definition is None:
+        logger.warning("Camera Gain menu item %s not found", selected_item)
+        return
     new_gain = selected_item_definition["value"]
 
     if new_gain == "profile":

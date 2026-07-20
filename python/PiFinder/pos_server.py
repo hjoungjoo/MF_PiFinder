@@ -18,7 +18,7 @@ import json
 import os
 import threading
 from multiprocessing import Queue
-from typing import Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 from PiFinder import config, utils
 from PiFinder.calc_utils import FastAltAz, ra_to_deg, dec_to_deg, sf_utils
 from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObject
@@ -54,7 +54,7 @@ _GUIDE_MAX_HOLD_SECONDS = 60.0
 _MOUNT_STATUS_CACHE_SECONDS = 0.2
 _SKYSAFARI_SLEW_GRACE_SECONDS = 2.0
 _SKYSAFARI_SLEW_STATES = {"slewing", "refine_wait", "refine_sent"}
-_mount_status_cache = {
+_mount_status_cache: dict[str, Any] = {
     "time": 0.0,
     "value": None,
 }
@@ -64,11 +64,11 @@ _skysafari_slew_started_at = 0.0
 _skysafari_saw_mount_slew = False
 _config_last_loaded = 0.0
 _fallback_log_last = 0.0
-_pointing_debug_last = {
+_pointing_debug_last: dict[str, Any] = {
     "time": 0.0,
     "signature": None,
 }
-_imu_alignment_correction = {
+_imu_alignment_correction: dict[str, Any] = {
     "active": False,
     "alt_offset": 0.0,
     "az_offset": 0.0,
@@ -82,7 +82,7 @@ _GUIDE_DIRECTIONS = {
     "Mw": "west",
 }
 _guide_motion_lock = threading.Lock()
-_guide_motion_state = {
+_guide_motion_state: dict[str, Any] = {
     "direction": None,
     "timer": None,
     "token": 0,
@@ -98,6 +98,7 @@ _POINTING_STATUS_FILE = utils.runtime_dir / "pointing_coordinate_status.json"
 # for it and calls clear_state(). See mf_coordinate_helper_plan.
 _POINTING_RESET_REQUEST_FILE = utils.runtime_dir / "pointing_reset_request.json"
 _pointing_reset_last_at = 0.0
+
 
 def _get_config_option(option: str, default):
     global _config_last_loaded
@@ -161,9 +162,7 @@ def _write_pointing_status(state) -> None:
             "mount": _sample_status_payload(state.mount),
             "health": {
                 "warnings": list(state.health.warnings),
-                "mount_pre_alignment_only": bool(
-                    state.health.mount_pre_alignment_only
-                ),
+                "mount_pre_alignment_only": bool(state.health.mount_pre_alignment_only),
                 "mount_separation_degrees": state.health.mount_separation_degrees,
                 "imu_mount_separation_degrees": (
                     state.health.imu_mount_separation_degrees
@@ -427,6 +426,8 @@ def _align_mount_to_imu_on_reset(shared_state) -> Optional[Tuple[float, float]]:
         logger.info("Pointing reset: no valid IMU coordinate to align the mount to")
         return None
     ra_deg, dec_deg = imu_radec
+    if mountcontrol_queue is None:
+        return None
     mountcontrol_queue.put({"type": "sync", "ra": ra_deg, "dec": dec_deg})
     logger.info(
         "Pointing reset: synced mount to IMU coordinate RA %.4f Dec %.4f",
@@ -505,10 +506,7 @@ def _coordinate_service_loop(shared_state, stop_event: threading.Event) -> None:
 
 def _start_coordinate_service_loop(shared_state) -> None:
     global _coordinate_service_thread, _coordinate_service_stop
-    if (
-        _coordinate_service_thread is not None
-        and _coordinate_service_thread.is_alive()
-    ):
+    if _coordinate_service_thread is not None and _coordinate_service_thread.is_alive():
         return
     _coordinate_service_stop = threading.Event()
     _coordinate_service_thread = threading.Thread(
@@ -526,7 +524,6 @@ def _current_pointing(_shared_state) -> Optional[Tuple[float, float]]:
         logger.debug("No published pointing coordinate state yet")
         return None
     return state.radec()
-
 
 
 def get_telescope_ra(shared_state, _):
@@ -695,6 +692,8 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
     if goto_method == "off" and not multipoint_active:
         logger.info("SkySafari INDI GoTo skipped; GoTo Type is off")
         return False
+    if mountcontrol_queue is None or goto_guide_queue is None:
+        return False
 
     if multipoint_active:
         command = {
@@ -730,6 +729,8 @@ def _queue_indi_sync_if_enabled(ra_deg: float, dec_deg: float) -> bool:
     if not bool(_get_config_option("skysafari_indi_sync", True)):
         logger.info("SkySafari INDI sync skipped; skysafari_indi_sync is off")
         return False
+    if mountcontrol_queue is None:
+        return False
 
     mountcontrol_queue.put(
         {
@@ -753,6 +754,8 @@ def _queue_multipoint_align_confirm_if_active(ra_deg: float, dec_deg: float) -> 
     if not _multipoint_align_active():
         return False
     if not _mount_control_enabled():
+        return False
+    if mountcontrol_queue is None:
         return False
 
     mountcontrol_queue.put(

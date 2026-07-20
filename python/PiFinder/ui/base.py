@@ -10,7 +10,7 @@ import logging
 import time
 import uuid
 from itertools import cycle
-from typing import Type, Union
+from typing import TYPE_CHECKING, Any, Callable, Type, Union
 
 from PIL import Image, ImageDraw
 from PiFinder import utils
@@ -19,7 +19,6 @@ from PiFinder.displays import DisplayBase
 from PiFinder.config import Config
 from PiFinder.ui.marking_menus import MarkingMenu
 from PiFinder.catalogs import Catalogs
-from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
 
@@ -58,6 +57,16 @@ class GuideKeyMixin:
     Bluetooth/USB keyboard letters and numeric keypad keys provide quick
     INDI guide movement when mount control is enabled.
     """
+
+    if TYPE_CHECKING:
+        # Provided by the host class (UIModule); declared for the type
+        # checker only.
+        _mount_key: Callable[..., Any]
+        _mount_key_press: Callable[..., Any]
+        _mount_key_release: Callable[..., Any]
+        _guide_key_text: Callable[..., Any]
+        _guide_key_text_press: Callable[..., Any]
+        _guide_key_text_release: Callable[..., Any]
 
     def key_number(self, number=None):
         # Cardinal keys nudge/jog the mount; 0/5/7 are discrete commands
@@ -793,10 +802,7 @@ class UIModule:
             # target (plain menus / status) the key is unused.
             if target is None:
                 return False
-            if (
-                self.config_object.get_option("indi_goto_method", "indi_mount")
-                == "off"
-            ):
+            if self.config_object.get_option("indi_goto_method", "indi_mount") == "off":
                 self.message(_("GoTo Off"), 1)
                 return True
             command = {
@@ -823,9 +829,7 @@ class UIModule:
                 if freq_command is not None:
                     queue.put(freq_command)
             except Exception:
-                logging.getLogger("UI.base").exception(
-                    "Track frequency policy failed"
-                )
+                logging.getLogger("UI.base").exception("Track frequency policy failed")
             self.message(_("Mount GoTo"), 1)
         elif number == 7:
             pointing = self._mount_pointing_radec()

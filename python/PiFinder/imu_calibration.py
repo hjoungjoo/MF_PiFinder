@@ -47,13 +47,14 @@ def _as_list(value: Any) -> list[int]:
 
 
 def snapshot_from_sensor(sensor) -> dict[str, Any]:
-    snapshot = {
+    fields: dict[str, Any] = {}
+    snapshot: dict[str, Any] = {
         "version": CALIBRATION_VERSION,
         "sensor": "BNO055",
-        "fields": {},
+        "fields": fields,
     }
     for field in _FIELDS:
-        snapshot["fields"][field] = _as_list(getattr(sensor, field))
+        fields[field] = _as_list(getattr(sensor, field))
     return snapshot
 
 

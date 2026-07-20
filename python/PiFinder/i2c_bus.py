@@ -53,7 +53,7 @@ def get_i2c():
         logger.debug("Using hardware I2C bus (board.I2C)")
         return board.I2C()
 
-    from adafruit_extended_bus import ExtendedI2C
+    from adafruit_extended_bus import ExtendedI2C  # type: ignore
 
     logger.debug("Using software i2c-gpio bus /dev/i2c-%d", SOFTWARE_I2C_BUS)
     return ExtendedI2C(SOFTWARE_I2C_BUS)

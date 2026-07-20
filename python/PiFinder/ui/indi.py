@@ -4,6 +4,7 @@
 import json
 import time
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from PIL import ImageChops
 
@@ -17,6 +18,12 @@ from PiFinder.indi_align import (
 )
 from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.ui.camera_render import resize_for_display
+
+
+if TYPE_CHECKING:
+
+    def _(a) -> Any:
+        return a
 
 
 STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
@@ -737,12 +744,15 @@ class UIIndiMultiPointAlign(UIIndiGuide):
                     else self._STAGE_MODE
                 )
                 return
-            self._stage = self._STAGE_STAR if self.align_mode == "manual" else self._STAGE_ADJUST
+            self._stage = (
+                self._STAGE_STAR if self.align_mode == "manual" else self._STAGE_ADJUST
+            )
             return
-        if (
-            align_status.get("state") == "complete"
-            and self._stage in {self._STAGE_ADJUST, self._STAGE_STAR, self._STAGE_PREPARING}
-        ):
+        if align_status.get("state") == "complete" and self._stage in {
+            self._STAGE_ADJUST,
+            self._STAGE_STAR,
+            self._STAGE_PREPARING,
+        }:
             self._complete_or_cancel_to_settings(_("Align Complete"))
         if align_status.get("state") in {"failed", "cancelled"} and self._stage in {
             self._STAGE_ADJUST,
@@ -1098,7 +1108,11 @@ class UIIndiMultiPointAlign(UIIndiGuide):
         if self._stage == self._STAGE_STAR:
             self._select_star_and_goto()
             return
-        if self._stage == self._STAGE_ADJUST and align_status.get("active") and align_status.get("current_star"):
+        if (
+            self._stage == self._STAGE_ADJUST
+            and align_status.get("active")
+            and align_status.get("current_star")
+        ):
             if self._send_mount({"type": "multipoint_align_confirm"}):
                 self.message(_("Point Confirmed"), 1)
             return

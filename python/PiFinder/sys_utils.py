@@ -10,12 +10,27 @@ import sqlite3
 import subprocess
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any
+from typing import Any, Dict, Iterable
 
 import pam
 import requests
 import sh
-from sh import wpa_cli, unzip, passwd
+
+try:
+    from sh import wpa_cli, unzip, passwd
+except ImportError:
+    # Off-device (CI, dev machines) these binaries may not exist. The code
+    # paths that call them only run on the Pi, so fail at call time instead
+    # of import time.
+    def _missing_command(name):
+        def _fail(*args, **kwargs):
+            raise RuntimeError(f"'{name}' command is not available on this system")
+
+        return _fail
+
+    wpa_cli = _missing_command("wpa_cli")
+    unzip = _missing_command("unzip")
+    passwd = _missing_command("passwd")
 
 import socket
 from PiFinder import board_config
@@ -406,7 +421,7 @@ def write_onstep_location_cache(
     utc_datetime: Any = None,
 ) -> None:
     """Persist the last high-precision location PiFinder successfully sent."""
-    payload = {
+    payload: dict[str, Any] = {
         "latitude": float(latitude),
         "longitude": float(longitude),
         "elevation": None if elevation is None else float(elevation),
@@ -1195,7 +1210,7 @@ def _send_onstep_lx200_serial_commands(
     baudrate: int = 9600,
 ) -> list[dict[str, str]]:
     try:
-        import serial  # type: ignore[import-not-found]
+        import serial  # type: ignore
     except ImportError as exc:
         raise RuntimeError("pyserial is not installed") from exc
 
@@ -1624,7 +1639,7 @@ class Network:
 
     @staticmethod
     def _dedupe_wifi_networks(networks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        wifi_networks = []
+        wifi_networks: list[dict[str, Any]] = []
         seen_ssids = set()
         for network in networks:
             ssid = (network.get("ssid") or "").strip()
@@ -1702,7 +1717,7 @@ class Network:
         return {"id": 0, "ssid": ssid, "psk": psk, "key_mgmt": key_mgmt}
 
     @staticmethod
-    def _parse_wpa_supplicant(contents: list[str]) -> list:
+    def _parse_wpa_supplicant(contents: Iterable[str]) -> list:
         """
         Parses wpa_supplicant.conf to get current config
         """
@@ -1824,9 +1839,9 @@ class Network:
 
         nm_band = Network._nm_band_for_preference(self.get_sta_band_preference())
         for ssid, network in saved_by_ssid.items():
-            profile = profile_by_ssid.get(ssid)
-            profile_name = profile["name"] if profile else f"PiFinder {ssid}"
-            if not profile:
+            existing = profile_by_ssid.get(ssid)
+            profile_name = existing["name"] if existing else f"PiFinder {ssid}"
+            if not existing:
                 result = Network._nmcli(
                     [
                         "con",
@@ -2095,7 +2110,7 @@ class Network:
         return networks
 
     @staticmethod
-    def _parse_dnsmasq_leases(contents: str) -> dict[str, dict[str, str]]:
+    def _parse_dnsmasq_leases(contents: str) -> dict[str, dict[str, Any]]:
         leases = {}
         for line in contents.splitlines():
             parts = line.split()
@@ -2161,7 +2176,9 @@ class Network:
         """
         try:
             with open(DNSMASQ_LEASES_PATH, "r") as leases_file:
-                clients = Network._parse_dnsmasq_leases(leases_file.read())
+                clients: dict[str, dict[str, Any]] = Network._parse_dnsmasq_leases(
+                    leases_file.read()
+                )
         except FileNotFoundError:
             clients = {}
         except IOError as e:

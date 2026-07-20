@@ -122,9 +122,7 @@ def _altaz_unit_vector(alt_deg: float, az_deg: float) -> "np.ndarray":
     alt = math.radians(alt_deg)
     az = math.radians(az_deg)
     cos_alt = math.cos(alt)
-    return np.array(
-        [cos_alt * math.sin(az), cos_alt * math.cos(az), math.sin(alt)]
-    )
+    return np.array([cos_alt * math.sin(az), cos_alt * math.cos(az), math.sin(alt)])
 
 
 def _unit_vector_altaz(vector: "np.ndarray") -> Tuple[float, float]:
@@ -169,14 +167,10 @@ def _az_rotation_quaternion(daz_deg: float) -> "quaternion.quaternion":
     Azimuth runs north -> east (clockwise seen from above), which in the
     right-handed ENU frame (x=east, y=north, z=up) is a rotation about -z.
     """
-    return quaternion.from_rotation_vector(
-        np.array([0.0, 0.0, -math.radians(daz_deg)])
-    )
+    return quaternion.from_rotation_vector(np.array([0.0, 0.0, -math.radians(daz_deg)]))
 
 
-def _rotate_vector(
-    q: "quaternion.quaternion", vector: "np.ndarray"
-) -> "np.ndarray":
+def _rotate_vector(q: "quaternion.quaternion", vector: "np.ndarray") -> "np.ndarray":
     rotated = q * quaternion.quaternion(0.0, *vector) * q.conjugate()
     return np.array([rotated.x, rotated.y, rotated.z])
 
@@ -237,10 +231,9 @@ def _unit_vector_to_radec(vector: np.ndarray) -> Tuple[float, float]:
 def _weighted_radec(
     a: Tuple[float, float], b: Tuple[float, float], a_weight: float, b_weight: float
 ) -> Tuple[float, float]:
-    vector = (
-        _radec_to_unit_vector(a[0], a[1]) * float(a_weight)
-        + _radec_to_unit_vector(b[0], b[1]) * float(b_weight)
-    )
+    vector = _radec_to_unit_vector(a[0], a[1]) * float(
+        a_weight
+    ) + _radec_to_unit_vector(b[0], b[1]) * float(b_weight)
     return _unit_vector_to_radec(vector)
 
 
@@ -543,11 +536,10 @@ class PointingCoordinateService:
             raw_ra_deg, raw_dec_deg = sf_utils.altaz_to_radec(
                 aligned_alt, aligned_az, dt
             )
-            raw_ra_deg = raw_ra_deg % 360.0
+            if raw_ra_deg is not None:
+                raw_ra_deg = raw_ra_deg % 360.0
         except Exception:
-            logger.debug(
-                "Could not convert raw IMU Alt/Az to RA/Dec", exc_info=True
-            )
+            logger.debug("Could not convert raw IMU Alt/Az to RA/Dec", exc_info=True)
 
         timestamp = _as_float(getattr(imu_sample, "timestamp", None))
         quat_values = None
@@ -681,7 +673,9 @@ class PointingCoordinateService:
             imu_alignment_correction=imu_alignment_correction,
         )
         mount_enabled = bool(config_get("mount_control", False))
-        mount_status = mount_status_provider() if mount_enabled and mount_status_provider else {}
+        mount_status = (
+            mount_status_provider() if mount_enabled and mount_status_provider else {}
+        )
         mount = self.mount_sample_from_status(mount_status)
 
         # Context for the mount+IMU-delta fusion: the delta must be applied in
@@ -690,9 +684,7 @@ class PointingCoordinateService:
         # RA/Dec <-> alt/az conversions.
         self._fusion_context = {
             "dt": dt,
-            "location": self.observer_location(
-                shared_state, default_location_provider
-            ),
+            "location": self.observer_location(shared_state, default_location_provider),
             "mount_type": str(config_get("mount_type", "Alt/Az")),
         }
 
@@ -786,7 +778,9 @@ class PointingCoordinateService:
             SOURCE_UNAVAILABLE, "no valid solve, aligned mount, or IMU fallback"
         )
 
-    def _smooth_imu_altaz(self, alt: float, az: float) -> tuple[float, float, str, float]:
+    def _smooth_imu_altaz(
+        self, alt: float, az: float
+    ) -> tuple[float, float, str, float]:
         previous = self._imu_filter_altaz
         if previous is None:
             self._imu_filter_altaz = (alt, az % 360.0)
@@ -895,9 +889,7 @@ class PointingCoordinateService:
         fused_radec = self._fuse_altaz_rotation(mount_radec, imu, frame_metadata)
         if fused_radec is not None:
             gate_state = str(frame_metadata.get("imu_delta_gate", ""))
-            imu_rate = float(
-                frame_metadata.get("imu_delta_rate_deg_per_sec", 0.0)
-            )
+            imu_rate = float(frame_metadata.get("imu_delta_rate_deg_per_sec", 0.0))
         if fused_radec is None:
             coords, frame = self._imu_tracker_coords(imu)
             applied_1, applied_2, gate_state, imu_rate = self._gated_imu_delta(
@@ -924,12 +916,8 @@ class PointingCoordinateService:
                 dec_deg = max(-89.9, min(89.9, mount_radec[1] + applied_2))
                 ra_deg = (mount_radec[0] + applied_1) % 360.0
                 fused_radec = (ra_deg, dec_deg)
-                frame_metadata.setdefault(
-                    "imu_delta_applied_ra", applied_1
-                )
-                frame_metadata.setdefault(
-                    "imu_delta_applied_dec", applied_2
-                )
+                frame_metadata.setdefault("imu_delta_applied_ra", applied_1)
+                frame_metadata.setdefault("imu_delta_applied_dec", applied_2)
 
         return CoordinateSample(
             ra_deg=fused_radec[0],
@@ -1017,9 +1005,7 @@ class PointingCoordinateService:
             ra_deg = (
                 mount_radec[0] + _wrap_angle_delta_degrees(moved_ra - base_ra)
             ) % 360.0
-            dec_deg = max(
-                -89.9, min(89.9, mount_radec[1] + (moved_dec - base_dec))
-            )
+            dec_deg = max(-89.9, min(89.9, mount_radec[1] + (moved_dec - base_dec)))
         except Exception:
             logger.debug("Alt/Az fusion conversion failed", exc_info=True)
             return None
@@ -1139,12 +1125,11 @@ class PointingCoordinateService:
             # slew; wait for a sustained quiet stretch before booking anything
             # as a disturbance again.
             if rate < IMU_DELTA_EXIT_RATE_DEG_PER_SEC:
-                if tracker["quiet_since"] is None:
-                    tracker["quiet_since"] = now
-                if (
-                    now - tracker["quiet_since"]
-                    >= IMU_DELTA_POST_MOTION_QUIET_SECONDS
-                ):
+                quiet_since = tracker["quiet_since"]
+                if quiet_since is None:
+                    quiet_since = now
+                    tracker["quiet_since"] = quiet_since
+                if now - quiet_since >= IMU_DELTA_POST_MOTION_QUIET_SECONDS:
                     tracker["settle_pending"] = False
                     tracker["quiet_since"] = None
             else:
@@ -1213,9 +1198,7 @@ class PointingCoordinateService:
             or tracker.get("frame") != "altaz_rot"
         ):
             try:
-                sf_utils.set_location(
-                    location.lat, location.lon, location.altitude
-                )
+                sf_utils.set_location(location.lat, location.lon, location.altitude)
                 mount_alt, mount_az = sf_utils.radec_to_altaz(
                     mount_radec[0], mount_radec[1], dt_ctx, atmos=False
                 )
@@ -1257,10 +1240,7 @@ class PointingCoordinateService:
             alt_prev, az_prev = tracker["altaz_prev"]
             alt_now, az_now = imu_altaz
             psi0 = tracker["psi0"]
-            if (
-                max(abs(alt_prev), abs(alt_now))
-                <= ALTAZ_ROTATION_ZENITH_GUARD_ALT_DEG
-            ):
+            if max(abs(alt_prev), abs(alt_now)) <= ALTAZ_ROTATION_ZENITH_GUARD_ALT_DEG:
                 # Normal altitudes: build the step from the exact mount-axis
                 # decomposition. Rz(daz) is exact for the az axis at ANY
                 # IMU-vs-mount separation; the alt-axis rotation uses the
@@ -1274,9 +1254,7 @@ class PointingCoordinateService:
                 )
                 q_step_mount = _az_rotation_quaternion(
                     daz
-                ) * quaternion.from_rotation_vector(
-                    alt_axis * math.radians(dalt)
-                )
+                ) * quaternion.from_rotation_vector(alt_axis * math.radians(dalt))
             else:
                 # Near the zenith the measured azimuth is noise; use the
                 # minimal-arc rotation between the boresight VECTORS, which
@@ -1330,18 +1308,14 @@ class PointingCoordinateService:
             v_mount = _altaz_unit_vector(mount_alt, mount_az)
             v_fused = _rotate_vector(tracker["q_off"], v_mount)
             fused_alt, fused_az = _unit_vector_altaz(v_fused)
-            base_ra, base_dec = sf_utils.altaz_to_radec(
-                mount_alt, mount_az, ctx["dt"]
-            )
+            base_ra, base_dec = sf_utils.altaz_to_radec(mount_alt, mount_az, ctx["dt"])
             moved_ra, moved_dec = sf_utils.altaz_to_radec(
                 fused_alt, fused_az, ctx["dt"]
             )
             ra_deg = (
                 mount_radec[0] + _wrap_angle_delta_degrees(moved_ra - base_ra)
             ) % 360.0
-            dec_deg = max(
-                -89.9, min(89.9, mount_radec[1] + (moved_dec - base_dec))
-            )
+            dec_deg = max(-89.9, min(89.9, mount_radec[1] + (moved_dec - base_dec)))
         except Exception:
             logger.debug("Alt/Az rotation fusion failed", exc_info=True)
             return None
@@ -1357,9 +1331,7 @@ class PointingCoordinateService:
                 "mount_az": mount_az,
                 "fused_alt": fused_alt,
                 "fused_az": fused_az,
-                "imu_delta_applied_az": _wrap_angle_delta_degrees(
-                    fused_az - mount_az
-                ),
+                "imu_delta_applied_az": _wrap_angle_delta_degrees(fused_az - mount_az),
                 "imu_delta_applied_alt": fused_alt - mount_alt,
             }
         )
