@@ -24,6 +24,26 @@ in [Constants and Timing (from source)](#constants-and-timing-from-source).
 - The Object Details number-5 GoTo is routed through the GoTo/Guide service
   queue instead of going straight to mount control.
 
+2026-07-20 tracking-frequency policy summary:
+
+- All three GoTo entry points (web catalog push / LCD keypad 5 / SkySafari
+  `:MS#`) apply the same tracking-frequency policy: planets get a feed-forward
+  frequency, static targets reset to sidereal only when a non-sidereal
+  frequency is active. The policy itself lives in `track_freq_policy.py`.
+- The web and LCD paths decide from `obj_type == "Pla"`. SkySafari carries no
+  object type in the LX200 protocol, so its target is **matched against the
+  planet ephemeris** by position (6' tolerance) and this can be switched off
+  with `skysafari_planet_track_freq` (default on). Identification by position
+  is a guess -- a planet and a star share coordinates during an occultation or
+  conjunction -- so paths that know `obj_type` never use it.
+- Design, on-hardware verification, and open issues: see
+  `mf_web_catalogs_dev_ko.md` P6/P6-1/P6-2. **P6-2 records an open defect**:
+  SkySafari sends JNow coordinates while `calc_planets()` returns J2000, so
+  precession (~22') makes the match fail.
+- `_queue_indi_goto_if_enabled` guards only the queue each path actually uses.
+  Requiring both silently dropped multi-point align GoTos whenever the
+  GoTo/Guide service was absent (fixed 2026-07-20).
+
 ## Purpose
 
 Let the user choose how INDI mount GoTo is performed and whether tracking guide
@@ -80,6 +100,7 @@ python/views/indi_mount.html
   SkySafari Mount Mode settings
   skysafari_lx200_mount_code
   skysafari_indi_sync
+  skysafari_planet_track_freq
   GoTo / Guide settings
   indi_goto_method (off | indi_mount | pifinder)
   indi_goto_refine_accuracy_arcmin

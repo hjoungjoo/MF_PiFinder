@@ -205,6 +205,57 @@ Push 대상이 행성/혜성일 때 트래킹 속도를 INDI로 넘기는 방안
   sky-frame 드리프트로 보일 수 있음 — 실외 정렬 후 재측정으로 확인할 것.
 - 참고: EQ용 "Multi-Axis Tracking" 상태가 N/A인 것은 Alt/Az에서 정상(항상 2축 구동).
 
+### P6-1 GoTo 진입점별 트래킹 주파수 정책 (2026-07-20)
+
+세 진입점이 같은 정책을 공유하되 **대상 판별 방법이 다르다**.
+
+| 진입점 | 판별 근거 | 구현 |
+| --- | --- | --- |
+| 웹 카탈로그 push | `obj_type == "Pla"` | `web_catalogs._apply_push_track_freq` |
+| LCD GoTo(키패드 5) | `obj_type == "Pla"` | `track_freq_policy.track_freq_command_for_target` |
+| SkySafari `:MS#` | **좌표 ↔ 에페메리스 대조** | `track_freq_policy.track_freq_command_for_coordinates` |
+
+- 공통: 행성은 feed-forward 주파수를 걸고, 정적 대상은 **활성 비항성 주파수가 있을 때만**
+  sidereal로 복원한다(이미 sidereal이면 무동작). 복원은 P6대로 `trackFreq` 직접 쓰기.
+- SkySafari는 LX200 프로토콜상 천체 종류를 보내지 않으므로 좌표로 추정할 수밖에 없다.
+  허용오차 6′는 LX200 양자화(RA 1s=15″, Dec 1″)와 에페메리스 차이를 흡수하면서
+  달 시직경 30′보다 작아 이웃 천체와 충돌하지 않는 값으로 정했다.
+- **좌표 추정은 어디까지나 추정이다** — 엄폐/합에서는 행성과 항성이 같은 좌표를 가진다.
+  그래서 `skysafari_planet_track_freq`(기본 켜짐, SkySafari Mount Mode 카드)로 끌 수 있고,
+  끄면 SkySafari 대상은 전부 sidereal로 처리한다. `obj_type`을 아는 웹/LCD 경로는
+  **좌표 추정을 사용하지 않는다** — 선언된 타입이 항상 우선이다.
+
+### P6-2 미해결: SkySafari 좌표는 JNow, `calc_planets()`는 J2000 (2026-07-20 실측)
+
+웹에서 달 GoTo(주파수 정상 적용) → SkySafari에서 금성 GoTo 시 **60.16427 Hz(sidereal)로
+리셋**되는 현상. 원인은 **좌표 분점(epoch) 불일치**다.
+
+```
+마운트 좌표(SkySafari가 보낸 값):  RA 163.5792  Dec 7.9008
+금성 J2000 (calc_planets 반환값):  RA 163.2353  Dec 8.0447   → 분리 22.18′
+금성 JNow  (radec(epoch='date')):  RA 163.5840  Dec 7.9027   → 분리  0.31′
+```
+
+- SkySafari ↔ OnStep 체인은 **JNow**로 일관되어 있다(그래서 GoTo 자체는 정확히 맞는다).
+- `Skyfield_utils.calc_planets()`는 `apparent().radec()`을 인자 없이 호출하므로 **J2000(ICRS)**
+  를 반환한다. JNow는 `radec(epoch='date')`로 받아야 한다.
+- 세차 오차 22.2′가 허용오차 6′를 넘겨 매칭 실패 → "행성 아님" 판정 → sidereal 리셋.
+- **주의: "GoTo가 잘 맞으니 양쪽 다 J2000"은 틀린 추론이다.** 양쪽이 일관되게 JNow였을 뿐이다.
+
+**수정 방향** (미구현, 착수 전 결정 필요):
+
+1. `calc_planets()`에 분점 옵션을 추가하고 매칭에서만 JNow를 사용 —
+   기존 호출자(카탈로그·차트·플롯)는 J2000 그대로 유지해야 하므로 회귀 범위가 넓다.
+2. `track_freq_policy` 안에서 매칭 전용으로 JNow를 직접 계산 — `calc_planets()`를
+   건드리지 않아 안전하나 계산이 일부 중복된다. **현재 이쪽을 우선 검토 중.**
+
+어느 쪽이든 **PiFinder 내부 좌표 규약(J2000)과 LX200 프로토콜 경계(JNow)의 경계를
+어디에 둘지**가 본질이므로, `mf_coordinate_helper_plan`의 좌표 규약과 함께 결정한다.
+
+부수 확인: 매칭 실패 시 분리 각도를 남기는 진단 로그를 `planet_at_coordinates`에 넣어
+두었으나 **INFO 레벨이라 현재 로그 설정에서 기록되지 않는다** — 실패 시 아무것도 남지
+않으므로 레벨/로그 설정도 함께 손봐야 한다.
+
 ---
 
 ## 5. 테스트 계획

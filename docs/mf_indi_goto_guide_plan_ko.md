@@ -20,6 +20,21 @@
 - Object Details 숫자 5 GoTo는 mountcontrol 직행 대신 GoTo/Guide 서비스 큐를
   사용한다.
 
+2026-07-20 트래킹 주파수 정책 요약:
+
+- GoTo 진입점 세 곳(웹 카탈로그 push / LCD 키패드 5 / SkySafari `:MS#`)이 모두 같은
+  트래킹 주파수 정책을 적용한다. 행성은 feed-forward 주파수, 정적 대상은 활성 비항성
+  주파수가 있을 때만 sidereal 복원. 정책 본체는 `track_freq_policy.py`.
+- 웹·LCD는 `obj_type == "Pla"`로 판별한다. SkySafari는 LX200 프로토콜상 천체 종류가
+  없어 **좌표를 에페메리스와 대조**해 판별하며(허용오차 6′),
+  `skysafari_planet_track_freq`(기본 켜짐)로 끌 수 있다. 엄폐/합에서 행성과 항성이
+  좌표를 공유하므로 이 추정은 선택적이며, `obj_type`을 아는 경로는 사용하지 않는다.
+- 상세 설계·실기기 검증·미해결 사항은 `mf_web_catalogs_dev_ko.md` P6/P6-1/P6-2 참고.
+  **P6-2에 미해결 결함이 있다**: SkySafari 좌표는 JNow인데 `calc_planets()`는 J2000을
+  반환해 세차 22′ 때문에 매칭이 실패한다.
+- `_queue_indi_goto_if_enabled`는 경로별로 필요한 큐만 검사한다. 두 큐를 모두 요구하면
+  GoTo/Guide 서비스가 없을 때 multi-point align GoTo가 조용히 사라진다(2026-07-20 수정).
+
 ## 목적
 
 INDI 마운트를 사용할 때 GoTo와 추적 보정 동작을 사용자가 명확히 선택할 수 있게 한다.
@@ -74,6 +89,7 @@ python/views/indi_mount.html
   SkySafari Mount Mode 설정
   skysafari_lx200_mount_code
   skysafari_indi_sync
+  skysafari_planet_track_freq
   GoTo / Guide 설정
   indi_goto_method (off | indi_mount | pifinder)
   indi_goto_refine_accuracy_arcmin
