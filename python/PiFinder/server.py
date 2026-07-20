@@ -1076,6 +1076,9 @@ class Server:
                 "skysafari_indi_sync": bool(
                     cfg.get_option("skysafari_indi_sync", True)
                 ),
+                "skysafari_planet_track_freq": bool(
+                    cfg.get_option("skysafari_planet_track_freq", True)
+                ),
                 "indi_goto_refine_accuracy_arcmin": float(
                     cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
                 ),
@@ -1564,6 +1567,10 @@ class Server:
             cfg.set_option(
                 "skysafari_indi_sync",
                 request.form.get("skysafari_indi_sync") == "on",
+            )
+            cfg.set_option(
+                "skysafari_planet_track_freq",
+                request.form.get("skysafari_planet_track_freq") == "on",
             )
             self.ui_queue.put("reload_config")
             return _render_indi_page(_("SkySafari mount settings applied"))

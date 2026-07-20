@@ -25,6 +25,7 @@ from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObje
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.pointing_coordinate_service import PointingCoordinateService
 from PiFinder.state import Location as StateLocation
+from PiFinder.track_freq_policy import track_freq_command_for_coordinates
 from PiFinder.types.positioning import AlignCancel, AlignOnRaDec
 import sys
 import time
@@ -692,29 +693,61 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
     if goto_method == "off" and not multipoint_active:
         logger.info("SkySafari INDI GoTo skipped; GoTo Type is off")
         return False
-    if mountcontrol_queue is None or goto_guide_queue is None:
-        return False
+    mount_queue = mountcontrol_queue
+    guide_queue = goto_guide_queue
 
+    # Same tracking-frequency policy as the web catalog push and the LCD GoTo
+    # key, resolved by position: SkySafari sends bare coordinates with no
+    # object type, so the ephemeris decides whether this is a planet (feed
+    # forward its rate) or a static target (reset any non-sidereal frequency,
+    # which would otherwise stay applied and quietly drift every later
+    # target). Best-effort -- a missing mount-control queue must not block the
+    # GoTo itself.
+    if mount_queue is not None:
+        try:
+            freq_command = track_freq_command_for_coordinates(
+                ra_deg,
+                dec_deg,
+                shared_state,
+                identify_planets=bool(
+                    _get_config_option("skysafari_planet_track_freq", True)
+                ),
+            )
+            if freq_command is not None:
+                mount_queue.put(freq_command)
+                logger.info(
+                    "SkySafari GoTo tracking frequency: %s", freq_command["type"]
+                )
+        except Exception:
+            logger.exception("SkySafari track frequency policy failed")
+
+    # Each path requires only the queue it actually uses. Demanding both would
+    # drop align GoTos whenever the GoTo/Guide service is absent, contradicting
+    # the bypass above that deliberately lets them through with GoTo Type off.
     if multipoint_active:
+        if mount_queue is None:
+            return False
         command = {
             "type": "multipoint_align_goto_target",
             "ra": ra_deg,
             "dec": dec_deg,
             "name": "SkySafari Target",
         }
-        mountcontrol_queue.put(command)
+        mount_queue.put(command)
         logger.info(
             "SkySafari multi-point align GoTo queued: RA %.4f Dec %.4f",
             ra_deg,
             dec_deg,
         )
     else:
+        if guide_queue is None:
+            return False
         command = {
             "type": "goto_target",
             "ra": ra_deg,
             "dec": dec_deg,
         }
-        goto_guide_queue.put(command)
+        guide_queue.put(command)
         logger.info(
             "SkySafari INDI GoTo routed to GoTo/Guide service: RA %.4f Dec %.4f",
             ra_deg,

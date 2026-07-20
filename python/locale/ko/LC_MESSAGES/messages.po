@@ -4367,6 +4367,22 @@ msgid "Forward SkySafari Align/Sync to INDI"
 msgstr "SkySafari 정렬/동기화를 INDI로 전달"
 
 # AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:453
+msgid "Apply Planet Tracking Rate on SkySafari GoTo"
+msgstr "SkySafari GoTo에 행성 추적 속도 적용"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:455
+msgid ""
+"SkySafari sends coordinates without an object type, so a GoTo target is "
+"matched against the planet ephemeris to decide the tracking rate. Turn this "
+"off to treat every SkySafari target as sidereal."
+msgstr ""
+"SkySafari는 천체 종류 없이 좌표만 보내므로, GoTo 대상을 행성 위치 계산과 "
+"대조해 추적 속도를 정합니다. 끄면 모든 SkySafari 대상을 항성 속도로 "
+"취급합니다."
+
+# AI-TRANSLATED (claude): needs human review
 #: views/indi_mount.html:449
 msgid "Apply SkySafari Settings"
 msgstr "SkySafari 설정 적용"

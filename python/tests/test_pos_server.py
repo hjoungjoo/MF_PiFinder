@@ -6,7 +6,7 @@ import pytest
 import pytz
 import quaternion
 
-from PiFinder import pos_server
+from PiFinder import nonsidereal, pos_server, track_freq_policy
 from PiFinder.types.positioning import ImuSample
 
 
@@ -79,6 +79,23 @@ class DummyUnlockedLocation:
 
 
 @pytest.fixture(autouse=True)
+def sidereal_mount_status(monkeypatch):
+    """Keep the tracking-frequency policy off the live mount status file.
+
+    track_freq_policy._mount_status reads /dev/shm on a running PiFinder, so
+    without this a GoTo test's queue contents depend on whatever frequency the
+    real mount happens to be at. Default to sidereal (nothing to reset); tests
+    that exercise the reset override it.
+    """
+    monkeypatch.setattr(track_freq_policy, "_mount_status", lambda: {})
+    # Keep the ephemeris out of GoTo tests too; planet identification has its
+    # own coverage in test_track_freq_policy.py.
+    monkeypatch.setattr(
+        track_freq_policy, "planet_at_coordinates", lambda *args, **kwargs: None
+    )
+
+
+@pytest.fixture(autouse=True)
 def reset_imu_alignment_correction():
     pos_server._stop_skysafari_guide_keepalive()
     pos_server._reset_imu_alignment_correction("test setup")
@@ -91,6 +108,7 @@ def reset_imu_alignment_correction():
     pos_server._invalidate_pointing_cache()
 
 
+@pytest.mark.unit
 def test_imu_altaz_requires_calibrated_sample():
     sample = ImuSample(
         quat=quaternion.quaternion(1, 0, 0, 0),
@@ -101,6 +119,7 @@ def test_imu_altaz_requires_calibrated_sample():
     assert pos_server._imu_altaz_degrees(sample, "right") is None
 
 
+@pytest.mark.unit
 def test_imu_fallback_returns_radec_for_calibrated_sample():
     sample = ImuSample(
         quat=quaternion.quaternion(1, 0, 0, 0),
@@ -118,6 +137,7 @@ def test_imu_fallback_returns_radec_for_calibrated_sample():
     assert -90.0 <= dec_deg <= 90.0
 
 
+@pytest.mark.unit
 def test_current_datetime_falls_back_to_system_utc_when_pifinder_time_missing():
     dt = pos_server._current_datetime(DummyState(None, dt="none"))
 
@@ -125,6 +145,7 @@ def test_current_datetime_falls_back_to_system_utc_when_pifinder_time_missing():
     assert dt.utcoffset() == datetime.timedelta(0)
 
 
+@pytest.mark.unit
 def test_observer_location_uses_config_default_when_shared_location_unlocked(
     monkeypatch,
 ):
@@ -143,6 +164,7 @@ def test_observer_location_uses_config_default_when_shared_location_unlocked(
     assert location.source == "CONFIG: Pungnap-dong"
 
 
+@pytest.mark.unit
 def test_get_telescope_ra_returns_lx200_ra_default_without_pointing():
     pos_server._coordinate_service.clear_state()
 
@@ -158,6 +180,7 @@ def test_get_telescope_ra_returns_lx200_ra_default_without_pointing():
         (359.999, "00:00:00"),
     ],
 )
+@pytest.mark.unit
 def test_format_ra_degrees_wraps_to_lx200_hms(ra_deg, expected):
     assert pos_server._format_ra_degrees(ra_deg) == expected
 
@@ -170,6 +193,7 @@ def test_format_ra_degrees_wraps_to_lx200_hms(ra_deg, expected):
         (89.9999, "+90*00'00"),
     ],
 )
+@pytest.mark.unit
 def test_format_dec_degrees_normalizes_seconds(dec_deg, expected):
     assert pos_server._format_dec_degrees(dec_deg) == expected
 
@@ -185,6 +209,7 @@ class DummyConfig:
         return None
 
 
+@pytest.mark.unit
 def test_skysafari_guide_move_queues_indi_manual_motion(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
@@ -201,6 +226,7 @@ def test_skysafari_guide_move_queues_indi_manual_motion(monkeypatch):
     }
 
 
+@pytest.mark.unit
 def test_skysafari_guide_move_sends_keepalive_until_stop(monkeypatch):
     class FakeTimer:
         timers = []
@@ -262,6 +288,7 @@ def test_skysafari_guide_move_sends_keepalive_until_stop(monkeypatch):
     assert FakeTimer.timers[-1].cancelled
 
 
+@pytest.mark.unit
 def test_skysafari_guide_move_survives_short_command_connection(monkeypatch):
     class FakeTimer:
         timers = []
@@ -330,12 +357,14 @@ def test_skysafari_guide_move_survives_short_command_connection(monkeypatch):
         ({"mount_type": "Alt/Az", "skysafari_lx200_mount_code": "P"}, "PT1"),
     ],
 )
+@pytest.mark.unit
 def test_skysafari_status_reports_configured_mount_mode(monkeypatch, options, expected):
     monkeypatch.setattr(pos_server, "pos_server_config", DummyConfig(options))
 
     assert pos_server.get_status(None, ":GW#") == expected
 
 
+@pytest.mark.unit
 def test_skysafari_guide_stop_queues_indi_stop(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
@@ -348,6 +377,7 @@ def test_skysafari_guide_stop_queues_indi_stop(monkeypatch):
     assert commands.get_nowait() == {"type": "stop_movement"}
 
 
+@pytest.mark.unit
 def test_skysafari_guide_move_ignored_when_mount_control_disabled(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
@@ -361,6 +391,7 @@ def test_skysafari_guide_move_ignored_when_mount_control_disabled(monkeypatch):
         commands.get_nowait()
 
 
+@pytest.mark.unit
 def test_skysafari_goto_routes_to_goto_guide_by_default(monkeypatch):
     guide_commands = queue.Queue()
     monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
@@ -383,6 +414,140 @@ def test_skysafari_goto_routes_to_goto_guide_by_default(monkeypatch):
     }
 
 
+@pytest.mark.unit
+def test_skysafari_goto_resets_active_non_sidereal_frequency(monkeypatch):
+    """A SkySafari GoTo that is not on a planet is a sidereal target: a
+    frequency left over from an earlier planet GoTo must be reset."""
+    mount_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "goto_guide_queue", queue.Queue())
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", mount_commands)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True}),
+    )
+    monkeypatch.setattr(
+        track_freq_policy, "_mount_status", lambda: {"track_freq_hz": 60.12627}
+    )
+
+    pos_server._queue_indi_goto_if_enabled(
+        DummyState(None, DummySolution(True)), 12.5, -34.25
+    )
+
+    assert mount_commands.get_nowait() == {"type": "reset_track_freq"}
+
+
+@pytest.mark.unit
+def test_skysafari_goto_to_planet_coordinates_sets_feed_forward_rate(monkeypatch):
+    """SkySafari sends no object type, so a planet is recognised by position."""
+    mount_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "goto_guide_queue", queue.Queue())
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", mount_commands)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True}),
+    )
+    monkeypatch.setattr(
+        track_freq_policy,
+        "planet_at_coordinates",
+        lambda ra, dec, state, **kwargs: "JUPITER"
+        if (ra, dec) == (12.5, -34.25)
+        else None,
+    )
+    monkeypatch.setattr(track_freq_policy, "planet_dra_dt", lambda name, state: 0.5)
+
+    pos_server._queue_indi_goto_if_enabled(
+        DummyState(None, DummySolution(True)), 12.5, -34.25
+    )
+
+    command = mount_commands.get_nowait()
+    assert command["type"] == "set_track_freq"
+    assert command["label"] == "Jupiter"
+    # Eastward motion means the mount must run slower than sidereal.
+    assert command["hz"] < nonsidereal.SIDEREAL_FREQ_HZ
+
+
+@pytest.mark.unit
+def test_skysafari_planet_identification_can_be_disabled(monkeypatch):
+    """With the option off, a GoTo sitting exactly on a planet is still
+    treated as sidereal -- identification by position is a guess, and the
+    user may be targeting a star the planet happens to be occulting."""
+    mount_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "goto_guide_queue", queue.Queue())
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", mount_commands)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True, "skysafari_planet_track_freq": False}),
+    )
+    monkeypatch.setattr(
+        track_freq_policy, "planet_at_coordinates", lambda *args, **kwargs: "JUPITER"
+    )
+    monkeypatch.setattr(
+        track_freq_policy, "_mount_status", lambda: {"track_freq_hz": 60.12627}
+    )
+
+    pos_server._queue_indi_goto_if_enabled(
+        DummyState(None, DummySolution(True)), 12.5, -34.25
+    )
+
+    assert mount_commands.get_nowait() == {"type": "reset_track_freq"}
+
+
+@pytest.mark.unit
+def test_skysafari_goto_leaves_sidereal_mount_untouched(monkeypatch):
+    mount_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "goto_guide_queue", queue.Queue())
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", mount_commands)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True}),
+    )
+    monkeypatch.setattr(track_freq_policy, "_mount_status", lambda: {})
+
+    pos_server._queue_indi_goto_if_enabled(
+        DummyState(None, DummySolution(True)), 12.5, -34.25
+    )
+
+    with pytest.raises(queue.Empty):
+        mount_commands.get_nowait()
+
+
+@pytest.mark.unit
+def test_multipoint_align_goto_does_not_require_goto_guide_queue(monkeypatch):
+    """A multi-point align GoTo only ever touches mount control, so an absent
+    GoTo/Guide queue must not drop it -- the same reason the "GoTo Type off"
+    bypass above exists."""
+    mount_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", mount_commands)
+    monkeypatch.setattr(pos_server, "goto_guide_queue", None)
+    monkeypatch.setattr(
+        pos_server,
+        "_mount_control_status",
+        lambda: {"multipoint_align": {"active": True}},
+    )
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True, "indi_goto_method": "off"}),
+    )
+
+    queued = pos_server._queue_indi_goto_if_enabled(
+        DummyState(None, DummySolution(True)), 187.5, -34.25
+    )
+
+    assert queued is True
+    assert mount_commands.get_nowait() == {
+        "type": "multipoint_align_goto_target",
+        "ra": 187.5,
+        "dec": -34.25,
+        "name": "SkySafari Target",
+    }
+
+
+@pytest.mark.unit
 def test_skysafari_goto_skipped_when_goto_method_off(monkeypatch):
     guide_commands = queue.Queue()
     monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
@@ -402,6 +567,7 @@ def test_skysafari_goto_skipped_when_goto_method_off(monkeypatch):
         guide_commands.get_nowait()
 
 
+@pytest.mark.unit
 def test_skysafari_ms_command_triggers_indi_goto(monkeypatch):
     guide_commands = queue.Queue()
     ui_commands = queue.Queue()
@@ -432,6 +598,7 @@ def test_skysafari_ms_command_triggers_indi_goto(monkeypatch):
     }
 
 
+@pytest.mark.unit
 def test_skysafari_ms_command_does_not_push_ui_during_multipoint_align(monkeypatch):
     commands = queue.Queue()
     ui_commands = queue.Queue()
@@ -465,6 +632,7 @@ def test_skysafari_ms_command_does_not_push_ui_during_multipoint_align(monkeypat
     }
 
 
+@pytest.mark.unit
 def test_skysafari_ms_command_returns_error_without_target(monkeypatch):
     monkeypatch.setattr(pos_server, "sr_result", None)
     monkeypatch.setattr(pos_server, "sd_result", None)
@@ -472,6 +640,7 @@ def test_skysafari_ms_command_returns_error_without_target(monkeypatch):
     assert pos_server.handle_slew_command(DummyState(None), ":MS#") == "1"
 
 
+@pytest.mark.unit
 def test_distance_bars_follow_mount_control_slew_state(monkeypatch):
     monkeypatch.setattr(pos_server, "_skysafari_slew_started_at", 0.0)
     monkeypatch.setattr(pos_server, "_skysafari_saw_mount_slew", False)
@@ -487,6 +656,7 @@ def test_distance_bars_follow_mount_control_slew_state(monkeypatch):
     assert pos_server.get_distance_bars(None, ":D#") == ""
 
 
+@pytest.mark.unit
 def test_distance_bars_show_initial_grace_after_slew_command(monkeypatch):
     monkeypatch.setattr(pos_server, "_skysafari_saw_mount_slew", False)
     monkeypatch.setattr(pos_server, "_mount_control_status", lambda: {})
@@ -496,6 +666,7 @@ def test_distance_bars_show_initial_grace_after_slew_command(monkeypatch):
     assert pos_server.get_distance_bars(None, ":D#") == "\x7f"
 
 
+@pytest.mark.unit
 def test_handle_client_sends_empty_lx200_response(monkeypatch):
     class FakeSocket:
         def __init__(self):
@@ -525,6 +696,7 @@ def test_handle_client_sends_empty_lx200_response(monkeypatch):
     assert fake_socket.sent == [b"#"]
 
 
+@pytest.mark.unit
 def test_handle_client_processes_multiple_lx200_commands_in_one_packet(monkeypatch):
     class FakeSocket:
         def __init__(self):
@@ -555,11 +727,13 @@ def test_handle_client_processes_multiple_lx200_commands_in_one_packet(monkeypat
     assert fake_socket.sent == [b"#", b"AT1"]
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize("status", ["AT1", "PT1", "GT1"])
 def test_lx200_mount_status_response_is_not_hash_terminated(status):
     assert pos_server._format_lx200_response(status) == status.encode()
 
 
+@pytest.mark.unit
 def test_handle_client_processes_split_lx200_command(monkeypatch):
     class FakeSocket:
         def __init__(self):
@@ -589,6 +763,7 @@ def test_handle_client_processes_split_lx200_command(monkeypatch):
     assert fake_socket.sent == [b"#"]
 
 
+@pytest.mark.unit
 def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
@@ -620,6 +795,7 @@ def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
     }
 
 
+@pytest.mark.unit
 def test_skysafari_sync_queues_indi_sync_by_default(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
@@ -650,6 +826,7 @@ def test_skysafari_sync_queues_indi_sync_by_default(monkeypatch):
     }
 
 
+@pytest.mark.unit
 def test_skysafari_sync_skipped_when_sync_disabled(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
@@ -678,6 +855,7 @@ def test_skysafari_sync_skipped_when_sync_disabled(monkeypatch):
         commands.get_nowait()
 
 
+@pytest.mark.unit
 def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
     commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
@@ -712,6 +890,7 @@ def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
     }
 
 
+@pytest.mark.unit
 def test_skysafari_sync_sets_imu_alignment_without_plate_solve(monkeypatch):
     dt = datetime.datetime(2026, 7, 1, 12, tzinfo=pytz.UTC)
     target_coordinates = (100.0, -20.0)
@@ -762,6 +941,7 @@ def test_skysafari_sync_sets_imu_alignment_without_plate_solve(monkeypatch):
     )
 
 
+@pytest.mark.unit
 def test_solved_pointing_resets_imu_alignment_correction(monkeypatch):
     pos_server._imu_alignment_correction.update(
         {
@@ -799,6 +979,7 @@ def test_solved_pointing_resets_imu_alignment_correction(monkeypatch):
     assert pos_server._imu_alignment_correction["active"] is False
 
 
+@pytest.mark.unit
 def test_skysafari_sync_returns_no_target_without_coordinates(monkeypatch):
     monkeypatch.setattr(pos_server, "last_target_coordinates", None)
     monkeypatch.setattr(pos_server, "sr_result", None)
