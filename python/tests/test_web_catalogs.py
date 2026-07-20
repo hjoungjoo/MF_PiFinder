@@ -27,7 +27,11 @@ class FakeSharedState:
         self._ui_state = FakeUIState()
 
     def location(self):
-        return SimpleNamespace(lat=37.5, lon=127.1, lock=False)
+        # lock=True so the planet catalog uses THIS location. With lock=False
+        # _observer_location falls back to the config's default location,
+        # which exists on a developer's device but not in CI -- there the
+        # planet list came back empty and the tests failed.
+        return SimpleNamespace(lat=37.5, lon=127.1, altitude=0.0, lock=True)
 
     def datetime(self):
         return None
