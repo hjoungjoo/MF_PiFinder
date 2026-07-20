@@ -171,7 +171,9 @@ class MultiPointAlignController:
         target = self.session.get("current_star")
         return target if isinstance(target, dict) else None
 
-    def record_current_point(self, source: str, mount_align_command: str) -> dict[str, Any]:
+    def record_current_point(
+        self, source: str, mount_align_command: str
+    ) -> dict[str, Any]:
         current_star = self.current_target()
         if self.session is None or current_star is None:
             raise RuntimeError("No current alignment target")

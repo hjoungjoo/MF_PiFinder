@@ -715,17 +715,15 @@ def test_gate_hysteresis_captures_weak_slip_head_and_tail(monkeypatch):
             solved, _fused_imu(100.0, dec), mount, CoordinateHealth()
         )
 
-    service._select_current(
-        solved, _fused_imu(100.0, dec), mount, CoordinateHealth()
-    )
+    service._select_current(solved, _fused_imu(100.0, dec), mount, CoordinateHealth())
 
-    assert tick(0.004).metadata["imu_delta_gate"] == "hold"     # artifact floor
+    assert tick(0.004).metadata["imu_delta_gate"] == "hold"  # artifact floor
     assert tick(0.033).metadata["imu_delta_gate"] == "fast_follow"  # enters
     assert tick(0.060).metadata["imu_delta_gate"] == "fast_follow"  # peak
     assert tick(0.020).metadata["imu_delta_gate"] == "fast_follow"  # tail kept
-    released = tick(0.010)                                          # exits
+    released = tick(0.010)  # exits
     assert released.metadata["imu_delta_gate"] == "hold"
-    assert tick(0.020).metadata["imu_delta_gate"] == "hold"     # below re-entry
+    assert tick(0.020).metadata["imu_delta_gate"] == "hold"  # below re-entry
 
     # Applied dec offset = 0.033 + 0.060 + 0.020 only.
     assert released.metadata["imu_delta_applied_dec"] == pytest.approx(0.113)
@@ -920,9 +918,7 @@ def test_eq_mount_uses_rotation_tracker_and_survives_imu_yaw_offset():
     current = first
     for dra in (5.0, 10.0, 15.0):
         true_ra = (mount_ra + dra) % 360.0
-        true_alt, true_az = sf_utils.radec_to_altaz(
-            true_ra, mount_dec, dt, atmos=False
-        )
+        true_alt, true_az = sf_utils.radec_to_altaz(true_ra, mount_dec, dt, atmos=False)
         current = service._select_current(
             solved, imu_at(true_alt, true_az), mount, CoordinateHealth()
         )

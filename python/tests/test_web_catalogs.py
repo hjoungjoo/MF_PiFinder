@@ -135,9 +135,7 @@ def test_objects_api_basic(web_app):
 def test_objects_api_pagination(web_app):
     app, _server = web_app
     client = _login(app.test_client())
-    page2 = client.get(
-        "/catalogs/api/objects?catalog=M&page=2&page_size=50"
-    ).get_json()
+    page2 = client.get("/catalogs/api/objects?catalog=M&page=2&page_size=50").get_json()
     assert page2["page"] == 2
     assert page2["pages"] == 3
     assert page2["objects"][0]["display"] == "M 51"

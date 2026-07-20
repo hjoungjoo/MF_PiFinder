@@ -1079,9 +1079,7 @@ class Server:
                 "indi_goto_refine_accuracy_arcmin": float(
                     cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
                 ),
-                "indi_goto_method": cfg.get_option(
-                    "indi_goto_method", "indi_mount"
-                ),
+                "indi_goto_method": cfg.get_option("indi_goto_method", "indi_mount"),
                 "indi_tracking_guide_enabled": bool(
                     cfg.get_option("indi_tracking_guide_enabled", True)
                 ),
@@ -1089,9 +1087,7 @@ class Server:
                     cfg.get_option("indi_tracking_guide_goto_recovery_enabled", True)
                 ),
                 "indi_tracking_guide_manual_retarget_enabled": bool(
-                    cfg.get_option(
-                        "indi_tracking_guide_manual_retarget_enabled", True
-                    )
+                    cfg.get_option("indi_tracking_guide_manual_retarget_enabled", True)
                 ),
                 "indi_guide_pulse_invert_we": bool(
                     cfg.get_option("indi_guide_pulse_invert_we", False)
@@ -1326,15 +1322,11 @@ class Server:
                 "quality": current.get("quality") or "-",
                 "ra_deg": _fmt(current.get("ra"), 4),
                 "dec_deg": _fmt(current.get("dec"), 4),
-                "mount_separation": _fmt(
-                    health.get("mount_separation_degrees"), 2
-                ),
+                "mount_separation": _fmt(health.get("mount_separation_degrees"), 2),
                 "imu_mount_separation": _fmt(
                     health.get("imu_mount_separation_degrees"), 2
                 ),
-                "warnings": (
-                    ", ".join(str(w) for w in warnings) if warnings else "-"
-                ),
+                "warnings": (", ".join(str(w) for w in warnings) if warnings else "-"),
                 "last_reset": last_reset,
             }
 
@@ -1581,9 +1573,7 @@ class Server:
         def indi_goto_guide_update():
             goto_method = (request.form.get("indi_goto_method") or "").strip()
             if goto_method not in ("off", "indi_mount", "pifinder"):
-                return _render_indi_page(
-                    error_message=_("Invalid INDI GoTo method")
-                )
+                return _render_indi_page(error_message=_("Invalid INDI GoTo method"))
 
             try:
                 refine_accuracy_arcmin = float(
@@ -1598,9 +1588,7 @@ class Server:
             cfg = config.Config()
             cfg.load_config()
             cfg.set_option("indi_goto_method", goto_method)
-            cfg.set_option(
-                "indi_goto_refine_accuracy_arcmin", refine_accuracy_arcmin
-            )
+            cfg.set_option("indi_goto_refine_accuracy_arcmin", refine_accuracy_arcmin)
             cfg.set_option(
                 "indi_tracking_guide_enabled",
                 request.form.get("indi_tracking_guide_enabled") == "on",
@@ -1625,9 +1613,7 @@ class Server:
                 max_gotos = int(request.form.get("indi_pifinder_goto_max_gotos") or 10)
             except (TypeError, ValueError):
                 max_gotos = 10
-            cfg.set_option(
-                "indi_pifinder_goto_max_gotos", max(1, min(50, max_gotos))
-            )
+            cfg.set_option("indi_pifinder_goto_max_gotos", max(1, min(50, max_gotos)))
             self.ui_queue.put("reload_config")
             return _render_indi_page(_("INDI GoTo / Guide settings applied"))
 
@@ -2070,9 +2056,7 @@ class Server:
             try:
                 indi_cfg = _indi_config_values()
                 _require_onstepx_driver(indi_cfg)
-                mode = (
-                    request.form.get("mode") or "compass_goto_loop"
-                ).strip().lower()
+                mode = (request.form.get("mode") or "compass_goto_loop").strip().lower()
                 if mode != "compass_goto_loop":
                     raise ValueError(_("Invalid backlash auto mode"))
                 repeats_raw = request.form.get(
@@ -2083,9 +2067,7 @@ class Server:
                 except (TypeError, ValueError):
                     raise ValueError(_("Motion test repeats must be a number"))
                 if not (
-                    WEB_BACKLASH_MIN_REPEATS
-                    <= repeats
-                    <= WEB_BACKLASH_MAX_REPEATS
+                    WEB_BACKLASH_MIN_REPEATS <= repeats <= WEB_BACKLASH_MAX_REPEATS
                 ):
                     raise ValueError(
                         _("Motion test repeats must be between 1 and %(max)d")
@@ -2096,9 +2078,7 @@ class Server:
                 self.mountcontrol_queue.put(
                     {"type": "auto_backlash", "mode": mode, "repeats": repeats}
                 )
-                return _indi_json_response(
-                    message=_("Solved GoTo motion test started")
-                )
+                return _indi_json_response(message=_("Solved GoTo motion test started"))
             except (RuntimeError, ValueError) as e:
                 return _indi_json_response(ok=False, error=str(e))
 
@@ -2130,7 +2110,9 @@ class Server:
                 result = sys_utils.apply_indi_onstep_properties(
                     [
                         _onstep_property_on("TELESCOPE_ABORT_MOTION.ABORT", indi_cfg),
-                        _onstep_property_on("TELESCOPE_TRACK_STATE.TRACK_OFF", indi_cfg),
+                        _onstep_property_on(
+                            "TELESCOPE_TRACK_STATE.TRACK_OFF", indi_cfg
+                        ),
                     ],
                     server_host=indi_cfg["server_host"],
                     server_port=indi_cfg["server_port"],

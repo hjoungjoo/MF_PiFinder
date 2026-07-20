@@ -46,7 +46,24 @@ logger = logging.getLogger("WebCatalogs")
 
 # Catalog grouping for the home page. Codes not listed land in "Other".
 CATALOG_GROUPS: List[Tuple[str, List[str]]] = [
-    ("Deep Sky", ["M", "NGC", "IC", "C", "H", "Col", "Har", "Abl", "Arp", "B", "Sh2", "EGC", "Lyn"]),
+    (
+        "Deep Sky",
+        [
+            "M",
+            "NGC",
+            "IC",
+            "C",
+            "H",
+            "Col",
+            "Har",
+            "Abl",
+            "Arp",
+            "B",
+            "Sh2",
+            "EGC",
+            "Lyn",
+        ],
+    ),
     ("Double & Variable Stars", ["WDS", "SaM", "RDS", "SaR", "TLK", "Str"]),
     ("Observing Lists", ["Ta2", "SaA"]),
 ]
@@ -54,8 +71,27 @@ CATALOG_GROUPS: List[Tuple[str, List[str]]] = [
 # Preferred "home catalog" order when an object appears in several catalogs
 # (drives the detail page title and the designation used for push).
 CATALOG_PRIORITY = [
-    "M", "C", "H", "NGC", "IC", "Str", "Col", "Har", "Abl", "Arp", "B",
-    "Sh2", "EGC", "Lyn", "Ta2", "SaA", "RDS", "TLK", "SaM", "SaR", "WDS",
+    "M",
+    "C",
+    "H",
+    "NGC",
+    "IC",
+    "Str",
+    "Col",
+    "Har",
+    "Abl",
+    "Arp",
+    "B",
+    "Sh2",
+    "EGC",
+    "Lyn",
+    "Ta2",
+    "SaA",
+    "RDS",
+    "TLK",
+    "SaM",
+    "SaR",
+    "WDS",
 ]
 
 DEFAULT_PAGE_SIZE = 50
@@ -78,8 +114,15 @@ _db_lock = threading.Lock()
 _sf_lock = threading.Lock()
 
 PLANET_SEQUENCE = [
-    "MERCURY", "VENUS", "MOON", "MARS", "JUPITER", "SATURN", "URANUS",
-    "NEPTUNE", "PLUTO",
+    "MERCURY",
+    "VENUS",
+    "MOON",
+    "MARS",
+    "JUPITER",
+    "SATURN",
+    "URANUS",
+    "NEPTUNE",
+    "PLUTO",
 ]
 
 
@@ -115,7 +158,9 @@ def _observed_set() -> set:
         from PiFinder.db.observations_db import ObservationsDatabase
 
         obs_db = ObservationsDatabase()
-        return {(row["catalog"], row["sequence"]) for row in obs_db.get_observed_objects()}
+        return {
+            (row["catalog"], row["sequence"]) for row in obs_db.get_observed_objects()
+        }
     except Exception:
         logger.exception("Could not load observed objects")
         return set()
@@ -374,7 +419,10 @@ def register_catalog_routes(app, server_instance):
             else "",
             object_count=count,
             obj_types=[
-                {"code": row["obj_type"], "label": OBJ_TYPES.get(row["obj_type"], row["obj_type"])}
+                {
+                    "code": row["obj_type"],
+                    "label": OBJ_TYPES.get(row["obj_type"], row["obj_type"]),
+                }
                 for row in obj_types
             ],
             constellations=[row["const"] for row in consts],
@@ -422,9 +470,7 @@ def register_catalog_routes(app, server_instance):
 
         types = [t for t in request.args.get("types", "").split(",") if t]
         if types:
-            where.append(
-                "o.obj_type IN ({})".format(",".join("?" * len(types)))
-            )
+            where.append("o.obj_type IN ({})".format(",".join("?" * len(types))))
             params.extend(types)
 
         const = request.args.get("const", "")
@@ -446,12 +492,16 @@ def register_catalog_routes(app, server_instance):
         observed_filter = request.args.get("observed", "")  # "", "yes", "no"
 
         page = max(1, int(request.args.get("page", 1)))
-        page_size = min(MAX_PAGE_SIZE, max(1, int(request.args.get("page_size", DEFAULT_PAGE_SIZE))))
+        page_size = min(
+            MAX_PAGE_SIZE, max(1, int(request.args.get("page_size", DEFAULT_PAGE_SIZE)))
+        )
         sort = request.args.get("sort", "seq")
         up_now = request.args.get("up_now", "") == "1"
 
         calculator = _altaz_calculator(server_instance.shared_state)
-        total_filtered = _query("SELECT COUNT(*) AS n" + base_sql, tuple(params))[0]["n"]
+        total_filtered = _query("SELECT COUNT(*) AS n" + base_sql, tuple(params))[0][
+            "n"
+        ]
         alt_allowed = total_filtered <= ALT_COMPUTE_LIMIT and calculator is not None
 
         select_cols = (
@@ -486,7 +536,9 @@ def register_catalog_routes(app, server_instance):
         )
 
         if needs_python_pass:
-            rows = _query(select_cols + base_sql + " ORDER BY co.sequence", tuple(params))
+            rows = _query(
+                select_cols + base_sql + " ORDER BY co.sequence", tuple(params)
+            )
             enriched = []
             for row in rows:
                 alt = az = None
@@ -501,13 +553,20 @@ def register_catalog_routes(app, server_instance):
                     continue
                 enriched.append((row, alt, az))
             if sort == "alt" and alt_allowed:
-                enriched.sort(key=lambda item: item[1] if item[1] is not None else -99.0, reverse=True)
+                enriched.sort(
+                    key=lambda item: item[1] if item[1] is not None else -99.0,
+                    reverse=True,
+                )
             elif sort == "mag":
+
                 def mag_key(item):
                     try:
-                        return float(json.loads(item[0]["mag"] or "{}").get("filter_mag"))
+                        return float(
+                            json.loads(item[0]["mag"] or "{}").get("filter_mag")
+                        )
                     except (TypeError, ValueError):
                         return 99.0
+
                 enriched.sort(key=mag_key)
             total = len(enriched)
             page_rows = enriched[(page - 1) * page_size : page * page_size]
@@ -600,9 +659,7 @@ def register_catalog_routes(app, server_instance):
         best = (-91.0, None)
         for i in range(steps + 1):
             dt = start + timedelta(minutes=i * CURVE_STEP_MINUTES)
-            alt, _az = FastAltAz(location.lat, location.lon, dt).radec_to_altaz(
-                ra, dec
-            )
+            alt, _az = FastAltAz(location.lat, location.lon, dt).radec_to_altaz(ra, dec)
             samples.append({"t": dt.isoformat(), "alt": round(alt, 2)})
             if alt > best[0]:
                 best = (alt, dt)
@@ -783,14 +840,17 @@ def register_catalog_routes(app, server_instance):
                 }
             )
         if sort == "alt":
-            rows.sort(key=lambda r: r["alt"] if r["alt"] is not None else -99.0,
-                      reverse=True)
+            rows.sort(
+                key=lambda r: r["alt"] if r["alt"] is not None else -99.0, reverse=True
+            )
         elif sort == "mag":
+
             def planet_mag(row):
                 try:
                     return float(row["mag"])
                 except ValueError:
                     return 99.0
+
             rows.sort(key=planet_mag)
         return _json_response(
             {
@@ -949,11 +1009,12 @@ def register_catalog_routes(app, server_instance):
             server_instance, bundle["ra"], bundle["dec"], bundle["display"]
         )
         # Planets are non-sidereal: apply the ephemeris feed-forward rate.
-        body = {"offset_arcsec_per_s": bundle["track"]["offset_arcsec_per_s"]} \
-            if bundle.get("track") else {}
-        track_freq = _apply_push_track_freq(
-            server_instance, bundle["display"], body
+        body = (
+            {"offset_arcsec_per_s": bundle["track"]["offset_arcsec_per_s"]}
+            if bundle.get("track")
+            else {}
         )
+        track_freq = _apply_push_track_freq(server_instance, bundle["display"], body)
         logger.info("Web catalog planet push: %s", bundle["display"])
         return _json_response(
             {
@@ -1010,8 +1071,7 @@ def register_catalog_routes(app, server_instance):
 
         observed = _observed_set()
         is_observed = any(
-            (entry["catalog_code"], entry["sequence"]) in observed
-            for entry in entries
+            (entry["catalog_code"], entry["sequence"]) in observed for entry in entries
         )
 
         calculator = _altaz_calculator(server_instance.shared_state)
@@ -1112,9 +1172,7 @@ def _queue_mount_goto(
         return {"action": "none", "reason": "config unavailable"}
 
     multipoint = _mount_status().get("multipoint_align")
-    multipoint_active = isinstance(multipoint, dict) and bool(
-        multipoint.get("active")
-    )
+    multipoint_active = isinstance(multipoint, dict) and bool(multipoint.get("active"))
 
     mountcontrol_queue = getattr(server_instance, "mountcontrol_queue", None)
     goto_guide_queue = getattr(server_instance, "goto_guide_queue", None)

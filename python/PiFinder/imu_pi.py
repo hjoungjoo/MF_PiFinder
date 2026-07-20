@@ -99,7 +99,9 @@ class Imu:
                 return
             imu_calibration.apply_snapshot_to_sensor(self.sensor, snapshot)
             self.calibration_loaded = True
-            logger.info("Loaded BNO055 calibration from %s", imu_calibration.CALIBRATION_FILE)
+            logger.info(
+                "Loaded BNO055 calibration from %s", imu_calibration.CALIBRATION_FILE
+            )
         except Exception:
             logger.exception("Could not load saved BNO055 calibration")
 
@@ -111,7 +113,9 @@ class Imu:
             imu_calibration.save_snapshot(snapshot)
             self._calibration_saved_this_run = True
             self.calibration_saved_now = True
-            logger.info("Saved BNO055 calibration to %s", imu_calibration.CALIBRATION_FILE)
+            logger.info(
+                "Saved BNO055 calibration to %s", imu_calibration.CALIBRATION_FILE
+            )
         except Exception:
             logger.exception("Could not save BNO055 calibration")
 

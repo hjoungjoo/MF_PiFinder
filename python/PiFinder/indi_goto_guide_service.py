@@ -954,9 +954,7 @@ class IndiGotoGuideService:
             self.manual_retarget_pending = False
             if self.tracking_guide_suspended:
                 self.tracking_guide_suspended = False
-                logger.info(
-                    "Tracking guide suspension cleared; manual move ended"
-                )
+                logger.info("Tracking guide suspension cleared; manual move ended")
             manual_retarget_enabled = bool(
                 self.config_values.get(
                     "indi_tracking_guide_manual_retarget_enabled", True
@@ -973,9 +971,7 @@ class IndiGotoGuideService:
                 # first forces _enable_pulse_correction to re-send with it).
                 self._disable_tracking_guide("manual re-target")
                 accuracy = float(
-                    self.config_values.get(
-                        "indi_tracking_guide_threshold_arcmin", 10.0
-                    )
+                    self.config_values.get("indi_tracking_guide_threshold_arcmin", 10.0)
                 )
                 self._enable_pulse_correction(accuracy)
                 self.tracking_guide_state = "enabled"
@@ -1003,9 +999,7 @@ class IndiGotoGuideService:
             self.tracking_recovery_attempts = 0
             self.tracking_guide_recovery_mode = "none"
             self.tracking_guide_state = "suspended"
-            self.tracking_guide_last_action = (
-                "suspended until next GoTo or manual move"
-            )
+            self.tracking_guide_last_action = "suspended until next GoTo or manual move"
             return
 
         goto_threshold_arcmin = (
@@ -1452,9 +1446,7 @@ class IndiGotoGuideService:
         cfg.load_config()
         self.config_values = {
             "mount_control": bool(cfg.get_option("mount_control", False)),
-            "indi_goto_method": str(
-                cfg.get_option("indi_goto_method", "indi_mount")
-            ),
+            "indi_goto_method": str(cfg.get_option("indi_goto_method", "indi_mount")),
             "indi_tracking_guide_enabled": bool(
                 cfg.get_option("indi_tracking_guide_enabled", True)
             ),

@@ -772,6 +772,7 @@ def test_solved_pointing_resets_imu_alignment_correction(monkeypatch):
             "target_coordinates": (100.0, -20.0),
         }
     )
+
     class FakeCoordinateState:
         solved = type("Solved", (), {"valid": True})()
 

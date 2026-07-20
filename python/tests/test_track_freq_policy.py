@@ -59,8 +59,7 @@ def test_static_target_resets_only_when_active(monkeypatch):
 def test_no_object_behaves_like_static(monkeypatch):
     monkeypatch.setattr(track_freq_policy, "_mount_status", lambda: {})
     assert (
-        track_freq_policy.track_freq_command_for_target(None, FakeSharedState())
-        is None
+        track_freq_policy.track_freq_command_for_target(None, FakeSharedState()) is None
     )
 
 

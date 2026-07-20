@@ -56,9 +56,7 @@ class Fonts:
         cfg = config.Config()
         lang = cfg.get_option("language", "en")
         if lang in ["ko", "zh"]:
-            cjk_ttf = str(
-                Path(font_path, "sarasa-mono-sc-light-nerd-font+patched.ttf")
-            )
+            cjk_ttf = str(Path(font_path, "sarasa-mono-sc-light-nerd-font+patched.ttf"))
             boldttf = cjk_ttf
             regularttf = cjk_ttf
             use_layout_engine = False

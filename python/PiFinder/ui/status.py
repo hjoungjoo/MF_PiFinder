@@ -221,10 +221,7 @@ class UIStatus(GuideKeyMixin, UIModule):
             screen_direction = self.config_object.get_option(
                 "screen_direction", "right"
             )
-            if (
-                self._q_imu2cam is None
-                or self._q_imu2cam_direction != screen_direction
-            ):
+            if self._q_imu2cam is None or self._q_imu2cam_direction != screen_direction:
                 self._q_imu2cam = ImuDeadReckoning._q_imu2cam(screen_direction)
                 self._q_imu2cam_direction = screen_direction
             q = (imu_quat * self._q_imu2cam).normalized()

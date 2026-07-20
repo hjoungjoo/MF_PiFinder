@@ -70,7 +70,8 @@ def planet_dra_dt(name: str, shared_state) -> Optional[float]:
             location = shared_state.location()
             if location is not None:
                 sf_utils.set_location(
-                    location.lat, location.lon,
+                    location.lat,
+                    location.lon,
                     getattr(location, "altitude", 0.0) or 0.0,
                 )
         except Exception:
@@ -106,9 +107,7 @@ def track_freq_command_for_target(
         if rate is not None:
             hz, was_clamped = nonsidereal.clamp_hz(nonsidereal.hz_from_offset(rate))
             if was_clamped:
-                logger.warning(
-                    "Track frequency for %s clamped to %.5f Hz", name, hz
-                )
+                logger.warning("Track frequency for %s clamped to %.5f Hz", name, hz)
             return {"type": "set_track_freq", "hz": hz, "label": name.capitalize()}
         # Rate unavailable: leave the mount's current frequency untouched.
         return None

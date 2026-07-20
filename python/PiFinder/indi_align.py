@@ -80,9 +80,7 @@ def _load_bright_align_stars() -> list[dict[str, Any]]:
                 key = name.casefold()
                 if key in stars_by_name:
                     continue
-                ra = (
-                    float(row["RA Hr"]) + float(row["RA Min"]) / 60.0
-                ) * 15.0
+                ra = (float(row["RA Hr"]) + float(row["RA Min"]) / 60.0) * 15.0
                 stars_by_name[key] = {
                     "name": name,
                     "ra": ra % 360.0,
@@ -134,12 +132,9 @@ def angular_separation_degrees(
     dec_a_rad = math.radians(float(dec_a))
     ra_b_rad = math.radians(float(ra_b))
     dec_b_rad = math.radians(float(dec_b))
-    cos_sep = (
-        math.sin(dec_a_rad) * math.sin(dec_b_rad)
-        + math.cos(dec_a_rad)
-        * math.cos(dec_b_rad)
-        * math.cos(ra_a_rad - ra_b_rad)
-    )
+    cos_sep = math.sin(dec_a_rad) * math.sin(dec_b_rad) + math.cos(
+        dec_a_rad
+    ) * math.cos(dec_b_rad) * math.cos(ra_a_rad - ra_b_rad)
     cos_sep = max(-1.0, min(1.0, cos_sep))
     return math.degrees(math.acos(cos_sep))
 
@@ -150,14 +145,10 @@ def nearest_align_star(
     completed: list[dict[str, Any]] | None = None,
     candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    used_names = {
-        str(star.get("name", "")).casefold() for star in (completed or [])
-    }
+    used_names = {str(star.get("name", "")).casefold() for star in (completed or [])}
     pool = candidates or BRIGHT_ALIGN_STARS
     usable = [
-        star
-        for star in pool
-        if str(star.get("name", "")).casefold() not in used_names
+        star for star in pool if str(star.get("name", "")).casefold() not in used_names
     ]
     if not usable:
         usable = pool or BRIGHT_ALIGN_STARS
@@ -210,9 +201,7 @@ def visible_align_stars(
     min_altitude: float = ALIGN_STAR_MIN_ALTITUDE_DEG,
     max_altitude: float = ALIGN_STAR_MAX_ALTITUDE_DEG,
 ) -> list[dict[str, Any]]:
-    used_names = {
-        str(star.get("name", "")).casefold() for star in (completed or [])
-    }
+    used_names = {str(star.get("name", "")).casefold() for star in (completed or [])}
     visible: list[dict[str, Any]] = []
     for star in BRIGHT_ALIGN_STARS:
         if str(star.get("name", "")).casefold() in used_names:

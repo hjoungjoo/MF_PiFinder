@@ -818,7 +818,10 @@ def register_api_routes(app, server_instance, require_auth=False):
             settings = _raw_stack_settings()
             if not settings["processing_enabled"]:
                 return Response(status=204)
-            from PiFinder.raw_live_stack import download_color_mode, download_image_format
+            from PiFinder.raw_live_stack import (
+                download_color_mode,
+                download_image_format,
+            )
 
             image_format = download_image_format(settings)
             rendered = _raw_stack_processor().render_image(
@@ -832,7 +835,9 @@ def register_api_routes(app, server_instance, require_auth=False):
             if rendered is None:
                 return Response(status=204)
             image_bytes, mimetype = rendered
-            filename = f"pifinder_livecam_{time.strftime('%Y%m%d_%H%M%S')}.{image_format}"
+            filename = (
+                f"pifinder_livecam_{time.strftime('%Y%m%d_%H%M%S')}.{image_format}"
+            )
             return Response(
                 image_bytes,
                 content_type=mimetype,

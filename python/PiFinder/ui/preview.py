@@ -195,10 +195,7 @@ class UIPreview(GuideKeyMixin, UIModule):
             # Average the nominal Bayer quad. This also reduces the checker
             # pattern on mono sensors reported through an RGGB driver.
             arr = (
-                arr[0::2, 0::2]
-                + arr[0::2, 1::2]
-                + arr[1::2, 0::2]
-                + arr[1::2, 1::2]
+                arr[0::2, 0::2] + arr[0::2, 1::2] + arr[1::2, 0::2] + arr[1::2, 1::2]
             ) * 0.25
 
         low = float(np.percentile(arr, 1.0))
@@ -482,9 +479,7 @@ class UIPreview(GuideKeyMixin, UIModule):
             # frame (half of it for 2x, a quarter for 4x) then scales to the
             # display, so the zoom factor stays 2x / 4x at any resolution.
             # (Shared with the daytime-align screen via ui.camera_render.)
-            image_obj = resize_for_display(
-                display_image, (resX, resY), self.zoom_level
-            )
+            image_obj = resize_for_display(display_image, (resX, resY), self.zoom_level)
 
             # Background-anchored linear stretch (replaces autocontrast), then RED.
             # Stretch on a single luminance band (debug frames are RGB; hardware
