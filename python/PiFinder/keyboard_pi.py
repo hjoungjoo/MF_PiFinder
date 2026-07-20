@@ -6,6 +6,8 @@ and adds keys to the provided queue
 
 """
 
+from __future__ import annotations
+
 from time import monotonic, sleep
 import libinput
 from PiFinder.keyboard_interface import KeyboardInterface
@@ -247,9 +249,8 @@ class KeyboardPi(KeyboardInterface):
         self.physical_press_modifiers.pop(key, None)
 
     def _physical_key_modifiers(self, key: int) -> set[int]:
-        return (
-            set(self.physical_press_modifiers.get(key, set()))
-            | (self.physical_pressed & PHYSICAL_MODIFIER_KEYS)
+        return set(self.physical_press_modifiers.get(key, set())) | (
+            self.physical_pressed & PHYSICAL_MODIFIER_KEYS
         )
 
     def _direction_number_key(self, keycode: int) -> int | None:
@@ -334,26 +335,22 @@ class KeyboardPi(KeyboardInterface):
                     if kbev.key_state == libinput.constant.KeyState.PRESSED:
                         self._remember_physical_press(kbev.key)
                         number = self._physical_direction_number_key(kbev.key)
-                        if (
-                            number is not None
-                            and not self._physical_key_modifiers(kbev.key)
+                        if number is not None and not self._physical_key_modifiers(
+                            kbev.key
                         ):
                             return self.number_press_key(number)
                         text_char = self._physical_text_char(kbev.key)
-                        if (
-                            text_char is not None
-                            and not self._physical_key_modifiers(kbev.key)
+                        if text_char is not None and not self._physical_key_modifiers(
+                            kbev.key
                         ):
                             return self.text_press_key(text_char)
                         continue
                     if kbev.key_state != libinput.constant.KeyState.RELEASED:
                         continue
 
-                    press_modifiers = self.physical_press_modifiers.get(
-                        kbev.key, set()
-                    )
-                    release_modifiers = (
-                        set(self.physical_pressed) | set(press_modifiers)
+                    press_modifiers = self.physical_press_modifiers.get(kbev.key, set())
+                    release_modifiers = set(self.physical_pressed) | set(
+                        press_modifiers
                     )
                     was_hold_sent = kbev.key in self.physical_hold_sent
                     self._forget_physical_press(kbev.key)

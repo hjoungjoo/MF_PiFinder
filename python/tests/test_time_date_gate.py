@@ -11,6 +11,8 @@ suppression, live predicate). Full-screen rendering in both states is covered by
 the cold/warm crash-smoke in test_ui_modules.py.
 """
 
+from __future__ import annotations
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 

@@ -10,6 +10,8 @@ This module is the main entry point for PiFinder it:
 
 """
 
+from __future__ import annotations
+
 import gettext
 
 import os

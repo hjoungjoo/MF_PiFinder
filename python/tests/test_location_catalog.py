@@ -1,3 +1,4 @@
+from __future__ import annotations
 from PiFinder import location_catalog
 
 

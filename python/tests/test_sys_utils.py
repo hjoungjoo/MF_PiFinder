@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pytest
 
 try:
@@ -618,7 +619,14 @@ try:
         )
         sys_utils.pause_wifi_for_bt_pairing(safety_timeout=42)
         # radio is turned off (both client wifi and the AP interface)
-        assert ["sudo", "-n", sys_utils.NMCLI_COMMAND, "radio", "wifi", "off"] in run_cmds
+        assert [
+            "sudo",
+            "-n",
+            sys_utils.NMCLI_COMMAND,
+            "radio",
+            "wifi",
+            "off",
+        ] in run_cmds
         assert [
             "sudo",
             "-n",

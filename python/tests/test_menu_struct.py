@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pytest
 
 import PiFinder.i18n  # noqa: F401
@@ -123,9 +124,7 @@ def test_imu_settings_menu_entries_exist():
 @pytest.mark.smoke
 def test_indi_settings_menu_entries_exist():
     menu = menu_structure.pifinder_menu
-    settings_menu = next(
-        item for item in menu["items"] if item["name"] == "Settings"
-    )
+    settings_menu = next(item for item in menu["items"] if item["name"] == "Settings")
     setting_menu = next(
         item for item in settings_menu["items"] if item["name"] == "INDI Setting"
     )

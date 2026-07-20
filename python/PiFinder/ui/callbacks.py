@@ -8,6 +8,8 @@ Each one takes the current ui module as an argument
 
 """
 
+from __future__ import annotations
+
 import logging
 import gettext
 import json

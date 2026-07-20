@@ -4,6 +4,8 @@
 UI screen for time-source sync and helper status.
 """
 
+from __future__ import annotations
+
 import datetime
 import json
 from pathlib import Path
@@ -103,7 +105,9 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
             return value
         return dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    def _status_bundle(self) -> tuple[dict[str, Any] | None, dict[str, Any] | None, bool]:
+    def _status_bundle(
+        self,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, bool]:
         status = self._read_json(STATUS_FILE)
         helper = _get(status, "helper")
         if not isinstance(helper, dict):
@@ -120,9 +124,7 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
         if status is None:
             return [
                 _("No time sync status"),
-                _("Helper: {state}").format(
-                    state=_get(helper, "state", default="--")
-                ),
+                _("Helper: {state}").format(state=_get(helper, "state", default="--")),
                 _("Request: {present}").format(
                     present=_("Yes") if request_present else _("No")
                 ),
@@ -166,9 +168,7 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
             _("NTP: {state}").format(state=_get(ntp, "state", default="--")),
             _("NTP srv: {server}").format(server=_get(ntp, "server", default="--")),
             _("tAcc: {tacc}").format(tacc=self._format_tacc(_get(latest, "tAcc_ns"))),
-            _("Sys: {state}").format(
-                state=_get(system_clock, "state", default="--")
-            ),
+            _("Sys: {state}").format(state=_get(system_clock, "state", default="--")),
             _("RTC: {state}").format(state=_get(rtc, "state", default="--")),
             _("Helper: {state}").format(state=_get(helper, "state", default="--")),
             _("Request: {present}").format(
@@ -216,9 +216,7 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
             _("Sel time: {time}").format(
                 time=self._format_time(_get(selected, "time"))
             ),
-            _("GPS: {time}").format(
-                time=self._format_time(_get(latest, "gps_time"))
-            ),
+            _("GPS: {time}").format(time=self._format_time(_get(latest, "gps_time"))),
             _("Age: {age}").format(age=self._format_age(_get(latest, "age_seconds"))),
             _("Valid: {valid}").format(valid=self._format_bool(_get(latest, "valid"))),
             _("tAcc: {tacc}").format(tacc=self._format_tacc(_get(latest, "tAcc_ns"))),
@@ -234,15 +232,11 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
                 or _get(chrony, "reference_id", default="--")
             ),
             _("Chrony off: {offset}").format(
-                offset=self._format_offset(
-                    _get(chrony, "system_time_offset_seconds")
-                )
+                offset=self._format_offset(_get(chrony, "system_time_offset_seconds"))
             ),
             _("NTP: {state}").format(state=_get(ntp, "state", default="--")),
             _("NTP srv: {server}").format(server=_get(ntp, "server", default="--")),
-            _("NTP time: {time}").format(
-                time=self._format_time(_get(ntp, "time"))
-            ),
+            _("NTP time: {time}").format(time=self._format_time(_get(ntp, "time"))),
             _("NTP delay: {delay}").format(
                 delay=self._format_offset(_get(ntp, "delay_seconds"))
             ),
@@ -273,7 +267,9 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
             if "system_clock" in helper_results:
                 lines.append(
                     _("Sys result: {state}").format(
-                        state=_get(helper_results, "system_clock", "state", default="--")
+                        state=_get(
+                            helper_results, "system_clock", "state", default="--"
+                        )
                     )
                 )
             if "rtc" in helper_results:

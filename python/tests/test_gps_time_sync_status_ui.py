@@ -1,3 +1,4 @@
+from __future__ import annotations
 import PiFinder.i18n  # noqa: F401
 
 from PiFinder.ui.gps_time_sync_status import UIGPSTimeSyncStatus
@@ -92,13 +93,13 @@ def test_custom_ntp_server_is_handled_from_ntp_server_menu():
 
     assert len(ntp_server_entries) == 1
     custom_items = [
-        item
-        for item in ntp_server_entries[0]["items"]
-        if item.get("value") == "custom"
+        item for item in ntp_server_entries[0]["items"] if item.get("value") == "custom"
     ]
     assert len(custom_items) == 1
     assert custom_items[0]["name"] == "Custom"
-    assert custom_items[0]["callback"] is menu_structure.callbacks.edit_custom_ntp_server
+    assert (
+        custom_items[0]["callback"] is menu_structure.callbacks.edit_custom_ntp_server
+    )
     assert (
         custom_items[0]["name_suffix_callback"]
         is menu_structure.callbacks.get_custom_ntp_server_display

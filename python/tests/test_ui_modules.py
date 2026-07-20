@@ -45,6 +45,8 @@ Run from ``python/`` (paths in ``PiFinder.utils`` are relative to CWD):
     nox -s ui_tests
 """
 
+from __future__ import annotations
+
 import builtins
 import copy
 import datetime

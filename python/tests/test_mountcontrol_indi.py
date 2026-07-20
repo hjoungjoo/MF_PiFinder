@@ -1,8 +1,10 @@
+from __future__ import annotations
 import json
 import time
 from multiprocessing import Queue
 
 from PiFinder import sys_utils
+from PiFinder import indi_backlash_calibration as ibc
 from PiFinder import mountcontrol_indi as mci
 from PiFinder.mountcontrol_indi import (
     MountControlIndi,
@@ -298,7 +300,7 @@ def test_auto_backlash_requires_solved_pointing():
     assert not mount.auto_calculate_backlash()
 
     assert mount._backlash_auto is not None
-    assert mount._backlash_auto["auto_mode"] == mci.BACKLASH_AUTO_MODE_COMPASS_GOTO
+    assert mount._backlash_auto["auto_mode"] == ibc.BACKLASH_AUTO_MODE_COMPASS_GOTO
     assert mount._backlash_auto["state"] == "waiting_for_solved"
 
 
@@ -320,9 +322,9 @@ def test_auto_backlash_uses_solved_goto_loop():
 
     assert mount._backlash_auto is not None
     assert mount._backlash_auto["axis"] == "Mount frame"
-    assert mount._backlash_auto["auto_mode"] == mci.BACKLASH_AUTO_MODE_COMPASS_GOTO
+    assert mount._backlash_auto["auto_mode"] == ibc.BACKLASH_AUTO_MODE_COMPASS_GOTO
     assert mount._backlash_auto["state"] == "ready"
-    assert mount._backlash_auto["repeats"] == mci.BACKLASH_COMPASS_GOTO_REPEATS
+    assert mount._backlash_auto["repeats"] == ibc.BACKLASH_COMPASS_GOTO_REPEATS
     assert mount._backlash_auto["solved_status"]["valid"] is True
     assert mount._backlash_auto["original_tracking"] is True
     assert tracking_writes == [False]
@@ -332,7 +334,7 @@ def test_auto_backlash_accepts_repeat_count():
     mount = DummyMountControl(shared_state=object())
     calls = {}
 
-    def fake_start(repeats=mci.BACKLASH_COMPASS_GOTO_REPEATS, offset_deg=2.0):
+    def fake_start(repeats=ibc.BACKLASH_COMPASS_GOTO_REPEATS, offset_deg=2.0):
         calls["repeats"] = repeats
         calls["offset_deg"] = offset_deg
         return True
@@ -350,7 +352,7 @@ def test_backlash_stop_request_aborts_motion_test(monkeypatch, tmp_path):
     monkeypatch.setattr(mci, "STOP_REQUEST_FILE", stop_request)
     mount = DummyMountControl(shared_state=object())
     mount._backlash_auto = {
-        "auto_mode": mci.BACKLASH_AUTO_MODE_COMPASS_GOTO,
+        "auto_mode": ibc.BACKLASH_AUTO_MODE_COMPASS_GOTO,
         "state": "running",
     }
     stop_calls = []
@@ -420,7 +422,7 @@ def test_backlash_goto_waits_for_onstep_final_no_goto(monkeypatch):
 def test_compass_goto_loop_records_initial_offset_and_repeats():
     mount = DummyMountControl(shared_state=object())
     mount._backlash_auto = {
-        "auto_mode": mci.BACKLASH_AUTO_MODE_COMPASS_GOTO,
+        "auto_mode": ibc.BACKLASH_AUTO_MODE_COMPASS_GOTO,
         "repeats": 2,
         "offset_deg": 3.0,
     }
@@ -435,7 +437,9 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
         "source": "solve",
     }
     mount._wait_for_solved_pointing = (
-        lambda label, min_timestamp=None, timeout=mci.BACKLASH_SOLVED_WAIT_SECONDS: mount._current_solved_pointing()
+        lambda label,
+        min_timestamp=None,
+        timeout=ibc.BACKLASH_SOLVED_WAIT_SECONDS: mount._current_solved_pointing()
     )
     mount._home_park_status_fields = lambda: {"park_state": "Unparked"}
     mount._read_tracking_enabled = lambda: False
@@ -450,7 +454,7 @@ def test_compass_goto_loop_records_initial_offset_and_repeats():
     mount._backlash_cancelable_sleep = lambda seconds, label: True
 
     def fake_goto(
-        ra_deg, dec_deg, phase_label, timeout=mci.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
+        ra_deg, dec_deg, phase_label, timeout=ibc.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
     ):
         goto_calls.append((phase_label, round(ra_deg % 360.0, 3), round(dec_deg, 3)))
         current_position[0] = ra_deg % 360.0
@@ -524,7 +528,7 @@ def test_backlash_goto_command_disables_tracking_after_goto(monkeypatch):
     mount._backlash_auto = {}
 
     def fake_goto(
-        ra_deg, dec_deg, phase_label, timeout=mci.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
+        ra_deg, dec_deg, phase_label, timeout=ibc.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
     ):
         goto_calls.append((ra_deg, dec_deg, phase_label, timeout))
         return True
@@ -539,7 +543,7 @@ def test_backlash_goto_command_disables_tracking_after_goto(monkeypatch):
         "ra",
     )
     assert goto_calls == [
-        (12.3, -4.5, "goto phase", mci.BACKLASH_COMPASS_GOTO_TIMEOUT_SECONDS)
+        (12.3, -4.5, "goto phase", ibc.BACKLASH_COMPASS_GOTO_TIMEOUT_SECONDS)
     ]
     assert tracking_writes == [False]
 
@@ -721,7 +725,7 @@ def test_compass_backlash_filter_uses_middle_40_percent_mean():
 def test_compass_goto_loop_restores_tracking_after_test():
     mount = DummyMountControl(shared_state=object())
     mount._backlash_auto = {
-        "auto_mode": mci.BACKLASH_AUTO_MODE_COMPASS_GOTO,
+        "auto_mode": ibc.BACKLASH_AUTO_MODE_COMPASS_GOTO,
         "repeats": 1,
         "offset_deg": 3.0,
     }
@@ -737,7 +741,9 @@ def test_compass_goto_loop_restores_tracking_after_test():
         "source": "solve",
     }
     mount._wait_for_solved_pointing = (
-        lambda label, min_timestamp=None, timeout=mci.BACKLASH_SOLVED_WAIT_SECONDS: mount._current_solved_pointing()
+        lambda label,
+        min_timestamp=None,
+        timeout=ibc.BACKLASH_SOLVED_WAIT_SECONDS: mount._current_solved_pointing()
     )
     mount._home_park_status_fields = lambda: {"park_state": "Unparked"}
     mount._read_tracking_enabled = lambda: True
@@ -752,7 +758,7 @@ def test_compass_goto_loop_restores_tracking_after_test():
     mount._backlash_cancelable_sleep = lambda seconds, label: True
 
     def fake_goto(
-        ra_deg, dec_deg, phase_label, timeout=mci.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
+        ra_deg, dec_deg, phase_label, timeout=ibc.BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS
     ):
         goto_calls.append((phase_label, round(ra_deg % 360.0, 3), round(dec_deg, 3)))
         current_position[0] = ra_deg % 360.0
@@ -914,7 +920,9 @@ def test_multipoint_align_skysafari_confirm_requires_prior_goto_target():
 def test_multipoint_align_syncs_location_time_and_large_mount_offset_before_start():
     mount = DummyMountControl()
     positions = [(50.0, -10.0), (10.0, 20.0), (10.0, 20.0)]
-    mount._read_current_position = lambda: positions.pop(0) if positions else (10.0, 20.0)
+    mount._read_current_position = (
+        lambda: positions.pop(0) if positions else (10.0, 20.0)
+    )
 
     assert mount.start_multipoint_align("manual", 2)
 
@@ -1385,7 +1393,10 @@ def test_guide_rate_boosts_to_fast_for_large_error(monkeypatch):
     assert mount.client.numbers[-1] == (
         "LX200 OnStep",
         "GUIDE_RATE",
-        {"GUIDE_RATE_WE": mci.GUIDE_RATE_FAST_X, "GUIDE_RATE_NS": mci.GUIDE_RATE_FAST_X},
+        {
+            "GUIDE_RATE_WE": mci.GUIDE_RATE_FAST_X,
+            "GUIDE_RATE_NS": mci.GUIDE_RATE_FAST_X,
+        },
     )
     assert mount._guide_rate_boosted
     assert mount._guide_rate_writable is True
@@ -1427,7 +1438,10 @@ def test_guide_rate_restored_to_fine_on_disable():
     assert mount.client.numbers[-1] == (
         "LX200 OnStep",
         "GUIDE_RATE",
-        {"GUIDE_RATE_WE": mci.GUIDE_RATE_FINE_X, "GUIDE_RATE_NS": mci.GUIDE_RATE_FINE_X},
+        {
+            "GUIDE_RATE_WE": mci.GUIDE_RATE_FINE_X,
+            "GUIDE_RATE_NS": mci.GUIDE_RATE_FINE_X,
+        },
     )
     assert not mount._guide_rate_boosted
 

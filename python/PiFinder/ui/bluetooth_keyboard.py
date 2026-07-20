@@ -4,6 +4,8 @@
 Bluetooth keyboard pairing and connection UI.
 """
 
+from __future__ import annotations
+
 import contextlib
 import fcntl
 import logging
@@ -328,13 +330,10 @@ class UIBluetoothKeyboard(UITextMenu):
             self.pair_passkey = passkey.group(1)
             self.pair_status = "Type this code:"
 
-        if (
-            not self.pair_yes_sent
-            and (
-                "Confirm passkey" in text
-                or "Authorize service" in text
-                or "Accept pairing" in text
-            )
+        if not self.pair_yes_sent and (
+            "Confirm passkey" in text
+            or "Authorize service" in text
+            or "Accept pairing" in text
         ):
             self._send_pair_command("yes")
             self.pair_yes_sent = True
@@ -509,7 +508,9 @@ class UIBluetoothKeyboard(UITextMenu):
                 [0, y - 1, self.display_class.resX, self.display_class.resY],
                 fill=self.colors.get(0),
             )
-            self.draw.text((2, y), status, font=self.fonts.base.font, fill=self.colors.get(192))
+            self.draw.text(
+                (2, y), status, font=self.fonts.base.font, fill=self.colors.get(192)
+            )
             return self.screen_update()
         return result
 

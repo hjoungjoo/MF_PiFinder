@@ -1,3 +1,4 @@
+from __future__ import annotations
 from pathlib import Path
 
 import PiFinder.i18n  # noqa: F401
@@ -61,8 +62,14 @@ def test_apsta_system_files_target_virtual_ap_interface():
     assert "interface uap0" in dhcpcd
     assert "static ip_address=10.10.10.1/24" in dhcpcd
     assert "Before=hostapd.service dnsmasq.service" in prepare_service
-    assert "ExecStart=/usr/bin/bash __PIFINDER_REPO_DIR__/scripts/pifinder_apsta.sh prepare" in prepare_service
-    assert "ExecStart=/usr/bin/bash __PIFINDER_REPO_DIR__/scripts/pifinder_apsta.sh monitor" in monitor_service
+    assert (
+        "ExecStart=/usr/bin/bash __PIFINDER_REPO_DIR__/scripts/pifinder_apsta.sh prepare"
+        in prepare_service
+    )
+    assert (
+        "ExecStart=/usr/bin/bash __PIFINDER_REPO_DIR__/scripts/pifinder_apsta.sh monitor"
+        in monitor_service
+    )
     assert 'AP_IFACE="${PIFINDER_AP_IFACE:-uap0}"' in manager
     assert "interface add" in manager
     assert "restart hostapd" in manager
@@ -81,8 +88,8 @@ def test_mode_switch_scripts_manage_apsta_services():
     assert 'echo -n "AP+STA"' in switch_apsta
     assert "pifinder_apsta_prepare" in switch_apsta
     assert "pifinder_apsta_monitor" in switch_apsta
-    assert "pifinder_apsta.sh\" cleanup" in switch_ap
-    assert "pifinder_apsta.sh\" cleanup" in switch_cli
+    assert 'pifinder_apsta.sh" cleanup' in switch_ap
+    assert 'pifinder_apsta.sh" cleanup' in switch_cli
 
 
 def test_wifi_profile_import_is_installed_by_setup_and_update():

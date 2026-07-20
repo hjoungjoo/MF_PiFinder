@@ -1,3 +1,4 @@
+from __future__ import annotations
 import glob
 import configparser
 import importlib.util
@@ -733,9 +734,7 @@ def apply_indi_onstep_connection(
         except FileNotFoundError as exc:
             raise RuntimeError("indi_setprop is not installed") from exc
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
-                "Timed out while applying INDI OnStep settings"
-            ) from exc
+            raise RuntimeError("Timed out while applying INDI OnStep settings") from exc
 
     def _connect_state() -> str:
         try:
@@ -1478,9 +1477,7 @@ def reboot_onstep_controller_exclusive(
                 commands,
             )
             time.sleep(ONSTEP_REBOOT_SETTLE_SECONDS)
-            if not _wait_for_onstep_network_ready(
-                network_host, int(network_port)
-            ):
+            if not _wait_for_onstep_network_ready(network_host, int(network_port)):
                 raise RuntimeError(
                     "OnStep controller did not come back after reboot "
                     f"({network_host}:{network_port})"
@@ -2630,7 +2627,7 @@ def _restore_wifi_command() -> str:
     client-only-mode devices don't get an access point started behind their back.
     """
     return (
-        f'uuid=$(cat {BT_PAIRING_WIFI_STATE_FILE} 2>/dev/null); '
+        f"uuid=$(cat {BT_PAIRING_WIFI_STATE_FILE} 2>/dev/null); "
         f"{NMCLI_COMMAND} radio wifi on; "
         f'if [ -n "$uuid" ]; then {NMCLI_COMMAND} connection up "$uuid" 2>/dev/null; '
         f"else {NMCLI_COMMAND} device connect {BT_PAIRING_STA_INTERFACE} 2>/dev/null; fi; "
