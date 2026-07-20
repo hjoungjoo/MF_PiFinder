@@ -12,7 +12,14 @@
 
   <div class="pfcat-detailgrid">
     <div>
-      {% if not obj.planet %}
+      {% if obj.planet %}
+      <div class="pfcat-imgcard">
+        <img id="pfcat-obj-image" src="/images/planets/{{ obj.planet | lower }}.jpg"
+             alt="{{ obj.display }}"
+             onerror="this.parentElement.classList.add('noimg'); this.remove();">
+        <div class="pfcat-credit">NASA — public domain</div>
+      </div>
+      {% else %}
       <div class="pfcat-imgcard">
         <img id="pfcat-obj-image" src="/catalogs/image/{{ obj.object_id }}"
              alt="{{ obj.display }}"
