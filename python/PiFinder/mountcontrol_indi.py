@@ -16,6 +16,7 @@ import os
 import queue
 import re
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from multiprocessing import Queue
 from typing import Any, Optional
@@ -509,6 +510,10 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._track_freq_target_hz: Optional[float] = None
         self._track_freq_label: str = ""
         self._track_freq_last_assert_at = 0.0
+        # Consecutive failed auto-reconnect attempts. The first failure after
+        # a state change logs in full; repeats run with WARNING/INFO logging
+        # suppressed so an offline mount does not fill the log every retry.
+        self._auto_connect_failures = 0
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -1241,10 +1246,37 @@ class MountControlIndi(BacklashCalibrationMixin):
         return True
 
     def mark_disconnected(self, message: str) -> None:
+        was_connected = self.connected
         self.connected = False
         self.device = None
         self._coordinate_sync = None
+        if was_connected:
+            # A connected->disconnected transition is a state change: let the
+            # first reconnect attempt of the new outage log in full again.
+            # (Disconnect callbacks also fire during each failed retry; those
+            # must not reset the counter or suppression never engages.)
+            self._auto_connect_failures = 0
         self._write_controller_status("disconnected", message)
+
+    @contextmanager
+    def _quiet_retry_logging(self, quiet: bool):
+        """Silence WARNING/INFO chatter for a repeated auto-reconnect attempt.
+
+        The first attempt after a state change logs normally; while `quiet`,
+        the mount-control loggers only pass ERROR and above, so an offline
+        mount does not write the same timeout batch every retry."""
+        if not quiet:
+            yield
+            return
+        targets = (logger, clientlogger)
+        previous = [target.level for target in targets]
+        for target in targets:
+            target.setLevel(logging.ERROR)
+        try:
+            yield
+        finally:
+            for target, level in zip(targets, previous):
+                target.setLevel(level)
 
     def restart_driver(self) -> bool:
         logger.info("Restarting INDI Web Manager, server, and mount driver")
@@ -3509,9 +3541,28 @@ class MountControlIndi(BacklashCalibrationMixin):
                 self._reassert_track_frequency()
                 now = time.monotonic()
                 if not self.connected and now >= next_auto_connect_at:
-                    logger.info("Attempting automatic INDI mount connection")
-                    if self.connect(announce=False):
+                    first_attempt = self._auto_connect_failures == 0
+                    if first_attempt:
+                        logger.info("Attempting automatic INDI mount connection")
+                    with self._quiet_retry_logging(quiet=not first_attempt):
+                        connect_ok = self.connect(announce=False)
+                    if connect_ok:
+                        if self._auto_connect_failures:
+                            logger.info(
+                                "INDI mount connected after %d suppressed retries",
+                                self._auto_connect_failures,
+                            )
+                        self._auto_connect_failures = 0
                         self._console("INDI mount\nconnected")
+                    else:
+                        self._auto_connect_failures += 1
+                        if first_attempt:
+                            logger.warning(
+                                "INDI mount connection failed; retrying every "
+                                "%.0f s with repeat warnings suppressed until "
+                                "the state changes",
+                                AUTO_CONNECT_RETRY_INTERVAL,
+                            )
                     next_auto_connect_at = now + AUTO_CONNECT_RETRY_INTERVAL
                 self._write_status_heartbeat()
                 continue
