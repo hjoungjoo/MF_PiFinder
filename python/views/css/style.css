@@ -584,3 +584,22 @@ html[data-theme="red"] input[type=search]:not(.browser-default),
 html[data-theme="red"] textarea.materialize-textarea {
   border-bottom-color: var(--pf-border);
 }
+
+/* Bare <hr> uses the browser's light default, which reads as a white bar on
+   the dark themes (e.g. Tools > User Data and Settings). */
+hr {
+  border: none;
+  border-top: 1px solid var(--pf-border);
+}
+
+/* Red Night: input text and placeholders otherwise keep the browser/Materialize
+   light default (e.g. the Tools restore file field's "Select backup file..."). */
+html[data-theme="red"] input:not(.browser-default),
+html[data-theme="red"] textarea.materialize-textarea {
+  color: var(--pf-text);
+}
+html[data-theme="red"] input:not(.browser-default)::placeholder,
+html[data-theme="red"] textarea.materialize-textarea::placeholder {
+  color: var(--pf-text-muted);
+  opacity: 1;
+}
