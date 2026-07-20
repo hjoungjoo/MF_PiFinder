@@ -157,6 +157,33 @@ fi
 echo uhid | sudo tee /etc/modules-load.d/uhid.conf >/dev/null
 sudo modprobe uhid || true
 
+# SD-card wear reduction: keep steady log writers off the card.
+# 1) /tmp on tmpfs -- indiserver's stdout log (redirected there by indi-web)
+#    and INDI FIFOs/sockets then live in RAM.
+if ! grep -qE '^\s*tmpfs\s+/tmp\s+tmpfs' /etc/fstab; then
+    echo "tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777,size=256M 0 0" \
+        | sudo tee -a /etc/fstab >/dev/null
+fi
+# 2) Cap the indiserver log on that tmpfs (no rotation of its own).
+#    'su' is required because /tmp is world-writable (1777).
+sudo tee /etc/logrotate.d/indiserver >/dev/null <<LOGROTATE_EOF
+/tmp/indiserver.log {
+    su ${PIFINDER_USER} ${PIFINDER_USER}
+    size 10M
+    rotate 2
+    copytruncate
+    missingok
+    notifempty
+    compress
+}
+LOGROTATE_EOF
+# 3) journald is volatile (RAM); cap it below the default 15%-of-/run.
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo tee /etc/systemd/journald.conf.d/pifinder-ram-cap.conf >/dev/null <<'JOURNALD_EOF'
+[Journal]
+RuntimeMaxUse=32M
+JOURNALD_EOF
+
 # Samba config
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/smb.conf" /etc/samba/smb.conf
 
