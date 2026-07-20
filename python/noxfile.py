@@ -14,10 +14,24 @@ _PYTHON = "3.9" if shutil.which("python3.9") else None
 @nox.session(reuse_venv=True, python=_PYTHON)
 def lint(session: nox.Session) -> None:
     """
-    Lint the project's codebase.
+    Check the project's codebase for lint violations.
 
-    This session installs necessary dependencies for linting and then runs the linter to check for
-    stylistic errors and coding standards compliance across the project's codebase.
+    Fails when the linter finds a violation, so CI catches it. This session
+    deliberately does NOT rewrite files: it used to run ``ruff check --fix``,
+    which repaired the checkout and then exited 0, so violations could be
+    committed and CI never noticed. Run ``nox -s lint_fix`` to apply.
+
+    Args:
+        session (nox.Session): The Nox session being run, providing context and methods for session actions.
+    """
+    session.install("ruff==0.4.8")
+    session.run("ruff", "check", "--config", "builtins=['_']")
+
+
+@nox.session(reuse_venv=True, python=_PYTHON)
+def lint_fix(session: nox.Session) -> None:
+    """
+    Apply the linter's automatic fixes (rewrites files).
 
     Args:
         session (nox.Session): The Nox session being run, providing context and methods for session actions.

@@ -38,7 +38,8 @@ environments are activated before any of the python based tools below.
 
 **Development workflow uses Nox for task automation:**
 ```bash
-nox -s lint          # Code linting with Ruff (auto-fixes issues)
+nox -s lint          # Lint CHECK with Ruff -- fails on violations, rewrites nothing
+nox -s lint_fix      # Apply Ruff's automatic lint fixes (rewrites files)
 nox -s format        # Formatting CHECK with Ruff -- fails on drift, rewrites nothing
 nox -s format_fix    # Apply Ruff formatting (rewrites files)
 nox -s type_hints    # Type checking with MyPy
