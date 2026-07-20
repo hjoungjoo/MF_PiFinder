@@ -1,7 +1,6 @@
 import json
 import time
 from multiprocessing import Queue
-from types import SimpleNamespace
 
 from PiFinder import sys_utils
 from PiFinder import mountcontrol_indi as mci

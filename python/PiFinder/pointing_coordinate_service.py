@@ -11,7 +11,6 @@ PiFinder/IMU pointing before the two coordinate systems have been matched.
 
 from __future__ import annotations
 
-import datetime
 import logging
 import math
 import threading

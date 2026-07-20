@@ -34,13 +34,7 @@ from PiFinder.indi_align import (
     next_align_star,
 )
 from PiFinder.indi_backlash_calibration import (
-    BACKLASH_AUTO_GOTO_TIMEOUT_SECONDS,
     BACKLASH_AUTO_MODE_COMPASS_GOTO,
-    BACKLASH_AUTO_MODES,
-    BACKLASH_COMPASS_GOTO_REPEATS,
-    BACKLASH_COMPASS_GOTO_TIMEOUT_SECONDS,
-    BACKLASH_GOTO_MAX_RETRIES,
-    BACKLASH_SOLVED_WAIT_SECONDS,
     BacklashCalibrationMixin,
 )
 from PiFinder.indi_multipoint_align import (
