@@ -6,6 +6,7 @@ This module contains the base UIModule class
 """
 
 import json
+import logging
 import time
 import uuid
 from itertools import cycle
@@ -763,7 +764,7 @@ class UIModule:
             return None
         return aligned.RA, aligned.Dec
 
-    def _mount_command(self, number, target=None) -> bool:
+    def _mount_command(self, number, target=None, target_object=None) -> bool:
         """Run a discrete mount command for a number key: 0=Stop 5=GoTo 7=Sync
         9=Speed+ 3=Speed-.
 
@@ -810,6 +811,21 @@ class UIModule:
                 guide_queue.put(command)
             else:
                 queue.put(command)
+            # Same tracking-frequency policy as the web catalog push:
+            # planets get an ephemeris feed-forward rate, static targets
+            # reset an active non-sidereal frequency back to sidereal.
+            try:
+                from PiFinder.track_freq_policy import track_freq_command_for_target
+
+                freq_command = track_freq_command_for_target(
+                    target_object, self.shared_state
+                )
+                if freq_command is not None:
+                    queue.put(freq_command)
+            except Exception:
+                logging.getLogger("UI.base").exception(
+                    "Track frequency policy failed"
+                )
             self.message(_("Mount GoTo"), 1)
         elif number == 7:
             pointing = self._mount_pointing_radec()
@@ -828,7 +844,7 @@ class UIModule:
             return False
         return True
 
-    def _mount_key(self, number, target=None) -> None:
+    def _mount_key(self, number, target=None, target_object=None) -> None:
         """Single-tap number key: cardinal = one nudge, else discrete command."""
         if number is None:
             return
@@ -836,9 +852,9 @@ class UIModule:
         if direction is not None:
             self._guide_move(direction)
             return
-        self._mount_command(number, target=target)
+        self._mount_command(number, target=target, target_object=target_object)
 
-    def _mount_key_press(self, number, target=None) -> None:
+    def _mount_key_press(self, number, target=None, target_object=None) -> None:
         """Press a number key: cardinal starts hold-to-move, else discrete."""
         if number is None:
             return
@@ -846,7 +862,7 @@ class UIModule:
         if direction is not None:
             self._guide_move(direction, keepalive=True)
             return
-        self._mount_command(number, target=target)
+        self._mount_command(number, target=target, target_object=target_object)
 
     def _mount_key_release(self, number) -> None:
         """Release a cardinal number key: stop the hold-to-move motion."""

@@ -707,10 +707,18 @@ class UIObjectDetails(UIModule):
         """Cardinal keys nudge the mount, 0/5/7 are discrete commands (GoTo uses
         this object) and 9/3 adjust the slew rate. Held cardinal keys move for
         as long as they are held."""
-        self._mount_key(number, target=(self.object.ra, self.object.dec))
+        self._mount_key(
+            number,
+            target=(self.object.ra, self.object.dec),
+            target_object=self.object,
+        )
 
     def key_number_press(self, number=None):
-        self._mount_key_press(number, target=(self.object.ra, self.object.dec))
+        self._mount_key_press(
+            number,
+            target=(self.object.ra, self.object.dec),
+            target_object=self.object,
+        )
 
     def key_number_release(self, number=None):
         self._mount_key_release(number)
