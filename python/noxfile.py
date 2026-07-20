@@ -29,10 +29,24 @@ def lint(session: nox.Session) -> None:
 @nox.session(reuse_venv=True, python=_PYTHON)
 def format(session: nox.Session) -> None:
     """
-    Format the project's codebase.
+    Check the project's code formatting.
 
-    This session installs necessary dependencies for code formatting and runs the formatter
-    to check (and optionally correct) the code format according to the project's style guide.
+    Fails (and prints the diff) when a file is not formatted, so CI catches
+    drift. This session deliberately does NOT rewrite files: it used to run a
+    bare ``ruff format``, which always exited 0, so unformatted code could be
+    committed and CI never noticed. Run ``nox -s format_fix`` to apply.
+
+    Args:
+        session (nox.Session): The Nox session being run, providing context and methods for session actions.
+    """
+    session.install("ruff==0.4.8")
+    session.run("ruff", "format", "--check", "--diff")
+
+
+@nox.session(reuse_venv=True, python=_PYTHON)
+def format_fix(session: nox.Session) -> None:
+    """
+    Apply the project's code formatting (rewrites files).
 
     Args:
         session (nox.Session): The Nox session being run, providing context and methods for session actions.
