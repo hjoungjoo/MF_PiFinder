@@ -1,9 +1,17 @@
+import shutil
+
 import nox
 
 nox.options.sessions = ["lint", "format", "type_hints", "smoke_tests"]
 
+# Upstream targets Python 3.9, but deployment devices (Raspberry Pi OS
+# Bookworm) only ship newer interpreters. Use 3.9 when it exists, otherwise
+# fall back to the interpreter running nox so sessions don't all fail with
+# "Python interpreter 3.9 not found".
+_PYTHON = "3.9" if shutil.which("python3.9") else None
 
-@nox.session(reuse_venv=True, python="3.9")
+
+@nox.session(reuse_venv=True, python=_PYTHON)
 def lint(session: nox.Session) -> None:
     """
     Lint the project's codebase.
@@ -18,7 +26,7 @@ def lint(session: nox.Session) -> None:
     session.run("ruff", "check", "--fix", "--config", "builtins=['_']")
 
 
-@nox.session(reuse_venv=True, python="3.9")
+@nox.session(reuse_venv=True, python=_PYTHON)
 def format(session: nox.Session) -> None:
     """
     Format the project's codebase.
@@ -33,7 +41,7 @@ def format(session: nox.Session) -> None:
     session.run("ruff", "format")
 
 
-@nox.session(reuse_venv=True, python="3.9")
+@nox.session(reuse_venv=True, python=_PYTHON)
 def type_hints(session: nox.Session) -> None:
     """
     Check type hints in the project's codebase.
@@ -54,7 +62,7 @@ def type_hints(session: nox.Session) -> None:
     session.run("mypy", "--install-types", "--non-interactive", "PiFinder")
 
 
-@nox.session(reuse_venv=True, python="3.9")
+@nox.session(reuse_venv=True, python=_PYTHON)
 def unit_tests(session: nox.Session) -> None:
     """
     Run the project's unit tests.
@@ -70,7 +78,7 @@ def unit_tests(session: nox.Session) -> None:
     session.run("pytest", "-m", "unit")
 
 
-@nox.session(reuse_venv=True, python="3.9")
+@nox.session(reuse_venv=True, python=_PYTHON)
 def web_tests(session: nox.Session) -> None:
     """
     Run the project's test suite on the web interface.
@@ -85,7 +93,7 @@ def web_tests(session: nox.Session) -> None:
     session.run("pytest", "-m", "web")
 
 
-@nox.session(reuse_venv=True, python="3.9")
+@nox.session(reuse_venv=True, python=_PYTHON)
 def smoke_tests(session: nox.Session) -> None:
     """
         Run the project's smoke tests.
@@ -101,7 +109,7 @@ def smoke_tests(session: nox.Session) -> None:
     session.run("pytest", "-m", "smoke")
 
 
-@nox.session(reuse_venv=True, python="3.9")
+@nox.session(reuse_venv=True, python=_PYTHON)
 def ui_tests(session: nox.Session) -> None:
     """
     Run the UI module smoke harness (tests/test_ui_modules.py).
@@ -119,7 +127,7 @@ def ui_tests(session: nox.Session) -> None:
     session.run("pytest", "-m", "integration", "tests/test_ui_modules.py")
 
 
-@nox.session(reuse_venv=True, python="3.9")
+@nox.session(reuse_venv=True, python=_PYTHON)
 def babel(session: nox.Session) -> None:
     """
     Run the I18N toolchain
