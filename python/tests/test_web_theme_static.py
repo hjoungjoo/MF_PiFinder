@@ -226,27 +226,6 @@ def test_fullscreen_restores_on_the_first_gesture_after_navigation():
     assert "onFullscreenChange" in init_js
 
 
-def test_pwa_install_button_is_present():
-    base_html = (VIEWS_DIR / "base.html").read_text()
-    init_js = (VIEWS_DIR / "js" / "init.js").read_text()
-    style_css = (VIEWS_DIR / "css" / "style.css").read_text()
-
-    assert base_html.count("pf-install-button") == 2  # desktop nav + sidenav
-    assert 'id="pf-install-help"' in base_html
-    assert "Install App" in base_html
-
-    assert "beforeinstallprompt" in init_js
-    assert "appinstalled" in init_js
-    assert "deferredInstallPrompt" in init_js
-    assert "isStandaloneDisplay" in init_js
-    assert "isIosDevice" in init_js  # iOS has no install API, only the share sheet
-
-    # The hidden attribute must win over the button display rules.
-    assert ".pf-nav-icon-button[hidden]" in style_css
-    assert ".pf-sidenav-button[hidden]" in style_css
-    assert ".pf-install-help[hidden]" in style_css
-
-
 def test_spa_engine_is_wired_into_base_template():
     base_html = (VIEWS_DIR / "base.html").read_text()
 
@@ -330,17 +309,3 @@ def test_polling_pages_guard_their_reschedule_points():
         assert "PAGE_ALIVE()" in page, name
         # The capture must precede every use, or it reads the wrong page's check.
         assert page.index("const PAGE_ALIVE") < page.index("PAGE_ALIVE()"), name
-
-
-def test_korean_translations_cover_install_prompt():
-    ko_po = (
-        Path(__file__).resolve().parents[1]
-        / "locale"
-        / "ko"
-        / "LC_MESSAGES"
-        / "messages.po"
-    ).read_text()
-
-    assert 'msgid "Install App"' in ko_po
-    assert 'msgstr "앱 설치"' in ko_po
-    assert "홈 화면에 추가" in ko_po

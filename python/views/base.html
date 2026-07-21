@@ -42,9 +42,6 @@
         <a id="logo-container" href="/#" class="pf-brand-logo"><img src="/images/WebLogo_RED.png" class="pf-logo"></a>
         <div class="pf-nav-controls hide-on-med-and-down">
           <div class="pf-fullscreen-menu">
-            <button type="button" class="pf-nav-icon-button pf-install-button" title="{{ _('Install App') }}" aria-label="{{ _('Install App') }}" hidden>
-              <i class="material-icons">add_to_home_screen</i>
-            </button>
             <button type="button" class="pf-nav-icon-button pf-fullscreen-button" title="{{ _('Fullscreen') }}" aria-label="{{ _('Fullscreen') }}">
               <i class="material-icons">fullscreen</i>
             </button>
@@ -90,11 +87,6 @@
             <i class="material-icons left">fullscreen</i>{{ _('Fullscreen') }}
           </button>
         </li>
-        <li class="pf-sidenav-action">
-          <button type="button" class="pf-sidenav-button pf-install-button" hidden>
-            <i class="material-icons left">add_to_home_screen</i>{{ _('Install App') }}
-          </button>
-        </li>
         <li class="pf-sidenav-theme">
           <span>{{ _('Theme') }}</span>
           <select class="browser-default pf-theme-select" aria-label="{{ _('Web theme') }}">
@@ -110,9 +102,6 @@
       {% block content %}{% endblock %}
     </div>
   </main>
-  <div id="pf-install-help" class="pf-install-help" hidden>
-    {{ _('Tap the browser share button, then choose "Add to Home Screen".') }}
-  </div>
   <button type="button" id="pf-fullscreen-restore" class="pf-fullscreen-restore pf-fullscreen-button" hidden>
     <i class="material-icons left">fullscreen</i>{{ _('Resume Fullscreen') }}
   </button>

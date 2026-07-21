@@ -137,16 +137,8 @@ main {
 .pf-fullscreen-menu {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
   min-height: 2.5rem;
   margin-left: 0;
-}
-
-/* The flex display rules below would otherwise defeat the hidden attribute. */
-.pf-nav-icon-button[hidden],
-.pf-sidenav-button[hidden],
-.pf-sidenav-action[hidden] {
-  display: none;
 }
 
 .pf-nav-icon-button {
@@ -207,25 +199,6 @@ main {
 
 .pf-sidenav-button i.left {
   margin-right: 0.75rem;
-}
-
-.pf-install-help {
-  position: fixed;
-  left: 1rem;
-  right: 1rem;
-  bottom: 4.5rem;
-  z-index: 10000;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--pf-border);
-  border-radius: 4px;
-  background-color: var(--pf-button);
-  color: var(--pf-text);
-  font-size: 0.9rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-
-.pf-install-help[hidden] {
-  display: none;
 }
 
 .pf-fullscreen-restore {
