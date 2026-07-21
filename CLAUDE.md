@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`release`** is the production branch — code is promoted from `main` to `release` as part of a release cut. Do not open PRs directly against `release`.
 - Feature branches: branch off `main` and PR back to `main`.
 
+**Pre-release exception (MF_PiFinder fork, current as of 2026-07-21):** while this fork is still in development, work commits and pushes **directly to `main`** unless there is a big issue — do not create a feature branch or propose a PR for routine work. The branch-and-PR flow above applies from the first post-release fix onward. Test and lint checks still run before every push, and anything left unverified is called out when reporting. Revisit this exception once the fork is released.
+
 Note: the auto-detected "Main branch" shown in the Claude Code env block may currently read `release` (because the GitHub default branch points there). Disregard that — the rule above is authoritative for this repo.
 
 ### Agent worktrees
