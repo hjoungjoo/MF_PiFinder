@@ -239,6 +239,9 @@
           <button type="button" class="btn" id="zoomIn" title="{{ _('Zoom in') }}" aria-label="{{ _('Zoom in') }}">
             <i class="material-icons">add</i>
           </button>
+          <button type="button" class="btn" id="zoomFit" title="{{ _('Fit to width') }}" aria-label="{{ _('Fit to width') }}">
+            <i class="material-icons">aspect_ratio</i>
+          </button>
           <button type="button" class="btn" id="zoomReset" title="{{ _('Actual size') }}" aria-label="{{ _('Actual size') }}">
             <i class="material-icons">center_focus_strong</i>
           </button>
@@ -315,10 +318,12 @@ const image = document.getElementById('livecamImage');
 const placeholder = document.getElementById('livecamPlaceholder');
 const message = document.getElementById('livecamMessage');
 const zoomValue = document.getElementById('zoomValue');
+const shell = document.querySelector('.livecam-preview-shell');
 let pollTimer = null;
 let waitingSince = null;
 let controlsHydrated = false;
 let imageZoom = 1.0;
+let fitMode = true;
 
 function currentTheme() {
   const theme = document.documentElement.getAttribute('data-theme') || 'grey';
@@ -412,20 +417,52 @@ function renderStatus(data, syncControls = false) {
   }
 }
 
+function fitScale() {
+  // Width the image may occupy inside the shell, borders excluded.
+  const available = shell.clientWidth;
+  const naturalWidth = image.naturalWidth || 0;
+  if (!available || !naturalWidth) {
+    return null;
+  }
+  return available / naturalWidth;
+}
+
 function applyImageZoom() {
   const naturalWidth = image.naturalWidth || 0;
   const naturalHeight = image.naturalHeight || 0;
   if (!naturalWidth || !naturalHeight) {
-    zoomValue.textContent = `${Math.round(imageZoom * 100)}%`;
+    zoomValue.textContent = '-';
     return;
   }
-  image.style.width = `${Math.round(naturalWidth * imageZoom)}px`;
-  image.style.height = `${Math.round(naturalHeight * imageZoom)}px`;
-  zoomValue.textContent = `${Math.round(imageZoom * 100)}%`;
+  // RAW frames are far wider than the shell, so fitting the width is the
+  // useful default; zooming switches to an explicit scale.
+  if (fitMode) {
+    // Percentage width rather than a pixel calculation: a tall frame that
+    // raises a vertical scrollbar would otherwise shrink the usable width and
+    // leave the image a few pixels too wide, adding a horizontal scrollbar.
+    image.style.width = '100%';
+    image.style.height = 'auto';
+    image.style.maxWidth = '100%';
+  } else {
+    image.style.width = `${Math.round(naturalWidth * imageZoom)}px`;
+    image.style.height = `${Math.round(naturalHeight * imageZoom)}px`;
+    image.style.maxWidth = 'none';
+  }
+  zoomValue.textContent = `${Math.round(currentScale() * 100)}%`;
 }
 
 function setImageZoom(nextZoom) {
+  fitMode = false;
   imageZoom = Math.max(0.25, Math.min(4.0, nextZoom));
+  applyImageZoom();
+}
+
+function currentScale() {
+  return fitMode ? (fitScale() || imageZoom) : imageZoom;
+}
+
+function setFitMode() {
+  fitMode = true;
   applyImageZoom();
 }
 
@@ -490,19 +527,38 @@ controls.output_source.addEventListener('change', syncStackFromOutput);
 
 controls.stack_enabled.addEventListener('change', syncOutputFromStack);
 
+// Stepping from the current scale keeps zooming continuous when leaving fit
+// mode, instead of jumping back to whatever imageZoom was left at.
 document.getElementById('zoomOut').addEventListener('click', () => {
-  setImageZoom(imageZoom - 0.25);
+  setImageZoom(currentScale() - 0.25);
 });
 
 document.getElementById('zoomIn').addEventListener('click', () => {
-  setImageZoom(imageZoom + 0.25);
+  setImageZoom(currentScale() + 0.25);
 });
 
 document.getElementById('zoomReset').addEventListener('click', () => {
   setImageZoom(1.0);
 });
 
+document.getElementById('zoomFit').addEventListener('click', setFitMode);
+
 image.addEventListener('load', applyImageZoom);
+
+// Page scripts are re-run on every SPA visit, so replace the previous
+// listener instead of stacking one up per visit.
+if (window.__livecamResize) {
+  window.removeEventListener('resize', window.__livecamResize);
+}
+window.__livecamResize = function() {
+  if (PAGE_ALIVE && !PAGE_ALIVE()) {
+    return;
+  }
+  if (fitMode) {
+    applyImageZoom();
+  }
+};
+window.addEventListener('resize', window.__livecamResize);
 
 document.getElementById('downloadImage').addEventListener('click', () => {
   window.location.href = `/api/camera/raw-stack/download?theme=${encodeURIComponent(currentTheme())}`;

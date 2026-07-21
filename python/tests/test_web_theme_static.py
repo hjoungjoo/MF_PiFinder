@@ -309,3 +309,33 @@ def test_polling_pages_guard_their_reschedule_points():
         assert "PAGE_ALIVE()" in page, name
         # The capture must precede every use, or it reads the wrong page's check.
         assert page.index("const PAGE_ALIVE") < page.index("PAGE_ALIVE()"), name
+
+
+def test_scrollbars_follow_the_theme():
+    style_css = (VIEWS_DIR / "css" / "style.css").read_text()
+
+    # Default scrollbars render light grey and break dark adaptation on the red
+    # theme as soon as a pane overflows.
+    assert "scrollbar-color: var(--pf-scrollbar-thumb) var(--pf-bg)" in style_css
+    assert "scrollbar-width: thin" in style_css
+    assert "::-webkit-scrollbar-thumb" in style_css
+    assert "::-webkit-scrollbar-track" in style_css
+    assert "::-webkit-scrollbar-corner" in style_css
+    # Hover must not reuse the text colours; they are far too bright at night.
+    assert "var(--pf-scrollbar-thumb-hover)" in style_css
+    assert "background: var(--pf-text-muted)" not in style_css
+
+    # Colours must come from the theme variables, not be hard coded.
+    scrollbar_block = style_css[style_css.index("scrollbar-width: thin") :]
+    scrollbar_block = scrollbar_block[: scrollbar_block.index("main {")]
+    assert "#" not in scrollbar_block, "scrollbar colours must use theme variables"
+
+
+def test_log_viewer_keeps_its_own_console_scrollbars():
+    # The log viewer is deliberately a neutral dark console; style.css must not
+    # reach into it, same rule as its text colours.
+    style_css = (VIEWS_DIR / "css" / "style.css").read_text()
+    logs_html = (VIEWS_DIR / "logs.html").read_text()
+
+    assert ".log-container" not in style_css
+    assert ".log-container::-webkit-scrollbar" in logs_html
