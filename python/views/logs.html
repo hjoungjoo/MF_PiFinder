@@ -180,6 +180,9 @@
 
 {% block scripts %}
 <script>
+// Captured now: reading window.pfPageAlive later would resolve to whichever
+// page is current, so this poll loop would survive navigation and double up.
+const PAGE_ALIVE = window.pfPageAlive;
 let currentPosition = 0;
 let isPaused = false;
 let logBuffer = [];
@@ -194,6 +197,7 @@ let currentPollInterval = MIN_POLL_INTERVAL;
 
 function scheduleNextFetch(delay) {
     clearTimeout(pollTimer);
+    if (PAGE_ALIVE && !PAGE_ALIVE()) { return; }
     if (!isPaused) {
         pollTimer = setTimeout(fetchLogs, delay);
     }

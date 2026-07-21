@@ -2,6 +2,8 @@
   const themeStorageKey = 'pifinderWebTheme';
   const fullscreenStorageKey = 'pifinderWantFullscreen';
   const validThemes = ['grey', 'red'];
+  let navigatingAway = false;
+  let deferredInstallPrompt = null;
 
   function currentTheme() {
     let storedTheme = null;
@@ -45,6 +47,11 @@
     }
   }
 
+  function fullscreenSupported() {
+    const root = document.documentElement;
+    return Boolean(root.requestFullscreen || root.webkitRequestFullscreen);
+  }
+
   function requestAppFullscreen() {
     const root = document.documentElement;
     const requestFullscreen = root.requestFullscreen || root.webkitRequestFullscreen;
@@ -82,6 +89,95 @@
     });
   }
 
+  // The Fullscreen API is bound to the document and every navigation drops it.
+  // requestFullscreen() needs a transient user activation, so it cannot be called
+  // on load -- instead the first tap or key press after the new page arrives
+  // restores fullscreen without swallowing that interaction.
+  function armFullscreenRestore() {
+    if (!fullscreenSupported() || !fullscreenWanted() || fullscreenElement()) {
+      return;
+    }
+
+    function disarm() {
+      document.removeEventListener('pointerdown', restore, true);
+      document.removeEventListener('keydown', restore, true);
+    }
+
+    function restore() {
+      if (!fullscreenWanted()) {
+        disarm();
+        return;
+      }
+      requestAppFullscreen().then(function() {
+        disarm();
+        updateFullscreenButtons();
+      }).catch(function() {
+        // Keep listening: the next gesture gets another chance.
+      });
+    }
+
+    document.addEventListener('pointerdown', restore, true);
+    document.addEventListener('keydown', restore, true);
+  }
+
+  function onFullscreenChange() {
+    // Leaving fullscreen while staying on the page (Esc, F11) means the user
+    // wants windowed mode, so stop restoring it on the next page.
+    if (!fullscreenElement() && !navigatingAway) {
+      setFullscreenWanted(false);
+    }
+    updateFullscreenButtons();
+  }
+
+  function isStandaloneDisplay() {
+    if (navigator.standalone === true) {
+      return true;
+    }
+    if (!window.matchMedia) {
+      return false;
+    }
+    return ['fullscreen', 'standalone', 'minimal-ui'].some(function(mode) {
+      return window.matchMedia('(display-mode: ' + mode + ')').matches;
+    });
+  }
+
+  function isIosDevice() {
+    const ua = navigator.userAgent;
+    if (/iPad|iPhone|iPod/.test(ua)) {
+      return true;
+    }
+    return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  }
+
+  function updateInstallButtons() {
+    // Installed already, or no way to install from this browser: hide the entry.
+    const canInstall = !isStandaloneDisplay() && (deferredInstallPrompt !== null || isIosDevice());
+    $('.pf-install-button')
+      .prop('hidden', !canInstall)
+      .closest('.pf-sidenav-action')
+      .prop('hidden', !canInstall);
+    if (!canInstall) {
+      $('#pf-install-help').prop('hidden', true);
+    }
+  }
+
+  function runInstall() {
+    if (deferredInstallPrompt) {
+      const promptEvent = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      promptEvent.prompt();
+      Promise.resolve(promptEvent.userChoice).catch(function() {
+        // Dismissal is not an error; the button state is refreshed either way.
+      }).then(function() {
+        updateInstallButtons();
+      });
+      return;
+    }
+    // iOS has no install API -- Safari's share sheet is the only path.
+    const help = $('#pf-install-help');
+    help.prop('hidden', !help.prop('hidden'));
+  }
+
   function isInternalNavigationLink(anchor) {
     const href = anchor.getAttribute('href');
     if (!href || href === '#' || href.indexOf('javascript:') === 0) {
@@ -116,8 +212,30 @@
       }
     });
 
-    document.addEventListener('fullscreenchange', updateFullscreenButtons);
-    document.addEventListener('webkitfullscreenchange', updateFullscreenButtons);
+    $('.pf-install-button').on('click', function() {
+      runInstall();
+    });
+
+    updateInstallButtons();
+    armFullscreenRestore();
+
+    window.addEventListener('beforeunload', function() {
+      navigatingAway = true;
+    });
+
+    window.addEventListener('beforeinstallprompt', function(event) {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      updateInstallButtons();
+    });
+
+    window.addEventListener('appinstalled', function() {
+      deferredInstallPrompt = null;
+      updateInstallButtons();
+    });
+
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch(function() {

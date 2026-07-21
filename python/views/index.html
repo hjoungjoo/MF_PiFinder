@@ -42,6 +42,9 @@
 
 {% block scripts %}
 <script>
+// Captured now: reading window.pfPageAlive later would resolve to whichever
+// page is current, so this poll loop would survive navigation and double up.
+const PAGE_ALIVE = window.pfPageAlive;
 function fetchImage() {
     const imageElement = document.getElementById('image');
     fetch("/image?t=" + new Date().getTime())
@@ -64,6 +67,7 @@ function fetchImage() {
         })
         .finally(() => {
             // Schedule the next fetch operation after 100 milliseconds, whether this operation was successful or not
+            if (PAGE_ALIVE && !PAGE_ALIVE()) { return; }
             setTimeout(fetchImage, 500);
         });
 }

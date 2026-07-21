@@ -200,3 +200,147 @@ def test_fullscreen_script_is_present():
     assert "webkitRequestFullscreen" in init_js
     assert "exitFullscreen" in init_js
     assert "fullscreenchange" in init_js
+
+
+def test_fullscreen_restores_on_the_first_gesture_after_navigation():
+    init_js = (VIEWS_DIR / "js" / "init.js").read_text()
+
+    # requestFullscreen() needs a transient user activation, so the restore has
+    # to hang off a real gesture rather than run on load.
+    assert "armFullscreenRestore" in init_js
+    assert "addEventListener('pointerdown', restore, true)" in init_js
+    assert "addEventListener('keydown', restore, true)" in init_js
+    assert "fullscreenSupported" in init_js
+
+    # The gesture must not be swallowed by the restore listener, so the function
+    # body itself must never cancel the event it rides on.
+    arm_body = init_js.split("function armFullscreenRestore")[1].split(
+        "function onFullscreenChange"
+    )[0]
+    assert "preventDefault" not in arm_body
+    assert "stopPropagation" not in arm_body
+
+    # Leaving fullscreen deliberately (Esc/F11) must not be undone on next tap.
+    assert "navigatingAway" in init_js
+    assert "beforeunload" in init_js
+    assert "onFullscreenChange" in init_js
+
+
+def test_pwa_install_button_is_present():
+    base_html = (VIEWS_DIR / "base.html").read_text()
+    init_js = (VIEWS_DIR / "js" / "init.js").read_text()
+    style_css = (VIEWS_DIR / "css" / "style.css").read_text()
+
+    assert base_html.count("pf-install-button") == 2  # desktop nav + sidenav
+    assert 'id="pf-install-help"' in base_html
+    assert "Install App" in base_html
+
+    assert "beforeinstallprompt" in init_js
+    assert "appinstalled" in init_js
+    assert "deferredInstallPrompt" in init_js
+    assert "isStandaloneDisplay" in init_js
+    assert "isIosDevice" in init_js  # iOS has no install API, only the share sheet
+
+    # The hidden attribute must win over the button display rules.
+    assert ".pf-nav-icon-button[hidden]" in style_css
+    assert ".pf-sidenav-button[hidden]" in style_css
+    assert ".pf-install-help[hidden]" in style_css
+
+
+def test_spa_engine_is_wired_into_base_template():
+    base_html = (VIEWS_DIR / "base.html").read_text()
+
+    # Must load before the page block so page scripts can capture pfPageAlive.
+    assert "/js/spa.js" in base_html
+    assert base_html.index("/js/spa.js") < base_html.index("{% block scripts %}")
+    assert base_html.index("/js/init.js") < base_html.index("/js/spa.js")
+
+
+def test_spa_engine_handles_the_three_page_script_hazards():
+    spa_js = (VIEWS_DIR / "js" / "spa.js").read_text()
+
+    # 1. Page scripts define globals for inline onclick=, so they cannot be
+    #    wrapped in a scope; indirect eval keeps let/const out of global lexical
+    #    scope so a second visit does not throw on redeclaration.
+    assert "(0, eval)" in spa_js
+
+    # 2. DOMContentLoaded never fires again after the first load.
+    assert "DOMContentLoaded" in spa_js
+    assert "readyState" in spa_js
+
+    # 3. Self-rescheduling poll loops must not survive or multiply.
+    assert "stopPageTimers" in spa_js
+    assert "pfPageAlive" in spa_js
+    assert "pfPageEpoch" in spa_js
+    assert "scheduledEpoch" in spa_js
+
+    # Any failure hands the navigation back to the browser.
+    assert "window.location.href = url" in spa_js
+    # Field escape hatch.
+    assert "nospa" in spa_js
+
+
+def test_spa_loads_page_owned_external_scripts():
+    spa_js = (VIEWS_DIR / "js" / "spa.js").read_text()
+
+    # The catalog pages load /js/catalogs.js in their scripts block and call
+    # into it from the very next inline script, so external scripts must be
+    # fetched, deduped, and awaited in order -- skipping them leaves the
+    # catalog table stuck on "Loading...".
+    assert "loadExternalScript" in spa_js
+    assert "loadedScripts" in spa_js
+    assert "element.onload" in spa_js
+    assert "hoistStylesheets" in spa_js
+
+    catalog_pages = list((VIEWS_DIR / "catalogs").glob("*.html"))
+    assert catalog_pages, "catalog templates missing"
+    for page in catalog_pages:
+        text = page.read_text()
+        if "<script src" not in text:
+            continue
+        # The pattern the loader has to support: external bundle then init call.
+        assert "catalogs.js" in text, page.name
+
+
+def test_row_click_navigation_goes_through_the_spa():
+    spa_js = (VIEWS_DIR / "js" / "spa.js").read_text()
+    catalogs_js = (VIEWS_DIR / "js" / "catalogs.js").read_text()
+    obs_sessions = (VIEWS_DIR / "obs_sessions.html").read_text()
+
+    # Assigning window.location bypasses the anchor click handler, so those
+    # navigations reload the document and drop fullscreen.
+    assert "window.pfNavigate" in spa_js
+    for source, name in (
+        (catalogs_js, "catalogs.js"),
+        (obs_sessions, "obs_sessions.html"),
+    ):
+        assert "pfNavigate" in source, name
+
+    # Clickable rows must not navigate unconditionally.
+    assert "() => (window.location = tr.dataset.href)" not in catalogs_js
+    assert 'onClick="window.location.href=' not in obs_sessions
+
+
+def test_polling_pages_guard_their_reschedule_points():
+    # These pages reschedule themselves from async callbacks, which run after
+    # the epoch has already advanced -- the timer shim alone cannot catch them.
+    for name in ["remote.html", "index.html", "livecam.html", "logs.html"]:
+        page = (VIEWS_DIR / name).read_text()
+        assert "const PAGE_ALIVE = window.pfPageAlive;" in page, name
+        assert "PAGE_ALIVE()" in page, name
+        # The capture must precede every use, or it reads the wrong page's check.
+        assert page.index("const PAGE_ALIVE") < page.index("PAGE_ALIVE()"), name
+
+
+def test_korean_translations_cover_install_prompt():
+    ko_po = (
+        Path(__file__).resolve().parents[1]
+        / "locale"
+        / "ko"
+        / "LC_MESSAGES"
+        / "messages.po"
+    ).read_text()
+
+    assert 'msgid "Install App"' in ko_po
+    assert 'msgstr "앱 설치"' in ko_po
+    assert "홈 화면에 추가" in ko_po

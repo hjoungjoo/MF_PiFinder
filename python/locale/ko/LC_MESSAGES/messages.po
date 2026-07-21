@@ -3591,6 +3591,12 @@ msgstr "테마"
 msgid "Resume Fullscreen"
 msgstr "전체 화면 복귀"
 
+msgid "Install App"
+msgstr "앱 설치"
+
+msgid "Tap the browser share button, then choose \"Add to Home Screen\"."
+msgstr "브라우저 공유 버튼을 누른 뒤 \"홈 화면에 추가\"를 선택하세요."
+
 #: views/base.html:111
 msgid "PiFinder User Guide"
 msgstr "PiFinder User Guide"

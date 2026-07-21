@@ -101,7 +101,16 @@ function pfcatInitCatalog() {
         })
         .join("");
       rows.querySelectorAll("tr[data-href]").forEach((tr) => {
-        tr.addEventListener("click", () => (window.location = tr.dataset.href));
+        // pfNavigate keeps this a same-document navigation so fullscreen
+        // survives; it falls back to a normal load when the SPA is off.
+        tr.addEventListener("click", () => {
+          const href = tr.dataset.href;
+          if (window.pfNavigate) {
+            window.pfNavigate(href);
+          } else {
+            window.location = href;
+          }
+        });
       });
     }
     el("pfcat-shown").textContent = `${data.total} shown`;

@@ -294,6 +294,9 @@
 
 {% block scripts %}
 <script>
+// Captured now: reading window.pfPageAlive later would resolve to whichever
+// page is current, so this poll loop would survive navigation and double up.
+const PAGE_ALIVE = window.pfPageAlive;
 const controls = {
   processing_enabled: document.getElementById('processingEnabled'),
   input_frame_source: document.getElementById('inputFrameSource'),
@@ -417,7 +420,9 @@ async function fetchStatus() {
   } catch (error) {
     message.textContent = error.toString();
   } finally {
-    pollTimer = setTimeout(fetchStatus, 1500);
+    if (!PAGE_ALIVE || PAGE_ALIVE()) {
+      pollTimer = setTimeout(fetchStatus, 1500);
+    }
   }
 }
 
@@ -434,7 +439,9 @@ async function postControl(payload) {
   }
   renderStatus(data, true);
   message.textContent = data.message || '';
-  pollTimer = setTimeout(fetchStatus, 1000);
+  if (!PAGE_ALIVE || PAGE_ALIVE()) {
+    pollTimer = setTimeout(fetchStatus, 1000);
+  }
 }
 
 document.getElementById('applySettings').addEventListener('click', async () => {

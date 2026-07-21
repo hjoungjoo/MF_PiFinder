@@ -25,7 +25,7 @@
 <th>{{ _('Date') }}</th><th>{{ _('Location') }}</th><th>{{ _('Hours') }}</th><th>{{ _('Objects') }}</th>
 </tr>
 {% for session in sessions %}
-<tr style="cursor: pointer;" onClick="window.location.href='/observations/{{ session["UID"] }}';">
+<tr style="cursor: pointer;" onClick="if (window.pfNavigate) { window.pfNavigate('/observations/{{ session["UID"] }}'); } else { window.location.href='/observations/{{ session["UID"] }}'; }">
   <td>{{ session["start_time_local"] }}</td>
   <td>{{ session["timezone"] }}<br>{{ session["lat"] | round(2) }} / {{ session["lon"] | round(2) }}</td>
   <td>{{ session["duration"] | round(1) }}</td>
