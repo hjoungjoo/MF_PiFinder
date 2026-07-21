@@ -20,6 +20,8 @@ body {
   --pf-border: #777;
   --pf-input-bg: #4a4a4a;
   --pf-link: #d0d0d0;
+  --pf-scrollbar-thumb: #777;
+  --pf-scrollbar-thumb-hover: #949494;
 }
 
 html[data-theme="red"] {
@@ -35,6 +37,50 @@ html[data-theme="red"] {
   --pf-border: #5a1512;
   --pf-input-bg: #120202;
   --pf-link: #ff6a5c;
+  /* Deliberately dim, and hover barely lifts off the base: on a desktop the
+     cursor passes over the bar constantly, and a bright flash costs dark
+     adaptation. Phones never hover, so this only matters on PC. */
+  --pf-scrollbar-thumb: #4a1110;
+  --pf-scrollbar-thumb-hover: #5a1512;
+}
+
+/* Scrollbars default to light grey, which breaks dark adaptation on the red
+   night theme as soon as any pane overflows. Driven by the theme variables so
+   both themes stay consistent, and applied globally rather than per container
+   so the preview shell, log viewer and catalog tables are all covered.
+   scrollbar-color is inherited, so setting it on the root is enough. */
+/* Chrome/Edge 121+ ignore every ::-webkit-scrollbar rule as soon as
+   scrollbar-color is set, and derive their own hover shade by lightening the
+   thumb -- which is exactly the bright flash we are trying to avoid at night,
+   and is not addressable from CSS. So the standard properties are given only
+   to engines that have no ::-webkit-scrollbar support (Firefox), leaving
+   WebKit/Blink on the pseudo-elements below where the hover state is ours. */
+@supports not selector(::-webkit-scrollbar) {
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--pf-scrollbar-thumb) var(--pf-bg);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: var(--pf-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pf-scrollbar-thumb);
+  border-radius: 5px;
+}
+
+/* Desktop only concern: phones drag the content and never hover the bar. */
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background: var(--pf-scrollbar-thumb-hover);
 }
 
 main {

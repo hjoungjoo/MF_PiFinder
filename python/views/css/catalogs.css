@@ -94,9 +94,9 @@
 }
 .pfcat, .pfcat select.browser-default, .pfcat input.browser-default { color-scheme: dark; }
 .pfcat-tablewrap::-webkit-scrollbar { height: 8px; background: var(--pf-surface); }
-.pfcat-tablewrap::-webkit-scrollbar-thumb { background: var(--pf-border); border-radius: 4px; }
-.pfcat-tablewrap { scrollbar-color: var(--pf-border) var(--pf-surface); }
-.pfcat-search-results { scrollbar-color: var(--pf-border) var(--pf-surface); }
+.pfcat-tablewrap::-webkit-scrollbar-thumb { background: var(--pf-scrollbar-thumb); border-radius: 4px; }
+.pfcat-tablewrap { scrollbar-color: var(--pf-scrollbar-thumb) var(--pf-surface); }
+.pfcat-search-results { scrollbar-color: var(--pf-scrollbar-thumb) var(--pf-surface); }
 .pfcat a:focus-visible, .pfcat button:focus-visible {
   outline: 2px solid var(--pf-link); outline-offset: 2px;
 }
