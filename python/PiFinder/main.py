@@ -47,6 +47,7 @@ from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.catalogs import CatalogBuilder, CatalogFilter, Catalogs
 from PiFinder.calc_utils import sf_utils
 from PiFinder.state_utils import sleep_for_framerate
+from PiFinder.livecam_config import processing_enabled
 
 from PiFinder.ui.console import UIConsole
 from PiFinder.ui.menu_manager import MenuManager
@@ -76,6 +77,8 @@ display_device: DisplayBase = DisplayBase()
 keypad_pwm = None
 USER_LOCATION_SOURCES = {"WEB", "MANUAL"}
 USER_LOCATION_PREFIXES = ("CONFIG:",)
+# Throttle for the LiveCam wake check; update() runs every main-loop pass.
+LIVECAM_WAKE_POLL_SECONDS = 1.0
 
 
 def _is_user_location_source(source: str | None) -> bool:
@@ -178,6 +181,8 @@ class PowerManager:
         self.shared_state = shared_state
         self.display_device = display_device
         self.last_activity = time.time()
+        self._livecam_checked_at = 0.0
+        self._livecam_wake_cached = False
 
     def register_activity(self):
         """
@@ -211,12 +216,45 @@ class PowerManager:
         self.shared_state.set_power_state(0)
         self.sleep_screen()
 
+    def livecam_holds_wake(self) -> bool:
+        """
+        True while LiveCam processing is on.
+
+        The camera loop drops to one capture per 30 s in sleep mode, so a
+        sleeping PiFinder makes LiveCam unusable: enabling processing shows
+        nothing for up to half a minute, and the preview then updates that
+        slowly. Web activity does not count as user activity, so a session
+        driven purely from the web UI would always sleep.
+        """
+        if not hasattr(self.shared_state, "livecam_settings"):
+            return False
+        # update() runs every main-loop pass and shared_state is a manager
+        # proxy, so this read is throttled rather than paid per frame.
+        now = time.time()
+        if now - self._livecam_checked_at < LIVECAM_WAKE_POLL_SECONDS:
+            return self._livecam_wake_cached
+        self._livecam_checked_at = now
+        try:
+            self._livecam_wake_cached = processing_enabled(
+                self.shared_state.livecam_settings()
+            )
+        except Exception:
+            # Never let a power-management read take down the main loop.
+            self._livecam_wake_cached = False
+        return self._livecam_wake_cached
+
     def update(self):
         """
         Check IMU for activity
         go to sleep if needed
         if asleep, Introduce wait state
         """
+        if self.livecam_holds_wake():
+            # Also wakes a sleeping unit, so turning processing on from the
+            # web UI starts producing frames immediately.
+            self.register_activity()
+            return
+
         if self.get_sleep_timeout() <= 0:
             # Disabled
             self.register_activity()

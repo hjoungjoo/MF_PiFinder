@@ -316,6 +316,7 @@ const placeholder = document.getElementById('livecamPlaceholder');
 const message = document.getElementById('livecamMessage');
 const zoomValue = document.getElementById('zoomValue');
 let pollTimer = null;
+let waitingSince = null;
 let controlsHydrated = false;
 let imageZoom = 1.0;
 
@@ -385,12 +386,29 @@ function renderStatus(data, syncControls = false) {
   setText('statusAcceptedRejected', `${stack.accepted_count || 0} / ${stack.rejected_count || 0}`);
   setText('statusError', stack.last_error || stack.last_reject_reason || '-');
   if (data.enabled && data.has_frame) {
+    waitingSince = null;
     image.hidden = false;
     placeholder.hidden = true;
     image.src = `/api/camera/raw-stack/image?t=${Date.now()}&theme=${encodeURIComponent(currentTheme())}`;
   } else {
     image.hidden = true;
     placeholder.hidden = false;
+    if (data.enabled) {
+      // Enabling processing does not produce a frame right away: the camera
+      // publishes the next RAW it captures, which can be tens of seconds away.
+      // Without the elapsed counter this looks like Apply did nothing, so
+      // people press Apply again until a frame happens to land.
+      if (waitingSince === null) {
+        waitingSince = Date.now();
+      }
+      const seconds = Math.round((Date.now() - waitingSince) / 1000);
+      placeholder.textContent =
+        "{{ _('Processing is on. Waiting for the camera to publish the next RAW frame') }}" +
+        ` (${seconds}s)`;
+    } else {
+      waitingSince = null;
+      placeholder.textContent = "{{ _('Processing is off.') }}";
+    }
   }
 }
 
