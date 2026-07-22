@@ -36,6 +36,21 @@ MF-only follow-up:
 
 - SSD1333 automatic display detection, separated from the larger Rev-4 hardware patch
 
+Additionally reflected on 2026-07-13:
+
+- upstream selected commits applied:
+  - Stellarium 2.0 observing-list import (#527, `39412ac`)
+  - catalog filter cache: skip re-filtering unchanged catalogs on list open (#526, `f704a26`)
+  - UBlox GPS NAV-SVINFO/NAV-SAT decoding fix (#524, `9cb0060`) — `gps_ubx_parser.py`
+    and its tests applied cleanly; `gps_ubx.py` was hand-merged so the NAV-PVT handler
+    keeps both the MF time handling and the upstream numSV used-count
+- reviewed but skipped this round:
+  - three NixOS migration commits (#523 `e22ac48`, #521 `0621d15`, #517 `02e6b30`) —
+    whether MF will support the NixOS migration is undecided
+  - state datetime tz fix (#508, `e64f0b6`) — already covered via `timez.py`; reapplying
+    would drag in the excluded Rev-4 `state.py` changes, so it is left out
+  - Rev-4 hardware enablement (#498, `e82b809`) — kept out by policy
+
 This is not a full change history.  For feature-by-feature history, see
 `docs/mf_change_history_en.md`.
 
@@ -46,6 +61,9 @@ This is not a full change history.  For feature-by-feature history, see
 | NixOS PR build CI | Applied | GitHub Actions and manifest scripts; no runtime impact |
 | case/accessory files | Applied | STL/JPG/README changes only |
 | Observing-list CSV import | Applied | `obslist_formats.py`, docs, tests |
+| Observing-list Stellarium 2.0 import | Applied | #527 `39412ac`. Extends the `obslist_formats.py` Stellarium reader |
+| Catalog filter cache | Applied | #526 `f704a26`. Adds `catalog_base.py`, skips re-filtering unchanged catalogs |
+| UBlox GPS NAV-SVINFO/NAV-SAT decode fix | Applied | #524 `9cb0060`. `gps_ubx_parser.py` offset fix, `gps_ubx.py` NAV-PVT hand-merge |
 | UTC-aware datetime | Applied | Adds `timez.py`; touches state/server/callback time handling |
 | Set Time/Date self-gate | Applied | Manual time/date UI is inert until a location lock exists |
 | OBJ_TYPES single-source | Applied | Type filter menu is generated from `OBJ_TYPES` |
@@ -317,10 +335,10 @@ Key files:
 
 Preserve:
 
-- SkySafari `:Sr/:Sd` stores target coordinates.
-- SkySafari `:MS#` is GoTo.
-- SkySafari `:CM#` is Sync/Align.
-- `:CM#` prefers the most recent parsed `Sr/Sd` target.
+- Preserve the SkySafari `:Sr/:Sd` (store target) → `:MS#` (GoTo) / `:CM#`
+  (Sync/Align, prefers the most recent parsed `Sr/Sd`) forwarding semantics.
+  Full flow: see
+  [mf_goto_mount_source_structure_en.md](mf_goto_mount_source_structure_en.md).
 - If GoTo forwarding is enabled, Align/Sync can also be forwarded to INDI/OnStep.
 - Before solving, IMU fallback/correction may be used.
 - After a successful solve, IMU alignment correction is reset.

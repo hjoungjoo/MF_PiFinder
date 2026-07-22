@@ -26,6 +26,12 @@ Not covered:
 
 ## Work-Area Table of Contents and PR Status
 
+> **Note (2026-07-23):** the PR status below and the "PR Reorganization Proposal"
+> are a 2026-06-27 snapshot and no longer current. While this fork is pre-release
+> we commit/push directly to `main` (CLAUDE.md pre-release exception, 2026-07-21);
+> the branch/PR flow resumes from the first post-release fix. Treat the table
+> below as a per-feature scope history only.
+
 Status baseline: open `hjoungjoo` Draft PRs in `brickbots/PiFinder` and the local
 `mf_pifinder` integration branch as of 2026-06-27.
 

@@ -424,7 +424,7 @@ Fixes:
      logged, and tracking-guide state transitions are now journaled
      (`Tracking guide disturbed -> settling (...)`).
 2. A guide-correction pulse no longer claims mount readback priority
-   (mountcontrol `_motion_status`), so the IMU stays live during fine pulse
+   (mountcontrol `_mount_common_status_fields`), so the IMU stays live during fine pulse
    corrections (the pulse is sub-arcminute and the IMU-delta rate gate discards
    it anyway).
 
@@ -624,7 +624,7 @@ For each sync + GoTo step, "wait for GoTo completion" does not look at whether t
 coordinate has reached the target; it **polls the mount motion-status flags to
 decide whether the mount has finished slewing and stopped** (arrival accuracy is
 checked in the separate error-measurement step afterward). The implementation is
-`_tick_final_goto`, and the same logic serves the initial GoTo, corrective GoTos,
+`_tick_goto_wait`, and the same logic serves the initial GoTo, corrective GoTos,
 and the Tracking Guide recovery GoTo.
 
 Procedure:

@@ -125,6 +125,36 @@ backlash_auto
 device
 ```
 
+## Time Constants
+
+Key current values:
+
+```text
+POSITION_STATUS_MIN_INTERVAL = 0.5 sec
+STATUS_HEARTBEAT_INTERVAL = 2.0 sec
+AUTO_CONNECT_START_DELAY = 5.0 sec
+AUTO_CONNECT_RETRY_INTERVAL = 10.0 sec
+
+MANUAL_MOTION_LEASE_SECONDS = 1.2 sec
+MANUAL_MOTION_MIN_LEASE_SECONDS = 0.3 sec
+MANUAL_MOTION_MAX_LEASE_SECONDS = 5.0 sec
+MANUAL_MOTION_MAX_CONTINUOUS_SECONDS = 10.0 sec
+MANUAL_MOTION_POLL_SECONDS = 0.1 sec
+MANUAL_MOTION_STOP_RETRY_SECONDS = 0.5 sec
+
+SkySafari POS server guide bridge:
+_GUIDE_LEASE_SECONDS = 1.2 sec
+_GUIDE_KEEPALIVE_SECONDS = 0.4 sec
+_GUIDE_RESTART_SECONDS = 8.0 sec
+_GUIDE_MAX_HOLD_SECONDS = 60.0 sec
+
+GOTO_COMPLETE_MIN_SECONDS = 1.0 sec
+GOTO_COMPLETE_STABLE_SECONDS = 2.5 sec
+GOTO_COMPLETE_POSITION_STABLE_DEG = 0.02 deg
+GOTO_COMPLETE_TARGET_TOLERANCE_DEG = 0.5 deg
+GOTO_COMPLETE_FALLBACK_SECONDS = 180.0 sec
+```
+
 ## Main Loop
 
 `run()` owns the command loop.
@@ -363,6 +393,80 @@ Completion requires stable conditions:
 6. Current readback is stable.
 7. The ready state remains stable for the configured settle time.
 
+## GoTo Progress / Completion Detection
+
+When a GoTo starts, a `_goto_motion` dict is created.
+
+```text
+target_ra
+target_dec
+started_at
+complete_ready_since
+indi_seen_busy
+onstep_seen_goto_active
+last_complete_position
+target_error_deg
+position_change_deg
+```
+
+In-progress loop:
+
+```mermaid
+flowchart TD
+    A[_check_goto_motion] --> B{_goto_motion present?}
+    B -->|no| END[return]
+    B -->|yes| C{refine pending?}
+    C -->|yes| END
+    C -->|no| D{manual motion active?}
+    D -->|yes| END
+    D -->|no| E{1s since start?}
+    E -->|no| END
+    E -->|yes| F[_indi_mount_is_busy]
+    F --> G[_read_goto_progress_position]
+    G --> H[_write_goto_progress_status]
+    H --> I[_goto_completion_ready]
+    I -->|ready| J[_complete_goto_motion]
+    I -->|not ready| K{over 180s?}
+    K -->|yes| L[timeout complete]
+    K -->|no| END
+```
+
+Completion conditions:
+
+1. If INDI busy is true, not complete.
+2. If the OnStep raw `:GU#` return shows GoTo active, not complete.
+3. Even if OnStep complete is true, if busy/active was never observed and less
+   than 3 seconds have passed since start, keep observing.
+4. If INDI busy is not explicitly false, not complete.
+5. If the current position is more than 0.5 degrees from the target, not
+   complete.
+6. If the current position has moved more than 0.02 degrees from the previous
+   completion-candidate position, not complete.
+7. If the state passing the above conditions holds for at least 4 seconds,
+   complete.
+
+GoTo progress status publication:
+
+```text
+state = slewing
+message = GoTo in progress
+mount_motion_active = true
+mount_motion_type = goto
+mount_readback_priority = true
+ra
+dec
+target_ra
+target_dec
+target_error_deg
+indi_busy
+goto_wait_seconds
+goto_motion_active = true
+```
+
+These values matter for SkySafari coordinate stability. During GoTo the mount
+readback is published continuously, and `PointingCoordinateService` sees
+`mount_readback_priority=true` and prefers it.
+
 ## GoTo Refine and Guide Correction
 
 GoTo refine waits for a fresh solve after a GoTo, syncs the mount to the solve
@@ -402,6 +506,82 @@ flowchart TD
 
 Direct sync is exclusive because the OnStep TCP/serial port should not be shared
 with an active driver connection.
+
+## Park / Home / Tracking / Slew
+
+Park/Home:
+
+```text
+park        -> TELESCOPE_PARK.PARK
+unpark      -> TELESCOPE_PARK.UNPARK
+set_home    -> TELESCOPE_HOME.SET
+return_home -> TELESCOPE_HOME.GO
+set_park    -> TELESCOPE_PARK_OPTION.PARK_CURRENT
+```
+
+Tracking:
+
+- `_read_tracking_enabled()` checks both the driver property and the OnStep
+  Status text.
+- `set_tracking(enabled)` applies the tracking switch and confirms it.
+
+Slew rate:
+
+- `set_slew_rate(rate)` applies `TELESCOPE_SLEW_RATE.<0..9>`.
+- `refresh_slew_rate()` reads the current driver switch state and updates
+  `self.slew_rate`.
+
+Guide rate:
+
+- `set_guide_rate(rate)` applies the driver's guide rate number vector.
+- The current backlash test is organized as a GoTo loop rather than a
+  pulse-guide approach.
+
+## Backlash Flow Summary
+
+Manual Backlash save, automatic measurement state machine, GoTo measurement
+loop, solved-coordinate record capture, filtering, and recommendation
+generation are managed by `BacklashCalibrationMixin` in
+`python/PiFinder/indi_backlash_calibration.py`. `MountControlIndi` inherits this
+mixin and supplies shared mount operations such as INDI connect, GoTo, Sync,
+Tracking, and status publication.
+
+Automatic Backlash calculation reads coordinates from
+`PointingCoordinateService.solved` and runs only when the plate solve is valid.
+`PointingCoordinateService.current` is not used for the calculation because it
+may contain fallback data.
+
+The Backlash UI commands arrive as:
+
+```text
+refresh_backlash
+set_backlash
+auto_backlash
+backlash_compass_continue
+backlash_compass_stop
+```
+
+`set_backlash()`:
+
+```mermaid
+flowchart TD
+    A[set_backlash ra de] --> B[value 0..3600 validate]
+    B --> C[_apply_backlash_values]
+    C --> D[_apply_indi_backlash]
+    D --> E[state=connected, backlash_ra/backlash_de updated]
+```
+
+Auto backlash:
+
+- The current primary mode is `compass_goto_loop`.
+- It verifies that `PointingCoordinateService.solved` is valid.
+- It accounts for safe position, mount model, and AltAz or RA/Dec frame.
+- Motion records are analyzed as detailed CSV/records.
+- The calculated result is shown in the UI, but final application is done by the
+  user entering/saving the value.
+
+For the detailed procedure, see `docs/mf_backlash_measurement_flow_en.md`
+together with the actual UI state.
 
 ## Multi Align Summary
 
@@ -490,3 +670,32 @@ Debug order:
 2. Check which source `pointing_coordinate_status.json` selected.
 3. If both are correct but SkySafari is wrong, inspect POS `:GR#/:GD#`.
 4. If mount status is stale, inspect INDI readback and the mount-control loop.
+
+## Manual-Motion Coordinate Update — Key Points
+
+Manual-motion coordinate updates are handled by three functions:
+
+```text
+_read_manual_motion_progress_position()
+_write_manual_motion_progress_status()
+_publish_manual_motion_progress()
+```
+
+Call sites:
+
+```text
+manual_move()
+  -> force publish immediately after start
+
+run()
+  -> at the start of every loop
+  -> empty branch after queue timeout
+```
+
+Purpose of this structure:
+
+- Ensures SkySafari receives the latest manual-motion coordinate when it
+  requests coordinates.
+- Prefers mount readback while moving, the same as GoTo.
+- Prevents IMU jitter from mixing into the coordinate as error during manual
+  motion.

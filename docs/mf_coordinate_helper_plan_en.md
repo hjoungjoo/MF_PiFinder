@@ -688,23 +688,16 @@ Expected behavior:
 
 ## SkySafari Target / Sync / Align
 
-SkySafari target input:
+The full parse/store/push-to/INDI GoTo+Sync forwarding/Multi Align routing for
+`:Sr/:Sd/:MS/:CM` is owned by
+[mf_goto_mount_source_structure_en.md](mf_goto_mount_source_structure_en.md)
+("SkySafari INDI GoTo/Sync forwarding path"). Only the coordinate-service-
+relevant points are kept here.
 
-```text
-:SrHH:MM:SS#
-:Sd+DD*MM:SS#
-:MS#
-```
-
-Rules:
-
-- `:Sr/:Sd` are parsed and kept as-is (`sr_result`/`sd_result`).
-- `:MS#` stores the same target as `last_target_coordinates` and uses it for
-  the PiFinder push target and optional INDI GoTo.
-- In Multi Align, GoTo is routed to `multipoint_align_goto_target`.
-- `:CM#` Sync/Align uses the currently parsed `:Sr/:Sd` coordinates, falling
-  back to the last GoTo target (`last_target_coordinates`).
-- In Multi Align, `:CM#` is routed to `multipoint_align_confirm`.
+- Both target (`:Sr/:Sd` → `:MS#`) and sync (`:CM#`) use the **requested
+  coordinates as-is** (no J2000/JNow reinterpretation; `sr_result`/`sd_result`).
+  `:CM#` prefers the just-received `:Sr/:Sd`, falling back to the last GoTo
+  target (`last_target_coordinates`).
 - SkySafari guide input (`:Mn#`, `:Ms#`, `:Me#`, `:Mw#`) is not target
   coordinate input. `pos_server.py` owns the guide keepalive timer and queues
   `manual_movement` / `manual_movement_keepalive` to mount-control.

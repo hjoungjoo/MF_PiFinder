@@ -339,10 +339,9 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 
 보존해야 할 정책:
 
-- SkySafari `:Sr/:Sd`는 target 좌표 저장이다.
-- SkySafari `:MS#`는 GoTo 처리이다.
-- SkySafari `:CM#`는 Sync/Align 처리이다.
-- `:CM#` 처리 시 직전에 들어온 `Sr/Sd` target을 우선 사용한다.
+- SkySafari `:Sr/:Sd`(target 저장) → `:MS#`(GoTo) / `:CM#`(Sync/Align, 직전
+  `Sr/Sd` 우선)의 forwarding 의미를 유지한다. 전체 흐름은
+  [mf_goto_mount_source_structure_ko.md](mf_goto_mount_source_structure_ko.md) 참조.
 - GoTo forwarding이 켜져 있으면 Align/Sync도 INDI/OnStep에 전달할 수 있어야 한다.
 - solve 전에는 IMU fallback/보정값을 사용할 수 있다.
 - solve가 성공하면 IMU alignment correction은 초기화한다.

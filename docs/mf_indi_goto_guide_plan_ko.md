@@ -380,7 +380,7 @@ indi_tracking_guide_motion_arcmin = 15.0
      override 발동은 로그로 남는다. 상태 전이도 이제 journal에 로깅된다
      (`Tracking guide disturbed -> settling (...)`).
 2. guide-correction 펄스는 더 이상 마운트 readback 우선권을 주장하지 않는다
-   (mountcontrol `_motion_status`). 미세 펄스 보정 중에도 IMU가 살아 있게 한다
+   (mountcontrol `_mount_common_status_fields`). 미세 펄스 보정 중에도 IMU가 살아 있게 한다
    (펄스는 sub-arcminute이고 IMU-delta rate 게이트가 어차피 버린다).
 
 실장비 검증: ~30초 연속 손 움직임 동안 가이드가 `disturbed`를 유지하고(좌표는 밀기
@@ -567,7 +567,7 @@ flowchart TD
 
 각 sync + GoTo 스텝에서 "GoTo 완료 대기"는 좌표가 target에 도달했는지를 직접 보지
 않고, **마운트가 슬루를 끝내고 정지했는지를 모션 상태 플래그로 폴링**해 판정한다
-(도착 정확도는 완료 후 별도 오차 측정 단계에서 확인). 구현은 `_tick_final_goto`이며
+(도착 정확도는 완료 후 별도 오차 측정 단계에서 확인). 구현은 `_tick_goto_wait`이며
 초기 GoTo·보정 GoTo·추적 가이드 복구 GoTo에 모두 같은 로직이 쓰인다.
 
 절차:

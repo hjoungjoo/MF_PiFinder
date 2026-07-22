@@ -86,17 +86,12 @@ Supported values:
 This is mount-axis independent because the IMU measures physical sky direction
 and SkySafari receives RA/Dec.
 
-In the SkySafari/LX200 command flow, `:Sr...#` and `:Sd...#` only store target
-coordinates. The following command selects the action:
-
-| Following command | Meaning |
-| --- | --- |
-| `:MS#` | GoTo the stored target |
-| `:CM#` | Sync/Align to the stored target |
-
-When handling `CM#`, PiFinder prefers the most recently received `Sr/Sd`
-coordinates over the previous GoTo target. This prevents an Align/Sync on a new
-object from accidentally reusing the older GoTo target.
+The SkySafari/LX200 `:Sr/:Sd` (store target) → `:MS#` (GoTo) / `:CM#`
+(Sync/Align) handling and full forwarding flow is owned by
+[mf_goto_mount_source_structure_en.md](mf_goto_mount_source_structure_en.md).
+The point that matters for this no-solve alignment is that `:CM#` prefers the
+just-received `:Sr/:Sd` over the previous GoTo target — so an Align/Sync on a
+new object never accidentally reuses the older GoTo target.
 
 SkySafari GoTo forwarding is governed by the GoTo / Guide setting
 `indi_goto_method` (GoTo Type: `off` / `indi_mount` / `pifinder`; reorganized

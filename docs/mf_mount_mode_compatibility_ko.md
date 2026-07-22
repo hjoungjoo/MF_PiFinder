@@ -85,17 +85,12 @@ INDI > SkySafari Mount Mode > SkySafari LX200 Mount Code
 이 흐름은 mount axis가 Alt/Az인지 EQ인지에 의존하지 않는다. IMU는 실제 하늘
 수평 방향을 측정하고, SkySafari에는 항상 RA/Dec를 반환하기 때문이다.
 
-SkySafari/LX200 명령 처리에서 `:Sr...#`와 `:Sd...#`는 target 좌표를 저장만
-한다. 실제 동작은 뒤따르는 명령으로 구분한다.
-
-| 후속 명령 | 의미 |
-| --- | --- |
-| `:MS#` | 저장된 target으로 GoTo |
-| `:CM#` | 저장된 target으로 Sync/Align |
-
-`CM#` 처리 시에는 방금 수신된 `Sr/Sd` 좌표를 이전 GoTo target보다 우선한다.
-따라서 사용자가 다른 대상에서 Align/Sync를 실행해도 이전 GoTo 좌표로 잘못
-정렬되지 않는다.
+SkySafari/LX200의 `:Sr/:Sd`(target 저장) → `:MS#`(GoTo) / `:CM#`(Sync/Align)
+처리와 forwarding 전체 흐름은
+[mf_goto_mount_source_structure_ko.md](mf_goto_mount_source_structure_ko.md)가
+소유한다. 본 no-solve 정렬에서 중요한 점은 `:CM#`이 방금 받은 `:Sr/:Sd`를 이전
+GoTo target보다 우선한다는 것이다 — 다른 대상에서 Align/Sync해도 이전 GoTo
+좌표로 잘못 정렬되지 않는다.
 
 SkySafari GoTo 전달 여부는 GoTo / Guide 설정의 `indi_goto_method`(GoTo Type:
 `off` / `indi_mount` / `pifinder`)가 결정한다(2026-07-19 개편). `off`가 아니면
