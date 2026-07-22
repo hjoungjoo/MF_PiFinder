@@ -59,6 +59,21 @@ IMU_SMOOTH_MODERATE_ALPHA = 0.25
 IMU_SMOOTH_LARGE_ALPHA = 0.65
 MOUNT_IMU_DELTA_HOLD_SECONDS = 1.5
 MOUNT_READBACK_MOVING_DELTA_DEGREES = 0.005
+# Tracking catch-up budget (2026-07-23). While the mount tracks a target the
+# readback RA/Dec is constant but the axes physically rotate (~11 arcsec/s
+# measured), so the scope follows the alt/az trajectory of the fixed readback.
+# The BNO055 cannot resolve that slow motion: its output freezes, then snaps
+# ~0.3 deg to catch up at 0.25-0.4 deg/s (hardware capture 2026-07-22) — well
+# above the disturbance rate gate, which booked every snap as a physical push
+# and stepped the fused coordinate off target (sawtooth drift). The tracker
+# therefore keeps a per-axis budget of expected-but-unreported tracking motion
+# (predicted trajectory minus reported IMU motion) and cancels the
+# budget-matching component of a fast_follow step before booking the rest as a
+# disturbance. The cap bounds the budget where the IMU never catches up (yaw
+# has no absolute reference in imuplus, so the az budget would otherwise grow
+# without bound) — a same-direction real push can be absorbed at most up to
+# the budget, which the cap keeps small relative to a deliberate push.
+IMU_TRACKING_CATCHUP_BUDGET_CAP_DEG = 3.0
 # When the observer location moves more than this (metres), the mount+IMU
 # fusion anchor and delta tracker were built for the old site (its psi0 and the
 # alt/az <-> RA/Dec conversions assume a fixed lat/lon), so they are discarded
@@ -183,6 +198,25 @@ def _rotate_vector(q: "quaternion.quaternion", vector: "np.ndarray") -> "np.ndar
 
 def clamp_altitude_degrees(altitude: float) -> float:
     return max(-90.0, min(90.0, altitude))
+
+
+def _tracking_budget_cancel(step: float, budget: float) -> float:
+    """Portion of an IMU step explained by the pending tracking budget: same
+    sign as the budget and clamped to its magnitude. Zero when the step goes
+    the other way — a real push against the tracking direction is never
+    cancelled."""
+    if budget > 0.0 and step > 0.0:
+        return min(step, budget)
+    if budget < 0.0 and step < 0.0:
+        return max(step, budget)
+    return 0.0
+
+
+def _clamp_tracking_budget(value: float) -> float:
+    return max(
+        -IMU_TRACKING_CATCHUP_BUDGET_CAP_DEG,
+        min(IMU_TRACKING_CATCHUP_BUDGET_CAP_DEG, value),
+    )
 
 
 def valid_radec(ra_deg: Any, dec_deg: Any) -> Optional[Tuple[float, float]]:
@@ -1206,33 +1240,44 @@ class PointingCoordinateService:
 
         now = time.monotonic()
         v_now = _altaz_unit_vector(imu_altaz[0], imu_altaz[1])
+        # The expected physical alt/az of the scope: while the mount tracks, the
+        # readback RA/Dec is constant and the axes follow this trajectory as
+        # time advances. Recomputed every tick — it feeds the tracking catch-up
+        # budget and the fusion's mount pointing vector.
+        try:
+            sf_utils.set_location(location.lat, location.lon, location.altitude)
+            mount_alt, mount_az = sf_utils.radec_to_altaz(
+                mount_radec[0], mount_radec[1], dt_ctx, atmos=False
+            )
+        except Exception:
+            logger.debug(
+                "Mount alt/az conversion failed in rotation tracker",
+                exc_info=True,
+            )
+            return None
+        if mount_alt is None or mount_az is None:
+            return None
+
         tracker = self._imu_delta_tracker
         if (
             tracker is None
             or tracker.get("anchor") is not self._mount_imu_anchor
             or tracker.get("frame") != "altaz_rot"
         ):
-            try:
-                sf_utils.set_location(location.lat, location.lon, location.altitude)
-                mount_alt, mount_az = sf_utils.radec_to_altaz(
-                    mount_radec[0], mount_radec[1], dt_ctx, atmos=False
-                )
-            except Exception:
-                logger.debug(
-                    "Mount alt/az conversion failed at rotation-tracker init",
-                    exc_info=True,
-                )
-                return None
-            if mount_alt is None or mount_az is None:
-                return None
             tracker = {
                 "anchor": self._mount_imu_anchor,
                 "frame": "altaz_rot",
                 "v_prev": v_now,
                 "altaz_prev": imu_altaz,
+                "mount_altaz": (mount_alt, mount_az),
                 "t": now,
                 "q_off": quaternion.one,
                 "psi0": _wrap_angle_delta_degrees(mount_az - imu_altaz[1]),
+                "budget_alt": 0.0,
+                "budget_az": 0.0,
+                "cancelled_alt": 0.0,
+                "cancelled_az": 0.0,
+                "ep_active": False,
                 "episode": False,
                 "settle_pending": False,
                 "quiet_since": None,
@@ -1250,19 +1295,71 @@ class PointingCoordinateService:
         step_deg = math.degrees(math.acos(cos_step))
         rate = step_deg / dt
 
+        # Per-tick expected motion (trajectory of the constant readback) and
+        # reported IMU motion, both as mount-frame alt/az components (az deltas
+        # are invariant under the constant psi0 yaw offset, alt is
+        # gravity-referenced in both frames).
+        prev_mount_alt, prev_mount_az = tracker["mount_altaz"]
+        expected_alt = mount_alt - prev_mount_alt
+        expected_az = _wrap_angle_delta_degrees(mount_az - prev_mount_az)
+        step_alt = imu_altaz[0] - tracker["altaz_prev"][0]
+        step_az = _wrap_angle_delta_degrees(imu_altaz[1] - tracker["altaz_prev"][1])
+
         gate_state = self._gate_decision(tracker, rate, now, accumulate)
-        if gate_state == "fast_follow":
+        if gate_state in ("suspended_mount_motion", "post_motion_settle"):
+            # The mount is moving itself (readback jumping — the trajectory
+            # prediction is invalid) or the BNO055 is re-converging; the
+            # pending catch-up amount is unknowable, so drop it. A pending
+            # episode is discarded without rebalance — its bookings are the
+            # mount's own motion and the snapshot/rollback machinery already
+            # reverts that leak.
+            tracker["budget_alt"] = 0.0
+            tracker["budget_az"] = 0.0
+            tracker["ep_active"] = False
+        elif gate_state == "fast_follow":
+            budget_alt = tracker["budget_alt"] + expected_alt
+            budget_az = tracker["budget_az"] + expected_az
             alt_prev, az_prev = tracker["altaz_prev"]
-            alt_now, az_now = imu_altaz
+            alt_now = imu_altaz[0]
             psi0 = tracker["psi0"]
+            if not tracker.get("ep_active"):
+                tracker["ep_active"] = True
+                tracker["ep_net_alt"] = 0.0
+                tracker["ep_net_az"] = 0.0
+                tracker["ep_cancel_alt"] = 0.0
+                tracker["ep_cancel_az"] = 0.0
+                tracker["ep_az_start"] = az_prev
+                tracker["ep_zenith"] = False
             if max(abs(alt_prev), abs(alt_now)) <= ALTAZ_ROTATION_ZENITH_GUARD_ALT_DEG:
+                # A BNO055 tracking catch-up snap matches the pending budget in
+                # direction and (at most) magnitude — cancel that component and
+                # book only the residual as a disturbance. A push against the
+                # tracking direction cancels nothing; a same-direction push
+                # books its excess over the budget. Per-tick cancellation is
+                # provisional: an oscillating (wobbling) IMU would otherwise
+                # get its tracking-direction half-cycles cancelled and its
+                # return half-cycles booked, rectifying symmetric noise into a
+                # net offset (hardware capture 2026-07-23: one 20 s wobble
+                # episode leaked ~430 arcsec). _rebalance_tracking_episode
+                # settles the difference against the episode's NET displacement
+                # when the episode ends.
+                cancel_alt = _tracking_budget_cancel(step_alt, budget_alt)
+                cancel_az = _tracking_budget_cancel(step_az, budget_az)
+                budget_alt -= cancel_alt
+                budget_az -= cancel_az
+                tracker["cancelled_alt"] += cancel_alt
+                tracker["cancelled_az"] += cancel_az
+                tracker["ep_net_alt"] += step_alt
+                tracker["ep_net_az"] += step_az
+                tracker["ep_cancel_alt"] += cancel_alt
+                tracker["ep_cancel_az"] += cancel_az
+                daz = step_az - cancel_az
+                dalt = step_alt - cancel_alt
                 # Normal altitudes: build the step from the exact mount-axis
                 # decomposition. Rz(daz) is exact for the az axis at ANY
                 # IMU-vs-mount separation; the alt-axis rotation uses the
                 # horizontal axis at the (psi0-mapped) azimuth, matching the
                 # fused pointing's azimuth to within the tracked mismatch.
-                daz = _wrap_angle_delta_degrees(az_now - az_prev)
-                dalt = alt_now - alt_prev
                 axis_az_mount = math.radians(az_prev + psi0)
                 alt_axis = np.array(
                     [math.cos(axis_az_mount), -math.sin(axis_az_mount), 0.0]
@@ -1274,7 +1371,11 @@ class PointingCoordinateService:
                 # Near the zenith the measured azimuth is noise; use the
                 # minimal-arc rotation between the boresight VECTORS, which
                 # stays well-conditioned through the pole, conjugated into the
-                # mount frame by psi0.
+                # mount frame by psi0. No budget cancellation here — the az
+                # components it would clamp are exactly the unreliable ones —
+                # and the episode is marked so the end-of-episode rebalance
+                # skips it too.
+                tracker["ep_zenith"] = True
                 q_step = _min_arc_quaternion(v_prev, v_now)
                 q_step_mount = (
                     _az_rotation_quaternion(psi0)
@@ -1282,13 +1383,69 @@ class PointingCoordinateService:
                     * _az_rotation_quaternion(-psi0)
                 )
             tracker["q_off"] = (q_step_mount * tracker["q_off"]).normalized()
+            tracker["budget_alt"] = _clamp_tracking_budget(budget_alt)
+            tracker["budget_az"] = _clamp_tracking_budget(budget_az)
+        else:
+            if tracker.get("ep_active"):
+                self._rebalance_tracking_episode(tracker)
+            # hold: expected motion the IMU did not report accumulates as
+            # pending catch-up; whatever it did report consumes it. A frozen
+            # BNO055 grows the budget at the tracking rate; an IMU that follows
+            # continuously keeps it near zero.
+            tracker["budget_alt"] = _clamp_tracking_budget(
+                tracker["budget_alt"] + expected_alt - step_alt
+            )
+            tracker["budget_az"] = _clamp_tracking_budget(
+                tracker["budget_az"] + expected_az - step_az
+            )
 
         tracker["v_prev"] = v_now
         tracker["altaz_prev"] = imu_altaz
+        tracker["mount_altaz"] = (mount_alt, mount_az)
         tracker["t"] = now
         tracker["gate"] = gate_state
         tracker["rate_deg_s"] = rate
         return tracker
+
+    def _rebalance_tracking_episode(self, tracker: dict[str, Any]) -> None:
+        """Settle an ended fast_follow episode against its NET displacement.
+
+        Per-tick budget cancellation rectifies a symmetric IMU wobble: the
+        half-cycles in the tracking direction are cancelled (consuming budget)
+        while the return half-cycles are booked, walking the fused coordinate
+        off even though the net motion was ~zero. At episode end, recompute the
+        ideal cancellation from the episode's net step and apply the
+        difference: give back wrongly-consumed budget and un-book (or book) the
+        matching rotation. A clean catch-up snap or a clean push already
+        matches the ideal, so the correction is zero there.
+        """
+        tracker["ep_active"] = False
+        if tracker.get("ep_zenith"):
+            # Zenith ticks book vector min-arcs whose az components the
+            # component ledger cannot represent; leave those episodes as-is.
+            return
+        diff_alt = diff_az = 0.0
+        for axis, net_key, cancel_key in (
+            ("alt", "ep_net_alt", "ep_cancel_alt"),
+            ("az", "ep_net_az", "ep_cancel_az"),
+        ):
+            provisional = tracker[cancel_key]
+            available = tracker[f"budget_{axis}"] + provisional
+            ideal = _tracking_budget_cancel(tracker[net_key], available)
+            tracker[f"budget_{axis}"] = _clamp_tracking_budget(available - ideal)
+            tracker[f"cancelled_{axis}"] += ideal - provisional
+            if axis == "alt":
+                diff_alt = provisional - ideal
+            else:
+                diff_az = provisional - ideal
+        if abs(diff_alt) < 1e-9 and abs(diff_az) < 1e-9:
+            return
+        axis_az_mount = math.radians(tracker["ep_az_start"] + tracker["psi0"])
+        alt_axis = np.array([math.cos(axis_az_mount), -math.sin(axis_az_mount), 0.0])
+        q_corr = _az_rotation_quaternion(diff_az) * quaternion.from_rotation_vector(
+            alt_axis * math.radians(diff_alt)
+        )
+        tracker["q_off"] = (q_corr * tracker["q_off"]).normalized()
 
     def _fuse_altaz_rotation(
         self,
@@ -1312,14 +1469,9 @@ class PointingCoordinateService:
 
         ctx = self._fusion_context or {}
         try:
-            sf_utils.set_location(
-                ctx["location"].lat, ctx["location"].lon, ctx["location"].altitude
-            )
-            mount_alt, mount_az = sf_utils.radec_to_altaz(
-                mount_radec[0], mount_radec[1], ctx["dt"], atmos=False
-            )
-            if mount_alt is None or mount_az is None:
-                return None
+            # The tracker tick just computed this tick's mount alt/az (and set
+            # the sf_utils location) — reuse it.
+            mount_alt, mount_az = tracker["mount_altaz"]
             v_mount = _altaz_unit_vector(mount_alt, mount_az)
             v_fused = _rotate_vector(tracker["q_off"], v_mount)
             fused_alt, fused_az = _unit_vector_altaz(v_fused)
@@ -1342,6 +1494,10 @@ class PointingCoordinateService:
                 "imu_delta_gate": tracker["gate"],
                 "imu_delta_rate_deg_per_sec": tracker["rate_deg_s"],
                 "psi0_deg": tracker["psi0"],
+                "imu_track_budget_alt": tracker["budget_alt"],
+                "imu_track_budget_az": tracker["budget_az"],
+                "imu_track_cancelled_alt": tracker["cancelled_alt"],
+                "imu_track_cancelled_az": tracker["cancelled_az"],
                 "mount_alt": mount_alt,
                 "mount_az": mount_az,
                 "fused_alt": fused_alt,

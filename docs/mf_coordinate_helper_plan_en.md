@@ -413,6 +413,81 @@ reports the mount's native frame (`equatorial` on an EQ mount) with
 polar-axis rotation under a −53 deg yaw offset must land within 1 deg of
 (mount_ra + 15, mount_dec)).
 
+### Tracking catch-up budget — rejecting BNO055 snaps during sidereal tracking (added 2026-07-23)
+
+**Hardware repro (2026-07-22, indoors, aligned on M5 and left alone, 10-min
+time series at 0.3 s):** while the mount tracks a target the readback RA/Dec
+is constant but the axes physically rotate (measured alt −11.1″/s, az
++11.4″/s). The BNO055 (imuplus) cannot resolve that slow rotation — of the
+−6668″ of physical alt motion over 10 minutes the IMU reported only **−2524″
+(38%), in 2-3 snaps**, and of +6869″ az only **+240″ (3.5%)** (yaw has no
+absolute reference without the magnetometer). Its output stays **frozen**
+(median rate exactly 0.0), then the accelerometer notices the changed gravity
+direction and **snaps ~0.3° at 0.25-0.41°/s in one burst**. Each snap cleared
+the disturbance gate (enter 0.03°/s), was booked into q_off as `fast_follow`,
+stepped the fused coordinate ~0.3° off target per snap → tracking-guide
+recovery threshold exceeded → sync+GoTo re-align → repeat — the **periodic
+sawtooth drift** seen in SkySafari. The blind spot: tracking motion never
+changes the readback, so the `mount_motion_active` suppression cannot see it.
+
+**Fix — a tracking catch-up budget in the rotation tracker:**
+
+```text
+1. Every tick, compute the expected physical motion from the constant
+   readback's alt/az trajectory:
+     expected = mount_altaz(dt_now) − mount_altaz(dt_prev)
+   (the tracker now does the radec_to_altaz conversion each tick and stores
+   it; _fuse_altaz_rotation reuses it, removing the duplicate conversion)
+2. hold: budget += expected − step  (a frozen IMU grows the budget at the
+   tracking rate; an IMU that follows continuously keeps it near zero)
+3. fast_follow (normal-altitude branch): cancel the step against the budget
+   with a same-sign, budget-magnitude clamp (_tracking_budget_cancel); book
+   only the residual into q_off. A push against the tracking direction is
+   never cancelled; a same-direction push books its excess over the budget.
+4. suspended/post_motion_settle: the readback is moving so the trajectory
+   prediction is invalid — drop the budget.
+5. Zenith branch (min-arc): no cancellation — the az components it would
+   clamp are exactly the unreliable ones there.
+6. Per-axis cap IMU_TRACKING_CATCHUP_BUDGET_CAP_DEG (3.0°) — imuplus yaw has
+   no absolute reference, so the az budget would otherwise grow without
+   bound; the cap limits the worst-case mis-cancellation exposure.
+```
+
+- Why component alt/az comparison holds across frames: az deltas are
+  invariant under the constant psi0 yaw offset, and alt is gravity-referenced
+  in both frames.
+- Diagnostic metadata: `imu_track_budget_alt/az` (pending budget),
+  `imu_track_cancelled_alt/az` (cumulative cancelled since tracker init).
+- Known limitation: a real push in the **same direction** as tracking can be
+  absorbed up to the pending budget (typically ≤ ~0.5° between snaps). The 3°
+  cap bounds the worst case, and at night a solve is the absolute reference
+  anyway. The scalar component fallback path (no fusion context) cannot
+  compute the trajectory and keeps its previous behavior, without a budget.
+- Regression tests:
+  `test_tracking_catchup_snap_is_cancelled_not_booked_as_disturbance` (a full
+  catch-up snap after a 180 s freeze must leave fused within 0.03° of the
+  readback), `test_real_push_during_tracking_still_registers` (a +2° push
+  against the accumulated budget books its full magnitude).
+
+**First hardware verification (2026-07-23, 13 min) and the wobble-rectification
+follow-up:** the re-align sawtooth was gone (2 cycles per 10 min before → 0)
+and six snaps totalling −1.99° were fully cancelled. But per-tick cancellation
+had a rectification defect: in a symmetric 0.07°/s **wobble** episode the
+tracking-direction half-cycles were cancelled (consuming budget) while the
+return half-cycles were booked as a disturbance — rectifying ~zero net motion
+into a ~430″ offset (one episode measured). Follow-up: per-tick cancellation
+is now **provisional**; the episode accumulates its net displacement and
+provisional cancellations (`ep_net_*`/`ep_cancel_*`), and at episode end
+`_rebalance_tracking_episode` recomputes the ideal cancellation from the NET
+step, corrects q_off by the difference, and returns wrongly-consumed budget. A
+clean snap or clean push matches the ideal, so the correction is zero there.
+Zenith episodes are exempt (their min-arc bookings have no component ledger).
+On a suspended transition the episode is discarded without rebalance (the
+mount-motion leak is already reverted by the snapshot rollback). Regression:
+`test_imu_wobble_episode_nets_to_zero_after_rebalance` (a ±0.05° symmetric
+wobble must leave fused within 0.02° of the readback with the budget
+restored).
+
 ### IMU-delta rate gate (added 2026-07-12)
 
 Found on hardware while tracking: with the mount tracking sidereal, the readback

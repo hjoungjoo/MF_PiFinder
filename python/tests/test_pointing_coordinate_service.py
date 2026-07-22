@@ -928,6 +928,123 @@ def test_eq_mount_uses_rotation_tracker_and_survives_imu_yaw_offset():
     assert fused_dec == pytest.approx(mount_dec, abs=1.0)
 
 
+def _tracking_freeze_setup(freeze_seconds):
+    """Reproduce the 2026-07-22 hardware capture geometry: mount target-locked
+    (constant readback RA/Dec) while tracking physically rotates the axes; the
+    BNO055 output stays frozen for freeze_seconds while the fusion context's
+    time advances 1 s per tick. Returns everything the snap/push phase needs."""
+    from PiFinder.calc_utils import sf_utils
+
+    t0 = datetime.datetime(2026, 7, 22, 14, 0, tzinfo=datetime.timezone.utc)
+    location = SimpleNamespace(lat=37.527, lon=127.109, altitude=50.0)
+    sf_utils.set_location(location.lat, location.lon, location.altitude)
+
+    service = PointingCoordinateService()
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    mount_ra, mount_dec = sf_utils.altaz_to_radec(30.0, 250.0, t0)
+    mount = _fused_mount(mount_ra % 360.0, mount_dec)
+
+    def tick(dt, imu_alt, imu_az):
+        service._fusion_context = {
+            "dt": dt,
+            "location": location,
+            "mount_type": "Alt/Az",
+        }
+        return service._select_current(
+            solved, _fused_imu_altaz(imu_alt, imu_az, dt), mount, CoordinateHealth()
+        )
+
+    # IMU boresight with an arbitrary imuplus yaw offset (psi0 = +50 here).
+    imu_alt0, imu_az0 = 30.0, 200.0
+    anchor = tick(t0, imu_alt0, imu_az0)
+    assert anchor.source == SOURCE_FUSED
+
+    dt = t0
+    for _ in range(freeze_seconds):
+        dt = dt + datetime.timedelta(seconds=1)
+        frozen = tick(dt, imu_alt0, imu_az0)
+        assert frozen.metadata["imu_delta_gate"] in ("hold", "init")
+
+    # Physical trajectory the scope actually followed while frozen.
+    alt0, az0 = sf_utils.radec_to_altaz(mount_ra, mount_dec, t0, atmos=False)
+    alt_now, az_now = sf_utils.radec_to_altaz(mount_ra, mount_dec, dt, atmos=False)
+    moved_alt = alt_now - alt0
+    moved_az = ((az_now - az0 + 180.0) % 360.0) - 180.0
+    # The geometry must actually move enough to look like a hardware snap.
+    assert abs(moved_alt) > 0.1
+
+    return service, tick, dt, mount, (imu_alt0, imu_az0), (moved_alt, moved_az)
+
+
+def test_tracking_catchup_snap_is_cancelled_not_booked_as_disturbance():
+    """Regression for the 2026-07-22 hardware sawtooth: the BNO055 cannot
+    resolve sidereal-rate tracking motion — it freezes, then snaps ~0.3 deg to
+    catch up at 0.25-0.4 deg/s. The rate gate booked each snap as a physical
+    push, stepping the fused coordinate off target until the guide re-aligned.
+    The tracking budget must cancel the snap so fused stays on the readback."""
+    _service, tick, dt, mount, (imu_alt0, imu_az0), (moved_alt, moved_az) = (
+        _tracking_freeze_setup(180)
+    )
+
+    # Full catch-up snap in one tick (rate >> enter gate).
+    snapped = tick(dt, imu_alt0 + moved_alt, imu_az0 + moved_az)
+    assert snapped.metadata["imu_delta_gate"] == "fast_follow"
+    # The snap must be recognized as tracking catch-up, not a disturbance:
+    assert snapped.metadata["imu_track_cancelled_alt"] != 0.0
+    ra, dec = snapped.radec()
+    mount_ra, mount_dec = mount.radec()
+    assert abs(((ra - mount_ra + 180.0) % 360.0) - 180.0) < 0.03
+    assert abs(dec - mount_dec) < 0.03
+    assert abs(snapped.metadata["imu_delta_applied_alt"]) < 0.03
+    assert abs(snapped.metadata["imu_delta_applied_az"]) < 0.03
+
+
+def test_real_push_during_tracking_still_registers():
+    """The budget must only absorb tracking-consistent motion: a hand push
+    against the tracking direction books its full magnitude even with a large
+    pending catch-up budget."""
+    _service, tick, dt, _mount, (imu_alt0, imu_az0), (moved_alt, _moved_az) = (
+        _tracking_freeze_setup(120)
+    )
+    assert moved_alt < 0.0  # setting target: pending budget is negative in alt
+
+    # Push the scope UP 2 deg — opposite the pending alt budget.
+    pushed = tick(dt, imu_alt0 + 2.0, imu_az0)
+    assert pushed.metadata["imu_delta_gate"] == "fast_follow"
+    assert pushed.metadata["imu_delta_applied_alt"] == pytest.approx(2.0, abs=0.1)
+
+
+def test_imu_wobble_episode_nets_to_zero_after_rebalance():
+    """Regression for the 2026-07-23 hardware capture: a symmetric BNO055
+    oscillation (0.07 deg/s wobble) had its tracking-direction half-cycles
+    cancelled against the budget and its return half-cycles booked as a
+    disturbance — rectifying ~zero net motion into a ~430 arcsec offset. The
+    end-of-episode rebalance must settle bookings against the NET displacement
+    so a wobble leaves the fused coordinate on the readback."""
+    _service, tick, dt, mount, (imu_alt0, imu_az0), (moved_alt, _moved_az) = (
+        _tracking_freeze_setup(120)
+    )
+    assert moved_alt < 0.0  # pending alt budget is negative (setting target)
+
+    # Fast symmetric wobble: down (tracking direction), back up, down, back up.
+    for wobble_alt in (-0.05, 0.0, -0.05, 0.0):
+        wobbled = tick(dt, imu_alt0 + wobble_alt, imu_az0)
+        assert wobbled.metadata["imu_delta_gate"] == "fast_follow"
+
+    # One quiet tick ends the episode and triggers the rebalance.
+    settled = tick(dt, imu_alt0, imu_az0)
+    assert settled.metadata["imu_delta_gate"] == "hold"
+    ra, dec = settled.radec()
+    mount_ra, mount_dec = mount.radec()
+    assert abs(((ra - mount_ra + 180.0) % 360.0) - 180.0) < 0.02
+    assert abs(dec - mount_dec) < 0.02
+    assert abs(settled.metadata["imu_delta_applied_alt"]) < 0.02
+    assert abs(settled.metadata["imu_delta_applied_az"]) < 0.02
+    # And the wrongly-consumed budget was given back (still roughly the
+    # pre-wobble pending amount, i.e. clearly nonzero in the tracking sign).
+    assert settled.metadata["imu_track_budget_alt"] < -0.1
+
+
 def test_fusion_anchor_resets_when_observer_location_moves():
     service = PointingCoordinateService()
     here = SimpleNamespace(lat=37.5, lon=127.0, altitude=30.0)

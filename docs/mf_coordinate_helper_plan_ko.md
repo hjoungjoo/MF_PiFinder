@@ -400,6 +400,69 @@ Alt/Az 작업 후 EQ 스칼라 경로를 점검하니 같은 부류의 프레임
 오프셋 하의 극축 +15° 회전이 (mount_ra + 15, mount_dec)의 1° 이내에 착지해야
 한다).
 
+### 추적 따라잡기 예산 — 사이드리얼 추적 중 BNO055 스냅 기각 (2026-07-23)
+
+**실장비 재현 (2026-07-22, 실내, M5 정렬 후 방치, 10분 시계열 0.3s 샘플):**
+마운트가 타겟 추적 중이면 readback RA/Dec는 고정되지만 물리 축은 계속 돈다
+(실측 alt −11.1″/s, az +11.4″/s). BNO055(imuplus)는 이 느린 회전을 분해하지
+못한다 — 10분간 물리 alt 이동 −6668″ 중 IMU는 **−2524″(38%)만, 스냅 2~3회로**
+보고했고 az는 +6869″ 중 **+240″(3.5%)**만 보였다(yaw는 자기센서 없이 절대
+기준이 없음). 출력은 평소 **완전히 얼어 있다가**(rate 중앙값 정확히 0.0)
+가속도계가 중력 방향 변화를 감지하면 **~0.3°를 0.25~0.41°/s로 한 번에 스냅**
+한다. 이 스냅이 외란 게이트(진입 0.03°/s)를 넘어 `fast_follow`로 q_off에
+적재됐고, fused가 스냅마다 ~0.3°씩 이탈 → 추적 가이드 복구 임계 초과 →
+sync+GoTo 재정렬 → 반복 — 스카이사파리에서 보이던 **주기적 톱니파 드리프트**의
+정체다. 추적 모션은 readback을 바꾸지 않으므로 `mount_motion_active` 기반
+억제에는 안 보인다는 것이 핵심 맹점이었다.
+
+**수정 — 회전 tracker에 추적 따라잡기 예산(budget) 도입:**
+
+```text
+1. 매 tick, readback(고정 RA/Dec)의 alt/az 궤적에서 기대 물리 이동을 계산:
+     expected = mount_altaz(dt_now) − mount_altaz(dt_prev)
+   (tracker가 매 tick radec_to_altaz를 수행하고 결과를 저장;
+   _fuse_altaz_rotation은 이 값을 재사용해 변환 중복을 없앰)
+2. hold: budget += expected − step  (얼어 있으면 추적 속도로 누적,
+   연속 추종하는 좋은 IMU면 ≈0 유지)
+3. fast_follow(정상 고도 분기): 스텝을 예산과 같은 부호·예산 크기 한도로
+   상쇄(_tracking_budget_cancel), 잔차만 외란으로 q_off에 적재.
+   추적 반대 방향 밀기는 전혀 상쇄되지 않고, 같은 방향 밀기는 예산 초과분이
+   적재된다.
+4. suspended/post_motion_settle: readback이 움직여 궤적 예측이 무효 —
+   budget 폐기.
+5. 천정 분기(min-arc): az 성분이 원래 신뢰 불가라 상쇄 없음.
+6. 축별 상한 IMU_TRACKING_CATCHUP_BUDGET_CAP_DEG(3.0°) — imuplus yaw는 절대
+   기준이 없어 az 예산이 무한 성장할 수 있으므로 상한으로 오상쇄 노출을 제한.
+```
+
+- alt/az 성분 비교가 프레임을 넘어 성립하는 근거: az delta는 상수 psi0 yaw
+  오프셋에 불변이고 alt는 양쪽 다 중력 기준이다.
+- 진단 metadata: `imu_track_budget_alt/az`(대기 중 예산),
+  `imu_track_cancelled_alt/az`(tracker 생성 후 상쇄 누계).
+- 알려진 한계: 추적과 **같은 방향** 실제 밀기는 대기 예산만큼(전형적으로 스냅
+  사이 ≤ ~0.5°) 흡수될 수 있다. 상한 3°가 최악 노출을 제한하고, 야간에는
+  solve가 절대 기준이라 영향 없다. 스칼라 성분 폴백 경로(컨텍스트 없음)는
+  궤적을 계산할 수 없어 예산 없이 기존 동작 유지.
+- 회귀 테스트: `test_tracking_catchup_snap_is_cancelled_not_booked_as_disturbance`
+  (180초 동결 후 전량 따라잡기 스냅 → fused가 readback의 0.03° 이내 유지),
+  `test_real_push_during_tracking_still_registers`(예산 누적 상태에서 반대
+  방향 +2° 밀기 → 전량 적재).
+
+**1차 실기기 검증(2026-07-23, 13분)과 wobble 정류 보강:** 재정렬 사이클은
+사라졌고(이전 10분에 2회 → 0회) 스냅 6회 총 −1.99°가 전량 상쇄됐다. 그러나
+tick 단위 상쇄에 정류(rectification) 결함이 남아 있었다 — 0.07°/s의 대칭
+**진동(wobble)** 에피소드에서 추적 방향 반주기는 예산에 상쇄(예산 소모)되고
+복귀 반주기는 외란으로 적재되어, 순변위 ≈0이 ~430″ 오프셋으로 정류됐다(1회
+에피소드 실측). 보강: 에피소드 중에는 tick 상쇄를 **잠정**으로 취급하고
+순변위·잠정상쇄를 누적(`ep_net_*`/`ep_cancel_*`), 에피소드 종료 시
+`_rebalance_tracking_episode`가 **순변위 기준 이상적 상쇄**를 다시 계산해
+차액만큼 q_off를 보정하고 잘못 소모된 예산을 반환한다. 깨끗한 스냅·깨끗한
+밀기는 이상치와 잠정치가 일치해 보정 0. 천정 에피소드는 성분 장부로 표현
+불가라 재정산 제외. suspended 전이 시 에피소드는 재정산 없이 폐기(마운트
+자체 모션 누출은 기존 스냅숏 롤백이 처리). 회귀 테스트:
+`test_imu_wobble_episode_nets_to_zero_after_rebalance`(±0.05° 대칭 진동 후
+fused가 readback 0.02° 이내 + 예산 복원).
+
 ### IMU delta 속도 게이트 (2026-07-12 추가)
 
 추적 중 실장비에서 발견: mount가 사이드리얼 추적을 하면 readback RA/Dec는 target에
