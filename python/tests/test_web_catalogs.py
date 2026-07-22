@@ -151,6 +151,28 @@ def test_search_api(web_app):
 
 
 @pytest.mark.unit
+def test_search_api_designation_ordering(web_app):
+    app, _server = web_app
+    client = _login(app.test_client())
+
+    # "m5": exact designation first, then same-prefix longer sequences in
+    # numeric order (M5, M50, M51, ...).
+    displays = [
+        r["display"]
+        for r in client.get("/catalogs/api/search?q=m5").get_json()["results"]
+    ]
+    assert displays[0] == "M 5"
+    assert displays[:4] == ["M 5", "M 50", "M 51", "M 52"]
+
+    # Case-insensitive prefix; "ngc1" -> NGC 1, NGC 10, NGC 11, ...
+    displays = [
+        r["display"]
+        for r in client.get("/catalogs/api/search?q=ngc1").get_json()["results"]
+    ]
+    assert displays[:3] == ["NGC 1", "NGC 10", "NGC 11"]
+
+
+@pytest.mark.unit
 def test_object_page_and_altitude(web_app):
     app, _server = web_app
     client = _login(app.test_client())

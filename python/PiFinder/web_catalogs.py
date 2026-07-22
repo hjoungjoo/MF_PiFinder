@@ -29,6 +29,7 @@ import json
 import logging
 import math
 import os
+import re
 import sqlite3
 import threading
 from datetime import timedelta
@@ -608,35 +609,73 @@ def register_catalog_routes(app, server_instance):
         q = request.args.get("q", "").strip()
         if len(q) < 2:
             return _json_response({"results": []})
-        rows = _query(
-            """
-            SELECT n.object_id, n.common_name, co.catalog_code, co.sequence,
-                   o.obj_type, o.const
-              FROM names n
-              JOIN objects o ON o.id = n.object_id
-              JOIN catalog_objects co ON co.object_id = n.object_id
-             WHERE n.common_name LIKE ?
-             LIMIT 120
-            """,
-            (f"%{q}%",),
-        )
-        results = []
-        seen = set()
-        for row in rows:
-            if row["object_id"] in seen:
-                continue
+
+        results: List[Dict[str, Any]] = []
+        seen: set = set()
+
+        def add(row, matched_name):
+            if row["object_id"] in seen or len(results) >= 50:
+                return
             seen.add(row["object_id"])
             results.append(
                 {
                     "object_id": row["object_id"],
                     "display": _display_name(row["catalog_code"], row["sequence"]),
-                    "matched_name": row["common_name"],
+                    "matched_name": matched_name or "",
                     "type_label": OBJ_TYPES.get(row["obj_type"], row["obj_type"]),
                     "const": row["const"],
                 }
             )
-            if len(results) >= 50:
-                break
+
+        # Catalog-designation search: a query like "m5" / "ngc1" (letters +
+        # digits) means the user is after a catalog number, not a common name.
+        # Rank so that objects whose sequence starts with the typed digits come
+        # first, shortest sequence first (same digit-count as the input on top),
+        # then in numeric order: "m5" -> M 5, M 50, M 51...; "ngc1" -> NGC 1,
+        # NGC 10, NGC 11...
+        m = re.match(r"^([A-Za-z]+)\s*(\d+)$", q)
+        if m:
+            code, seq_prefix = m.group(1), m.group(2)
+            for row in _query(
+                """
+                SELECT co.object_id, co.catalog_code, co.sequence,
+                       o.obj_type, o.const,
+                       (SELECT n.common_name FROM names n
+                          WHERE n.object_id = o.id
+                            AND n.common_name NOT LIKE co.catalog_code || '%'
+                          ORDER BY (n.common_name GLOB '*[a-z]*') DESC, n.id
+                          LIMIT 1) AS common_name
+                  FROM catalog_objects co
+                  JOIN objects o ON o.id = co.object_id
+                 WHERE co.catalog_code = ? COLLATE NOCASE
+                   AND CAST(co.sequence AS TEXT) LIKE ?
+                 ORDER BY LENGTH(CAST(co.sequence AS TEXT)), co.sequence
+                 LIMIT 50
+                """,
+                (code, f"{seq_prefix}%"),
+            ):
+                add(row, row["common_name"])
+
+        # Common-name search (also tops up a designation search). Names that
+        # start with the query rank above names that merely contain it, then
+        # shorter names, then alphabetical.
+        if len(results) < 50:
+            for row in _query(
+                """
+                SELECT n.object_id, n.common_name, co.catalog_code, co.sequence,
+                       o.obj_type, o.const
+                  FROM names n
+                  JOIN objects o ON o.id = n.object_id
+                  JOIN catalog_objects co ON co.object_id = n.object_id
+                 WHERE n.common_name LIKE ?
+                 ORDER BY (n.common_name LIKE ?) DESC,
+                          LENGTH(n.common_name), n.common_name
+                 LIMIT 120
+                """,
+                (f"%{q}%", f"{q}%"),
+            ):
+                add(row, row["common_name"])
+
         return _json_response({"results": results})
 
     @app.route("/catalogs/api/altitude/<int:object_id>")
