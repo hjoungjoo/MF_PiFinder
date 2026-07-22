@@ -928,5 +928,32 @@ def test_eq_mount_uses_rotation_tracker_and_survives_imu_yaw_offset():
     assert fused_dec == pytest.approx(mount_dec, abs=1.0)
 
 
+def test_fusion_anchor_resets_when_observer_location_moves():
+    service = PointingCoordinateService()
+    here = SimpleNamespace(lat=37.5, lon=127.0, altitude=30.0)
+
+    # First observation just records the site -- nothing to reset yet.
+    service._mount_imu_anchor = {"sentinel": "anchor"}
+    service._imu_delta_tracker = {"sentinel": "tracker"}
+    service._reset_fusion_on_location_change(here)
+    assert service._mount_imu_anchor == {"sentinel": "anchor"}
+    assert service._fusion_location == (37.5, 127.0, 30.0)
+
+    # GPS jitter (a few metres) must NOT reset the anchor.
+    service._reset_fusion_on_location_change(
+        SimpleNamespace(lat=37.50001, lon=127.00001, altitude=30.0)
+    )
+    assert service._mount_imu_anchor == {"sentinel": "anchor"}
+
+    # A real relocation (~1.5 km) discards the anchor and tracker so they
+    # rebuild for the new site.
+    service._reset_fusion_on_location_change(
+        SimpleNamespace(lat=37.51, lon=127.01, altitude=30.0)
+    )
+    assert service._mount_imu_anchor is None
+    assert service._imu_delta_tracker is None
+    assert service._fusion_location == (37.51, 127.01, 30.0)
+
+
 def _wrap(delta):
     return ((delta + 180.0) % 360.0) - 180.0

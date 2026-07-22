@@ -991,3 +991,95 @@ def test_skysafari_sync_returns_no_target_without_coordinates(monkeypatch):
     )
 
     assert pos_server.handle_sync_command(DummyState(None), ":CM#") == "No target."
+
+
+class _MutableLocation:
+    def __init__(self, lat, lon, altitude=30.0, lock=True):
+        self.lat = lat
+        self.lon = lon
+        self.altitude = altitude
+        self.lock = lock
+
+
+@pytest.fixture()
+def location_resync(monkeypatch):
+    """Mount location auto-resync with mount_control enabled and a fresh
+    (unsynced) module state."""
+    commands: queue.Queue = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(
+        pos_server,
+        "_get_config_option",
+        lambda option, default=None: True if option == "mount_control" else default,
+    )
+    monkeypatch.setattr(pos_server, "_mount_synced_location", None)
+    monkeypatch.setattr(pos_server, "_next_location_resync_at", 0.0)
+    return commands
+
+
+@pytest.mark.unit
+def test_location_resync_first_lock_syncs_immediately(location_resync):
+    state = DummyState(None, location=_MutableLocation(37.5, 127.0))
+    pos_server._sync_mount_location_on_change(state)
+    assert location_resync.get_nowait() == {"type": "sync_location_time"}
+    assert location_resync.empty()
+
+
+@pytest.mark.unit
+def test_location_resync_ignores_gps_jitter(location_resync):
+    state = DummyState(None, location=_MutableLocation(37.5, 127.0))
+    pos_server._sync_mount_location_on_change(state)
+    assert location_resync.get_nowait() == {"type": "sync_location_time"}
+
+    # A few metres of jitter -- allow the recheck window, expect no re-sync.
+    pos_server._next_location_resync_at = 0.0
+    state._location = _MutableLocation(37.50001, 127.00001)
+    pos_server._sync_mount_location_on_change(state)
+    assert location_resync.empty()
+
+
+@pytest.mark.unit
+def test_location_resync_on_real_move(location_resync):
+    state = DummyState(None, location=_MutableLocation(37.5, 127.0))
+    pos_server._sync_mount_location_on_change(state)
+    assert location_resync.get_nowait() == {"type": "sync_location_time"}
+
+    # ~1.5 km move past the recheck window -> re-sync.
+    pos_server._next_location_resync_at = 0.0
+    state._location = _MutableLocation(37.51, 127.01)
+    pos_server._sync_mount_location_on_change(state)
+    assert location_resync.get_nowait() == {"type": "sync_location_time"}
+
+
+@pytest.mark.unit
+def test_location_resync_rate_limited_between_rechecks(location_resync):
+    state = DummyState(None, location=_MutableLocation(37.5, 127.0))
+    pos_server._sync_mount_location_on_change(state)
+    assert location_resync.get_nowait() == {"type": "sync_location_time"}
+
+    # Real move but still inside the recheck window -> held off.
+    pos_server._next_location_resync_at = time.monotonic() + 999.0
+    state._location = _MutableLocation(37.51, 127.01)
+    pos_server._sync_mount_location_on_change(state)
+    assert location_resync.empty()
+
+
+@pytest.mark.unit
+def test_location_resync_skips_unlocked_location(location_resync):
+    state = DummyState(None, location=_MutableLocation(37.5, 127.0, lock=False))
+    pos_server._sync_mount_location_on_change(state)
+    assert location_resync.empty()
+
+
+@pytest.mark.unit
+def test_location_resync_skips_when_mount_control_disabled(monkeypatch):
+    commands: queue.Queue = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(
+        pos_server, "_get_config_option", lambda option, default=None: default
+    )
+    monkeypatch.setattr(pos_server, "_mount_synced_location", None)
+    monkeypatch.setattr(pos_server, "_next_location_resync_at", 0.0)
+    state = DummyState(None, location=_MutableLocation(37.5, 127.0))
+    pos_server._sync_mount_location_on_change(state)
+    assert commands.empty()

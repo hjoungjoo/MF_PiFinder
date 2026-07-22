@@ -680,6 +680,62 @@ UI:
 - LCD UI: INDI > INIT > "Reset Pointing" ("Set Location" 다음). 요청 파일을 쓰고
   확인 메시지를 띄우는 단순 액션 항목.
 
+## 위치 변경 시 마운트 site/time 자동 재동기화 (2026-07-22 추가)
+
+배경: INDI 마운트는 **connect 시점에만** site 위치/시간을 받는다
+(`mountcontrol_indi.py`의 `sync_location_time`, `sync_on_connect`). 부팅 시
+마운트가 GPS 락 이전에 자동 연결되면 `location.lock=False`라 sync가 "No locked
+location/time"으로 실패하고([mountcontrol_indi.py:1535]), 이후 GPS가 락되거나
+사용자가 위치를 선택해도 마운트에 알리는 자동 트리거가 없어 site/clock이
+스테일하게 남는다. Alt/Az 마운트는 site·시계로 alt/az↔RA/Dec를 환산하므로 이
+오차가 그대로 readback·GoTo 오차가 된다. (수동 재sync는 LCD 메뉴/웹 INDI
+페이지에만 있었다.)
+
+구현: 좌표 서비스 루프(`pos_server._coordinate_service_loop`)가 매 tick
+`_sync_mount_location_on_change`를 호출한다.
+
+- 트리거는 `shared_state.location()`의 **잠긴 좌표 변화**다. GPS 락과 수동 위치
+  선택 모두 동일한 `gps_queue` "fix" 경로로 `location.lock=True`를 세팅하므로
+  감지기 하나가 둘 다 커버한다.
+- **첫 잠긴 위치**는 즉시 `mountcontrol_queue.put({"type":
+  "sync_location_time"})`. 부팅 시 마운트가 이미 연결된 상태에서 첫 GPS 락이
+  오는(바로 그) 시나리오를 잡는다. 시간도 함께 실려 GPS로 보정된 시각이
+  OnStep에 전달된다.
+- **이후**에는 `_LOCATION_RESYNC_RECHECK_SECONDS`(60s) 주기로만 재확인하고,
+  직전 동기화 위치에서 `_LOCATION_RESYNC_MOVE_THRESHOLD_M`(500m)를 넘은
+  경우에만 재전송 → GPS 지터로 매 tick 재sync(및 앵커 리셋)하는 것을 방지한다.
+- 가드: `mountcontrol_queue is None` 또는 `mount_control` config off이면 무동작.
+  `_get_config_option`을 직접 조용히 조회한다(비활성 시 매 tick INFO 로그를
+  남기는 `_mount_control_enabled()`는 쓰지 않는다).
+- **정렬 안전성은 의도적으로 트리거 제한에서 제외**한다: 위치가 바뀌면 사용자가
+  관측지를 옮긴 것이므로 어차피 재정렬이 필요하다 — 그래서 이미 정렬된
+  상태에서도 재sync를 억제하지 않는다. site 재전송
+  (GEOGRAPHIC_COORD/TIME_UTC 또는 LX200 `:St/:Sg/...`)은 OnStep 네이티브
+  정렬을 지우지 않는다(정렬 리셋은 별도 `:SX09,0#`). 문제 시 재검토.
+
+융합 앵커 리셋: site가 바뀌면 마운트 readback RA/Dec가 (물리 이동 없이) 새 site
+기준으로 점프하고, 옛 site에서 누적된 IMU-delta 앵커/tracker(회전 tracker의
+`psi0`, alt/az↔RA/Dec 변환)는 무효가 된다. `PointingCoordinateService.
+current_state()`가 매 tick 관측지 위치를 `_reset_fusion_on_location_change`로
+비교해, `FUSION_LOCATION_RESET_THRESHOLD_M`(500m)를 넘으면 `_mount_imu_anchor`·
+`_imu_delta_tracker`·applied 스냅숏을 버린다(sync key 변경과 동일한 취급). 두
+tracker 경로 모두 anchor 정체성이 바뀌면 새 site 기준으로 재초기화된다.
+`clear_state()`도 `_fusion_location`을 초기화한다.
+
+IMU fallback 자체는 매 tick `sf_utils.set_location` 후 재계산하므로 위치 변경을
+자동 추종한다(수정 불필요).
+
+테스트(단위):
+
+- `test_pos_server.py`: 첫 락 즉시 sync / 지터 무시 / 실이동 재sync / recheck 창
+  내 rate-limit / unlocked skip / mount_control off skip.
+- `test_pointing_coordinate_service.py::
+  test_fusion_anchor_resets_when_observer_location_moves`: 지터는 앵커 유지,
+  ~1.5km 이동은 앵커·tracker 폐기.
+
+미검증: 실기기 end-to-end(부팅 후 첫 GPS 락 → OnStep site/clock 반영, 관측지
+이동 후 readback 정합) 확인은 아직. 실장비에서 재확인 필요.
+
 ## 디버깅 포인트
 
 좌표가 흔들릴 때 먼저 확인할 파일:

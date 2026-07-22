@@ -11,6 +11,7 @@ This is used by SkySafari (iOS, iPadOS)
 
 import socket
 import logging
+import math
 import queue as queue_module
 import re
 import datetime
@@ -55,6 +56,17 @@ _GUIDE_MAX_HOLD_SECONDS = 60.0
 _MOUNT_STATUS_CACHE_SECONDS = 0.2
 _SKYSAFARI_SLEW_GRACE_SECONDS = 2.0
 _SKYSAFARI_SLEW_STATES = {"slewing", "refine_wait", "refine_sent"}
+# Auto re-sync of the INDI mount's site location/time when the observing
+# location changes (first GPS lock, or a manual location selection -- both
+# arrive as a locked shared_state.location). The mount otherwise only learns
+# the location at connect time, so a fix obtained after connect leaves its
+# site/clock stale. The first locked location is synced immediately; after that
+# the location is only re-checked on a not-too-short cadence, and a re-sync is
+# sent only when the location has moved beyond the jitter threshold.
+_LOCATION_RESYNC_RECHECK_SECONDS = 60.0
+_LOCATION_RESYNC_MOVE_THRESHOLD_M = 500.0
+_mount_synced_location: Optional[Tuple[float, float, float]] = None
+_next_location_resync_at = 0.0
 _mount_status_cache: dict[str, Any] = {
     "time": 0.0,
     "value": None,
@@ -493,11 +505,81 @@ def _handle_pointing_reset_request(shared_state) -> None:
         logger.exception("Could not handle pointing reset request")
 
 
+def _location_distance_m(
+    a: Tuple[float, float, float], b: Tuple[float, float, float]
+) -> float:
+    """Approximate ground distance in metres between two (lat, lon, alt)
+    fixes. Equirectangular approximation -- ample for a "did we move?" gate."""
+    lat1, lon1, alt1 = a
+    lat2, lon2, alt2 = b
+    mean_lat = math.radians((lat1 + lat2) / 2.0)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1) * math.cos(mean_lat)
+    horizontal = math.hypot(dlat, dlon) * 6371000.0
+    return math.hypot(horizontal, alt2 - alt1)
+
+
+def _sync_mount_location_on_change(shared_state) -> None:
+    """Re-send site location/time to the INDI mount when the observing
+    location changes. The first locked fix is synced immediately; later
+    changes are rate-limited to ``_LOCATION_RESYNC_RECHECK_SECONDS`` so GPS
+    jitter cannot spam the mount (and repeatedly reset the fusion anchor)."""
+    global _mount_synced_location, _next_location_resync_at
+    if mountcontrol_queue is None:
+        return
+    if not bool(_get_config_option("mount_control", False)):
+        return
+    try:
+        location = shared_state.location()
+    except Exception:
+        return
+    if not location or not getattr(location, "lock", False):
+        return
+    current = (
+        float(location.lat),
+        float(location.lon),
+        0.0 if location.altitude is None else float(location.altitude),
+    )
+
+    if _mount_synced_location is None:
+        # First locked location since the service started -> sync now.
+        _enqueue_mount_location_sync(current, "first locked location")
+        return
+
+    now = time.monotonic()
+    if now < _next_location_resync_at:
+        return
+    _next_location_resync_at = now + _LOCATION_RESYNC_RECHECK_SECONDS
+    if _location_distance_m(_mount_synced_location, current) < (
+        _LOCATION_RESYNC_MOVE_THRESHOLD_M
+    ):
+        return
+    _enqueue_mount_location_sync(current, "location changed")
+
+
+def _enqueue_mount_location_sync(
+    location: Tuple[float, float, float], reason: str
+) -> None:
+    global _mount_synced_location, _next_location_resync_at
+    _mount_synced_location = location
+    _next_location_resync_at = time.monotonic() + _LOCATION_RESYNC_RECHECK_SECONDS
+    if mountcontrol_queue is not None:
+        mountcontrol_queue.put({"type": "sync_location_time"})
+    logger.info(
+        "Mount location/time re-sync queued (%s): lat=%.5f lon=%.5f alt=%.0f",
+        reason,
+        location[0],
+        location[1],
+        location[2],
+    )
+
+
 def _coordinate_service_loop(shared_state, stop_event: threading.Event) -> None:
     logger.info("Pointing coordinate service loop started")
     while not stop_event.is_set():
         try:
             _handle_pointing_reset_request(shared_state)
+            _sync_mount_location_on_change(shared_state)
             _update_coordinate_service_state(shared_state)
         except Exception:
             logger.exception("Pointing coordinate service update failed")

@@ -59,6 +59,12 @@ IMU_SMOOTH_MODERATE_ALPHA = 0.25
 IMU_SMOOTH_LARGE_ALPHA = 0.65
 MOUNT_IMU_DELTA_HOLD_SECONDS = 1.5
 MOUNT_READBACK_MOVING_DELTA_DEGREES = 0.005
+# When the observer location moves more than this (metres), the mount+IMU
+# fusion anchor and delta tracker were built for the old site (its psi0 and the
+# alt/az <-> RA/Dec conversions assume a fixed lat/lon), so they are discarded
+# and rebuilt for the new site -- the same treatment a mount re-sync gets. Well
+# above GPS jitter, well below any real relocation.
+FUSION_LOCATION_RESET_THRESHOLD_M = 500.0
 # Hysteresis rate gate for the mount+IMU-delta fusion. The IMU delta exists to
 # catch physical disturbances (a bump, a push, a motor stall slip). While the
 # mount is tracking, the smoothed IMU lags the slow (~15"/s) tracking motion,
@@ -326,6 +332,10 @@ class PointingCoordinateService:
         # mount_type), refreshed by current_state(). None (e.g. direct
         # _select_current calls in tests) falls back to the equatorial frame.
         self._fusion_context: Optional[dict[str, Any]] = None
+        # Observer (lat, lon, altitude) the fusion anchor/tracker were built
+        # for; a large move rebuilds them for the new site (see
+        # FUSION_LOCATION_RESET_THRESHOLD_M).
+        self._fusion_location: Optional[Tuple[float, float, float]] = None
         self._last_health_mount_radec: Optional[Tuple[float, float]] = None
         self._last_health_imu_altaz: Optional[Tuple[float, float]] = None
         self._state_lock = threading.RLock()
@@ -367,6 +377,7 @@ class PointingCoordinateService:
             self._last_mount_motion_radec = None
             self._last_mount_sample_ts = None
             self._imu_delta_applied_snapshot = None
+            self._fusion_location = None
 
     def solved_sample(self, shared_state: Any, dt: Any) -> CoordinateSample:
         try:
@@ -682,11 +693,15 @@ class PointingCoordinateService:
         # the mount's native axis frame (alt/az mount -> alt/az space, EQ mount
         # -> RA/Dec space), and the alt/az branch needs location + time for the
         # RA/Dec <-> alt/az conversions.
+        fusion_location = self.observer_location(
+            shared_state, default_location_provider
+        )
         self._fusion_context = {
             "dt": dt,
-            "location": self.observer_location(shared_state, default_location_provider),
+            "location": fusion_location,
             "mount_type": str(config_get("mount_type", "Alt/Az")),
         }
+        self._reset_fusion_on_location_change(fusion_location)
 
         health = CoordinateHealth()
         current = self._select_current(solved, imu, mount, health)
@@ -1418,6 +1433,47 @@ class PointingCoordinateService:
             ):
                 return (imu_altaz[1], imu_altaz[0]), "altaz"
         return self._imu_tracker_radec(imu), "equatorial"
+
+    def _reset_fusion_on_location_change(self, location: Any) -> None:
+        """Discard the mount+IMU fusion anchor and delta tracker when the
+        observer location moves to a new site. Both encode the old lat/lon (the
+        rotation tracker's psi0 and the alt/az <-> RA/Dec conversions), so a
+        real relocation must rebuild them -- the same reset a mount re-sync
+        triggers. GPS jitter below FUSION_LOCATION_RESET_THRESHOLD_M is ignored
+        so the anchor is not reset every tick."""
+        if location is None:
+            return
+        try:
+            current = (
+                float(location.lat),
+                float(location.lon),
+                0.0 if location.altitude is None else float(location.altitude),
+            )
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        previous = self._fusion_location
+        if previous is not None:
+            lat1, lon1, alt1 = previous
+            lat2, lon2, alt2 = current
+            mean_lat = math.radians((lat1 + lat2) / 2.0)
+            dlat = math.radians(lat2 - lat1)
+            dlon = math.radians(lon2 - lon1) * math.cos(mean_lat)
+            horizontal = math.hypot(dlat, dlon) * 6371000.0
+            distance = math.hypot(horizontal, alt2 - alt1)
+            if distance < FUSION_LOCATION_RESET_THRESHOLD_M:
+                return
+            # Both tracker paths re-init when the anchor identity changes; drop
+            # the tracker too so the component path also rebuilds cleanly.
+            self._mount_imu_anchor = None
+            self._imu_delta_tracker = None
+            self._imu_delta_applied_snapshot = None
+            logger.info(
+                "Observer location moved %.0f m; resetting mount+IMU fusion "
+                "anchor for the new site",
+                distance,
+            )
+        self._fusion_location = current
 
     def _new_mount_imu_anchor(
         self, mount: CoordinateSample, imu: CoordinateSample

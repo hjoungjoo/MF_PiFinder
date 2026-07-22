@@ -708,6 +708,69 @@ UI surfaces:
 - LCD UI: INDI > INIT > "Reset Pointing" (after "Set Location"), a simple action
   item that writes the request file and flashes a confirmation.
 
+## Auto re-sync of mount site/time on location change (added 2026-07-22)
+
+Background: the INDI mount only receives its site location/time **at connect
+time** (`mountcontrol_indi.py` `sync_location_time`, gated by
+`sync_on_connect`). If the mount auto-connects at boot before a GPS lock,
+`location.lock=False` so the sync fails with "No locked location/time"
+([mountcontrol_indi.py:1535]); afterwards nothing tells the mount when GPS
+locks or the user picks a location, so its site/clock stays stale. Alt/Az
+mounts derive RA/Dec from site + clock, so that error becomes a readback and
+GoTo error. (Manual re-sync existed only on the LCD menu / web INDI page.)
+
+Implementation: the coordinate service loop
+(`pos_server._coordinate_service_loop`) calls
+`_sync_mount_location_on_change` every tick.
+
+- The trigger is a change in the **locked** `shared_state.location()`. Both a
+  GPS lock and a manual location selection set `location.lock=True` via the
+  same `gps_queue` "fix" path, so a single detector covers both.
+- The **first locked location** syncs immediately
+  (`mountcontrol_queue.put({"type": "sync_location_time"})`), fixing the boot
+  case where the mount is already connected when the first GPS lock arrives.
+  Time rides along, so the GPS-corrected clock reaches OnStep.
+- **After that** the location is only re-checked every
+  `_LOCATION_RESYNC_RECHECK_SECONDS` (60 s), and a re-sync is sent only when it
+  moved past `_LOCATION_RESYNC_MOVE_THRESHOLD_M` (500 m) from the last synced
+  fix — so GPS jitter cannot re-sync (and reset the anchor) every tick.
+- Guards: no-op when `mountcontrol_queue is None` or `mount_control` is off.
+  It reads `_get_config_option` directly and quietly (not
+  `_mount_control_enabled()`, which logs INFO every call when disabled).
+- **Alignment safety is deliberately left out of the trigger gating**: a
+  location change means the operator relocated and will re-align anyway, so a
+  re-sync is not suppressed even when already aligned. Re-sending the site
+  (GEOGRAPHIC_COORD/TIME_UTC or LX200 `:St/:Sg/...`) does not clear OnStep's
+  native alignment (that is a separate `:SX09,0#`). Revisit if it causes
+  trouble.
+
+Fusion anchor reset: when the site changes the mount readback RA/Dec jumps to
+the new site (with no physical motion), and the IMU-delta anchor/tracker
+accumulated at the old site (the rotation tracker's `psi0`, the alt/az <->
+RA/Dec conversions) become meaningless. `PointingCoordinateService.
+current_state()` compares the observer location each tick via
+`_reset_fusion_on_location_change`; past `FUSION_LOCATION_RESET_THRESHOLD_M`
+(500 m) it drops `_mount_imu_anchor`, `_imu_delta_tracker`, and the applied
+snapshot (the same treatment a sync-key change gets). Both tracker paths
+re-init once the anchor identity changes. `clear_state()` also resets
+`_fusion_location`.
+
+The IMU fallback itself recomputes after `sf_utils.set_location` each tick, so
+it already follows a location change (no change needed).
+
+Tests (unit):
+
+- `test_pos_server.py`: first-lock immediate sync / jitter ignored / real move
+  re-syncs / rate-limited within the recheck window / unlocked skip /
+  mount_control-off skip.
+- `test_pointing_coordinate_service.py::
+  test_fusion_anchor_resets_when_observer_location_moves`: jitter keeps the
+  anchor, a ~1.5 km move discards anchor and tracker.
+
+Not yet validated: hardware end-to-end (boot → first GPS lock → OnStep
+site/clock applied; readback consistency after relocating). Needs a re-check on
+real hardware.
+
 ## Debugging
 
 Useful commands:
