@@ -21,7 +21,7 @@ from PiFinder.equipment import Telescope, Eyepiece
 from PiFinder.indi_align import BRIGHT_ALIGN_STARS, clamp_align_points, get_align_star
 from PiFinder.keyboard_interface import KeyboardInterface
 from PiFinder.multiproclogging import MultiprocLogging
-from PiFinder.livecam_config import settings_from_config
+from PiFinder.livecam_config import SESSION_ONLY_KEYS, settings_from_config
 
 from flask import (
     Flask,
@@ -1044,9 +1044,18 @@ class Server:
         @auth_required
         def livecam():
             if hasattr(self.shared_state, "set_livecam_settings"):
-                self.shared_state.set_livecam_settings(
-                    settings_from_config(config.Config())
-                )
+                settings = settings_from_config(config.Config())
+                # settings_from_config forces session-only keys
+                # (processing_enabled) back to their OFF default. Carry forward
+                # the live session value so reopening the page does not silently
+                # disable a pipeline the user turned on for this session; only an
+                # app restart clears it. Mirrors _raw_stack_settings().
+                if hasattr(self.shared_state, "livecam_settings"):
+                    live = self.shared_state.livecam_settings() or {}
+                    for key in SESSION_ONLY_KEYS:
+                        if key in live:
+                            settings[key] = live[key]
+                self.shared_state.set_livecam_settings(settings)
             return app.jinja_env.get_template("livecam.html").render(title=_("LiveCam"))
 
         def _indi_json_response(ok=True, message="", error=""):
