@@ -243,24 +243,61 @@ time_sync_enabled = false (기본값 Off → 관찰/경고 전부 꺼짐)
 
 ### B. 자동 정렬(sync) 정책 (문제 2 + 원칙 반영)
 
-- [ ] **B5. 자동 정렬 솔브 게이트** — 사용자 명령이 아닌 모든 자동 sync
-  (추적 가이드 복구, PiFinder GoTo 반복/final sync)는 좌표 소스가 **신선한
-  plate solve일 때만** 전송. IMU/mount_imu_delta 좌표면 sync를 생략하고 상태에
-  사유 표시. 복구는 GoTo만 수행하거나 대기.
-  - 대상: `indi_goto_guide_service.py` (`_begin_tracking_recovery_goto`,
-    `_send_sync_and_goto`, `_send_final_sync_once`)
-  - 판단 근거: `pointing_coordinate_status.json`의 `current.source` /
-    `solved` 신선도 (`_load_pointing_status` 확장)
-- [ ] **B6. `skysafari_pifinder_align` 기본 false + 웹 UI 노출** — `:CM#`은
-  INDI 정렬 전용. PiFinder 얼라인은 LCD에서만.
+여기서 "자동 정렬 전송"이란: PiFinder가 사용자 명령 없이 스스로
+**PiFinder → INDI 마운트 방향**으로 sync 명령을 보내는 것을 말한다.
+
+```text
+indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
+  ──> MountControlIndi.sync_mount() ──> INDI ON_COORD_SET.SYNC ──> 마운트
+```
+
+이 sync는 마운트에게 "네가 지금 물리적으로 가리키는 방향의 좌표는
+(ra, dec)다"라고 알려 **마운트의 내부 좌표 프레임을 통째로 다시 맞추는**
+동작이다. 이때 보내는 (ra, dec)는 `PointingCoordinateService`의 현재
+융합좌표인데, 현재 구현은 이 좌표가 **plate solve에서 왔는지 IMU
+추측항법에서 왔는지 구분하지 않고 전송**한다. 실내/무솔브 상태에서는 IMU
+품질의 좌표가 그대로 마운트 프레임에 심어져 좌표계가 오염된다 — 이것이
+문제 2의 직접 원인이다 (실측: 2026-07-25 00:12:39, IMU 기반 RA 250.6/Dec
+−30.7로 sync 전송됨).
+
+- [ ] **B5. 자동 정렬 솔브 게이트** — 위의 자동 sync 전송 3경로 모두에
+  게이트를 추가한다: sync에 실어 보낼 현재 융합좌표의 **출처가 신선한
+  plate solve일 때만 마운트로 전송**하고, 출처가 IMU 또는 mount+IMU 델타이면
+  전송하지 않는다(생략).
+  - 게이트 대상 3경로 (`indi_goto_guide_service.py`):
+    1. `_begin_tracking_recovery_goto()` — 추적 가이드 외란 복구의
+       "현재 좌표로 sync 후 타깃 GoTo". 생략 시 sync 없이 GoTo만 수행하거나
+       솔브가 생길 때까지 대기.
+    2. `_send_sync_and_goto()` — GoTo Type=PiFinder 모드의 반복
+       "sync + GoTo" 스텝.
+    3. `_send_final_sync_once()` — PiFinder GoTo 완료 시 타깃 좌표로의
+       최종 sync.
+  - 게이트에 걸리지 않는 것(사용자 명령이므로 유지): LCD Guide 화면의
+    수동 sync(사각 버튼/키 7), Multi Align의 confirm sync, SkySafari
+    `:CM#` 전달(`skysafari_indi_sync`), 웹의 명시적 sync 버튼.
+  - 판단 근거: `pointing_coordinate_status.json`의 `current.source`가
+    solve 계열이고 솔브가 신선(stale 아님)한지 —
+    `_load_pointing_status()`를 확장해 소스/신선도를 함께 반환.
+- [ ] **B6. SkySafari Align이 PiFinder 얼라인을 덮어쓰지 않게** — 현재
+  SkySafari `:CM#`(Align/Sync)은 솔브가 있으면 **PiFinder 내부 얼라인
+  (target_pixel, LCD에서 맞춘 아이피스 정렬)까지 교체**한다
+  (`skysafari_pifinder_align` 기본 true, UI 노출 없음). 이 키의 기본값을
+  false로 바꾸고 웹 UI에 노출한다. 결과: `:CM#`은 **INDI 마운트로 가는
+  정렬 전송만** 수행하고, PiFinder 얼라인은 LCD에서만 바뀐다(운용 원칙 1·2).
   - 대상: `default_config.json`, `pos_server.py`, `server.py`,
     `views/indi_mount.html`
-- [ ] **B7. 무솔브 IMU 얼라인 옵션화** — `skysafari_imu_align_without_solve`
-  키를 실제 게이트로 복원, 기본 off. (업스트림 no-solve 부트스트랩 기능은
-  옵션으로 유지)
+- [ ] **B7. 무솔브 IMU 얼라인 옵션화** — 솔브가 없을 때 SkySafari `:CM#`이
+  "타깃 좌표 vs 현재 IMU 방향"의 차이를 **PiFinder 내부의 IMU 보정
+  오프셋**으로 저장하는 동작(마운트로는 전송되지 않고, SkySafari에 응답하는
+  좌표 표시에만 적용됨)이 현재 **옵션 없이 항상 켜져** 있다. config의
+  `skysafari_imu_align_without_solve` 키는 코드가 읽지 않는 잔재이므로 실제
+  게이트로 복원하고 기본 off로 한다. (업스트림의 무솔브 부트스트랩 기능은
+  옵션 on으로 계속 쓸 수 있게 유지)
   - 대상: `pos_server.py::_set_imu_alignment_from_target_if_no_solve()`
-- [ ] **B8. 자동 정렬 생략 시 상태 표시** — B5 게이트로 sync가 생략되면
-  `indi_goto_guide_status.json`과 웹 GoTo/Guide Status에 사유 표시.
+- [ ] **B8. 자동 정렬 생략 시 상태 표시** — B5 게이트가 sync 전송을 생략하면
+  그 사유(예: "sync skipped: no fresh solve")를
+  `indi_goto_guide_status.json`과 웹 GoTo/Guide Status 패널에 표시해,
+  현장에서 "왜 복구가 sync 없이 도는지"를 바로 알 수 있게 한다.
 
 ### C. 다음 관측 전 임시 설정 (코드 수정 전 방어)
 
