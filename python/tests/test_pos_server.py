@@ -1120,3 +1120,71 @@ def test_resync_mount_on_clock_jump_queues_commands(monkeypatch):
 
     assert guide_commands.get_nowait() == {"type": "clear_tracking_target"}
     assert mount_commands.get_nowait() == {"type": "sync_location_time"}
+
+
+@pytest.mark.unit
+def test_skysafari_sync_runs_pifinder_align_only_in_pifinder_mode(monkeypatch):
+    # B6: with a solve present, :CM# performs the PiFinder align only when
+    # indi_goto_method is "pifinder" (plus the INDI mount sync, tested below).
+    align_calls = []
+    monkeypatch.setattr(pos_server, "last_target_coordinates", (100.0, -20.0))
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(
+        pos_server,
+        "_align_pifinder_if_enabled",
+        lambda *args: align_calls.append(args) or True,
+    )
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig(
+            {
+                "mount_control": False,
+                "indi_goto_method": "pifinder",
+                "skysafari_indi_sync": False,
+            }
+        ),
+    )
+
+    assert (
+        pos_server.handle_sync_command(DummyState(None, DummySolution(True)), ":CM#")
+        == "Coordinates matched."
+    )
+    assert len(align_calls) == 1
+
+
+@pytest.mark.unit
+def test_skysafari_sync_skips_pifinder_align_in_indi_mount_mode(monkeypatch):
+    # B6: in indi_mount mode :CM# must leave the PiFinder align untouched and
+    # only forward the INDI mount sync.
+    commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "last_target_coordinates", (100.0, -20.0))
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(
+        pos_server,
+        "_align_pifinder_if_enabled",
+        lambda *args: pytest.fail("PiFinder align must not run in indi_mount mode"),
+    )
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig(
+            {
+                "mount_control": True,
+                "indi_goto_method": "indi_mount",
+                "skysafari_indi_sync": True,
+            }
+        ),
+    )
+
+    assert (
+        pos_server.handle_sync_command(DummyState(None, DummySolution(True)), ":CM#")
+        == "Coordinates matched."
+    )
+    sync_command = commands.get_nowait()
+    assert sync_command["type"] == "sync"
+    assert sync_command["ra"] == 100.0
+    assert sync_command["dec"] == -20.0

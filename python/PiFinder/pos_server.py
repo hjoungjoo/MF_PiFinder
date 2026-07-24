@@ -1281,21 +1281,29 @@ def handle_sync_command(shared_state, _input_str: str):
     if _queue_multipoint_align_confirm_if_active(ra_deg, dec_deg):
         return "Coordinates matched."
 
+    goto_method = str(_get_config_option("indi_goto_method", "indi_mount"))
     has_solved_pointing = _has_solved_pointing(shared_state)
     pifinder_aligned = False
     imu_aligned = False
     if has_solved_pointing:
         _reset_imu_alignment_correction("SkySafari sync with solved pointing")
-        pifinder_aligned = _align_pifinder_if_enabled(shared_state, ra_deg, dec_deg)
+        # B6 mode routing (docs/mf_field_test_20260724_analysis_ko.md): in
+        # pifinder mode a SkySafari Align performs BOTH the PiFinder align
+        # (same as LCD Start > Align) and the INDI mount sync below. In
+        # indi_mount mode only the mount sync goes out; the PiFinder align
+        # (target_pixel) changes through the LCD menu alone.
+        if goto_method == "pifinder":
+            pifinder_aligned = _align_pifinder_if_enabled(shared_state, ra_deg, dec_deg)
     else:
         imu_aligned = _set_imu_alignment_from_target_if_no_solve(
             shared_state, ra_deg, dec_deg
         )
     indi_synced = _queue_indi_sync_if_enabled(ra_deg, dec_deg)
     logger.info(
-        "SkySafari sync handled: target_source=%s pifinder_aligned=%s "
-        "imu_aligned=%s indi_synced=%s target=%.4f,%.4f",
+        "SkySafari sync handled: target_source=%s goto_method=%s "
+        "pifinder_aligned=%s imu_aligned=%s indi_synced=%s target=%.4f,%.4f",
         target_source,
+        goto_method,
         pifinder_aligned,
         imu_aligned,
         indi_synced,

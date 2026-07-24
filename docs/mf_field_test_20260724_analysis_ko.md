@@ -328,7 +328,13 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
   - 사용자 명령 sync(LCD Guide 수동 sync, Multi Align confirm, SkySafari
     `:CM#`, 웹 sync 버튼)도 같은 필드로 소스를 남기면 현장 사후 분석이
     쉬워진다.
-- [ ] **B6. SkySafari 정렬(`:CM#`)의 모드별 라우팅** — 2장 정책 표 구현:
+- [x] **B6. SkySafari 정렬(`:CM#`)의 모드별 라우팅** — 2026-07-25 구현.
+  `pos_server.handle_sync_command()`가 `indi_goto_method`를 확인해
+  PiFinder 모드에서만 PiFinder 얼라인을 수행하고, INDI Mount 모드에서는
+  INDI 정렬 전송만 한다. `skysafari_pifinder_align` 키는 **PiFinder 모드
+  내 추가 토글로 유지**(기본 true; 단서 조항 발동 시 이 키로 자동 얼라인만
+  끌 수 있음, UI 노출은 하지 않음). 단위 테스트 2종 추가, 전체 smoke+unit
+  740 통과. 원 계획:
   - `indi_goto_method = pifinder`: **PiFinder 얼라인 + INDI 마운트 정렬 둘
     다** 수행 (현재의 `skysafari_pifinder_align` 동작을 PiFinder 모드
     전용으로 유지).
