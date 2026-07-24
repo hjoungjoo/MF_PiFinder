@@ -31,18 +31,23 @@
 - **얼라인** = PiFinder 내부 정렬 (plate-solve 기반 target_pixel/aligned 축).
   LCD 화면에서 사용자가 수행하는 동작.
 
-사용자 원칙:
+사용자 원칙 — **GoTo Type(`indi_goto_method`) 모드별 정책으로 확정
+(2026-07-25 개정)**:
 
-1. **정렬은 INDI 마운트로만 전송한다.** SkySafari `:CM#` 등 외부 Sync/Align
-   입력은 마운트 정렬로만 반영되어야 하고, PiFinder 얼라인을 건드리면 안 된다.
-2. **PiFinder 얼라인은 LCD 메뉴를 통해서만 수행한다.** SkySafari나 자동 로직이
-   얼라인을 변경하면 안 된다.
-3. ~~사용자 명령 없이 IMU 품질 좌표로 마운트를 자동 정렬(sync)하는 동작은
-   금지~~ → **개정(2026-07-25)**: 자동 정렬이 융합좌표(솔브가 없으면 IMU)를
-   소스 구분 없이 전송하는 것은 **의도된 폴백**이다 — 실외에서 솔빙이
-   느리거나 실패해도, GPS가 불안해도 호핑 가능한 수준의 이동을 유지하기
-   위함. INDI 전용 운용이 필요하면 설정(Tracking Guide / GoTo Recovery
-   Off)으로 끈다. 상세는 7.B 서두 참조.
+| 입력/동작 | GoTo Type = **INDI Mount** | GoTo Type = **PiFinder** |
+| --- | --- | --- |
+| SkySafari 정렬(`:CM#`) | **INDI 마운트 정렬만** 전송. PiFinder 얼라인은 건드리지 않음 | **PiFinder 얼라인(LCD Start > Align과 동일) + INDI 마운트 정렬 둘 다** 수행 |
+| 자동 정렬(추적 가이드 복구 등 PiFinder가 스스로 보내는 sync) | **금지** — 자동 sync를 전송하지 않음 | **허용** — 융합좌표를 소스(솔브/IMU) 구분 없이 전송하는 의도된 폴백 (솔빙이 느리거나 실패해도, GPS가 불안해도 호핑 가능한 이동 유지) |
+| PiFinder 얼라인 변경 경로 | LCD 메뉴(Start > Align)로만 | LCD 메뉴 + SkySafari 정렬 |
+
+단서 조항: SkySafari발 PiFinder 얼라인 자동 수행에 구현상 문제가 발견되면
+그 부분은 제외하고, PiFinder 얼라인은 **수동 LCD 메뉴로만** 수행한다
+(INDI 정렬 전송은 유지).
+
+초판 원칙 1~3("정렬은 INDI로만 / 얼라인은 LCD로만 / IMU 자동 정렬 금지")은
+위 모드별 정책으로 대체되었다 — INDI Mount 모드에서는 초판 원칙이 그대로
+성립하고, PiFinder 모드에서는 얼라인 동시 수행과 IMU 폴백 자동 정렬이
+의도된 동작이다.
 
 ## 3. 타임라인 재구성
 
@@ -135,23 +140,24 @@ indi_goto_guide_status.json
 - 추가로 `tracking_guide_state = enabled`로 실내에서도 pulse guide 보정이
   계속 전송되고 있었다 (오차 4.1′ 기준).
 
-**결론 재정리 (2026-07-25, 원칙 3 개정 반영)**: 위 동작은 결함이 아니라
-설계대로 동작한 것이다 — 융합좌표(무솔브 시 IMU) 기반 자동 정렬은 실외에서
-솔빙이 느리거나 실패할 때를 위한 의도된 폴백이며, 실내에는 솔브가 없어 IMU
-좌표가 그대로 보였을 뿐이다. 문제 2에서 실제로 남는 개선점은 두 가지다:
-(1) 사용자가 INDI 전용 운용을 원할 때 무엇을 꺼야 하는지가 불명확했다 →
-설정(Tracking Guide / GoTo Recovery Off)이 공식 수단임을 문서화(7.B 서두),
-(2) 어떤 좌표로 정렬됐는지가 상태에 남지 않아 진단이 어려웠다 → B5(소스
-기록)로 보강.
+**결론 재정리 (2026-07-25, 2장 모드별 정책 반영)**: 융합좌표(무솔브 시
+IMU) 기반 자동 정렬 자체는 결함이 아니라 의도된 폴백이다 — 단, 그 폴백은
+**GoTo Type = PiFinder 모드의 동작**이어야 한다. 당시 설정은
+`indi_goto_method = indi_mount`였으므로, 이 sync는 모드별 정책 기준으로
+**나가지 말았어야 할 자동 정렬**이다. 문제 2에서 남는 개선점:
+(1) **B4 모드 게이트** — INDI Mount 모드에서는 자동 sync 전송 금지(핵심
+수정), (2) 어떤 좌표로 정렬됐는지가 상태에 남지 않아 진단이 어려웠다 →
+B5(소스 기록)/B8(표시)로 보강, (3) 보조 수단으로 Tracking Guide / GoTo
+Recovery Off 설정 문서화(7.B 서두).
 
-## 6. 운용 원칙과 충돌하는 코드 경로
+## 6. 모드별 정책(2장) 대비 현재 코드 상태
 
-| # | 경로 | 위치 | 현재 상태 | 원칙 위반 |
+| # | 경로 | 위치 | 현재 상태 | 정책 대비 판정 |
 | --- | --- | --- | --- | --- |
-| 1 | SkySafari `:CM#` → PiFinder 얼라인(target_pixel) 덮어쓰기 | `pos_server.py::_align_pifinder_if_enabled()` | `skysafari_pifinder_align` 기본 **true**, UI 노출 없음 | 원칙 2 |
-| 2 | SkySafari `:CM#` → 무솔브 IMU 얼라인 보정 | `pos_server.py::_set_imu_alignment_from_target_if_no_solve()` | **옵션 없이 항상 켜짐**. config의 `skysafari_imu_align_without_solve` 키는 코드가 읽지 않는 잔재 | 원칙 2 |
-| 3 | 추적 가이드 외란 복구 → 융합좌표(IMU 포함)로 mount 정렬 | `indi_goto_guide_service.py::_begin_tracking_recovery_goto()` | 좌표 소스 구분 없음 | ~~원칙 3~~ → 의도된 폴백으로 확정(원칙 3 개정), 위반 아님 |
-| 4 | PiFinder GoTo 모드 반복 정렬 / final sync, pointing reset 시 IMU 정렬 | `indi_goto_guide_service.py::_send_sync_and_goto()`, `_send_final_sync_once()`, `pos_server.py::_align_mount_to_imu_on_reset()` | 무솔브 시 IMU 좌표로 sync | ~~원칙 3~~ → 의도된 폴백으로 확정, 위반 아님 |
+| 1 | SkySafari `:CM#` → PiFinder 얼라인(target_pixel) 교체 | `pos_server.py::_align_pifinder_if_enabled()` | `skysafari_pifinder_align` 기본 **true**, 모드 무관 동작 | PiFinder 모드: **의도된 동작**(얼라인+정렬 동시). INDI Mount 모드: 정책 위반 → **B6 모드 게이트** |
+| 2 | SkySafari `:CM#` → 무솔브 IMU 얼라인 보정 | `pos_server.py::_set_imu_alignment_from_target_if_no_solve()` | **옵션 없이 항상 켜짐**. config의 `skysafari_imu_align_without_solve` 키는 코드가 읽지 않는 잔재 | 옵션화 필요 → **B7** |
+| 3 | 추적 가이드 외란 복구 → 융합좌표(IMU 포함)로 mount 정렬 | `indi_goto_guide_service.py::_begin_tracking_recovery_goto()` | 좌표 소스/GoTo Type 구분 없음 | PiFinder 모드: **의도된 폴백**(소스 무관). INDI Mount 모드: 자동 정렬 금지 위반 → **B4 모드 게이트** |
+| 4 | PiFinder GoTo 모드 반복 정렬 / final sync, pointing reset 시 IMU 정렬 | `indi_goto_guide_service.py::_send_sync_and_goto()`, `_send_final_sync_once()`, `pos_server.py::_align_mount_to_imu_on_reset()` | 무솔브 시 IMU 좌표로 sync | PiFinder 모드 전용 경로 — **의도된 폴백**, 위반 아님 |
 
 ## 7. 수정 계획 체크리스트
 
@@ -269,20 +275,31 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
 동작이다. 이때 보내는 (ra, dec)는 `PointingCoordinateService`의 현재
 융합좌표이며, 솔브가 없으면 IMU 추측항법/mount+IMU 델타 좌표로도 전송된다.
 
-**정책 확정 (2026-07-25, 사용자 결정): 좌표 소스를 구분하지 않고 전송하는
-것은 의도된 설계다.** 실외에서도 plate solve가 느리거나 실패하는 경우가
-있고, GPS가 불안한 환경에서도 오차는 있더라도 호핑이 가능한 수준의 이동을
-유지해야 하기 때문이다. IMU 융합좌표 기반 자동 정렬은 그 폴백이며, 솔브
-소스 게이트로 차단하지 않는다.
+**정책 확정 (2026-07-25, 사용자 결정, 2장 모드별 정책 표 참조)**:
 
-- 실내 검증에서 관찰된 "손으로 움직이면 IMU 좌표로 재정렬"(문제 2의 증상)은
-  이 폴백이 설계대로 동작한 것이다. 실내에는 솔브가 없으므로 IMU 좌표가
-  프레임에 반영되는 것이 보였을 뿐이다.
-- PiFinder의 개입 없이 **INDI 전용으로 운용하고 싶을 때는 설정으로 끈다**:
-  `Tracking Guide = Off` 또는 `GoTo Recovery = Off`(C9). 이것이 소스 게이트
-  대신의 공식적인 제어 수단이다.
+1. **자동 정렬의 허용 여부는 GoTo Type이 결정한다.**
+   - `indi_goto_method = pifinder`: 자동 정렬 허용. 좌표 소스(솔브/IMU)를
+     구분하지 않고 전송하는 것은 의도된 설계다 — 실외에서도 plate solve가
+     느리거나 실패하는 경우가 있고, GPS가 불안한 환경에서도 오차는 있더라도
+     호핑이 가능한 수준의 이동을 유지해야 하기 때문. 솔브 소스 게이트로
+     차단하지 않는다.
+   - `indi_goto_method = indi_mount`: **자동 정렬 금지.** PiFinder가 스스로
+     sync를 전송하면 안 된다(→ B4). 사용자 명령 sync는 모드와 무관하게 허용.
+2. 실내 검증에서 관찰된 "손으로 움직이면 IMU 좌표로 재정렬"(문제 2의 증상)은
+   PiFinder 폴백이 설계대로 동작한 것이나, 당시 `indi_goto_method =
+   indi_mount`였으므로 **B4 기준으로는 나가지 말았어야 할 sync**다.
+3. 보조 제어 수단: `Tracking Guide = Off` / `GoTo Recovery = Off`(C9)로
+   추적 가이드 개입 자체를 끌 수 있다.
 
-- [ ] **B5. 자동 정렬 가시성(소스 기록)** — 게이트는 도입하지 않는 대신,
+- [ ] **B4. 자동 정렬 모드 게이트** — `indi_goto_method = indi_mount`이면
+  자동 sync를 전송하지 않는다. 실질 대상은 추적 가이드 외란 복구
+  (`_begin_tracking_recovery_goto()`)의 "현재 좌표로 sync 후 GoTo" — INDI
+  Mount 모드에서는 **sync를 생략하고 GoTo/펄스 복구만** 수행한다.
+  (PiFinder GoTo 반복 sync/final sync는 PiFinder 모드에서만 실행되는 경로라
+  자연히 해당 없음.) 생략 사실은 B5/B8 가시성 경로로 상태에 남긴다.
+  - 대상: `indi_goto_guide_service.py::_begin_tracking_recovery_goto()`
+    (+ 동일 조건의 기타 자동 sync 경로 전수 확인)
+- [ ] **B5. 자동 정렬 가시성(소스 기록)** — 소스 게이트는 도입하지 않는 대신,
   어떤 좌표로 정렬됐는지를 추적할 수 있게 한다: 자동 sync 전송 시 사용한
   좌표 소스(`solved` / `mount_imu_delta` / `imu_fallback`)와 솔브 나이를
   함께 기록한다.
@@ -295,14 +312,19 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
   - 사용자 명령 sync(LCD Guide 수동 sync, Multi Align confirm, SkySafari
     `:CM#`, 웹 sync 버튼)도 같은 필드로 소스를 남기면 현장 사후 분석이
     쉬워진다.
-- [ ] **B6. SkySafari Align이 PiFinder 얼라인을 덮어쓰지 않게** — 현재
-  SkySafari `:CM#`(Align/Sync)은 솔브가 있으면 **PiFinder 내부 얼라인
-  (target_pixel, LCD에서 맞춘 아이피스 정렬)까지 교체**한다
-  (`skysafari_pifinder_align` 기본 true, UI 노출 없음). 이 키의 기본값을
-  false로 바꾸고 웹 UI에 노출한다. 결과: `:CM#`은 **INDI 마운트로 가는
-  정렬 전송만** 수행하고, PiFinder 얼라인은 LCD에서만 바뀐다(운용 원칙 1·2).
-  - 대상: `default_config.json`, `pos_server.py`, `server.py`,
-    `views/indi_mount.html`
+- [ ] **B6. SkySafari 정렬(`:CM#`)의 모드별 라우팅** — 2장 정책 표 구현:
+  - `indi_goto_method = pifinder`: **PiFinder 얼라인 + INDI 마운트 정렬 둘
+    다** 수행 (현재의 `skysafari_pifinder_align` 동작을 PiFinder 모드
+    전용으로 유지).
+  - `indi_goto_method = indi_mount`: **INDI 마운트 정렬만** 전송. PiFinder
+    얼라인(target_pixel)은 건드리지 않는다.
+  - 단서 조항: SkySafari발 얼라인 자동 수행에 구현상 문제가 확인되면
+    PiFinder 모드에서도 얼라인 부분은 제외하고(INDI 정렬 전송은 유지)
+    수동 LCD 메뉴(Start > Align)로만 수행한다.
+  - `skysafari_pifinder_align` config 키는 모드 게이트로 흡수한다(키 제거
+    또는 PiFinder 모드 내 추가 토글로 유지 — 구현 시 결정).
+  - 대상: `pos_server.py::handle_sync_command()` (+ 필요시
+    `default_config.json`, `server.py`, `views/indi_mount.html`)
 - [ ] **B7. 무솔브 IMU 얼라인 옵션화** — 솔브가 없을 때 SkySafari `:CM#`이
   "타깃 좌표 vs 현재 IMU 방향"의 차이를 **PiFinder 내부의 IMU 보정
   오프셋**으로 저장하는 동작(마운트로는 전송되지 않고, SkySafari에 응답하는
