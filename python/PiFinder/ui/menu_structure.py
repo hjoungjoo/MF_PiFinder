@@ -1445,52 +1445,6 @@ pifinder_menu = {
                                     ],
                                 },
                                 {
-                                    "name": _("Source Mode"),
-                                    "class": UITextMenu,
-                                    "select": "single",
-                                    "config_option": "time_sync_source_mode",
-                                    "post_callback": callbacks.reload_config,
-                                    "items": [
-                                        {
-                                            "name": _("Chrony"),
-                                            "value": "chrony",
-                                        },
-                                        {
-                                            "name": _("Best"),
-                                            "value": "best",
-                                        },
-                                        {
-                                            "name": _("GPS"),
-                                            "value": "gps",
-                                        },
-                                        {
-                                            "name": _("NTP"),
-                                            "value": "ntp",
-                                        },
-                                    ],
-                                },
-                                {
-                                    "name": _("Clock Manager"),
-                                    "class": UITextMenu,
-                                    "select": "single",
-                                    "config_option": "time_sync_clock_manager",
-                                    "post_callback": callbacks.reload_config,
-                                    "items": [
-                                        {
-                                            "name": _("Chrony"),
-                                            "value": "chrony",
-                                        },
-                                        {
-                                            "name": _("PiFinder"),
-                                            "value": "pifinder",
-                                        },
-                                        {
-                                            "name": _("Off"),
-                                            "value": "off",
-                                        },
-                                    ],
-                                },
-                                {
                                     "name": _("Chrony Source"),
                                     "class": UITextMenu,
                                     "select": "single",
@@ -1512,73 +1466,6 @@ pifinder_menu = {
                                     "class": UITextMenu,
                                     "select": "single",
                                     "config_option": "gps_time_sync",
-                                    "post_callback": callbacks.reload_config,
-                                    "items": [
-                                        {
-                                            "name": _("Off"),
-                                            "value": False,
-                                        },
-                                        {
-                                            "name": _("On"),
-                                            "value": True,
-                                        },
-                                    ],
-                                },
-                                {
-                                    "name": _("PiFinder NTP"),
-                                    "class": UITextMenu,
-                                    "select": "single",
-                                    "config_option": "ntp_time_sync",
-                                    "post_callback": callbacks.reload_config,
-                                    "items": [
-                                        {
-                                            "name": _("Off"),
-                                            "value": False,
-                                        },
-                                        {
-                                            "name": _("On"),
-                                            "value": True,
-                                        },
-                                    ],
-                                },
-                                {
-                                    "name": _("PiFinder NTP Server"),
-                                    "class": UITextMenu,
-                                    "select": "single",
-                                    "config_option": "ntp_server",
-                                    "post_callback": callbacks.reload_config,
-                                    "items": [
-                                        {
-                                            "name": _("pool.ntp.org"),
-                                            "value": "pool.ntp.org",
-                                        },
-                                        {
-                                            "name": _("time.google.com"),
-                                            "value": "time.google.com",
-                                        },
-                                        {
-                                            "name": _("time.cloudflare.com"),
-                                            "value": "time.cloudflare.com",
-                                        },
-                                        {
-                                            "name": _("time.nist.gov"),
-                                            "value": "time.nist.gov",
-                                        },
-                                        {
-                                            "name": _("Custom"),
-                                            "value": "custom",
-                                            "callback": callbacks.edit_custom_ntp_server,
-                                            "name_suffix_callback": (
-                                                callbacks.get_custom_ntp_server_display
-                                            ),
-                                        },
-                                    ],
-                                },
-                                {
-                                    "name": _("Software PPS"),
-                                    "class": UITextMenu,
-                                    "select": "single",
-                                    "config_option": "software_pps",
                                     "post_callback": callbacks.reload_config,
                                     "items": [
                                         {

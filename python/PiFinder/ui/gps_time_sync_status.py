@@ -133,20 +133,12 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
 
         latest = _get(status, "latest", default={})
         selected = _get(status, "selected", default={})
-        ntp = _get(status, "ntp", default={})
         chrony = _get(status, "chrony", default={})
-        system_clock = _get(status, "system_clock_sync", default={})
         rtc = _get(status, "rtc_sync", default={})
-        software_pps = _get(status, "software_pps", default={})
 
         source = _get(latest, "source", default="--")
         message_class = _get(latest, "message_class", default="")
         source_text = f"{source} {message_class}".strip()
-        pps_text = (
-            _("On {ticks}").format(ticks=_get(software_pps, "tick_count", default=0))
-            if _get(software_pps, "enabled")
-            else _("Off")
-        )
 
         return [
             _("State: {state}").format(state=_get(status, "state", default="--")),
@@ -165,16 +157,12 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
                 valid=self._format_bool(_get(latest, "valid"))
             ),
             _("Source: {source}").format(source=source_text or "--"),
-            _("NTP: {state}").format(state=_get(ntp, "state", default="--")),
-            _("NTP srv: {server}").format(server=_get(ntp, "server", default="--")),
             _("tAcc: {tacc}").format(tacc=self._format_tacc(_get(latest, "tAcc_ns"))),
-            _("Sys: {state}").format(state=_get(system_clock, "state", default="--")),
             _("RTC: {state}").format(state=_get(rtc, "state", default="--")),
             _("Helper: {state}").format(state=_get(helper, "state", default="--")),
             _("Request: {present}").format(
                 present=_("Yes") if request_present else _("No")
             ),
-            _("PPS: {state}").format(state=pps_text),
             _("{square} Details").format(square=self._SQUARE_),
         ]
 
@@ -196,12 +184,9 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
 
         latest = _get(status, "latest", default={})
         selected = _get(status, "selected", default={})
-        ntp = _get(status, "ntp", default={})
         chrony = _get(status, "chrony", default={})
         samples = _get(status, "samples", default={})
-        system_clock = _get(status, "system_clock_sync", default={})
         rtc = _get(status, "rtc_sync", default={})
-        software_pps = _get(status, "software_pps", default={})
         helper_results = _get(helper, "results", default={})
 
         lines = [
@@ -234,23 +219,11 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
             _("Chrony off: {offset}").format(
                 offset=self._format_offset(_get(chrony, "system_time_offset_seconds"))
             ),
-            _("NTP: {state}").format(state=_get(ntp, "state", default="--")),
-            _("NTP srv: {server}").format(server=_get(ntp, "server", default="--")),
-            _("NTP time: {time}").format(time=self._format_time(_get(ntp, "time"))),
-            _("NTP delay: {delay}").format(
-                delay=self._format_offset(_get(ntp, "delay_seconds"))
-            ),
             _("Samples: {count}/{min_required}").format(
                 count=_get(samples, "count", default=0),
                 min_required=_get(samples, "min_required", default="--"),
             ),
-            _("Sys req: {state}").format(
-                state=_get(system_clock, "state", default="--")
-            ),
             _("RTC req: {state}").format(state=_get(rtc, "state", default="--")),
-            _("PPS ticks: {ticks}").format(
-                ticks=_get(software_pps, "tick_count", default=0)
-            ),
             _("Helper: {state}").format(state=_get(helper, "state", default="--")),
             _("Helper UID: {uid}").format(
                 uid=_get(helper, "effective_uid", default="--")
@@ -264,14 +237,6 @@ class UIGPSTimeSyncStatus(GuideKeyMixin, UIModule):
         ]
 
         if isinstance(helper_results, dict):
-            if "system_clock" in helper_results:
-                lines.append(
-                    _("Sys result: {state}").format(
-                        state=_get(
-                            helper_results, "system_clock", "state", default="--"
-                        )
-                    )
-                )
             if "rtc" in helper_results:
                 lines.append(
                     _("RTC result: {state}").format(

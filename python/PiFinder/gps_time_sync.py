@@ -1,11 +1,19 @@
 #!/usr/bin/python
 # -*- coding:utf-8 -*-
 """
-Integrated time-source monitor for PiFinder.
+Time-source monitor for PiFinder.
 
-The monitor evaluates GPS and NTP candidates, selects the best available time
-source, manages optional software PPS ticks, and writes constrained requests for
-the privileged helper when system clock or RTC updates are enabled.
+chronyd is the only system-clock manager: it selects the more accurate of the
+NTP pool (when a network is available) and the GPS SHM refclock fed by gpsd
+(in the field). This monitor does not write the system clock. It observes
+chronyd tracking state and GPS time candidates for the status UI and the
+mount-sync trust gate, and writes constrained requests for the privileged
+helper when RTC updates are enabled.
+
+Reduced on 2026-07-25 (docs/mf_field_test_20260724_analysis_ko.md, item A3):
+the PiFinder-side SNTP client, software PPS ticks, direct system-clock writes
+(Clock Manager = PiFinder) and the Best/GPS/NTP source modes were removed —
+source selection is chronyd's job.
 """
 
 from __future__ import annotations
@@ -13,12 +21,8 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-import math
 import os
-import socket
-import struct
 import subprocess
-import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -44,13 +48,6 @@ DATA_DIR = Path(os.environ.get("PIFINDER_DATA_DIR", utils.data_dir))
 STATUS_FILE = utils.runtime_dir / "gps_time_status.json"
 REQUEST_FILE = DATA_DIR / "gps_time_sync_request.json"
 HELPER_STATUS_FILE = DATA_DIR / "gps_time_sync_helper_status.json"
-NTP_EPOCH_DELTA = 2_208_988_800
-DEFAULT_NTP_SERVERS = (
-    "pool.ntp.org",
-    "time.google.com",
-    "time.cloudflare.com",
-    "time.nist.gov",
-)
 
 
 def _read_boot_id() -> str:
@@ -121,82 +118,6 @@ def _utc_datetime(dt: datetime.datetime) -> datetime.datetime:
     if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
         return pytz.timezone("UTC").localize(dt)
     return dt.astimezone(pytz.timezone("UTC"))
-
-
-def _read_ntp_timestamp(packet: bytes, offset: int) -> float:
-    seconds, fraction = struct.unpack("!II", packet[offset : offset + 8])
-    return seconds - NTP_EPOCH_DELTA + fraction / 2**32
-
-
-def _write_ntp_timestamp(packet: bytearray, offset: int, unix_time: float) -> None:
-    ntp_time = unix_time + NTP_EPOCH_DELTA
-    seconds = int(ntp_time)
-    fraction = int((ntp_time - seconds) * 2**32)
-    packet[offset : offset + 8] = struct.pack("!II", seconds, fraction)
-
-
-def _read_ntp_short(packet: bytes, offset: int, signed: bool = False) -> float:
-    fmt = "!i" if signed else "!I"
-    raw_value = struct.unpack(fmt, packet[offset : offset + 4])[0]
-    return raw_value / 2**16
-
-
-class NtpClient:
-    """Small SNTP client used for opportunistic time-source checks."""
-
-    port = 123
-
-    def __init__(self, time_fn: Callable[[], float] = time.time):
-        self.time_fn = time_fn
-
-    def query(self, server: str, timeout_seconds: float = 1.0) -> dict[str, Any]:
-        server = server.strip()
-        if not server:
-            raise ValueError("NTP server is empty")
-
-        packet = bytearray(48)
-        packet[0] = 0x23  # LI=0, VN=4, mode=client
-        t1 = self.time_fn()
-        _write_ntp_timestamp(packet, 40, t1)
-
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.settimeout(timeout_seconds)
-            sock.sendto(packet, (server, self.port))
-            data, address = sock.recvfrom(512)
-            t4 = self.time_fn()
-
-        if len(data) < 48:
-            raise ValueError("NTP response was shorter than 48 bytes")
-
-        leap = (data[0] >> 6) & 0x03
-        version = (data[0] >> 3) & 0x07
-        mode = data[0] & 0x07
-        stratum = data[1]
-        t2 = _read_ntp_timestamp(data, 32)
-        t3 = _read_ntp_timestamp(data, 40)
-        root_delay = _read_ntp_short(data, 4, signed=True)
-        root_dispersion = _read_ntp_short(data, 8)
-        delay = (t4 - t1) - (t3 - t2)
-        offset = ((t2 - t1) + (t3 - t4)) / 2.0
-        valid = mode in (4, 5) and 0 < stratum < 16 and t3 > 0 and leap != 3
-        quality = max(0.0, delay) / 2.0 + max(0.0, root_dispersion)
-
-        return {
-            "time": datetime.datetime.fromtimestamp(t4 + offset, tz=pytz.UTC),
-            "server": server,
-            "address": address[0] if address else None,
-            "valid": valid,
-            "version": version,
-            "mode": mode,
-            "stratum": stratum,
-            "leap": leap,
-            "offset_seconds": offset,
-            "delay_seconds": max(0.0, delay),
-            "root_delay_seconds": root_delay,
-            "root_dispersion_seconds": root_dispersion,
-            "quality_seconds": quality,
-            "received_unix": t4,
-        }
 
 
 def _first_float(value: Any) -> Optional[float]:
@@ -293,25 +214,14 @@ class ChronyClient:
 
 
 class GpsTimeSyncMonitor:
-    """Evaluate GPS time quality and optional software PPS ticks."""
+    """Observe chronyd and GPS time quality; request RTC updates if enabled."""
 
     def __init__(
         self,
         time_sync_enabled: Optional[bool] = None,
         enabled: bool = False,
-        ntp_enabled: bool = False,
         chrony_enabled: bool = False,
-        software_pps_enabled: bool = False,
-        system_clock_sync_enabled: bool = False,
         rtc_sync_enabled: bool = False,
-        source_mode: str = "best",
-        clock_manager: str = "pifinder",
-        ntp_server: str = DEFAULT_NTP_SERVERS[0],
-        ntp_server_custom: str = "",
-        ntp_poll_interval_seconds: float = 300.0,
-        ntp_timeout_seconds: float = 1.0,
-        ntp_max_delay_ms: float = 1500.0,
-        ntp_stale_seconds: float = 900.0,
         chrony_poll_interval_seconds: float = 30.0,
         chrony_timeout_seconds: float = 1.0,
         chrony_stale_seconds: float = 120.0,
@@ -322,52 +232,20 @@ class GpsTimeSyncMonitor:
         stable_jitter_ms: float = 250.0,
         stable_offset_ms: float = 1000.0,
         status_write_interval_seconds: float = 5.0,
-        software_pps_interval_seconds: float = 1.0,
-        system_clock_sync_min_interval_seconds: float = 300.0,
-        system_clock_sync_step_threshold_ms: float = 500.0,
         rtc_sync_min_interval_seconds: float = 3600.0,
         status_file: Path = STATUS_FILE,
         helper_status_file: Path = HELPER_STATUS_FILE,
         time_fn: Callable[[], float] = time.time,
         monotonic_fn: Callable[[], float] = time.monotonic,
         request_writer: Optional[ClockSyncRequestWriter] = None,
-        ntp_client: Optional[NtpClient] = None,
         chrony_client: Optional[ChronyClient] = None,
-        ntp_async: bool = True,
     ):
-        self.clock_manager = (
-            clock_manager
-            if clock_manager in ("chrony", "pifinder", "off")
-            else "chrony"
-        )
-        system_clock_sync_enabled = (
-            system_clock_sync_enabled and self.clock_manager == "pifinder"
-        )
         if time_sync_enabled is None:
-            time_sync_enabled = (
-                enabled
-                or ntp_enabled
-                or chrony_enabled
-                or software_pps_enabled
-                or system_clock_sync_enabled
-                or rtc_sync_enabled
-            )
+            time_sync_enabled = enabled or chrony_enabled or rtc_sync_enabled
         self.time_sync_enabled = time_sync_enabled
         self.enabled = enabled
-        self.ntp_enabled = ntp_enabled
         self.chrony_enabled = chrony_enabled
-        self.software_pps_enabled = software_pps_enabled
-        self.system_clock_sync_enabled = system_clock_sync_enabled
         self.rtc_sync_enabled = rtc_sync_enabled
-        self.source_mode = (
-            source_mode if source_mode in ("chrony", "best", "gps", "ntp") else "best"
-        )
-        self.ntp_server = ntp_server
-        self.ntp_server_custom = ntp_server_custom
-        self.ntp_poll_interval_seconds = max(5.0, ntp_poll_interval_seconds)
-        self.ntp_timeout_seconds = max(0.1, ntp_timeout_seconds)
-        self.ntp_max_delay_seconds = max(0.001, ntp_max_delay_ms / 1000.0)
-        self.ntp_stale_seconds = max(5.0, ntp_stale_seconds)
         self.chrony_poll_interval_seconds = max(5.0, chrony_poll_interval_seconds)
         self.chrony_timeout_seconds = max(0.1, chrony_timeout_seconds)
         self.chrony_stale_seconds = max(5.0, chrony_stale_seconds)
@@ -378,22 +256,13 @@ class GpsTimeSyncMonitor:
         self.stable_jitter_seconds = max(0.001, stable_jitter_ms / 1000.0)
         self.stable_offset_seconds = max(0.001, stable_offset_ms / 1000.0)
         self.status_write_interval_seconds = max(0.5, status_write_interval_seconds)
-        self.software_pps_interval_seconds = max(0.1, software_pps_interval_seconds)
-        self.system_clock_sync_min_interval_seconds = max(
-            1.0, system_clock_sync_min_interval_seconds
-        )
-        self.system_clock_sync_step_threshold_seconds = max(
-            0.0, system_clock_sync_step_threshold_ms / 1000.0
-        )
         self.rtc_sync_min_interval_seconds = max(1.0, rtc_sync_min_interval_seconds)
         self.status_file = status_file
         self.helper_status_file = helper_status_file
         self.time_fn = time_fn
         self.monotonic_fn = monotonic_fn
         self.request_writer = request_writer or ClockSyncRequestWriter()
-        self.ntp_client = ntp_client or NtpClient(time_fn=time_fn)
         self.chrony_client = chrony_client or ChronyClient(time_fn=time_fn)
-        self.ntp_async = ntp_async
 
         self.samples: Deque[dict[str, Any]] = deque()
         self.state = "disabled"
@@ -403,33 +272,12 @@ class GpsTimeSyncMonitor:
         self.last_status_write_monotonic: Optional[float] = None
         self.latest_sample: Optional[dict[str, Any]] = None
 
-        self.ntp_state = "disabled"
-        self.ntp_message = "NTP time source disabled"
-        self.latest_ntp_sample: Optional[dict[str, Any]] = None
-        self.last_ntp_poll_monotonic: Optional[float] = None
-        self.ntp_query_in_progress = False
-        self.ntp_query_started_monotonic: Optional[float] = None
-        self.ntp_pending_result: Optional[dict[str, Any]] = None
-        self.ntp_lock = threading.Lock()
-
         self.chrony_state = "disabled"
         self.chrony_message = "chronyd time source disabled"
         self.latest_chrony_sample: Optional[dict[str, Any]] = None
         self.last_chrony_poll_monotonic: Optional[float] = None
 
         self.selected_source: Optional[dict[str, Any]] = None
-
-        self.pps_tick_count = 0
-        self.last_pps_tick_monotonic: Optional[float] = None
-        self.last_pps_tick_estimated_utc: Optional[datetime.datetime] = None
-        self.next_pps_tick_monotonic: Optional[float] = None
-
-        self.system_clock_sync_state = "disabled"
-        self.system_clock_sync_message = "System clock sync disabled"
-        self.system_clock_request_count = 0
-        self.last_system_clock_request_monotonic: Optional[float] = None
-        self.last_system_clock_request_utc: Optional[str] = None
-        self.last_system_clock_offset_seconds: Optional[float] = None
 
         self.rtc_sync_state = "disabled"
         self.rtc_sync_message = "RTC sync disabled"
@@ -444,34 +292,11 @@ class GpsTimeSyncMonitor:
         status_file: Path = STATUS_FILE,
         helper_status_file: Path = HELPER_STATUS_FILE,
     ) -> "GpsTimeSyncMonitor":
-        clock_manager = str(cfg.get_option("time_sync_clock_manager", "chrony"))
         return cls(
-            time_sync_enabled=_as_bool(cfg.get_option("time_sync_enabled", False)),
-            enabled=_as_bool(cfg.get_option("gps_time_sync", True)),
-            ntp_enabled=_as_bool(cfg.get_option("ntp_time_sync", False)),
-            chrony_enabled=_as_bool(cfg.get_option("chrony_time_sync", True)),
-            software_pps_enabled=_as_bool(cfg.get_option("software_pps", False)),
-            system_clock_sync_enabled=(
-                clock_manager == "pifinder"
-                and _as_bool(cfg.get_option("time_sync_system_clock", True), True)
-            ),
+            time_sync_enabled=_as_bool(cfg.get_option("time_sync_enabled", True), True),
+            enabled=_as_bool(cfg.get_option("gps_time_sync", True), True),
+            chrony_enabled=_as_bool(cfg.get_option("chrony_time_sync", True), True),
             rtc_sync_enabled=_as_bool(cfg.get_option("rtc_sync", False)),
-            source_mode=str(cfg.get_option("time_sync_source_mode", "chrony")),
-            clock_manager=clock_manager,
-            ntp_server=str(cfg.get_option("ntp_server", DEFAULT_NTP_SERVERS[0])),
-            ntp_server_custom=str(cfg.get_option("ntp_server_custom", "")),
-            ntp_poll_interval_seconds=_as_float(
-                cfg.get_option("ntp_poll_interval_seconds", 300.0), 300.0
-            ),
-            ntp_timeout_seconds=_as_float(
-                cfg.get_option("ntp_timeout_seconds", 1.0), 1.0
-            ),
-            ntp_max_delay_ms=_as_float(
-                cfg.get_option("ntp_max_delay_ms", 1500.0), 1500.0
-            ),
-            ntp_stale_seconds=_as_float(
-                cfg.get_option("ntp_stale_seconds", 900.0), 900.0
-            ),
             chrony_poll_interval_seconds=_as_float(
                 cfg.get_option("chrony_poll_interval_seconds", 30.0), 30.0
             ),
@@ -498,27 +323,6 @@ class GpsTimeSyncMonitor:
             stable_offset_ms=_as_float(
                 cfg.get_option("gps_time_sync_stable_offset_ms", 1000.0), 1000.0
             ),
-            software_pps_interval_seconds=_as_float(
-                cfg.get_option("software_pps_interval_seconds", 1.0), 1.0
-            ),
-            system_clock_sync_min_interval_seconds=_as_float(
-                cfg.get_option(
-                    "time_sync_system_clock_min_interval_seconds",
-                    cfg.get_option(
-                        "gps_time_sync_system_clock_min_interval_seconds", 300.0
-                    ),
-                ),
-                300.0,
-            ),
-            system_clock_sync_step_threshold_ms=_as_float(
-                cfg.get_option(
-                    "time_sync_system_clock_step_threshold_ms",
-                    cfg.get_option(
-                        "gps_time_sync_system_clock_step_threshold_ms", 500.0
-                    ),
-                ),
-                500.0,
-            ),
             rtc_sync_min_interval_seconds=_as_float(
                 cfg.get_option("rtc_sync_min_interval_seconds", 3600.0), 3600.0
             ),
@@ -534,19 +338,8 @@ class GpsTimeSyncMonitor:
         )
         self.time_sync_enabled = updated.time_sync_enabled
         self.enabled = updated.enabled
-        self.ntp_enabled = updated.ntp_enabled
         self.chrony_enabled = updated.chrony_enabled
-        self.software_pps_enabled = updated.software_pps_enabled
-        self.system_clock_sync_enabled = updated.system_clock_sync_enabled
         self.rtc_sync_enabled = updated.rtc_sync_enabled
-        self.source_mode = updated.source_mode
-        self.clock_manager = updated.clock_manager
-        self.ntp_server = updated.ntp_server
-        self.ntp_server_custom = updated.ntp_server_custom
-        self.ntp_poll_interval_seconds = updated.ntp_poll_interval_seconds
-        self.ntp_timeout_seconds = updated.ntp_timeout_seconds
-        self.ntp_max_delay_seconds = updated.ntp_max_delay_seconds
-        self.ntp_stale_seconds = updated.ntp_stale_seconds
         self.chrony_poll_interval_seconds = updated.chrony_poll_interval_seconds
         self.chrony_timeout_seconds = updated.chrony_timeout_seconds
         self.chrony_stale_seconds = updated.chrony_stale_seconds
@@ -557,25 +350,13 @@ class GpsTimeSyncMonitor:
         self.stable_jitter_seconds = updated.stable_jitter_seconds
         self.stable_offset_seconds = updated.stable_offset_seconds
         self.status_write_interval_seconds = updated.status_write_interval_seconds
-        self.software_pps_interval_seconds = updated.software_pps_interval_seconds
-        self.system_clock_sync_min_interval_seconds = (
-            updated.system_clock_sync_min_interval_seconds
-        )
-        self.system_clock_sync_step_threshold_seconds = (
-            updated.system_clock_sync_step_threshold_seconds
-        )
         self.rtc_sync_min_interval_seconds = updated.rtc_sync_min_interval_seconds
         self._refresh_action_wait_states()
         self.write_status(force=True)
 
     def _active(self) -> bool:
         return self.time_sync_enabled and (
-            self.enabled
-            or self.ntp_enabled
-            or self.chrony_enabled
-            or self.software_pps_enabled
-            or self.system_clock_sync_enabled
-            or self.rtc_sync_enabled
+            self.enabled or self.chrony_enabled or self.rtc_sync_enabled
         )
 
     def write_startup_status(self) -> None:
@@ -585,8 +366,6 @@ class GpsTimeSyncMonitor:
             self._set_state("waiting_for_time_source", "Waiting for chronyd")
         elif self.enabled:
             self._set_state("waiting_for_time_source", "Waiting for time source")
-        elif self.software_pps_enabled:
-            self._set_state("software_pps_only", "Software PPS enabled")
         else:
             self._set_state("disabled", "Time sync has no enabled source")
 
@@ -604,12 +383,6 @@ class GpsTimeSyncMonitor:
         changed = state != self.gps_state or message != self.gps_message
         self.gps_state = state
         self.gps_message = message
-        return changed
-
-    def _set_ntp_state(self, state: str, message: str) -> bool:
-        changed = state != self.ntp_state or message != self.ntp_message
-        self.ntp_state = state
-        self.ntp_message = message
         return changed
 
     def _set_chrony_state(self, state: str, message: str) -> bool:
@@ -853,63 +626,16 @@ class GpsTimeSyncMonitor:
             "leap_status": self.latest_chrony_sample.get("leap_status"),
         }
 
-    def _ntp_candidate(self) -> Optional[dict[str, Any]]:
-        if self.ntp_state != "stable" or self.latest_ntp_sample is None:
-            return None
-        age = self.monotonic_fn() - self.latest_ntp_sample["monotonic"]
-        if age > self.ntp_stale_seconds:
-            return None
-        ntp_dt = self._sample_time_for_now(self.latest_ntp_sample, "time")
-        if ntp_dt is None:
-            return None
-        return {
-            "source": "NTP",
-            "time": ntp_dt.isoformat(),
-            "valid": True,
-            "quality_seconds": self.latest_ntp_sample.get("quality_seconds"),
-            "age_seconds": age,
-            "server": self.latest_ntp_sample.get("server"),
-            "delay_seconds": self.latest_ntp_sample.get("delay_seconds"),
-            "stratum": self.latest_ntp_sample.get("stratum"),
-        }
-
-    def _candidate_for_mode(self) -> list[dict[str, Any]]:
-        chrony_candidate = self._chrony_candidate()
-        gps_candidate = self._gps_candidate()
-        ntp_candidate = self._ntp_candidate()
-        if self.source_mode == "chrony":
-            return [chrony_candidate] if chrony_candidate else []
-        if self.source_mode == "gps":
-            return [gps_candidate] if gps_candidate else []
-        if self.source_mode == "ntp":
-            return [ntp_candidate] if ntp_candidate else []
-        return [
-            candidate
-            for candidate in (chrony_candidate, gps_candidate, ntp_candidate)
-            if candidate is not None
-        ]
-
     def _evaluate_selected_source(self) -> bool:
-        candidates = self._candidate_for_mode()
-        if candidates:
-
-            def _quality_key(candidate: dict[str, Any]) -> float:
-                quality = candidate.get("quality_seconds")
-                if isinstance(quality, (int, float)):
-                    return float(quality)
-                return float("inf")
-
-            selected = min(candidates, key=_quality_key)
-            changed = selected != self.selected_source
-            self.selected_source = selected
+        # chronyd manages the system clock and already selects the most
+        # accurate of its sources (NTP / GPS refclock); the monitor only
+        # mirrors that choice.
+        candidate = self._chrony_candidate() if self.chrony_enabled else None
+        if candidate is not None:
+            changed = candidate != self.selected_source
+            self.selected_source = candidate
             changed = (
-                self._set_state(
-                    "stable",
-                    "Selected {source} time source".format(
-                        source=selected.get("source", "time")
-                    ),
-                )
-                or changed
+                self._set_state("stable", "Selected Chrony time source") or changed
             )
             return changed
 
@@ -917,12 +643,6 @@ class GpsTimeSyncMonitor:
         self.selected_source = None
         changed = previous_selected is not None
 
-        if self.source_mode == "gps" and self.enabled:
-            return self._set_state(self.gps_state, self.gps_message) or changed
-        if self.source_mode == "ntp" and self.ntp_enabled:
-            return self._set_state(self.ntp_state, self.ntp_message) or changed
-        if self.source_mode == "chrony" and self.chrony_enabled:
-            return self._set_state(self.chrony_state, self.chrony_message) or changed
         if self.chrony_enabled and self.chrony_state not in (
             "disabled",
             "waiting_for_chrony",
@@ -930,23 +650,16 @@ class GpsTimeSyncMonitor:
             return self._set_state(self.chrony_state, self.chrony_message) or changed
         if self.enabled and self.gps_state not in ("disabled", "waiting_for_gps_time"):
             return self._set_state(self.gps_state, self.gps_message) or changed
-        if self.ntp_enabled:
-            return self._set_state(self.ntp_state, self.ntp_message) or changed
         if self.chrony_enabled:
             return self._set_state(self.chrony_state, self.chrony_message) or changed
         if self.enabled:
             return self._set_state(self.gps_state, self.gps_message) or changed
-        if self.software_pps_enabled:
-            return (
-                self._set_state("software_pps_only", "Software PPS enabled") or changed
-            )
         return self._set_state("disabled", "Time sync has no enabled source") or changed
 
     def _evaluate_state(self) -> bool:
         if not self.time_sync_enabled:
             self.selected_source = None
             self._set_gps_state("disabled", "GPS time source disabled")
-            self._set_ntp_state("disabled", "NTP time source disabled")
             self._set_chrony_state("disabled", "chronyd time source disabled")
             return self._set_state("disabled", "Time sync disabled")
 
@@ -954,35 +667,11 @@ class GpsTimeSyncMonitor:
         changed = self._evaluate_selected_source() or changed
         return changed
 
-    def _set_system_clock_sync_state(
-        self, state: str, message: str, offset_seconds: Optional[float] = None
-    ) -> bool:
-        changed = (
-            state != self.system_clock_sync_state
-            or message != self.system_clock_sync_message
-            or offset_seconds != self.last_system_clock_offset_seconds
-        )
-        self.system_clock_sync_state = state
-        self.system_clock_sync_message = message
-        self.last_system_clock_offset_seconds = offset_seconds
-        return changed
-
     def _set_rtc_sync_state(self, state: str, message: str) -> bool:
         changed = state != self.rtc_sync_state or message != self.rtc_sync_message
         self.rtc_sync_state = state
         self.rtc_sync_message = message
         return changed
-
-    def _latest_gps_datetime(self) -> Optional[datetime.datetime]:
-        if self.latest_sample is None:
-            return None
-        gps_time = self.latest_sample.get("gps_time")
-        if not gps_time:
-            return None
-        try:
-            return _utc_datetime(datetime.datetime.fromisoformat(gps_time))
-        except ValueError:
-            return None
 
     def _selected_datetime(self) -> Optional[datetime.datetime]:
         if not self.selected_source:
@@ -994,14 +683,6 @@ class GpsTimeSyncMonitor:
             return _utc_datetime(datetime.datetime.fromisoformat(selected_time))
         except ValueError:
             return None
-
-    def _effective_ntp_server(self) -> str:
-        if self.ntp_server == "custom":
-            custom = self.ntp_server_custom.strip()
-            if custom:
-                return custom
-        server = self.ntp_server.strip()
-        return server if server and server != "custom" else DEFAULT_NTP_SERVERS[0]
 
     def _apply_chrony_result(self, result: dict[str, Any]) -> bool:
         now_monotonic = self.monotonic_fn()
@@ -1044,132 +725,6 @@ class GpsTimeSyncMonitor:
             str(result.get("state") or "stable"),
             str(result.get("message") or "chronyd is tracking a time source"),
         )
-
-    def _apply_ntp_result(self, result: dict[str, Any]) -> bool:
-        now_monotonic = self.monotonic_fn()
-        if not result.get("ok", True):
-            self.latest_ntp_sample = {
-                "server": result.get("server", self._effective_ntp_server()),
-                "valid": False,
-                "error": result.get("message", "NTP query failed"),
-                "monotonic": now_monotonic,
-                "received_unix": self.time_fn(),
-            }
-            return self._set_ntp_state(
-                "unavailable", str(result.get("message") or "NTP query failed")
-            )
-
-        ntp_dt = result.get("time")
-        if not isinstance(ntp_dt, datetime.datetime):
-            self.latest_ntp_sample = {
-                "server": result.get("server", self._effective_ntp_server()),
-                "valid": False,
-                "error": "NTP response did not include time",
-                "monotonic": now_monotonic,
-                "received_unix": self.time_fn(),
-            }
-            return self._set_ntp_state("invalid_sample", "NTP response missing time")
-
-        ntp_dt = _utc_datetime(ntp_dt)
-        delay_seconds = result.get("delay_seconds")
-        valid = _as_bool(result.get("valid", True), True)
-        sample = {
-            "time": ntp_dt.isoformat(),
-            "server": result.get("server", self._effective_ntp_server()),
-            "address": result.get("address"),
-            "valid": valid,
-            "stratum": result.get("stratum"),
-            "leap": result.get("leap"),
-            "offset_seconds": result.get("offset_seconds"),
-            "delay_seconds": delay_seconds,
-            "root_delay_seconds": result.get("root_delay_seconds"),
-            "root_dispersion_seconds": result.get("root_dispersion_seconds"),
-            "quality_seconds": result.get("quality_seconds"),
-            "system_offset_seconds": ntp_dt.timestamp() - self.time_fn(),
-            "monotonic": now_monotonic,
-            "received_unix": result.get("received_unix", self.time_fn()),
-        }
-        self.latest_ntp_sample = sample
-
-        if not valid:
-            return self._set_ntp_state(
-                "low_quality", "NTP server response was not valid"
-            )
-        if (
-            isinstance(delay_seconds, (int, float))
-            and delay_seconds > self.ntp_max_delay_seconds
-        ):
-            return self._set_ntp_state(
-                "low_quality",
-                "NTP delay {delay:.3f}s exceeds {limit:.3f}s".format(
-                    delay=delay_seconds, limit=self.ntp_max_delay_seconds
-                ),
-            )
-        return self._set_ntp_state("stable", "NTP time is available")
-
-    def _run_ntp_query(self, server: str) -> None:
-        try:
-            result = self.ntp_client.query(server, self.ntp_timeout_seconds)
-            result = dict(result)
-            result.setdefault("ok", True)
-        except Exception as exc:
-            result = {"ok": False, "server": server, "message": str(exc)}
-
-        with self.ntp_lock:
-            self.ntp_pending_result = result
-            self.ntp_query_in_progress = False
-
-    def _consume_ntp_result(self) -> bool:
-        with self.ntp_lock:
-            result = self.ntp_pending_result
-            self.ntp_pending_result = None
-        if result is None:
-            return False
-        return self._apply_ntp_result(result)
-
-    def _poll_ntp(self, now_monotonic: float) -> bool:
-        changed = self._consume_ntp_result()
-        if not self.time_sync_enabled or not self.ntp_enabled:
-            changed = (
-                self._set_ntp_state("disabled", "NTP time source disabled") or changed
-            )
-            return changed
-
-        if (
-            self.latest_ntp_sample is not None
-            and now_monotonic - self.latest_ntp_sample["monotonic"]
-            > self.ntp_stale_seconds
-        ):
-            changed = self._set_ntp_state("stale", "NTP sample is stale") or changed
-
-        if self.ntp_query_in_progress:
-            return self._set_ntp_state("querying", "Querying NTP server") or changed
-
-        due = (
-            self.last_ntp_poll_monotonic is None
-            or now_monotonic - self.last_ntp_poll_monotonic
-            >= self.ntp_poll_interval_seconds
-        )
-        if not due:
-            return changed
-
-        server = self._effective_ntp_server()
-        self.last_ntp_poll_monotonic = now_monotonic
-        self.ntp_query_started_monotonic = now_monotonic
-        self.ntp_query_in_progress = True
-
-        if self.ntp_async:
-            thread = threading.Thread(
-                target=self._run_ntp_query,
-                args=(server,),
-                name="PiFinderNTP",
-                daemon=True,
-            )
-            thread.start()
-            return self._set_ntp_state("querying", "Querying NTP server") or changed
-
-        self._run_ntp_query(server)
-        return self._consume_ntp_result() or changed
 
     def _poll_chrony(self, now_monotonic: float) -> bool:
         if not self.time_sync_enabled or not self.chrony_enabled:
@@ -1216,46 +771,7 @@ class GpsTimeSyncMonitor:
             return False
         return self.monotonic_fn() - last_monotonic < min_interval_seconds
 
-    def _system_clock_request_action(
-        self, gps_dt: datetime.datetime
-    ) -> tuple[bool, Optional[dict[str, Any]]]:
-        if not self.system_clock_sync_enabled:
-            changed = self._set_system_clock_sync_state(
-                "disabled", "System clock sync disabled"
-            )
-            return changed, None
-
-        offset_seconds = gps_dt.timestamp() - self.time_fn()
-        if abs(offset_seconds) <= self.system_clock_sync_step_threshold_seconds:
-            changed = self._set_system_clock_sync_state(
-                "in_sync",
-                "System clock offset is within the configured threshold",
-                offset_seconds,
-            )
-            return changed, None
-
-        if self._cooldown_active(
-            self.last_system_clock_request_monotonic,
-            self.system_clock_sync_min_interval_seconds,
-        ):
-            changed = self._set_system_clock_sync_state(
-                "cooldown",
-                "Waiting before the next system clock sync request",
-                offset_seconds,
-            )
-            return changed, None
-
-        return False, {
-            "enabled": True,
-            "offset_seconds": offset_seconds,
-            "step_threshold_seconds": self.system_clock_sync_step_threshold_seconds,
-            "min_interval_seconds": self.system_clock_sync_min_interval_seconds,
-        }
-
-    def _rtc_request_action(
-        self, gps_dt: datetime.datetime
-    ) -> tuple[bool, Optional[dict[str, Any]]]:
-        del gps_dt
+    def _rtc_request_action(self) -> tuple[bool, Optional[dict[str, Any]]]:
         if not self.rtc_sync_enabled:
             changed = self._set_rtc_sync_state("disabled", "RTC sync disabled")
             return changed, None
@@ -1300,8 +816,6 @@ class GpsTimeSyncMonitor:
                 "time": selected.get("time"),
                 "valid": selected.get("valid"),
                 "quality_seconds": selected.get("quality_seconds"),
-                "server": selected.get("server"),
-                "delay_seconds": selected.get("delay_seconds"),
                 "tAcc_ns": selected.get("tAcc_ns"),
                 "reference_id": selected.get("reference_id"),
                 "reference_name": selected.get("reference_name"),
@@ -1315,7 +829,6 @@ class GpsTimeSyncMonitor:
             "sources": {
                 "chrony": self._chrony_candidate(),
                 "gps": self._gps_candidate(),
-                "ntp": self._ntp_candidate(),
             },
             "samples": {
                 "count": len(self.samples),
@@ -1325,41 +838,18 @@ class GpsTimeSyncMonitor:
         result = self.request_writer.write_request(payload)
         if not result.get("ok"):
             message = str(result.get("message") or "Could not write sync request")
-            changed = False
-            if "system_clock" in actions:
-                changed = (
-                    self._set_system_clock_sync_state("request_error", message)
-                    or changed
-                )
-            if "rtc" in actions:
-                changed = self._set_rtc_sync_state("request_error", message) or changed
-            return changed
+            return self._set_rtc_sync_state("request_error", message)
 
         now_monotonic = self.monotonic_fn()
         sync_time = sync_dt.isoformat()
         message = str(result.get("message") or "Sync request written")
         changed = False
-        if "system_clock" in actions:
-            self.system_clock_request_count += 1
-            self.last_system_clock_request_monotonic = now_monotonic
-            self.last_system_clock_request_utc = sync_time
-            changed = (
-                self._set_system_clock_sync_state(
-                    "requested",
-                    "System clock sync requested for privileged helper",
-                    actions["system_clock"].get("offset_seconds"),
-                )
-                or changed
-            )
         if "rtc" in actions:
             self.rtc_request_count += 1
             self.last_rtc_request_monotonic = now_monotonic
             self.last_rtc_request_utc = sync_time
-            changed = (
-                self._set_rtc_sync_state(
-                    "requested", "RTC sync requested for privileged helper"
-                )
-                or changed
+            changed = self._set_rtc_sync_state(
+                "requested", "RTC sync requested for privileged helper"
             )
         logger.info("Time sync helper request written: %s", message)
         return changed
@@ -1372,18 +862,6 @@ class GpsTimeSyncMonitor:
         block_reason = self._sync_block_reason()
         if block_reason is not None:
             block_state, block_message = block_reason
-            if self.system_clock_sync_enabled:
-                changed = (
-                    self._set_system_clock_sync_state(block_state, block_message)
-                    or changed
-                )
-            else:
-                changed = (
-                    self._set_system_clock_sync_state(
-                        "disabled", "System clock sync disabled"
-                    )
-                    or changed
-                )
             if self.rtc_sync_enabled:
                 changed = (
                     self._set_rtc_sync_state(block_state, block_message) or changed
@@ -1404,61 +882,12 @@ class GpsTimeSyncMonitor:
         if sync_dt is None:
             return block_changed
 
-        changed, system_clock_action = self._system_clock_request_action(sync_dt)
+        changed, rtc_action = self._rtc_request_action()
         changed = changed or block_changed
-        rtc_changed, rtc_action = self._rtc_request_action(sync_dt)
-        changed = rtc_changed or changed
 
-        actions = {}
-        if system_clock_action is not None:
-            actions["system_clock"] = system_clock_action
         if rtc_action is not None:
-            actions["rtc"] = rtc_action
-
-        if actions:
-            changed = self._write_sync_request(sync_dt, actions) or changed
+            changed = self._write_sync_request(sync_dt, {"rtc": rtc_action}) or changed
         return changed
-
-    def _estimated_utc_for_monotonic(
-        self, tick_monotonic: float
-    ) -> Optional[datetime.datetime]:
-        if self.latest_sample is None:
-            return None
-        gps_time = self.latest_sample.get("gps_time")
-        sample_monotonic = self.latest_sample.get("monotonic")
-        if not gps_time or sample_monotonic is None:
-            return None
-        try:
-            gps_dt = datetime.datetime.fromisoformat(gps_time)
-        except ValueError:
-            return None
-        return _utc_datetime(gps_dt) + datetime.timedelta(
-            seconds=tick_monotonic - sample_monotonic
-        )
-
-    def _poll_software_pps(self, now_monotonic: float) -> bool:
-        if not self.software_pps_enabled:
-            self.next_pps_tick_monotonic = None
-            return False
-
-        if self.next_pps_tick_monotonic is None:
-            interval = self.software_pps_interval_seconds
-            self.next_pps_tick_monotonic = (
-                math.floor(now_monotonic / interval) + 1
-            ) * interval
-            return False
-
-        ticked = False
-        while now_monotonic >= self.next_pps_tick_monotonic:
-            tick_monotonic = self.next_pps_tick_monotonic
-            self.pps_tick_count += 1
-            self.last_pps_tick_monotonic = tick_monotonic
-            self.last_pps_tick_estimated_utc = self._estimated_utc_for_monotonic(
-                tick_monotonic
-            )
-            self.next_pps_tick_monotonic += self.software_pps_interval_seconds
-            ticked = True
-        return ticked
 
     def poll(self) -> None:
         if not self._active():
@@ -1466,8 +895,6 @@ class GpsTimeSyncMonitor:
 
         now_monotonic = self.monotonic_fn()
         chrony_changed = self._poll_chrony(now_monotonic)
-        ntp_changed = self._poll_ntp(now_monotonic)
-        ticked = self._poll_software_pps(now_monotonic)
         changed = False
 
         if self.enabled:
@@ -1481,14 +908,10 @@ class GpsTimeSyncMonitor:
                     "stale",
                     f"No GPS time sample for more than {self.stale_seconds:.0f}s",
                 )
-        elif self.software_pps_enabled:
-            changed = (
-                self._set_state("software_pps_only", "Software PPS enabled") or changed
-            )
 
-        changed = self._evaluate_state() or changed or chrony_changed or ntp_changed
+        changed = self._evaluate_state() or changed or chrony_changed
         changed = self._maybe_apply_sync_actions() or changed
-        self.write_status(force=changed or ticked)
+        self.write_status(force=changed)
 
     def note_reset(self) -> None:
         if not self._active():
@@ -1514,14 +937,10 @@ class GpsTimeSyncMonitor:
     def status_payload(self) -> dict[str, Any]:
         stats = self._offset_stats()
         latest = self.latest_sample or {}
-        ntp_latest = self.latest_ntp_sample or {}
         chrony_latest = self.latest_chrony_sample or {}
         age = None
         if latest.get("monotonic") is not None:
             age = self.monotonic_fn() - latest["monotonic"]
-        ntp_age = None
-        if ntp_latest.get("monotonic") is not None:
-            ntp_age = self.monotonic_fn() - ntp_latest["monotonic"]
         chrony_age = None
         if chrony_latest.get("monotonic") is not None:
             chrony_age = self.monotonic_fn() - chrony_latest["monotonic"]
@@ -1532,20 +951,14 @@ class GpsTimeSyncMonitor:
             "state": self.state,
             "message": self.message,
             "updated_unix": self.time_fn(),
-            "source_mode": self.source_mode,
-            "clock_manager": self.clock_manager,
+            "clock_manager": "chrony",
             "selected": self.selected_source,
             "gps_time_sync_enabled": self.enabled,
             "gps_time_sync_state": self.gps_state,
             "gps_time_sync_message": self.gps_message,
-            "ntp_time_sync_enabled": self.ntp_enabled,
-            "ntp_time_sync_state": self.ntp_state,
-            "ntp_time_sync_message": self.ntp_message,
             "chrony_time_sync_enabled": self.chrony_enabled,
             "chrony_time_sync_state": self.chrony_state,
             "chrony_time_sync_message": self.chrony_message,
-            "system_clock_sync_enabled": self.system_clock_sync_enabled,
-            "system_clock_sync_state": self.system_clock_sync_state,
             "rtc_sync_enabled": self.rtc_sync_enabled,
             "rtc_sync_state": self.rtc_sync_state,
             "samples": {
@@ -1570,30 +983,6 @@ class GpsTimeSyncMonitor:
                 "offset_seconds": latest.get("offset_seconds"),
                 "system_offset_seconds": latest.get("system_offset_seconds"),
                 "age_seconds": age,
-            },
-            "ntp": {
-                "enabled": self.ntp_enabled,
-                "state": self.ntp_state,
-                "message": self.ntp_message,
-                "server": ntp_latest.get("server", self._effective_ntp_server()),
-                "configured_server": self.ntp_server,
-                "custom_server": self.ntp_server_custom,
-                "time": ntp_latest.get("time"),
-                "valid": ntp_latest.get("valid"),
-                "stratum": ntp_latest.get("stratum"),
-                "leap": ntp_latest.get("leap"),
-                "offset_seconds": ntp_latest.get("offset_seconds"),
-                "delay_seconds": ntp_latest.get("delay_seconds"),
-                "root_delay_seconds": ntp_latest.get("root_delay_seconds"),
-                "root_dispersion_seconds": ntp_latest.get("root_dispersion_seconds"),
-                "quality_seconds": ntp_latest.get("quality_seconds"),
-                "system_offset_seconds": ntp_latest.get("system_offset_seconds"),
-                "age_seconds": ntp_age,
-                "last_poll_monotonic": self.last_ntp_poll_monotonic,
-                "poll_interval_seconds": self.ntp_poll_interval_seconds,
-                "timeout_seconds": self.ntp_timeout_seconds,
-                "max_delay_seconds": self.ntp_max_delay_seconds,
-                "error": ntp_latest.get("error"),
             },
             "chrony": {
                 "enabled": self.chrony_enabled,
@@ -1630,31 +1019,12 @@ class GpsTimeSyncMonitor:
                     "message": self.gps_message,
                     "candidate": self._gps_candidate(),
                 },
-                "ntp": {
-                    "enabled": self.ntp_enabled,
-                    "state": self.ntp_state,
-                    "message": self.ntp_message,
-                    "candidate": self._ntp_candidate(),
-                },
             },
             "offset": stats,
             "thresholds": {
                 "max_tAcc_ns": self.max_tacc_ns,
                 "stable_jitter_seconds": self.stable_jitter_seconds,
                 "stable_offset_seconds": self.stable_offset_seconds,
-                "system_clock_sync_step_threshold_seconds": (
-                    self.system_clock_sync_step_threshold_seconds
-                ),
-            },
-            "system_clock_sync": {
-                "enabled": self.system_clock_sync_enabled,
-                "state": self.system_clock_sync_state,
-                "message": self.system_clock_sync_message,
-                "request_count": self.system_clock_request_count,
-                "min_interval_seconds": self.system_clock_sync_min_interval_seconds,
-                "last_request_monotonic": self.last_system_clock_request_monotonic,
-                "last_request_utc": self.last_system_clock_request_utc,
-                "last_offset_seconds": self.last_system_clock_offset_seconds,
             },
             "rtc_sync": {
                 "enabled": self.rtc_sync_enabled,
@@ -1666,17 +1036,6 @@ class GpsTimeSyncMonitor:
                 "last_request_utc": self.last_rtc_request_utc,
             },
             "helper": self._read_helper_status(),
-            "software_pps": {
-                "enabled": self.software_pps_enabled,
-                "interval_seconds": self.software_pps_interval_seconds,
-                "tick_count": self.pps_tick_count,
-                "last_tick_monotonic": self.last_pps_tick_monotonic,
-                "last_tick_estimated_utc": (
-                    self.last_pps_tick_estimated_utc.isoformat()
-                    if self.last_pps_tick_estimated_utc
-                    else None
-                ),
-            },
         }
 
     def write_status(self, force: bool = False) -> None:
