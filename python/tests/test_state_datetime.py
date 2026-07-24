@@ -123,3 +123,24 @@ def test_accessors_return_none_when_datetime_unset():
 
     assert shared_state.utc_datetime() is None
     assert shared_state.local_datetime() is None
+
+
+@pytest.mark.unit
+def test_datetime_is_manual_tracks_forced_sets():
+    shared_state = SharedStateObj()
+
+    assert shared_state.datetime_is_manual() is False
+
+    # A regular (GPS) set is not manual.
+    shared_state.set_datetime(datetime.datetime(2026, 7, 25, 1, 0, 0, tzinfo=UTC))
+    assert shared_state.datetime_is_manual() is False
+
+    # A forced set (user time entry) is manual and blocks GPS overrides.
+    shared_state.set_datetime(
+        datetime.datetime(2026, 7, 25, 2, 0, 0, tzinfo=UTC), force=True
+    )
+    assert shared_state.datetime_is_manual() is True
+
+    # Reset clears the manual override (service restart / reboot semantics).
+    shared_state.reset_datetime()
+    assert shared_state.datetime_is_manual() is False

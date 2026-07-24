@@ -519,6 +519,16 @@ class SharedStateObj:
                 self.__datetime_time = time.time()
                 self.__datetime = dt
 
+    def datetime_is_manual(self):
+        """True while the civil datetime was set manually by the user.
+
+        A manual time blocks GPS overrides (see ``set_datetime``) and takes
+        priority over the chrony clock-trust gate for mount time sync. The
+        flag lives in this process-shared object only, so it resets whenever
+        the service restarts -- and therefore on every reboot, as required.
+        """
+        return self.__datetime_manual and self.__datetime is not None
+
     def reset_datetime(self):
         """Clear manual datetime override, allowing GPS time updates again."""
         self.__datetime = None

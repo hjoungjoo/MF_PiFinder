@@ -1415,6 +1415,12 @@ class MountControlIndi(BacklashCalibrationMixin):
             logger.exception("Could not read OnStep direct-sync configuration")
             return False
 
+    def _manual_datetime_active(self) -> bool:
+        try:
+            return bool(self.shared_state.datetime_is_manual())
+        except Exception:
+            return False
+
     def _shared_location_time_values(
         self, include_default_location: bool = False
     ) -> tuple[Optional[float], Optional[float], Optional[float], Any]:
@@ -1518,7 +1524,14 @@ class MountControlIndi(BacklashCalibrationMixin):
             # A4 clock-trust gate: never plant an unsynchronized system time
             # (stale fake-hwclock restore) in the mount -- on an Alt/Az mount
             # a wrong LST breaks every subsequent GoTo far from the sync star.
-            if not gps_time_sync.clock_is_trusted(check_chrony=True):
+            # A user-set manual time takes priority over the gate: the value
+            # sent below is shared_state.datetime(), which carries exactly
+            # that manual time (the flag dies with the service, so a reboot
+            # always clears the override).
+            if (
+                not self._manual_datetime_active()
+                and not gps_time_sync.clock_is_trusted(check_chrony=True)
+            ):
                 message = (
                     "Mount time sync deferred: system clock has not been "
                     "synchronized (GPS/NTP) since boot"

@@ -437,12 +437,18 @@ class UIModule:
 
     def _clock_untrusted(self) -> bool:
         """True while the system clock has not been GPS/NTP-synchronized this
-        boot (stale fake-hwclock time) -- mount time sync is deferred then."""
+        boot (stale fake-hwclock time) and no manual time is set -- mount time
+        sync is deferred then."""
         now = time.monotonic()
         if now - self._clock_trust_checked_at > CLOCK_TRUST_CHECK_SECONDS:
             from PiFinder.gps_time_sync import read_clock_trust_marker
 
-            self._clock_trust_cached = read_clock_trust_marker() is not None
+            manual = False
+            try:
+                manual = bool(self.shared_state.datetime_is_manual())
+            except Exception:
+                pass
+            self._clock_trust_cached = manual or read_clock_trust_marker() is not None
             self._clock_trust_checked_at = now
         return not self._clock_trust_cached
 

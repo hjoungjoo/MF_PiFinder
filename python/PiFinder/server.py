@@ -1184,6 +1184,17 @@ class Server:
                 web_motion_timer["timer"] = timer
                 timer.start()
 
+        def _clock_trusted_for_display():
+            # A user-set manual time counts as trusted (it is exactly what
+            # mount time sync will send); otherwise the boot-scoped chrony
+            # trust marker decides (A4).
+            try:
+                if bool(self.shared_state.datetime_is_manual()):
+                    return True
+            except Exception:
+                pass
+            return gps_time_sync.read_clock_trust_marker() is not None
+
         def _pifinder_location_time_values():
             source = "Current time"
             lat = lon = elev = ""
@@ -1518,8 +1529,7 @@ class Server:
             return jsonify(
                 {
                     "ok": True,
-                    "clock_trusted": gps_time_sync.read_clock_trust_marker()
-                    is not None,
+                    "clock_trusted": _clock_trusted_for_display(),
                     "mount_type": indi_cfg["mount_type"],
                     "onstep_device_name": indi_cfg["device_name"],
                     "is_onstepx_driver": indi_cfg["is_onstepx_driver"],

@@ -223,6 +223,12 @@ time_sync_enabled = false (기본값 Off → 관찰/경고 전부 꺼짐)
   - **LCD 경고**: 타이틀바 우측에 미신뢰 동안 "T"가 점멸(INDI 문제 표시와
     같은 규칙). **웹 경고**: `/indi` 페이지 상단 빨간 배너
     (`/indi/current_values`의 `clock_trusted`).
+  - **수동 시간 우선(2026-07-25 추가)**: 사용자가 LCD Set Time/Date로 시간을
+    수동 설정하면(`shared_state.datetime_is_manual()`) 신뢰 게이트보다
+    우선한다 — 마운트로 전송되는 값이 바로 그 수동 시간
+    (`shared_state.datetime()`)이기 때문. 수동 설정 즉시 마운트 site/time을
+    재전송하고 추적 타깃을 해제한다. 수동 플래그는 공유 상태에만 살아 있어
+    서비스 재시작/재부팅 시 초기화된다(요구사항: 재부팅 시 초기화).
 - [x] **A5. 시간 점프 시 재동기** — 2026-07-25 구현. location 변경 자동
   재동기와 같은 좌표 서비스 루프(`pos_server`)에서 wall clock과 monotonic의
   괴리(임계 2초)로 점프를 감지 → `sync_location_time` 재전송 +

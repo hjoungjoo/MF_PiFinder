@@ -907,6 +907,17 @@ def main(
                             shared_state.set_datetime(
                                 gps_dt, force=(gps_msg == "time_force")
                             )
+                            if gps_msg == "time_force" and mountcontrol_enabled:
+                                # A user-set manual time takes priority over
+                                # the clock-trust gate: push it to the mount
+                                # right away and drop the (now stale-framed)
+                                # tracking target.
+                                logger.info(
+                                    "Manual time set; re-syncing mount "
+                                    "site/time and clearing tracking target"
+                                )
+                                mountcontrol_queue.put({"type": "sync_location_time"})
+                                goto_guide_queue.put({"type": "clear_tracking_target"})
                             if log_time:
                                 logger.info("GPS Time (logged only once): %s", gps_dt)
                                 log_time = False

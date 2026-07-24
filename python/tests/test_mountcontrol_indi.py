@@ -1040,6 +1040,31 @@ def test_sync_location_time_blocked_while_clock_untrusted(monkeypatch):
     assert "clock has not been synchronized" in statuses[-1][1]
 
 
+def test_sync_location_time_allows_manual_time_over_trust_gate(monkeypatch):
+    class ManualTimeSharedState(DummySharedStateWithLocation):
+        def datetime_is_manual(self):
+            return True
+
+    mount = DummyMountControl(ManualTimeSharedState())
+    monkeypatch.setattr(mci.gps_time_sync, "clock_is_trusted", lambda **kwargs: False)
+    applied = []
+    monkeypatch.setattr(
+        sys_utils,
+        "apply_indi_onstep_location_time",
+        lambda **kwargs: applied.append(kwargs) or {"ok": True},
+    )
+    monkeypatch.setattr(sys_utils, "write_onstep_location_cache", lambda *args: None)
+    monkeypatch.setattr(
+        mount, "_write_controller_status", lambda state, message="", **extra: None
+    )
+
+    assert mount.sync_location_time() is True
+
+    # The manual PiFinder time is exactly what got sent to the mount.
+    assert len(applied) == 1
+    assert applied[0]["utc_datetime"] == "2026-07-01T14:45:00+00:00"
+
+
 def test_sync_location_time_uses_direct_lx200_for_onstep(monkeypatch):
     mount = DummyMountControl(DummySharedStateWithLocation())
     direct_calls = []

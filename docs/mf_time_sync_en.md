@@ -98,6 +98,11 @@ Legacy keys still present in older configs (`ntp_*`, `software_pps*`,
   2 s (chrony stepping after a late GPS fix), the mount site/time is re-sent
   and the tracking target is cleared. A trust transition without a visible
   jump also re-sends site/time.
+- **Manual time takes priority**: a time set manually via the LCD Set
+  Time/Date screens (the manual flag on `shared_state.datetime()`) overrides
+  the trust gate -- the mount receives exactly that manual time, and setting
+  it immediately re-sends site/time and clears the tracking target. The
+  override resets on a service restart / reboot.
 
 ## System clock and RTC
 
