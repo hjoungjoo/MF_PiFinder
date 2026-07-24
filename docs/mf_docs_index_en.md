@@ -58,7 +58,7 @@ Last updated: 2026-07-25. The KO version (`mf_docs_index_ko.md`) is authoritativ
 
 | Doc | ko/en | Status | Summary |
 |---|---|---|---|
-| [field_test_20260724_analysis](mf_field_test_20260724_analysis_ko.md) | ko | **analysis + fixes in progress** (2026-07-25) | Field-test failure analysis (no-time-source clock error, IMU-contaminated auto sync) with fix checklist. |
+| [field_test_20260724_analysis](mf_field_test_20260724_analysis_ko.md) | ko | **analysis + fixes in progress** (2026-07-25) | Field-test failure analysis (no-time-source clock error; IMU-fallback auto sync confirmed as intended design) with fix checklist. |
 | [goto_tracking_recovery_analysis](mf_goto_tracking_recovery_analysis_ko.md) | ko | **one-time** (2026-07-18) | OnStepX GoTo no-op (wedge) failure analysis + recovery verification. |
 | [indi_onstep_driver_test_checklist](mf_indi_onstep_driver_test_checklist_ko.md) | ko | **one-time** (2026-07-01) | INDI driver vs raw LX200 pre-integration verification record. |
 | [solve_motion_gate_review](mf_solve_motion_gate_review_en.md) | both | **plan (unbuilt)** | Unwired solve gate for frames exposed during motion (pending decision). |
