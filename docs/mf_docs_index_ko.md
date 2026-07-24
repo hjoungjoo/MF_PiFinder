@@ -8,7 +8,7 @@
 상태 라벨: **living** = 소스에 맞춰 계속 갱신 / **install** = 설치·운영 가이드 /
 **plan** = 구현 전/부분 구현 계획 / **1회성** = 완료된 분석·검증 기록(유지 대상 아님).
 
-최종 갱신: 2026-07-23.
+최종 갱신: 2026-07-25.
 
 ## INDI 마운트 — 좌표·포인팅 (핵심)
 
@@ -56,6 +56,7 @@
 
 | 문서 | ko/en | 상태 | 요약 |
 |---|---|---|---|
+| [field_test_20260724_analysis](mf_field_test_20260724_analysis_ko.md) | ko | **분석+수정 진행 중**(2026-07-25) | 현장 테스트 장애 분석(무시간원 시계 오차, 자동 정렬 IMU 오염)과 수정 체크리스트. |
 | [goto_tracking_recovery_analysis](mf_goto_tracking_recovery_analysis_ko.md) | ko | **1회성**(2026-07-18) | OnStepX GoTo 무동작(wedge) 장애 분석·복구 검증. |
 | [indi_onstep_driver_test_checklist](mf_indi_onstep_driver_test_checklist_ko.md) | ko | **1회성**(2026-07-01) | INDI 드라이버 vs 직접 LX200 사전 검증 기록. |
 | [solve_motion_gate_review](mf_solve_motion_gate_review_ko.md) | 둘 다 | **plan(미구현)** | 노출 중 이동 프레임 솔브 게이트 미배선 검토(협의 대기). |
