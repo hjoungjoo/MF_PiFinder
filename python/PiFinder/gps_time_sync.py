@@ -48,6 +48,12 @@ DATA_DIR = Path(os.environ.get("PIFINDER_DATA_DIR", utils.data_dir))
 STATUS_FILE = utils.runtime_dir / "gps_time_status.json"
 REQUEST_FILE = DATA_DIR / "gps_time_sync_request.json"
 HELPER_STATUS_FILE = DATA_DIR / "gps_time_sync_helper_status.json"
+# Written the first time chronyd reports a synchronized clock this boot. Lives
+# on tmpfs so a reboot (which restores a stale fake-hwclock time) clears it,
+# while a mere pifinder.service restart keeps it. The mount time-sync gate and
+# the LCD warning read this marker (docs/mf_field_test_20260724_analysis_ko.md,
+# item A4).
+CLOCK_TRUST_FILE = utils.runtime_dir / "clock_trusted.json"
 
 
 def _read_boot_id() -> str:
@@ -55,6 +61,72 @@ def _read_boot_id() -> str:
         return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
     except OSError:
         return "unknown"
+
+
+def read_clock_trust_marker(
+    marker_file: Path = CLOCK_TRUST_FILE,
+    boot_id_fn: Callable[[], str] = _read_boot_id,
+) -> Optional[dict[str, Any]]:
+    """Return the trust marker payload if it belongs to the current boot."""
+    try:
+        with open(marker_file, "r", encoding="utf-8") as marker_in:
+            payload = json.load(marker_in)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("boot_id") != boot_id_fn():
+        return None
+    return payload
+
+
+def write_clock_trust_marker(
+    source: str,
+    marker_file: Path = CLOCK_TRUST_FILE,
+    boot_id_fn: Callable[[], str] = _read_boot_id,
+    time_fn: Callable[[], float] = time.time,
+) -> None:
+    try:
+        utils.create_path(marker_file.parent)
+        payload = {
+            "boot_id": boot_id_fn(),
+            "source": source,
+            "trusted_unix": time_fn(),
+        }
+        tmp_file = marker_file.with_name(marker_file.name + ".tmp")
+        with open(tmp_file, "w", encoding="utf-8") as marker_out:
+            json.dump(payload, marker_out, indent=2, sort_keys=True)
+        tmp_file.replace(marker_file)
+        logger.info("Clock trust marker written (source=%s)", source)
+    except Exception:
+        logger.exception("Could not write clock trust marker")
+
+
+def clock_is_trusted(
+    check_chrony: bool = False,
+    marker_file: Path = CLOCK_TRUST_FILE,
+    boot_id_fn: Callable[[], str] = _read_boot_id,
+    chrony_client: Optional["ChronyClient"] = None,
+) -> bool:
+    """True when the system clock has been synchronized at least once this boot.
+
+    The fast path is the tmpfs marker. With ``check_chrony`` a live
+    ``chronyc tracking`` query is used as fallback (and primes the marker on
+    success) so the gate works even before the monitor's next poll or with
+    the observation framework disabled.
+    """
+    if read_clock_trust_marker(marker_file, boot_id_fn) is not None:
+        return True
+    if not check_chrony:
+        return False
+    client = chrony_client or ChronyClient()
+    result = client.query()
+    if result.get("ok") and result.get("state") == "stable":
+        write_clock_trust_marker(
+            "chrony-direct", marker_file=marker_file, boot_id_fn=boot_id_fn
+        )
+        return True
+    return False
 
 
 class ClockSyncRequestWriter:
@@ -235,6 +307,7 @@ class GpsTimeSyncMonitor:
         rtc_sync_min_interval_seconds: float = 3600.0,
         status_file: Path = STATUS_FILE,
         helper_status_file: Path = HELPER_STATUS_FILE,
+        clock_trust_file: Path = CLOCK_TRUST_FILE,
         time_fn: Callable[[], float] = time.time,
         monotonic_fn: Callable[[], float] = time.monotonic,
         request_writer: Optional[ClockSyncRequestWriter] = None,
@@ -259,6 +332,7 @@ class GpsTimeSyncMonitor:
         self.rtc_sync_min_interval_seconds = max(1.0, rtc_sync_min_interval_seconds)
         self.status_file = status_file
         self.helper_status_file = helper_status_file
+        self.clock_trust_file = clock_trust_file
         self.time_fn = time_fn
         self.monotonic_fn = monotonic_fn
         self.request_writer = request_writer or ClockSyncRequestWriter()
@@ -721,6 +795,9 @@ class GpsTimeSyncMonitor:
 
         sample["valid"] = result.get("state") == "stable"
         self.latest_chrony_sample = sample
+        if sample["valid"] and read_clock_trust_marker(self.clock_trust_file) is None:
+            # First synchronized clock this boot -> arm the trust gate (A4).
+            write_clock_trust_marker("chrony", marker_file=self.clock_trust_file)
         return self._set_chrony_state(
             str(result.get("state") or "stable"),
             str(result.get("message") or "chronyd is tracking a time source"),
@@ -952,6 +1029,7 @@ class GpsTimeSyncMonitor:
             "message": self.message,
             "updated_unix": self.time_fn(),
             "clock_manager": "chrony",
+            "clock_trusted": read_clock_trust_marker(self.clock_trust_file) is not None,
             "selected": self.selected_source,
             "gps_time_sync_enabled": self.enabled,
             "gps_time_sync_state": self.gps_state,

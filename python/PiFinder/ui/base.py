@@ -31,6 +31,9 @@ if TYPE_CHECKING:
 # geometry value — it must NOT scale with display resolution (it previously
 # read as a bare ``128`` which looked resolution-derived).
 GPS_ANIM_RATE = 128
+# A4 clock-trust warning: how often to re-read the tmpfs trust marker for the
+# title-bar indicator (cheap, but no need to stat it every frame).
+CLOCK_TRUST_CHECK_SECONDS = 5.0
 INDI_STATUS_FILE = utils.runtime_dir / "mount_control_status.json"
 INDI_OK_STATES = {"connected", "moving", "slewing", "stopped"}
 INDI_PROBLEM_STATES = {
@@ -173,6 +176,8 @@ class UIModule:
     _MINUS_ = "󰍴"
     _PLUSMINUS_ = "󰐕/󰍴"
     _gps_brightness = 0
+    _clock_trust_checked_at = 0.0
+    _clock_trust_cached = False
     _unmoved = False  # has the telescope moved since the last cam solve?
     _display_mode_list: Union[list[None], list[str]] = [None]  # List of display modes
     marking_menu: Union[None, MarkingMenu] = None
@@ -430,6 +435,26 @@ class UIModule:
         x = int(self.display_class.resX * 0.865)
         self.draw.text((x, y), "I", font=self.fonts.bold.font, fill=fill)
 
+    def _clock_untrusted(self) -> bool:
+        """True while the system clock has not been GPS/NTP-synchronized this
+        boot (stale fake-hwclock time) -- mount time sync is deferred then."""
+        now = time.monotonic()
+        if now - self._clock_trust_checked_at > CLOCK_TRUST_CHECK_SECONDS:
+            from PiFinder.gps_time_sync import read_clock_trust_marker
+
+            self._clock_trust_cached = read_clock_trust_marker() is not None
+            self._clock_trust_checked_at = now
+        return not self._clock_trust_cached
+
+    def _draw_clock_indicator(self, y):
+        if not self._clock_untrusted():
+            return
+        # Blink like the INDI problem indicator so it reads as a warning.
+        if int(time.time() * 2) % 2 == 0:
+            return
+        x = int(self.display_class.resX * 0.93)
+        self.draw.text((x, y), "T", font=self.fonts.bold.font, fill=self.colors.get(32))
+
     def draw_rotating_info(self, x=10, y=92, font=None):
         """Draw rotating constellation/SQM display with cross-fade."""
         self._rotating_display.draw(
@@ -498,6 +523,7 @@ class UIModule:
                 fill=_gps_color,
             )
             self._draw_indi_indicator(title_y)
+            self._draw_clock_indicator(title_y)
 
             if moving:
                 self._unmoved = False

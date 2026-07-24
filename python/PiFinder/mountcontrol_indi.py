@@ -22,6 +22,7 @@ from multiprocessing import Queue
 from typing import Any, Optional
 
 from PiFinder import calc_utils, config
+from PiFinder import gps_time_sync
 from PiFinder import nonsidereal
 from PiFinder import sys_utils, utils
 from PiFinder.indi_align import (
@@ -1514,6 +1515,20 @@ class MountControlIndi(BacklashCalibrationMixin):
         include_default_location: bool = False,
     ) -> bool:
         try:
+            # A4 clock-trust gate: never plant an unsynchronized system time
+            # (stale fake-hwclock restore) in the mount -- on an Alt/Az mount
+            # a wrong LST breaks every subsequent GoTo far from the sync star.
+            if not gps_time_sync.clock_is_trusted(check_chrony=True):
+                message = (
+                    "Mount time sync deferred: system clock has not been "
+                    "synchronized (GPS/NTP) since boot"
+                )
+                logger.warning(message)
+                self._write_controller_status(
+                    "connected" if self.connected else "idle", message
+                )
+                return False
+
             latitude, longitude, elevation, dt = self._shared_location_time_values(
                 include_default_location=include_default_location
             )

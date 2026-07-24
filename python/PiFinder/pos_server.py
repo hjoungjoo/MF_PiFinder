@@ -20,7 +20,7 @@ import os
 import threading
 from multiprocessing import Queue
 from typing import Any, Optional, Tuple, Union
-from PiFinder import config, utils
+from PiFinder import config, gps_time_sync, utils
 from PiFinder.calc_utils import FastAltAz, ra_to_deg, dec_to_deg, sf_utils
 from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObject
 from PiFinder.multiproclogging import MultiprocLogging
@@ -67,6 +67,15 @@ _LOCATION_RESYNC_RECHECK_SECONDS = 60.0
 _LOCATION_RESYNC_MOVE_THRESHOLD_M = 500.0
 _mount_synced_location: Optional[Tuple[float, float, float]] = None
 _next_location_resync_at = 0.0
+# A5 clock-event re-sync: when the system clock jumps (chrony stepping a
+# stale fake-hwclock time after a late GPS fix / NTP recovery) or the clock
+# first becomes trusted, the mount's site time and the tracking frame are
+# stale -- re-send location/time and drop the tracking target.
+_CLOCK_JUMP_THRESHOLD_SECONDS = 2.0
+_CLOCK_TRUST_RECHECK_SECONDS = 5.0
+_clock_jump_ref: Optional[Tuple[float, float]] = None
+_clock_trust_seen: Optional[bool] = None
+_next_clock_trust_check_at = 0.0
 _mount_status_cache: dict[str, Any] = {
     "time": 0.0,
     "value": None,
@@ -574,12 +583,73 @@ def _enqueue_mount_location_sync(
     )
 
 
+def _detect_clock_jump(now_unix: float, now_monotonic: float) -> Optional[float]:
+    """Return the jump size in seconds when the wall clock moved against the
+    monotonic clock (chrony stepping a stale boot time), else None."""
+    global _clock_jump_ref
+    previous = _clock_jump_ref
+    _clock_jump_ref = (now_unix, now_monotonic)
+    if previous is None:
+        return None
+    drift = (now_unix - previous[0]) - (now_monotonic - previous[1])
+    if abs(drift) < _CLOCK_JUMP_THRESHOLD_SECONDS:
+        return None
+    return drift
+
+
+def _resync_mount_on_clock_events(
+    now_unix: Optional[float] = None, now_monotonic: Optional[float] = None
+) -> None:
+    """A5: re-send mount site/time (and drop the tracking target on a jump)
+    when the system clock jumps or first becomes trusted this session."""
+    global _clock_trust_seen, _next_clock_trust_check_at
+
+    if now_unix is None:
+        now_unix = time.time()
+    if now_monotonic is None:
+        now_monotonic = time.monotonic()
+    jump_seconds = _detect_clock_jump(now_unix, now_monotonic)
+    if jump_seconds is not None:
+        logger.warning(
+            "System clock jumped by %+.1f s; re-syncing mount site/time and "
+            "clearing the tracking target",
+            jump_seconds,
+        )
+        if goto_guide_queue is not None:
+            goto_guide_queue.put({"type": "clear_tracking_target"})
+        if mountcontrol_queue is not None and bool(
+            _get_config_option("mount_control", False)
+        ):
+            mountcontrol_queue.put({"type": "sync_location_time"})
+        _clock_trust_seen = True
+        return
+
+    if now_monotonic < _next_clock_trust_check_at:
+        return
+    _next_clock_trust_check_at = now_monotonic + _CLOCK_TRUST_RECHECK_SECONDS
+    trusted = gps_time_sync.read_clock_trust_marker() is not None
+    previous_trust = _clock_trust_seen
+    _clock_trust_seen = trusted
+    if previous_trust is None or trusted == previous_trust:
+        return
+    if not trusted:
+        return
+    # Untrusted -> trusted without a visible jump (offset below the step
+    # threshold): the mount still never received a trusted time this session.
+    logger.info("System clock became trusted; re-syncing mount site/time")
+    if mountcontrol_queue is not None and bool(
+        _get_config_option("mount_control", False)
+    ):
+        mountcontrol_queue.put({"type": "sync_location_time"})
+
+
 def _coordinate_service_loop(shared_state, stop_event: threading.Event) -> None:
     logger.info("Pointing coordinate service loop started")
     while not stop_event.is_set():
         try:
             _handle_pointing_reset_request(shared_state)
             _sync_mount_location_on_change(shared_state)
+            _resync_mount_on_clock_events()
             _update_coordinate_service_state(shared_state)
         except Exception:
             logger.exception("Pointing coordinate service update failed")

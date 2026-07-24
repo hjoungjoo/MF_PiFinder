@@ -1083,3 +1083,40 @@ def test_location_resync_skips_when_mount_control_disabled(monkeypatch):
     state = DummyState(None, location=_MutableLocation(37.5, 127.0))
     pos_server._sync_mount_location_on_change(state)
     assert commands.empty()
+
+
+def test_detect_clock_jump_flags_wall_clock_step(monkeypatch):
+    monkeypatch.setattr(pos_server, "_clock_jump_ref", None)
+
+    # First sample only establishes the reference.
+    assert pos_server._detect_clock_jump(1000.0, 100.0) is None
+    # Wall clock and monotonic clock advance together: no jump.
+    assert pos_server._detect_clock_jump(1001.0, 101.0) is None
+    # Wall clock steps forward 3600 s while monotonic advances 1 s.
+    jump = pos_server._detect_clock_jump(4602.0, 102.0)
+    assert jump is not None and jump > 3590.0
+    # After the jump the new reference is in place: steady ticking is quiet.
+    assert pos_server._detect_clock_jump(4603.0, 103.0) is None
+
+
+def test_resync_mount_on_clock_jump_queues_commands(monkeypatch):
+    mount_commands: "queue.Queue" = queue.Queue()
+    guide_commands: "queue.Queue" = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", mount_commands)
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
+    monkeypatch.setattr(
+        pos_server, "_get_config_option", lambda name, default=None: True
+    )
+    monkeypatch.setattr(pos_server, "_clock_jump_ref", None)
+    monkeypatch.setattr(pos_server, "_clock_trust_seen", None)
+    monkeypatch.setattr(pos_server, "_next_clock_trust_check_at", float("inf"))
+
+    # Reference tick: establishes the baseline, queues nothing.
+    pos_server._resync_mount_on_clock_events(now_unix=1000.0, now_monotonic=100.0)
+    assert mount_commands.empty() and guide_commands.empty()
+
+    # Wall clock stepped ~3999 s while monotonic advanced 1 s.
+    pos_server._resync_mount_on_clock_events(now_unix=5000.0, now_monotonic=101.0)
+
+    assert guide_commands.get_nowait() == {"type": "clear_tracking_target"}
+    assert mount_commands.get_nowait() == {"type": "sync_location_time"}

@@ -209,20 +209,31 @@ time_sync_enabled = false (기본값 Off → 관찰/경고 전부 꺼짐)
     판단 근거가 된다.
   - 문서 갱신: [mf_time_sync_ko.md](mf_time_sync_ko.md) /
     [mf_time_sync_en.md](mf_time_sync_en.md) 재작성. 단위 테스트 26개 통과.
-- [ ] **A4. "시계 미신뢰" 게이트** — 부팅 후 실제 동기(chrony가 유효 소스로
-  스텝/추적) 이력이 없는 fake-hwclock 시간이면:
-  - LCD 상태바/웹에 경고 표시
-  - **마운트 location/time sync 전송 보류** (틀린 시간을 마운트에 심는 것이
-    최악의 동작)
-  - GoTo/Multi Align 시작 시 경고
-  - 판단 근거: `chronyc tracking`의 reference/leap/last-offset +
-    `gps_time_status.json` 관찰 상태.
-- [ ] **A5. 시간 점프 시 재동기** — 시간이 크게 점프하면(동기 회복) 마운트
-  site/time 재전송 + 추적 타깃 해제. location 변경 자동 재동기(dedf7b58)와
-  같은 훅에 time jump 감지 추가.
-- [ ] **A6. RTC 모듈 추가 검토** (하드웨어, DS3231 등) — A2의 makestep 보완이
-  적용되면 우선순위는 낮아지나, 부팅 직후부터 정확한 시간을 갖는 구조적
-  해결책. 사용자 결정 사항.
+- [x] **A4. "시계 미신뢰" 게이트** — 2026-07-25 구현.
+  - 신뢰 판정: chronyd가 이번 부팅에서 한 번이라도 동기(`stable`)되면 tmpfs
+    마커 `/dev/shm/pifinder/clock_trusted.json`(boot_id 포함)을 기록.
+    재부팅(fake-hwclock 복원)이면 마커가 사라지거나 boot_id 불일치로 무효.
+    시간 동기 모니터가 마커를 쓰고, `gps_time_sync.clock_is_trusted()`는
+    마커 우선 + 필요 시 `chronyc tracking` 직접 확인(성공 시 마커 기록)으로
+    모니터 비활성 상태에서도 동작한다.
+  - **마운트 location/time sync 게이트**: `sync_location_time()` 진입부에서
+    미신뢰면 전송을 보류하고 상태 메시지("Mount time sync deferred...")를
+    남긴다. Multi Align 시작은 위치/시간 sync 실패로 세션이 명확한 메시지와
+    함께 실패한다.
+  - **LCD 경고**: 타이틀바 우측에 미신뢰 동안 "T"가 점멸(INDI 문제 표시와
+    같은 규칙). **웹 경고**: `/indi` 페이지 상단 빨간 배너
+    (`/indi/current_values`의 `clock_trusted`).
+- [x] **A5. 시간 점프 시 재동기** — 2026-07-25 구현. location 변경 자동
+  재동기와 같은 좌표 서비스 루프(`pos_server`)에서 wall clock과 monotonic의
+  괴리(임계 2초)로 점프를 감지 → `sync_location_time` 재전송 +
+  `clear_tracking_target`. 점프 없이 미신뢰→신뢰로 전이한 경우(오프셋이
+  스텝 임계 미만)에도 마운트가 이번 세션에 신뢰 시간을 받은 적이 없으므로
+  site/time을 재전송한다.
+- [x] **A6. RTC 미도입 결정** — 2026-07-25 사용자 결정: 현장은 GPS, 그 외에는
+  NTP가 항상 있는 시스템이므로 RTC 하드웨어를 추가하지 않고 **시스템 기본
+  (fake-hwclock + chronyd + A2 makestep + A4 게이트)에 따른다.**
+  `rtc_sync` 옵션과 root helper는 기본 Off인 레거시로 남기며, 향후 정리
+  대상이다.
 
 ### B. 자동 정렬(sync) 정책 (문제 2 + 원칙 반영)
 

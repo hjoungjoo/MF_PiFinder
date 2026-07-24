@@ -1018,11 +1018,34 @@ def test_multipoint_align_skysafari_goto_target_becomes_confirm_target():
     assert mount._multipoint_align["completed"][0]["name"] == "SkySafari Target"
 
 
+def test_sync_location_time_blocked_while_clock_untrusted(monkeypatch):
+    mount = DummyMountControl(DummySharedStateWithLocation())
+    monkeypatch.setattr(mci.gps_time_sync, "clock_is_trusted", lambda **kwargs: False)
+    applied = []
+    monkeypatch.setattr(
+        sys_utils,
+        "apply_indi_onstep_location_time",
+        lambda **kwargs: applied.append(kwargs) or {"ok": True},
+    )
+    statuses = []
+    monkeypatch.setattr(
+        mount,
+        "_write_controller_status",
+        lambda state, message="", **extra: statuses.append((state, message)),
+    )
+
+    assert mount.sync_location_time() is False
+
+    assert applied == []
+    assert "clock has not been synchronized" in statuses[-1][1]
+
+
 def test_sync_location_time_uses_direct_lx200_for_onstep(monkeypatch):
     mount = DummyMountControl(DummySharedStateWithLocation())
     direct_calls = []
     cache_calls = []
 
+    monkeypatch.setattr(mci.gps_time_sync, "clock_is_trusted", lambda **kwargs: True)
     monkeypatch.setattr(
         mount,
         "_onstep_connection_config",

@@ -12,6 +12,12 @@
   </div>
 </div>
 
+<div class="row" id="clock_trust_warning" style="display: none;">
+  <div class="col s12">
+    <p class="red-text"><b>{{ _('System clock is not synchronized (no GPS/NTP sync since boot). Mount time sync is deferred until the clock is trusted.') }}</b></p>
+  </div>
+</div>
+
 {% if status_message %}
 <div class="row">
   <div class="col s12">
@@ -1005,6 +1011,10 @@ document.addEventListener('DOMContentLoaded', function() {
   function updateLocationValues(payload) {
     var pifinder = payload.pifinder_location_time || {};
     var onstep = payload.onstep_props || {};
+    var clockWarning = document.getElementById('clock_trust_warning');
+    if (clockWarning) {
+      clockWarning.style.display = payload.clock_trusted === false ? '' : 'none';
+    }
     if (payload.onstep_device_name) {
       onstepDeviceName = payload.onstep_device_name;
     }

@@ -85,8 +85,14 @@ UI 항목:
   비어 있고, 상태는 chrony/GPS 관찰 상태를 그대로 보여줍니다.
 - GPS 후보는 진단용으로만 관찰합니다: `tAcc`, 샘플 jitter, stale 여부로
   `stable/collecting/low_quality/unstable/stale`을 판정합니다.
-- "부팅 후 한 번도 동기된 적 없는 시계"(fake-hwclock 잔재) 감지와 마운트
-  time sync 보류 게이트는 분석 문서 A4 항목으로 추가 예정입니다.
+- **시계 신뢰 게이트(A4, 구현됨)**: chronyd가 이번 부팅에서 처음 동기되면
+  tmpfs 마커 `/dev/shm/pifinder/clock_trusted.json`(boot_id 포함)이 기록됩니다.
+  `gps_time_sync.clock_is_trusted()`가 이 마커(+필요 시 `chronyc` 직접 확인)로
+  판정하며, 미신뢰 동안 마운트 location/time sync는 보류되고 LCD 타이틀바에
+  "T"가 점멸, 웹 `/indi` 페이지에 경고 배너가 표시됩니다.
+- **시간 점프 재동기(A5, 구현됨)**: 시계가 2초 이상 점프하면(늦은 GPS fix를
+  chrony가 스텝) 마운트 site/time을 재전송하고 추적 타깃을 해제합니다.
+  점프 없이 신뢰 상태로 전이해도 site/time을 재전송합니다.
 
 ## System Clock과 RTC
 

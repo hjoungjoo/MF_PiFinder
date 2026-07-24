@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-25 01:59+0900\n"
+"POT-Creation-Date: 2026-07-25 02:22+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: xxxxxx <xxxxx@xxxxx.com>\n"
 "Language: fr_FR\n"
@@ -322,8 +322,8 @@ msgstr "Doit être un nombre valide"
 msgid "Backlash must be between 0 and %(max)d"
 msgstr "Doit être entre -90 et 90"
 
-#: PiFinder/server.py:1435 PiFinder/server.py:1773 PiFinder/server.py:2093
-#: PiFinder/server.py:2108
+#: PiFinder/server.py:1435 PiFinder/server.py:1775 PiFinder/server.py:2095
+#: PiFinder/server.py:2110
 msgid "Mount-control process is not available"
 msgstr ""
 
@@ -332,151 +332,151 @@ msgstr ""
 msgid "INDI"
 msgstr ""
 
-#: PiFinder/server.py:1570
+#: PiFinder/server.py:1572
 msgid "Invalid SkySafari mount status code"
 msgstr ""
 
-#: PiFinder/server.py:1585
+#: PiFinder/server.py:1587
 msgid "SkySafari mount settings applied"
 msgstr ""
 
-#: PiFinder/server.py:1592
+#: PiFinder/server.py:1594
 msgid "Invalid INDI GoTo method"
 msgstr ""
 
-#: PiFinder/server.py:1634
+#: PiFinder/server.py:1636
 msgid "INDI GoTo / Guide settings applied"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1641
+#: PiFinder/server.py:1643
 msgid "Invalid action"
 msgstr "Action non valide"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1644
+#: PiFinder/server.py:1646
 msgid "GoTo/Guide service unavailable"
 msgstr "Service GoTo/Guide indisponible"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1648
+#: PiFinder/server.py:1650
 msgid "Guide paused"
 msgstr "Guidage suspendu"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1648
+#: PiFinder/server.py:1650
 msgid "Guide resumed"
 msgstr "Guidage repris"
 
-#: PiFinder/server.py:1696
+#: PiFinder/server.py:1698
 msgid "INDI OnStep settings applied"
 msgstr ""
 
-#: PiFinder/server.py:1755
+#: PiFinder/server.py:1757
 msgid "INDI server restarted and driver connected"
 msgstr ""
 
-#: PiFinder/server.py:1775
+#: PiFinder/server.py:1777
 #, fuzzy
 msgid "Mount controller reboot requested"
 msgstr "Alignement en cours"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1908
+#: PiFinder/server.py:1910
 #, fuzzy
 msgid "Motion command sent"
 msgstr "Gestion des lieux"
 
-#: PiFinder/server.py:1969
+#: PiFinder/server.py:1971
 msgid "Location and UTC time sent via INDI"
 msgstr ""
 
-#: PiFinder/server.py:1986
+#: PiFinder/server.py:1988
 #, fuzzy
 msgid "Invalid alignment mode"
 msgstr "Alignement en cours"
 
-#: PiFinder/server.py:1990 PiFinder/server.py:2007
+#: PiFinder/server.py:1992 PiFinder/server.py:2009
 msgid "Select a valid alignment star"
 msgstr ""
 
-#: PiFinder/server.py:1999
+#: PiFinder/server.py:2001
 msgid "Multi-point alignment started"
 msgstr ""
 
-#: PiFinder/server.py:2015
+#: PiFinder/server.py:2017
 #, fuzzy
 msgid "Alignment star GoTo requested"
 msgstr "Alignement en cours"
 
-#: PiFinder/server.py:2024
+#: PiFinder/server.py:2026
 #, fuzzy
 msgid "Alignment point confirmed"
 msgstr "Erreur d'alignement"
 
-#: PiFinder/server.py:2031
+#: PiFinder/server.py:2033
 msgid "Multi-point alignment cancelled"
 msgstr ""
 
-#: PiFinder/server.py:2036
+#: PiFinder/server.py:2038
 #, fuzzy
 msgid "Invalid alignment action"
 msgstr "Erreur d'alignement"
 
-#: PiFinder/server.py:2065
+#: PiFinder/server.py:2067
 msgid "Backlash settings saved"
 msgstr ""
 
-#: PiFinder/server.py:2077
+#: PiFinder/server.py:2079
 msgid "Invalid backlash auto mode"
 msgstr ""
 
-#: PiFinder/server.py:2084
+#: PiFinder/server.py:2086
 msgid "Motion test repeats must be a number"
 msgstr ""
 
-#: PiFinder/server.py:2089
+#: PiFinder/server.py:2091
 #, fuzzy, python-format
 msgid "Motion test repeats must be between 1 and %(max)d"
 msgstr "Longitude doit être entre -180 et 180"
 
-#: PiFinder/server.py:2097
+#: PiFinder/server.py:2099
 msgid "Solved GoTo motion test started"
 msgstr ""
 
-#: PiFinder/server.py:2111
+#: PiFinder/server.py:2113
 msgid "Solved GoTo loop continue requested"
 msgstr ""
 
-#: PiFinder/server.py:2136 views/indi_mount.html:1410
+#: PiFinder/server.py:2138 views/indi_mount.html:1420
 msgid "Backlash motion test stop requested"
 msgstr ""
 
-#: PiFinder/server.py:2142
+#: PiFinder/server.py:2144
 msgid "Backlash stop requested; waiting for mount-control process stop"
 msgstr ""
 
-#: PiFinder/server.py:2158 views/indi_mount.html:1348
+#: PiFinder/server.py:2160 views/indi_mount.html:1358
 msgid "Pointing reset requested"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2165 PiFinder/server.py:2263 views/base.html:70
+#: PiFinder/server.py:2167 PiFinder/server.py:2265 views/base.html:70
 #: views/base.html:84
 msgid "Logs"
 msgstr "Journaux"
 
-#: PiFinder/server.py:2263
+#: PiFinder/server.py:2265
 msgid "Error creating log archive"
 msgstr "Erreur dans la création des logs "
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2320 views/restart_pifinder.html:6
+#: PiFinder/server.py:2322 views/restart_pifinder.html:6
 msgid "Restarting PiFinder"
 msgstr "Redémarrage PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2382
+#: PiFinder/server.py:2384
 msgid "Restart PiFinder"
 msgstr "Redémarrer PiFinder"
 
@@ -555,44 +555,44 @@ msgid "AUTO"
 msgstr "AUTO"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/base.py:346 PiFinder/ui/dateentry.py:166
+#: PiFinder/ui/base.py:351 PiFinder/ui/dateentry.py:166
 #: PiFinder/ui/locationentry.py:222 PiFinder/ui/timeentry.py:160
 msgid " Cancel"
 msgstr " Annuler"
 
-#: PiFinder/ui/base.py:717 PiFinder/ui/base.py:843 PiFinder/ui/indi.py:505
+#: PiFinder/ui/base.py:743 PiFinder/ui/base.py:869 PiFinder/ui/indi.py:505
 #: PiFinder/ui/indi.py:539 PiFinder/ui/indi.py:913
 msgid "Speed +"
 msgstr ""
 
-#: PiFinder/ui/base.py:717 PiFinder/ui/base.py:846 PiFinder/ui/indi.py:508
+#: PiFinder/ui/base.py:743 PiFinder/ui/base.py:872 PiFinder/ui/indi.py:508
 #: PiFinder/ui/indi.py:539 PiFinder/ui/indi.py:916
 msgid "Speed -"
 msgstr ""
 
-#: PiFinder/ui/base.py:799
+#: PiFinder/ui/base.py:825
 #, fuzzy
 msgid "Mount Stop"
 msgstr "Type de Monture"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/base.py:806
+#: PiFinder/ui/base.py:832
 msgid "GoTo Off"
 msgstr "GoTo désactivé"
 
-#: PiFinder/ui/base.py:833
+#: PiFinder/ui/base.py:859
 #, fuzzy
 msgid "Mount GoTo"
 msgstr "Type de Monture"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/base.py:837 PiFinder/ui/indi.py:579 PiFinder/ui/indi.py:1054
+#: PiFinder/ui/base.py:863 PiFinder/ui/indi.py:579 PiFinder/ui/indi.py:1054
 #: PiFinder/ui/indi.py:1059 PiFinder/ui/object_details.py:411
 #: PiFinder/ui/polar_align.py:444
 msgid "No solve"
 msgstr "Pas de résolution"
 
-#: PiFinder/ui/base.py:840
+#: PiFinder/ui/base.py:866
 #, fuzzy
 msgid "Mount Sync"
 msgstr "Type de Monture"
@@ -882,7 +882,7 @@ msgstr ""
 "échouée"
 
 #: PiFinder/ui/chart.py:50 PiFinder/ui/menu_structure.py:610
-#: views/indi_mount.html:278
+#: views/indi_mount.html:284
 msgid "Settings"
 msgstr "Réglages"
 
@@ -1360,7 +1360,7 @@ msgid "Time/Location"
 msgstr "Lieu"
 
 #: PiFinder/ui/indi.py:158 PiFinder/ui/menu_structure.py:106
-#: views/indi_mount.html:239
+#: views/indi_mount.html:245
 msgid "Park"
 msgstr ""
 
@@ -1371,19 +1371,19 @@ msgid "Set Home"
 msgstr "Accueil"
 
 #: PiFinder/ui/indi.py:164 PiFinder/ui/menu_structure.py:118
-#: views/indi_mount.html:238
+#: views/indi_mount.html:244
 msgid "Return Home"
 msgstr ""
 
 #: PiFinder/ui/indi.py:167 PiFinder/ui/menu_structure.py:110
-#: views/indi_mount.html:240
+#: views/indi_mount.html:246
 #, fuzzy
 msgid "Unpark"
 msgstr "Inconnu"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/indi.py:170 PiFinder/ui/menu_structure.py:122
-#: views/indi_mount.html:241
+#: views/indi_mount.html:247
 #, fuzzy
 msgid "Set-Park"
 msgstr "Étoile"
@@ -1398,8 +1398,8 @@ msgstr "Redémarrage"
 msgid "Mount Reboot"
 msgstr "Type de Monture"
 
-#: PiFinder/ui/indi.py:291 PiFinder/ui/indi.py:786 views/indi_mount.html:285
-#: views/indi_mount.html:1150
+#: PiFinder/ui/indi.py:291 PiFinder/ui/indi.py:786 views/indi_mount.html:291
+#: views/indi_mount.html:1160
 #, fuzzy
 msgid "Idle"
 msgstr "Filtre"
@@ -1460,7 +1460,7 @@ msgid "Align Complete"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:790 views/indi_mount.html:315
+#: PiFinder/ui/indi.py:790 views/indi_mount.html:321
 #, fuzzy
 msgid "Align Points"
 msgstr "Aucun point"
@@ -1511,7 +1511,7 @@ msgid "Left mode/cancel"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:821 views/indi_mount.html:311
+#: PiFinder/ui/indi.py:821 views/indi_mount.html:317
 #, fuzzy
 msgid "Align Mode"
 msgstr "mode client"
@@ -1880,13 +1880,13 @@ msgid "Set Location"
 msgstr "Définir position"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:102 views/indi_mount.html:212
+#: PiFinder/ui/menu_structure.py:102 views/indi_mount.html:218
 #, fuzzy
 msgid "Reset Pointing"
 msgstr "RàZ position"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:126 views/indi_mount.html:36
+#: PiFinder/ui/menu_structure.py:126 views/indi_mount.html:42
 #, fuzzy
 msgid "Restart INDI"
 msgstr "Redémarrer PiFinder"
@@ -2106,7 +2106,7 @@ msgstr "Mise en Sommeil"
 #: PiFinder/ui/menu_structure.py:1489 PiFinder/ui/menu_structure.py:1520
 #: PiFinder/ui/menu_structure.py:1559 PiFinder/ui/menu_structure.py:1666
 #: PiFinder/ui/menu_structure.py:1693 PiFinder/ui/menu_structure.py:1709
-#: views/indi_mount.html:471
+#: views/indi_mount.html:477
 msgid "Off"
 msgstr "Arret"
 
@@ -2289,7 +2289,7 @@ msgstr "Expo. Caméra"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/menu_structure.py:981 PiFinder/ui/menu_structure.py:1382
-#: views/indi_mount.html:309 views/indi_mount.html:432 views/network.html:32
+#: views/indi_mount.html:315 views/indi_mount.html:438 views/network.html:32
 msgid "Auto"
 msgstr "Auto"
 
@@ -2401,7 +2401,7 @@ msgid "Mount Type"
 msgstr "Type de Monture"
 
 #: PiFinder/ui/menu_structure.py:1105 views/edit_instrument.html:57
-#: views/indi_mount.html:433
+#: views/indi_mount.html:439
 msgid "Alt/Az"
 msgstr "Alt/Az"
 
@@ -2421,8 +2421,8 @@ msgstr "Réglages"
 msgid "Multi Align"
 msgstr "Mise en station"
 
-#: PiFinder/ui/menu_structure.py:1124 views/indi_mount.html:336
-#: views/indi_mount.html:589
+#: PiFinder/ui/menu_structure.py:1124 views/indi_mount.html:342
+#: views/indi_mount.html:595
 #, fuzzy
 msgid "Backlash"
 msgstr "RETOUR"
@@ -2432,22 +2432,22 @@ msgid "Goto/Guide"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1133 views/indi_mount.html:475
+#: PiFinder/ui/menu_structure.py:1133 views/indi_mount.html:481
 msgid "GoTo Type"
 msgstr "Type de GoTo"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1144 views/indi_mount.html:472
+#: PiFinder/ui/menu_structure.py:1144 views/indi_mount.html:478
 #, fuzzy
 msgid "INDI Mount"
 msgstr "tube, sur monture."
 
-#: PiFinder/ui/menu_structure.py:1148 views/indi_mount.html:473
+#: PiFinder/ui/menu_structure.py:1148 views/indi_mount.html:479
 #, fuzzy
 msgid "PiFinder"
 msgstr "Type de PiFinder"
 
-#: PiFinder/ui/menu_structure.py:1154 views/indi_mount.html:486
+#: PiFinder/ui/menu_structure.py:1154 views/indi_mount.html:492
 msgid "Tracking Guide"
 msgstr ""
 
@@ -2710,7 +2710,7 @@ msgstr "Expèrimental"
 msgid "Polar Align"
 msgstr "Mise en station"
 
-#: PiFinder/ui/menu_structure.py:1659 views/indi_mount.html:220
+#: PiFinder/ui/menu_structure.py:1659 views/indi_mount.html:226
 #, fuzzy
 msgid "Mount Control"
 msgstr "Type de Monture"
@@ -4089,8 +4089,8 @@ msgid "PiFinder Screen"
 msgstr "Écran PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/index.html:14 views/indi_mount.html:200 views/indi_mount.html:1073
-#: views/indi_mount.html:1111
+#: views/index.html:14 views/indi_mount.html:206 views/indi_mount.html:1083
+#: views/indi_mount.html:1121
 msgid "Mode"
 msgstr "Mode"
 
@@ -4121,87 +4121,93 @@ msgstr ""
 "Le serveur PiFinder est actuellement indisponible. Veuillez réessayer "
 "plus tard."
 
-#: views/indi_mount.html:33
+#: views/indi_mount.html:17
+msgid ""
+"System clock is not synchronized (no GPS/NTP sync since boot). Mount time"
+" sync is deferred until the clock is trusted."
+msgstr ""
+
+#: views/indi_mount.html:39
 #, fuzzy
 msgid "Current INDI Driver State"
 msgstr "Version courante"
 
-#: views/indi_mount.html:35
+#: views/indi_mount.html:41
 msgid "INDI Web Manager"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:37
+#: views/indi_mount.html:43
 #, fuzzy
 msgid "REBOOT INDI"
 msgstr "Redémarrer PiFinder"
 
-#: views/indi_mount.html:41
+#: views/indi_mount.html:47
 msgid "INDI Profile"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:42
+#: views/indi_mount.html:48
 #, fuzzy
 msgid "Active Driver"
 msgstr "Actif"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:48
+#: views/indi_mount.html:54
 #, fuzzy
 msgid "Connection"
 msgstr "Conditions"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:49
+#: views/indi_mount.html:55
 #, fuzzy
 msgid "Serial Mode"
 msgstr "Mode AP"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:50
+#: views/indi_mount.html:56
 #, fuzzy
 msgid "TCP Mode"
 msgstr "Mode AP"
 
-#: views/indi_mount.html:51
+#: views/indi_mount.html:57
 msgid "Serial Port"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:52
+#: views/indi_mount.html:58
 #, fuzzy
 msgid "Network Host"
 msgstr "Config. réseau"
 
-#: views/indi_mount.html:53
+#: views/indi_mount.html:59
 #, fuzzy
 msgid "Network Port"
 msgstr "Réseau"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:54
+#: views/indi_mount.html:60
 #, fuzzy
 msgid "OnStep Location"
 msgstr "Définir position"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:55
+#: views/indi_mount.html:61
 #, fuzzy
 msgid "Effective Coordinates"
 msgstr "Sys. coordonnées"
 
-#: views/indi_mount.html:56
+#: views/indi_mount.html:62
 msgid "INDI Driver Readback"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:57
+#: views/indi_mount.html:63
 #, fuzzy
 msgid "OnStep UTC Time"
 msgstr "Entrez heure locale"
 
-#: views/indi_mount.html:61
+#: views/indi_mount.html:67
 #, python-format
 msgid ""
 "%(driver)s driver properties are not available. Start the INDI profile "
@@ -4209,182 +4215,182 @@ msgid ""
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:61
+#: views/indi_mount.html:67
 #, fuzzy
 msgid "Active INDI"
 msgstr "Actif"
 
-#: views/indi_mount.html:69
+#: views/indi_mount.html:75
 #, python-format
 msgid "%(driver)s Driver Connection"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:74
+#: views/indi_mount.html:80
 #, fuzzy
 msgid "Network TCP"
 msgstr "Config. réseau"
 
-#: views/indi_mount.html:75
+#: views/indi_mount.html:81
 msgid "USB Serial"
 msgstr ""
 
-#: views/indi_mount.html:77
+#: views/indi_mount.html:83
 #, fuzzy
 msgid "Connection Type"
 msgstr "Type de Monture"
 
-#: views/indi_mount.html:81
+#: views/indi_mount.html:87
 msgid "INDI Server Host"
 msgstr ""
 
-#: views/indi_mount.html:85
+#: views/indi_mount.html:91
 msgid "INDI Server Port"
 msgstr ""
 
-#: views/indi_mount.html:93 views/indi_mount.html:121 views/network.html:182
+#: views/indi_mount.html:99 views/indi_mount.html:127 views/network.html:182
 msgid "Manual entry"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:102
+#: views/indi_mount.html:108
 #, fuzzy
 msgid "OnStep Network Device"
 msgstr "Nom du réseau AP"
 
-#: views/indi_mount.html:106
+#: views/indi_mount.html:112
 msgid "OnStep TCP Port"
 msgstr ""
 
-#: views/indi_mount.html:112
+#: views/indi_mount.html:118
 msgid "Manual IP or Host"
 msgstr ""
 
-#: views/indi_mount.html:126
+#: views/indi_mount.html:132
 msgid "No USB serial ports detected"
 msgstr ""
 
-#: views/indi_mount.html:129
+#: views/indi_mount.html:135
 msgid "USB Serial Port"
 msgstr ""
 
-#: views/indi_mount.html:135
+#: views/indi_mount.html:141
 msgid ""
 "No /dev/serial/by-id, /dev/ttyUSB, or /dev/ttyACM ports are currently "
 "visible. Connect the USB-serial cable and reload this page, or use manual"
 " entry if the port name is known."
 msgstr ""
 
-#: views/indi_mount.html:142
+#: views/indi_mount.html:148
 msgid "Manual Serial Port"
 msgstr ""
 
-#: views/indi_mount.html:148
+#: views/indi_mount.html:154
 msgid "Apply to INDI"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:158
+#: views/indi_mount.html:164
 #, fuzzy
 msgid "Location and Time"
 msgstr "Nom de lieu"
 
-#: views/indi_mount.html:161
+#: views/indi_mount.html:167
 #, fuzzy
 msgid "GPS Lock"
 msgstr "GPS vérouillé"
 
-#: views/indi_mount.html:162
+#: views/indi_mount.html:168
 #, fuzzy
 msgid "Location Source"
 msgstr "Loc. vérouillée"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:163
+#: views/indi_mount.html:169
 #, fuzzy
 msgid "Location to Send"
 msgstr "Position sauvegardée"
 
-#: views/indi_mount.html:164
+#: views/indi_mount.html:170
 #, fuzzy
 msgid "PiFinder UTC Time"
 msgstr "Type de PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:171 views/locations.html:63
+#: views/indi_mount.html:177 views/locations.html:63
 msgid "Latitude"
 msgstr "Latitude"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:175 views/locations.html:64
+#: views/indi_mount.html:181 views/locations.html:64
 msgid "Longitude"
 msgstr "Longitude"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:179
+#: views/indi_mount.html:185
 #, fuzzy
 msgid "Elevation m"
 msgstr "Nom de lieu"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:183
+#: views/indi_mount.html:189
 #, fuzzy
 msgid "UTC Time"
 msgstr "Heure UTC (h:m:s)"
 
-#: views/indi_mount.html:187
+#: views/indi_mount.html:193
 #, fuzzy
 msgid "Reload Current Values"
 msgstr "Version courante"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:188
+#: views/indi_mount.html:194
 #, fuzzy
 msgid "Send Location and Time"
 msgstr "Entrez nom lieu:"
 
-#: views/indi_mount.html:196
+#: views/indi_mount.html:202
 msgid "Pointing Coordinate Service"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:199
+#: views/indi_mount.html:205
 #, fuzzy
 msgid "Selected Source"
 msgstr "Tout désélect."
 
-#: views/indi_mount.html:201
+#: views/indi_mount.html:207
 #, fuzzy
 msgid "Quality"
 msgstr "Alt"
 
-#: views/indi_mount.html:202
+#: views/indi_mount.html:208
 msgid "RA (deg)"
 msgstr ""
 
-#: views/indi_mount.html:203
+#: views/indi_mount.html:209
 msgid "Dec (deg)"
 msgstr ""
 
-#: views/indi_mount.html:204
+#: views/indi_mount.html:210
 msgid "Mount Separation (deg)"
 msgstr ""
 
-#: views/indi_mount.html:205
+#: views/indi_mount.html:211
 msgid "IMU-Mount Separation (deg)"
 msgstr ""
 
-#: views/indi_mount.html:206
+#: views/indi_mount.html:212
 msgid "Warnings"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:207
+#: views/indi_mount.html:213
 #, fuzzy
 msgid "Last Reset"
 msgstr "Réinit. position"
 
-#: views/indi_mount.html:210
+#: views/indi_mount.html:216
 msgid ""
 "Reinitialize the fused coordinate when it has drifted from the sky "
 "(bad/absent plate solves, or IMU drift). With a valid plate solve it re-"
@@ -4393,256 +4399,256 @@ msgid ""
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:223
+#: views/indi_mount.html:229
 #, fuzzy
 msgid "Home State"
 msgstr "Nom d'hôte"
 
-#: views/indi_mount.html:227
+#: views/indi_mount.html:233
 #, fuzzy
 msgid "Park State"
 msgstr "Status du GPS"
 
-#: views/indi_mount.html:231
+#: views/indi_mount.html:237
 msgid "Raw Mount Status"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:237 views/indi_mount.html:594
+#: views/indi_mount.html:243 views/indi_mount.html:600
 #, fuzzy
 msgid "At Home"
 msgstr "Accueil"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:250
+#: views/indi_mount.html:256
 #, fuzzy
 msgid "Slew Rate"
 msgstr "Repères NSEO"
 
-#: views/indi_mount.html:259
+#: views/indi_mount.html:265
 msgid "Move Direction (DIR)"
 msgstr ""
 
-#: views/indi_mount.html:263
-msgid "Move up-left"
-msgstr ""
-
-# AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:264
-#, fuzzy
-msgid "Move up"
-msgstr "Télécommande"
-
-#: views/indi_mount.html:265
-#, fuzzy
-msgid "Move up-right"
-msgstr "Brillance Touche"
-
-#: views/indi_mount.html:266
-#, fuzzy
-msgid "Move left"
-msgstr "Gauche"
-
-#: views/indi_mount.html:267
-msgid "Hold"
-msgstr ""
-
-#: views/indi_mount.html:268
-#, fuzzy
-msgid "Move right"
-msgstr "Brillance Touche"
-
 #: views/indi_mount.html:269
-msgid "Move down-left"
+msgid "Move up-left"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
 #: views/indi_mount.html:270
 #, fuzzy
+msgid "Move up"
+msgstr "Télécommande"
+
+#: views/indi_mount.html:271
+#, fuzzy
+msgid "Move up-right"
+msgstr "Brillance Touche"
+
+#: views/indi_mount.html:272
+#, fuzzy
+msgid "Move left"
+msgstr "Gauche"
+
+#: views/indi_mount.html:273
+msgid "Hold"
+msgstr ""
+
+#: views/indi_mount.html:274
+#, fuzzy
+msgid "Move right"
+msgstr "Brillance Touche"
+
+#: views/indi_mount.html:275
+msgid "Move down-left"
+msgstr ""
+
+# AI-TRANSLATED (claude): needs human review
+#: views/indi_mount.html:276
+#, fuzzy
 msgid "Move down"
 msgstr "0 RÉSOUDRE"
 
-#: views/indi_mount.html:271
+#: views/indi_mount.html:277
 msgid "Move down-right"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:279
+#: views/indi_mount.html:285
 #, fuzzy
 msgid "Multi-Point Align"
 msgstr "Multi-Tap"
 
-#: views/indi_mount.html:283
+#: views/indi_mount.html:289
 #, fuzzy
 msgid "Align Status"
 msgstr "Status du GPS"
 
-#: views/indi_mount.html:289
+#: views/indi_mount.html:295
 msgid "Align Progress"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:295
+#: views/indi_mount.html:301
 #, fuzzy
 msgid "Current Align Star"
 msgstr "Mot de passe actuel"
 
-#: views/indi_mount.html:308
+#: views/indi_mount.html:314
 msgid "Manual"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:322
+#: views/indi_mount.html:328
 #, fuzzy
 msgid "mag"
 msgstr "Images"
 
-#: views/indi_mount.html:326
+#: views/indi_mount.html:332
 #, fuzzy
 msgid "Alignment Star"
 msgstr "Alignement en cours"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:330
+#: views/indi_mount.html:336
 #, fuzzy
 msgid "Start Align"
 msgstr "  {icon} DÉMARRER ALIGN."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:331
+#: views/indi_mount.html:337
 #, fuzzy
 msgid "GoTo Selected Star"
 msgstr "{icon} CHOISIR ÉTOILE"
 
-#: views/indi_mount.html:332
+#: views/indi_mount.html:338
 #, fuzzy
 msgid "Confirm Point"
 msgstr "Confirmation"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:333
+#: views/indi_mount.html:339
 #, fuzzy
 msgid "Cancel Align"
 msgstr "Annulé"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:340
+#: views/indi_mount.html:346
 #, fuzzy
 msgid "Current Backlash"
 msgstr "Mot de passe actuel"
 
-#: views/indi_mount.html:347
+#: views/indi_mount.html:353
 #, fuzzy
 msgid "Auto Calculation"
 msgstr "Calcul en cours"
 
-#: views/indi_mount.html:354
+#: views/indi_mount.html:360
 msgid "Calculated Backlash"
 msgstr ""
 
-#: views/indi_mount.html:358
+#: views/indi_mount.html:364
 msgid "Auto Method"
 msgstr ""
 
-#: views/indi_mount.html:359
+#: views/indi_mount.html:365
 msgid ""
 "Solved-coordinate GoTo round-trip test; repeated return/offset GoTo moves"
 " are recorded and filtered by direction before recommending candidate "
 "backlash values."
 msgstr ""
 
-#: views/indi_mount.html:362
+#: views/indi_mount.html:368
 msgid "Motion Command"
 msgstr ""
 
-#: views/indi_mount.html:363
+#: views/indi_mount.html:369
 msgid "INDI GoTo"
 msgstr ""
 
-#: views/indi_mount.html:366
+#: views/indi_mount.html:372
 msgid "Motion Test Repeats"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:372
+#: views/indi_mount.html:378
 #, fuzzy
 msgid "Motion Test Details"
 msgstr "Réinit. position"
 
-#: views/indi_mount.html:376
+#: views/indi_mount.html:382
 #, python-format
 msgid ""
 "Filtered %(filtered)s / %(sample)s, warm-up %(warmup)s, excluded "
 "%(excluded)s, spread %(spread)s%%, direction delta %(delta)s%%"
 msgstr ""
 
-#: views/indi_mount.html:395 views/indi_mount.html:399
+#: views/indi_mount.html:401 views/indi_mount.html:405
 #, python-format
 msgid "%(axis)s Backlash"
 msgstr ""
 
-#: views/indi_mount.html:403 views/indi_mount.html:590
+#: views/indi_mount.html:409 views/indi_mount.html:596
 msgid "Start Motion Test"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:404 views/indi_mount.html:591
+#: views/indi_mount.html:410 views/indi_mount.html:597
 #, fuzzy
 msgid "Continue Motion Test"
 msgstr "Longitude minutes"
 
-#: views/indi_mount.html:405
+#: views/indi_mount.html:411
 msgid "Save Backlash"
 msgstr ""
 
-#: views/indi_mount.html:413
+#: views/indi_mount.html:419
 msgid "INDI Driver"
 msgstr ""
 
-#: views/indi_mount.html:415
+#: views/indi_mount.html:421
 #, python-format
 msgid ""
 "%(driver)s is selected in the active INDI profile. OnStepX-specific setup"
 " and motion controls are hidden for this driver."
 msgstr ""
 
-#: views/indi_mount.html:415
+#: views/indi_mount.html:421
 msgid "No driver"
 msgstr ""
 
-#: views/indi_mount.html:423
+#: views/indi_mount.html:429
 msgid "SkySafari Mount Mode"
 msgstr ""
 
-#: views/indi_mount.html:428
+#: views/indi_mount.html:434
 #, fuzzy
 msgid "PiFinder Mount Type"
 msgstr "Type de PiFinder"
 
-#: views/indi_mount.html:434
+#: views/indi_mount.html:440
 msgid "Polar / EQ"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:435
+#: views/indi_mount.html:441
 #, fuzzy
 msgid "German EQ"
 msgstr "Allemand"
 
-#: views/indi_mount.html:437
+#: views/indi_mount.html:443
 msgid "SkySafari LX200 Mount Code"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:444
+#: views/indi_mount.html:450
 msgid "Forward SkySafari Align/Sync to INDI"
 msgstr "Transmettre Align/Sync de SkySafari à INDI"
 
-#: views/indi_mount.html:452
+#: views/indi_mount.html:458
 msgid "Apply Planet Tracking Rate on SkySafari GoTo"
 msgstr ""
 
-#: views/indi_mount.html:454
+#: views/indi_mount.html:460
 msgid ""
 "SkySafari sends coordinates without an object type, so a GoTo target is "
 "matched against the planet ephemeris to decide the tracking rate. Turn "
@@ -4650,275 +4656,275 @@ msgid ""
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:458
+#: views/indi_mount.html:464
 #, fuzzy
 msgid "Apply SkySafari Settings"
 msgstr "Réglages GPS"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:466
+#: views/indi_mount.html:472
 #, fuzzy
 msgid "GoTo / Guide Settings"
 msgstr "Réglages GPS"
 
-#: views/indi_mount.html:479
+#: views/indi_mount.html:485
 msgid "Refine Accuracy arcmin"
 msgstr ""
 
-#: views/indi_mount.html:494
+#: views/indi_mount.html:500
 msgid "Tracking Guide GoTo Recovery (re-slew when off target by more than 3 deg)"
 msgstr ""
 
-#: views/indi_mount.html:502
+#: views/indi_mount.html:508
 msgid ""
 "Manual Re-target (after a manual move, track the new position instead of "
 "returning)"
 msgstr ""
 
-#: views/indi_mount.html:510
+#: views/indi_mount.html:516
 msgid "Invert guide pulse RA/Az (WE)"
 msgstr ""
 
-#: views/indi_mount.html:516
+#: views/indi_mount.html:522
 msgid "Invert guide pulse Dec/Alt (NS)"
 msgstr ""
 
-#: views/indi_mount.html:527
+#: views/indi_mount.html:533
 msgid "PiFinder GoTo: Max sync + GoTo iterations"
 msgstr ""
 
-#: views/indi_mount.html:531
+#: views/indi_mount.html:537
 msgid "Apply GoTo / Guide Settings"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:532 views/indi_mount.html:1178
+#: views/indi_mount.html:538 views/indi_mount.html:1188
 msgid "Pause Guide"
 msgstr "Suspendre le guidage"
 
-#: views/indi_mount.html:535
+#: views/indi_mount.html:541
 msgid "GoTo / Guide Status"
 msgstr ""
 
-#: views/indi_mount.html:536
+#: views/indi_mount.html:542
 #, fuzzy
 msgid "Service"
 msgstr "Observé"
 
-#: views/indi_mount.html:538
+#: views/indi_mount.html:544
 msgid "Guide State"
 msgstr ""
 
-#: views/indi_mount.html:540
+#: views/indi_mount.html:546
 #, fuzzy
 msgid "Guide Error"
 msgstr "Erreur"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:542
+#: views/indi_mount.html:548
 #, fuzzy
 msgid "Recovery"
 msgstr "Enregistrer"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:544
+#: views/indi_mount.html:550
 #, fuzzy
 msgid "Last Action"
 msgstr "Définir position"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:592
+#: views/indi_mount.html:598
 #, fuzzy
 msgid "STOP"
 msgstr "Personnalisé"
 
-#: views/indi_mount.html:595
+#: views/indi_mount.html:601
 #, fuzzy
 msgid "Not at Home"
 msgstr "Pas de mise à jour"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:596
+#: views/indi_mount.html:602
 #, fuzzy
 msgid "Waiting at Home"
 msgstr "attente de la"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:597
+#: views/indi_mount.html:603
 #, fuzzy
 msgid "Parked"
 msgstr "Marque"
 
-#: views/indi_mount.html:598
+#: views/indi_mount.html:604
 msgid "Unparked"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:599
+#: views/indi_mount.html:605
 #, fuzzy
 msgid "Parking"
 msgstr "Recherche"
 
-#: views/indi_mount.html:600
+#: views/indi_mount.html:606
 #, fuzzy
 msgid "Parking Failed"
 msgstr "Erreur d'alignement"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:601
+#: views/indi_mount.html:607
 msgid "Unknown"
 msgstr "Inconnu"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:903
+#: views/indi_mount.html:909
 #, fuzzy
 msgid "Estimated"
 msgstr "RàZ date/heure"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1074
+#: views/indi_mount.html:1084
 #, fuzzy
 msgid "Records"
 msgstr "Enregistrer"
 
-#: views/indi_mount.html:1086 views/indi_mount.html:1099
+#: views/indi_mount.html:1096 views/indi_mount.html:1109
 #, fuzzy
 msgid "calculated"
 msgstr "Calcul en cours"
 
-#: views/indi_mount.html:1087 views/indi_mount.html:1100
+#: views/indi_mount.html:1097 views/indi_mount.html:1110
 #, fuzzy
 msgid "filtered"
 msgstr "Filtre"
 
-#: views/indi_mount.html:1091
+#: views/indi_mount.html:1101
 msgid "By movement direction"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1112
+#: views/indi_mount.html:1122
 #, fuzzy
 msgid "Confidence"
 msgstr "Confirmer suppression"
 
-#: views/indi_mount.html:1113
+#: views/indi_mount.html:1123
 #, fuzzy
 msgid "Filtered"
 msgstr "Filtre"
 
-#: views/indi_mount.html:1114
+#: views/indi_mount.html:1124
 msgid "warm-up"
 msgstr ""
 
-#: views/indi_mount.html:1115
+#: views/indi_mount.html:1125
 msgid "excluded"
 msgstr ""
 
-#: views/indi_mount.html:1116
+#: views/indi_mount.html:1126
 msgid "Spread"
 msgstr ""
 
-#: views/indi_mount.html:1117
+#: views/indi_mount.html:1127
 msgid "direction delta"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1177
+#: views/indi_mount.html:1187
 msgid "Resume Guide"
 msgstr "Reprendre le guidage"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1216
+#: views/indi_mount.html:1226
 #, fuzzy
 msgid "Reading"
 msgstr "Recherche"
 
-#: views/indi_mount.html:1223
+#: views/indi_mount.html:1233
 msgid "Could not read current values"
 msgstr ""
 
-#: views/indi_mount.html:1230
+#: views/indi_mount.html:1240
 #, fuzzy
 msgid "Updated"
 msgstr "Pas de mise à jour"
 
-#: views/indi_mount.html:1321
+#: views/indi_mount.html:1331
 #, fuzzy
 msgid "Setting"
 msgstr "Réglages"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1323
+#: views/indi_mount.html:1333
 #, fuzzy
 msgid "Applied"
 msgstr "Aligné!"
 
-#: views/indi_mount.html:1333
+#: views/indi_mount.html:1343
 msgid "Command sent"
 msgstr ""
 
-#: views/indi_mount.html:1343
+#: views/indi_mount.html:1353
 #, fuzzy
 msgid "Resetting..."
 msgstr "Redémarrage..."
 
-#: views/indi_mount.html:1377
+#: views/indi_mount.html:1387
 msgid "Starting auto calculation"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1386
+#: views/indi_mount.html:1396
 #, fuzzy
 msgid "Auto calculation requested"
 msgstr "Réinit. position"
 
-#: views/indi_mount.html:1404
+#: views/indi_mount.html:1414
 msgid "Stopping motion test"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1424 views/indi_mount.html:1430
+#: views/indi_mount.html:1434 views/indi_mount.html:1440
 #, fuzzy
 msgid "Continue requested"
 msgstr "Connexion requise"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1451
+#: views/indi_mount.html:1461
 #, fuzzy
 msgid "Working"
 msgstr "Réglages réseau"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1540
+#: views/indi_mount.html:1550
 #, fuzzy
 msgid "Stop"
 msgstr "Personnalisé"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1578
+#: views/indi_mount.html:1588
 #, fuzzy
 msgid "Restarting INDI"
 msgstr "Redémarrage PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1581
+#: views/indi_mount.html:1591
 #, fuzzy
 msgid "Restart requested"
 msgstr "Reprendre depuis la fin"
 
-#: views/indi_mount.html:1589
+#: views/indi_mount.html:1599
 msgid ""
 "Force-reboot the OnStep mount controller? The mount will be offline for "
 "about a minute."
 msgstr ""
 
-#: views/indi_mount.html:1592
+#: views/indi_mount.html:1602
 #, fuzzy
 msgid "Rebooting mount controller"
 msgstr "Type de Monture"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:1595
+#: views/indi_mount.html:1605
 #, fuzzy
 msgid "Reboot requested"
 msgstr "Reprendre depuis la fin"

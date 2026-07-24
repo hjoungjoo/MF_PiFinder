@@ -88,8 +88,16 @@ Legacy keys still present in older configs (`ntp_*`, `software_pps*`,
   `selected` is null and the state mirrors the chrony/GPS observation states.
 - GPS candidates are observed for diagnostics only: `tAcc`, sample jitter and
   staleness drive `stable/collecting/low_quality/unstable/stale`.
-- Detecting a never-synchronized clock after boot (stale fake-hwclock time)
-  and holding off mount time sync is planned as item A4 of the analysis doc.
+- **Clock-trust gate (A4, implemented)**: when chronyd first synchronizes this
+  boot, a tmpfs marker `/dev/shm/pifinder/clock_trusted.json` (with the boot
+  id) is written. `gps_time_sync.clock_is_trusted()` judges from the marker
+  (plus a direct `chronyc` check when needed); while untrusted, mount
+  location/time sync is deferred, a blinking "T" shows in the LCD title bar
+  and the web `/indi` page shows a warning banner.
+- **Clock-jump re-sync (A5, implemented)**: when the clock jumps by more than
+  2 s (chrony stepping after a late GPS fix), the mount site/time is re-sent
+  and the tracking target is cleared. A trust transition without a visible
+  jump also re-sends site/time.
 
 ## System clock and RTC
 

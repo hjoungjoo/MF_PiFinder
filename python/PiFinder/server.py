@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 import pydeepskylog as pds
 from PIL import Image
-from PiFinder import timez
+from PiFinder import gps_time_sync, timez
 from PiFinder import utils, calc_utils, config, location_catalog
 from PiFinder.db.observations_db import (
     ObservationsDatabase,
@@ -1518,6 +1518,8 @@ class Server:
             return jsonify(
                 {
                     "ok": True,
+                    "clock_trusted": gps_time_sync.read_clock_trust_marker()
+                    is not None,
                     "mount_type": indi_cfg["mount_type"],
                     "onstep_device_name": indi_cfg["device_name"],
                     "is_onstepx_driver": indi_cfg["is_onstepx_driver"],

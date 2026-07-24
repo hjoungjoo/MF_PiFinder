@@ -3,7 +3,13 @@ import json
 
 import pytz
 
-from PiFinder.gps_time_sync import ChronyClient, GpsTimeSyncMonitor
+from PiFinder.gps_time_sync import (
+    ChronyClient,
+    GpsTimeSyncMonitor,
+    clock_is_trusted,
+    read_clock_trust_marker,
+    write_clock_trust_marker,
+)
 
 
 class FakeClock:
@@ -190,10 +196,12 @@ def test_chrony_time_source_is_selected(tmp_path):
     clock = FakeClock(unix=utc(20).timestamp(), monotonic=100.0)
     chrony_client = FakeChronyClient([STABLE_CHRONY_RESULT])
     status_file = tmp_path / "gps_time_status.json"
+    trust_file = tmp_path / "clock_trusted.json"
     monitor = GpsTimeSyncMonitor(
         time_sync_enabled=True,
         chrony_enabled=True,
         status_file=status_file,
+        clock_trust_file=trust_file,
         time_fn=clock.time,
         monotonic_fn=clock.monotonic_time,
         chrony_client=chrony_client,
@@ -204,11 +212,14 @@ def test_chrony_time_source_is_selected(tmp_path):
     status = read_status(status_file)
     assert status["state"] == "stable"
     assert status["clock_manager"] == "chrony"
+    assert status["clock_trusted"] is True
     assert status["selected"]["source"] == "Chrony"
     assert status["selected"]["time"] == utc(20).isoformat()
     assert status["chrony"]["state"] == "stable"
     assert status["chrony"]["reference_name"] == "121.134.215.104"
     assert chrony_client.calls == [1.0]
+    # First synchronized chrony poll arms the boot-scoped trust marker (A4).
+    assert read_clock_trust_marker(trust_file) is not None
 
 
 def test_unsynced_chrony_leaves_no_selected_source(tmp_path):
@@ -225,10 +236,12 @@ def test_unsynced_chrony_leaves_no_selected_source(tmp_path):
         ]
     )
     status_file = tmp_path / "gps_time_status.json"
+    trust_file = tmp_path / "clock_trusted.json"
     monitor = GpsTimeSyncMonitor(
         time_sync_enabled=True,
         chrony_enabled=True,
         status_file=status_file,
+        clock_trust_file=trust_file,
         time_fn=clock.time,
         monotonic_fn=clock.monotonic_time,
         chrony_client=chrony_client,
@@ -238,8 +251,10 @@ def test_unsynced_chrony_leaves_no_selected_source(tmp_path):
 
     status = read_status(status_file)
     assert status["state"] == "unsynced"
+    assert status["clock_trusted"] is False
     assert status["selected"] is None
     assert status["chrony"]["state"] == "unsynced"
+    assert read_clock_trust_marker(trust_file) is None
 
 
 def test_rtc_sync_writes_request_when_chrony_stable(tmp_path):
@@ -252,6 +267,7 @@ def test_rtc_sync_writes_request_when_chrony_stable(tmp_path):
         chrony_enabled=True,
         rtc_sync_enabled=True,
         status_file=status_file,
+        clock_trust_file=tmp_path / "clock_trusted.json",
         time_fn=clock.time,
         monotonic_fn=clock.monotonic_time,
         request_writer=request_writer,
@@ -316,6 +332,47 @@ def test_status_payload_has_no_removed_sections(tmp_path):
     assert "system_clock_sync" not in payload
     assert "ntp" not in payload["sources"]
     assert payload["clock_manager"] == "chrony"
+
+
+def test_clock_trust_marker_is_boot_scoped(tmp_path):
+    marker = tmp_path / "clock_trusted.json"
+
+    write_clock_trust_marker("chrony", marker_file=marker, boot_id_fn=lambda: "boot-1")
+
+    assert read_clock_trust_marker(marker, boot_id_fn=lambda: "boot-1") is not None
+    # A different boot id (i.e. after a reboot) invalidates the marker.
+    assert read_clock_trust_marker(marker, boot_id_fn=lambda: "boot-2") is None
+
+
+def test_clock_is_trusted_falls_back_to_live_chrony(tmp_path):
+    marker = tmp_path / "clock_trusted.json"
+    chrony_client = FakeChronyClient([STABLE_CHRONY_RESULT])
+
+    assert not clock_is_trusted(marker_file=marker, boot_id_fn=lambda: "boot-1")
+    assert clock_is_trusted(
+        check_chrony=True,
+        marker_file=marker,
+        boot_id_fn=lambda: "boot-1",
+        chrony_client=chrony_client,
+    )
+    # The successful live check primes the marker for the fast path.
+    assert read_clock_trust_marker(marker, boot_id_fn=lambda: "boot-1") is not None
+    assert clock_is_trusted(marker_file=marker, boot_id_fn=lambda: "boot-1")
+
+
+def test_clock_is_trusted_stays_false_when_chrony_unsynced(tmp_path):
+    marker = tmp_path / "clock_trusted.json"
+    chrony_client = FakeChronyClient(
+        [{"ok": True, "state": "unsynced", "message": "not synchronized"}]
+    )
+
+    assert not clock_is_trusted(
+        check_chrony=True,
+        marker_file=marker,
+        boot_id_fn=lambda: "boot-1",
+        chrony_client=chrony_client,
+    )
+    assert read_clock_trust_marker(marker, boot_id_fn=lambda: "boot-1") is None
 
 
 def test_chrony_tracking_parser_reads_offsets():
