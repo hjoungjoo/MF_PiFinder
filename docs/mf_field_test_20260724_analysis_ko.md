@@ -37,7 +37,8 @@
 | 입력/동작 | GoTo Type = **INDI Mount** | GoTo Type = **PiFinder** |
 | --- | --- | --- |
 | SkySafari 정렬(`:CM#`) | **INDI 마운트 정렬만** 전송. PiFinder 얼라인은 건드리지 않음 | **PiFinder 얼라인(LCD Start > Align과 동일) + INDI 마운트 정렬 둘 다** 수행 |
-| 자동 정렬(추적 가이드 복구 등 PiFinder가 스스로 보내는 sync) | **금지** — 자동 sync를 전송하지 않음 | **허용** — 융합좌표를 소스(솔브/IMU) 구분 없이 전송하는 의도된 폴백 (솔빙이 느리거나 실패해도, GPS가 불안해도 호핑 가능한 이동 유지) |
+| 자동 정렬(PiFinder가 스스로 보내는 sync) | **금지** — 자동 sync를 전송하지 않음 | **허용** — 융합좌표를 소스(솔브/IMU) 구분 없이 전송하는 의도된 폴백 (솔빙이 느리거나 실패해도, GPS가 불안해도 호핑 가능한 이동 유지) |
+| 추적 가이드 외란 복구(sync + 원래 타깃으로 복귀 GoTo) | **미실행** — 외란을 감지해도 복구 동작을 하지 않음(상태 표시만) | 허용 (기존 disturbance recovery 동작) |
 | PiFinder 얼라인 변경 경로 | LCD 메뉴(Start > Align)로만 | LCD 메뉴 + SkySafari 정렬 |
 
 단서 조항: SkySafari발 PiFinder 얼라인 자동 수행에 구현상 문제가 발견되면
@@ -291,14 +292,19 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
 3. 보조 제어 수단: `Tracking Guide = Off` / `GoTo Recovery = Off`(C9)로
    추적 가이드 개입 자체를 끌 수 있다.
 
-- [ ] **B4. 자동 정렬 모드 게이트** — `indi_goto_method = indi_mount`이면
-  자동 sync를 전송하지 않는다. 실질 대상은 추적 가이드 외란 복구
-  (`_begin_tracking_recovery_goto()`)의 "현재 좌표로 sync 후 GoTo" — INDI
-  Mount 모드에서는 **sync를 생략하고 GoTo/펄스 복구만** 수행한다.
-  (PiFinder GoTo 반복 sync/final sync는 PiFinder 모드에서만 실행되는 경로라
-  자연히 해당 없음.) 생략 사실은 B5/B8 가시성 경로로 상태에 남긴다.
-  - 대상: `indi_goto_guide_service.py::_begin_tracking_recovery_goto()`
-    (+ 동일 조건의 기타 자동 sync 경로 전수 확인)
+- [ ] **B4. 자동 정렬/외란 복구 모드 게이트** — `indi_goto_method =
+  indi_mount`이면:
+  - **자동 sync 전송 금지**, 그리고 **외란 복구 자체를 실행하지 않는다**
+    (sync 생략 후 GoTo만 하는 것도 아님 — 복구 동작 전체 미실행).
+    외란 감지 시 상태 표시만 남긴다(`disturbed`/`recovery skipped:
+    indi_mount mode` 등, B8 연계).
+  - 일반 추적 펄스 보정(tracking guide의 미세 pulse)은 별개이며 Tracking
+    Guide 설정을 따른다.
+  - PiFinder GoTo 반복 sync/final sync는 PiFinder 모드에서만 실행되는
+    경로라 자연히 해당 없음.
+  - 대상: `indi_goto_guide_service.py` — `_begin_tracking_recovery_goto()`
+    호출 경로(외란 복구 분기)에 모드 게이트 (+ 동일 조건의 기타 자동 sync
+    경로 전수 확인)
 - [ ] **B5. 자동 정렬 가시성(소스 기록)** — 소스 게이트는 도입하지 않는 대신,
   어떤 좌표로 정렬됐는지를 추적할 수 있게 한다: 자동 sync 전송 시 사용한
   좌표 소스(`solved` / `mount_imu_delta` / `imu_fallback`)와 솔브 나이를
