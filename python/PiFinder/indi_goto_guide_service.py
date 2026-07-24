@@ -422,6 +422,29 @@ class IndiGotoGuideService:
         self.mountcontrol_queue.put(command)
         return True
 
+    def _sync_context(
+        self, origin: str, pointing_source: Optional[str] = None
+    ) -> dict[str, Any]:
+        """B5 visibility (docs/mf_field_test_20260724_analysis_ko.md): tag a
+        sync command with who requested it and which coordinate source fed
+        the value, so mount-control can record it in ``coordinate_sync``."""
+        pointing = (
+            self.pointing_status if isinstance(self.pointing_status, dict) else {}
+        )
+        current = pointing.get("current") or {}
+        solved = pointing.get("solved") or {}
+        solve_age_seconds = None
+        solved_timestamp = solved.get("timestamp")
+        if solved.get("valid") and isinstance(solved_timestamp, (int, float)):
+            solve_age_seconds = max(0.0, time.time() - float(solved_timestamp))
+        context: dict[str, Any] = {
+            "origin": origin,
+            "pointing_source": pointing_source or current.get("source") or "unknown",
+        }
+        if solve_age_seconds is not None:
+            context["solve_age_seconds"] = round(solve_age_seconds, 1)
+        return context
+
     def _tick_state_machine(self) -> None:
         if self.phase == "pifinder_goto":
             self._tick_goto_wait()
@@ -477,7 +500,12 @@ class IndiGotoGuideService:
             return
 
         self._forward_to_mountcontrol(
-            {"type": "sync", "ra": self.current_ra, "dec": self.current_dec}
+            {
+                "type": "sync",
+                "ra": self.current_ra,
+                "dec": self.current_dec,
+                **self._sync_context("pifinder_goto"),
+            }
         )
         self._forward_to_mountcontrol(
             {
@@ -732,6 +760,9 @@ class IndiGotoGuideService:
                 "type": "sync",
                 "ra": self.active_target_ra,
                 "dec": self.active_target_dec,
+                **self._sync_context(
+                    "pifinder_final_sync", pointing_source="goto_target"
+                ),
             }
         )
         self.final_sync_sent = True
@@ -1183,7 +1214,12 @@ class IndiGotoGuideService:
 
         self._disable_tracking_guide("starting goto recovery")
         self._forward_to_mountcontrol(
-            {"type": "sync", "ra": current_ra, "dec": current_dec}
+            {
+                "type": "sync",
+                "ra": current_ra,
+                "dec": current_dec,
+                **self._sync_context("tracking_recovery"),
+            }
         )
         self._forward_to_mountcontrol(
             {

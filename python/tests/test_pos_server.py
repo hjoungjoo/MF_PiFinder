@@ -792,6 +792,8 @@ def test_skysafari_sync_queues_indi_sync_when_enabled(monkeypatch):
         "type": "sync",
         "ra": 12.5,
         "dec": -34.25,
+        "origin": "skysafari_align",
+        "pointing_source": "skysafari_target",
     }
 
 
@@ -823,6 +825,8 @@ def test_skysafari_sync_queues_indi_sync_by_default(monkeypatch):
         "type": "sync",
         "ra": 42.0,
         "dec": 15.5,
+        "origin": "skysafari_align",
+        "pointing_source": "skysafari_target",
     }
 
 
@@ -887,6 +891,8 @@ def test_skysafari_sync_prefers_current_sr_sd_over_previous_goto(monkeypatch):
         "type": "sync",
         "ra": 30.0,
         "dec": 10.0,
+        "origin": "skysafari_align",
+        "pointing_source": "skysafari_target",
     }
 
 

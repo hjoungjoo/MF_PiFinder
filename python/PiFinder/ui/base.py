@@ -868,7 +868,15 @@ class UIModule:
             if pointing is None:
                 self.message(_("No solve"), 1)
                 return True
-            queue.put({"type": "sync", "ra": pointing[0], "dec": pointing[1]})
+            queue.put(
+                {
+                    "type": "sync",
+                    "ra": pointing[0],
+                    "dec": pointing[1],
+                    "origin": "lcd_guide",
+                    "pointing_source": "pifinder_pointing",
+                }
+            )
             self.message(_("Mount Sync"), 1)
         elif number == 9:
             queue.put({"type": "increase_slew_rate"})

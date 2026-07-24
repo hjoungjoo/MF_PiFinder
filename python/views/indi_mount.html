@@ -237,6 +237,10 @@
         <span>{{ _('Raw Mount Status') }}</span>
         <strong id="indi_raw_mount_status_value">{{ onstep_mount_state.raw_status or '-' }}</strong>
       </div>
+      <div class="indi-mount-state">
+        <span>{{ _('Last Sync') }}</span>
+        <strong id="indi_last_sync_value">-</strong>
+      </div>
     </div>
     <div class="row">
       <div class="col s12 m6 indi-park-actions">
@@ -1264,6 +1268,24 @@ document.addEventListener('DOMContentLoaded', function() {
       var mcs = payload.mount_control_status || {};
       if (mcs.raw_mount_status) {
         setText('indi_raw_mount_status_value', textOrDash(mcs.raw_mount_status));
+      }
+      // B5/B8 visibility: who requested the last mount sync and which
+      // coordinate source (solve / IMU fusion / target) fed it.
+      var coordSync = mcs.coordinate_sync || null;
+      if (coordSync && coordSync.synced) {
+        var syncText = (coordSync.origin || 'unknown') +
+          ' / ' + (coordSync.pointing_source || 'unknown');
+        if (typeof coordSync.solve_age_seconds === 'number') {
+          syncText += ' (solve ' + coordSync.solve_age_seconds.toFixed(0) + 's)';
+        }
+        if (typeof coordSync.synced_at === 'number') {
+          var syncAge = Math.max(0, (Date.now() / 1000) - coordSync.synced_at);
+          var syncAgeText = syncAge < 90
+            ? syncAge.toFixed(0) + 's'
+            : (syncAge / 60).toFixed(0) + 'm';
+          syncText += ', ' + syncAgeText + ' {{ _("ago") }}';
+        }
+        setText('indi_last_sync_value', syncText);
       }
     }).catch(function() { /* transient read errors are ignored */ });
   }

@@ -1800,7 +1800,11 @@ class MountControlIndi(BacklashCalibrationMixin):
             return
 
         self._pending_goto_refine = None
-        if not self.sync_mount(current_ra, current_dec):
+        if not self.sync_mount(
+            current_ra,
+            current_dec,
+            sync_context={"origin": "goto_refine", "pointing_source": "solved"},
+        ):
             self._write_controller_status(
                 "refine_failed", "Could not sync current solve"
             )
@@ -2259,7 +2263,12 @@ class MountControlIndi(BacklashCalibrationMixin):
                 guide_direction=",".join(p.split()[0] for p in pulses),
             )
 
-    def sync_mount(self, ra_deg: float, dec_deg: float) -> bool:
+    def sync_mount(
+        self,
+        ra_deg: float,
+        dec_deg: float,
+        sync_context: Optional[dict[str, Any]] = None,
+    ) -> bool:
         if not self.connect() or self.client is None or self.device is None:
             return False
 
@@ -2287,8 +2296,21 @@ class MountControlIndi(BacklashCalibrationMixin):
             "synced_at": time.time(),
             "source": "sync_mount",
         }
+        # B5 visibility (docs/mf_field_test_20260724_analysis_ko.md): record
+        # who requested this sync and which coordinate source (solve / IMU
+        # fusion / target) the value came from, for field diagnostics.
+        if sync_context:
+            for key in ("origin", "pointing_source", "solve_age_seconds"):
+                if sync_context.get(key) is not None:
+                    self._coordinate_sync[key] = sync_context[key]
         self.set_current_position(ra_deg, dec_deg)
-        logger.info("Mount synced to RA %.4f Dec %.4f", ra_deg, dec_deg)
+        logger.info(
+            "Mount synced to RA %.4f Dec %.4f (origin=%s source=%s)",
+            ra_deg,
+            dec_deg,
+            (sync_context or {}).get("origin", "unknown"),
+            (sync_context or {}).get("pointing_source", "unknown"),
+        )
         self._console("INDI mount\nsynced")
         return True
 
@@ -2859,7 +2881,14 @@ class MountControlIndi(BacklashCalibrationMixin):
             separation_arcmin,
         )
 
-        if not self.sync_mount(pifinder_ra, pifinder_dec):
+        if not self.sync_mount(
+            pifinder_ra,
+            pifinder_dec,
+            sync_context={
+                "origin": "multipoint_align_start",
+                "pointing_source": source,
+            },
+        ):
             self._align_session_status(
                 STATE_FAILED,
                 "Could not sync mount coordinates to PiFinder before alignment",
@@ -3347,7 +3376,14 @@ class MountControlIndi(BacklashCalibrationMixin):
                     STATE_FAILED, f"Could not accept {current_star['name']}"
                 )
                 return False
-        elif not self.sync_mount(ra, dec):
+        elif not self.sync_mount(
+            ra,
+            dec,
+            sync_context={
+                "origin": "multipoint_align_confirm",
+                "pointing_source": "align_target",
+            },
+        ):
             self._align_session_status(
                 STATE_FAILED, f"Could not confirm {current_star['name']}"
             )
@@ -3425,7 +3461,16 @@ class MountControlIndi(BacklashCalibrationMixin):
         elif command_type == "reboot_mount":
             self.reboot_mount()
         elif command_type == "sync":
-            self.sync_mount(float(command["ra"]), float(command["dec"]))
+            sync_context = {
+                key: command.get(key)
+                for key in ("origin", "pointing_source", "solve_age_seconds")
+                if command.get(key) is not None
+            }
+            self.sync_mount(
+                float(command["ra"]),
+                float(command["dec"]),
+                sync_context=sync_context or None,
+            )
         elif command_type == "goto_target":
             self.goto_target(
                 float(command["ra"]),

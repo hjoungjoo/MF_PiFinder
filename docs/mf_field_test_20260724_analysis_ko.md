@@ -315,7 +315,12 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
   - 대상: `indi_goto_guide_service.py` — `_tick_tracking_guide()` 진입부에
     모드 게이트(펄스/복구/타깃 arm 전부 포함) + 기타 자동 sync 경로 전수
     확인. mountcontrol의 `toggle_guide_correction`이 켜져 있으면 끄기.
-- [ ] **B5. 자동 정렬 가시성(소스 기록)** — 소스 게이트는 도입하지 않는 대신,
+- [x] **B5. 자동 정렬 가시성(소스 기록)** — 2026-07-25 구현. 모든 sync
+  명령(자동 3경로 + SkySafari `:CM#` + LCD Guide 수동 + Multi Align +
+  pointing reset)이 `origin`(누가 요청)과 `pointing_source`(좌표 출처:
+  solved/mount_imu_delta/imu_fallback/타깃), 유효 솔브 나이를 실어 보내고,
+  mountcontrol이 `mount_control_status.json`의 `coordinate_sync`에 기록한다.
+  원 계획: 소스 게이트는 도입하지 않는 대신,
   어떤 좌표로 정렬됐는지를 추적할 수 있게 한다: 자동 sync 전송 시 사용한
   좌표 소스(`solved` / `mount_imu_delta` / `imu_fallback`)와 솔브 나이를
   함께 기록한다.
@@ -347,18 +352,39 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
     또는 PiFinder 모드 내 추가 토글로 유지 — 구현 시 결정).
   - 대상: `pos_server.py::handle_sync_command()` (+ 필요시
     `default_config.json`, `server.py`, `views/indi_mount.html`)
-- [ ] **B7. 무솔브 IMU 얼라인 옵션화** — 솔브가 없을 때 SkySafari `:CM#`이
-  "타깃 좌표 vs 현재 IMU 방향"의 차이를 **PiFinder 내부의 IMU 보정
-  오프셋**으로 저장하는 동작(마운트로는 전송되지 않고, SkySafari에 응답하는
-  좌표 표시에만 적용됨)이 현재 **옵션 없이 항상 켜져** 있다. config의
-  `skysafari_imu_align_without_solve` 키는 코드가 읽지 않는 잔재이므로 실제
-  게이트로 복원하고 기본 off로 한다. (업스트림의 무솔브 부트스트랩 기능은
-  옵션 on으로 계속 쓸 수 있게 유지)
-  - 대상: `pos_server.py::_set_imu_alignment_from_target_if_no_solve()`
-- [ ] **B8. 자동 정렬 소스 상태 표시** — B5가 기록한 좌표 소스/솔브 나이를
-  `indi_goto_guide_status.json`과 웹 GoTo/Guide Status 패널에 표시해,
-  현장에서 "방금 정렬이 솔브 기반이었는지 IMU 폴백이었는지"를 바로 알 수
-  있게 한다.
+- [ ] **B7. 무솔브 IMU 얼라인 — 재분석(2026-07-25), 유지 권고(결정 대기)**
+
+  동작 상세: 솔브가 없을 때 SkySafari `:CM#`(Align)을 받으면, "타깃의
+  Alt/Az vs 현재 IMU가 가리키는 Alt/Az"의 차이를 **PiFinder 내부의 IMU
+  보정 오프셋**(alt/az offset)으로 저장한다. 이 오프셋은:
+  - **마운트로는 아무것도 전송하지 않는다** (INDI sync 아님).
+  - **PiFinder 얼라인(target_pixel)도 건드리지 않는다** (LCD Start > Align과
+    무관).
+  - 적용 대상은 **IMU 폴백 좌표뿐**: SkySafari에 응답하는 현재 위치 표시,
+    그리고 `PointingCoordinateService`의 IMU 폴백 샘플에 반영된다.
+  - 이후 plate solve가 성공하면 오프셋은 자동 초기화되고 솔브 기반
+    좌표로 전환된다.
+
+  모드 정책과의 정합성 검토:
+  - **PiFinder 모드**: 이 보정 덕분에 무솔브 상태에서도 IMU 폴백 좌표가
+    사용자 Align 기준으로 정확해진다 — "솔빙이 느리거나 실패해도, GPS가
+    불안해도 호핑 가능한 이동"이라는 폴백 철학을 실현하는 **핵심
+    메커니즘**이다. 자동 정렬 폴백이 쓰는 융합좌표의 품질도 이것으로
+    좋아진다. → 정합, 항상 켜져 있는 것이 맞다.
+  - **INDI Mount 모드**: B4로 자동 sync가 없으므로 이 보정은 SkySafari
+    위치 표시 개선에만 쓰인다. 마운트로 전송되는 것이 없어 "정렬은
+    INDI로만" 정책과 충돌하지 않는다. → 정합, 위반 아님.
+
+  **권고**: 초판의 "기본 off 옵션화" 계획은 구 원칙("얼라인은 LCD로만")
+  기준의 과잉 조치였다. 개정된 모드 정책 하에서는 **항상 켜짐 유지**가
+  맞다. 남는 정리 거리는 config의 잔재 키
+  `skysafari_imu_align_without_solve`(코드가 읽지 않음) 제거/문서화뿐.
+  사용자 확인 후 종결한다.
+- [x] **B8. 자동 정렬 소스 상태 표시** — 2026-07-25 구현. 웹 `/indi`
+  페이지의 마운트 상태 카드에 "Last Sync" 행 추가: `origin /
+  pointing_source (solve Ns), Ns ago` 형식으로 ~1초 폴링 갱신. 현장에서
+  "방금 정렬이 누구 요청이었고 솔브 기반이었는지 IMU 폴백이었는지"를 바로
+  확인할 수 있다.
 
 ### C. 다음 관측 전 임시 설정 (코드 수정 전 방어)
 

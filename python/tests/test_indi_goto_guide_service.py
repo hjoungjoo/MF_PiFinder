@@ -54,6 +54,10 @@ def _set_imu_moving(service, moving):
 def test_recovery_starts_after_settle_when_motion_ends(monkeypatch):
     clock = [1000.0]
     service = _make_service(monkeypatch, clock)
+    service.pointing_status = {
+        "current": {"source": "mount_imu_delta"},
+        "solved": {"valid": False},
+    }
 
     # First tick baselines the coordinate and opens a fresh settle window.
     service._tick_tracking_guide()
@@ -69,6 +73,11 @@ def test_recovery_starts_after_settle_when_motion_ends(monkeypatch):
     assert [c["type"] for c in commands[-2:]] == ["sync", "goto_target"]
     assert commands[-1]["ra"] == 100.0
     assert commands[-1]["dec"] == 20.0
+    # B5 visibility: the recovery sync is tagged with its origin and the
+    # coordinate source that fed the value.
+    sync_command = commands[-2]
+    assert sync_command["origin"] == "tracking_recovery"
+    assert sync_command["pointing_source"] == "mount_imu_delta"
 
 
 def test_lingering_imu_flag_cannot_delay_recovery_indefinitely(monkeypatch):

@@ -43,7 +43,7 @@ class DummyMountControl(MountControlIndi):
         )
         return {"ok": True}
 
-    def sync_mount(self, ra_deg, dec_deg):
+    def sync_mount(self, ra_deg, dec_deg, sync_context=None):
         self.events.append(("sync_mount", ra_deg, dec_deg))
         self.sync_calls.append((ra_deg, dec_deg))
         return True
@@ -1177,6 +1177,54 @@ def test_sync_mount_records_coordinate_sync_for_position_service():
     assert mount._coordinate_sync["ra"] == 132.0
     assert mount._coordinate_sync["dec"] == 49.5
     assert mount._status_fields()["coordinate_sync"]["synced"] is True
+
+
+def test_sync_mount_records_sync_context_fields():
+    mount = DummyConnectedMount()
+
+    assert mount.sync_mount(
+        132.0,
+        49.5,
+        sync_context={
+            "origin": "tracking_recovery",
+            "pointing_source": "mount_imu_delta",
+            "solve_age_seconds": 42.0,
+        },
+    )
+
+    sync = mount._coordinate_sync
+    assert sync["origin"] == "tracking_recovery"
+    assert sync["pointing_source"] == "mount_imu_delta"
+    assert sync["solve_age_seconds"] == 42.0
+
+
+def test_sync_command_passes_context_to_sync_mount(monkeypatch):
+    mount = DummyConnectedMount()
+    calls = []
+    monkeypatch.setattr(
+        mount,
+        "sync_mount",
+        lambda ra, dec, sync_context=None: calls.append((ra, dec, sync_context))
+        or True,
+    )
+
+    mount.handle_command(
+        {
+            "type": "sync",
+            "ra": 10.0,
+            "dec": 20.0,
+            "origin": "skysafari_align",
+            "pointing_source": "skysafari_target",
+        }
+    )
+
+    assert calls == [
+        (
+            10.0,
+            20.0,
+            {"origin": "skysafari_align", "pointing_source": "skysafari_target"},
+        )
+    ]
 
 
 def test_disconnected_mount_clears_coordinate_sync_anchor():

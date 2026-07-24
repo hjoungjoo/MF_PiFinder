@@ -450,7 +450,15 @@ def _align_mount_to_imu_on_reset(shared_state) -> Optional[Tuple[float, float]]:
     ra_deg, dec_deg = imu_radec
     if mountcontrol_queue is None:
         return None
-    mountcontrol_queue.put({"type": "sync", "ra": ra_deg, "dec": dec_deg})
+    mountcontrol_queue.put(
+        {
+            "type": "sync",
+            "ra": ra_deg,
+            "dec": dec_deg,
+            "origin": "pointing_reset",
+            "pointing_source": "imu_fallback",
+        }
+    )
     logger.info(
         "Pointing reset: synced mount to IMU coordinate RA %.4f Dec %.4f",
         ra_deg,
@@ -922,6 +930,8 @@ def _queue_indi_sync_if_enabled(ra_deg: float, dec_deg: float) -> bool:
             "type": "sync",
             "ra": ra_deg,
             "dec": dec_deg,
+            "origin": "skysafari_align",
+            "pointing_source": "skysafari_target",
         }
     )
     logger.info("SkySafari INDI sync queued: RA %.4f Dec %.4f", ra_deg, dec_deg)
