@@ -10,15 +10,18 @@ Responsibilities:
 
 - ``indi_goto_method = off``: reject GoTo requests (Stop/Abort still works).
 - ``indi_goto_method = indi_mount``: forward accepted GoTo/abort requests
-  straight to the mount-control executor.
+  straight to the mount-control executor. The mount only ever moves on
+  user-issued commands and its own tracking: the tracking guide (pulses,
+  disturbance recovery, auto sync) is entirely inactive in this mode (B4,
+  docs/mf_field_test_20260724_analysis_ko.md).
 - ``indi_goto_method = pifinder``: sync the mount to the current
   ``PointingCoordinateService`` coordinate, GoTo the target, and repeat sync +
   GoTo (bounded by ``indi_pifinder_goto_max_gotos``) until within the near
   threshold, then pulse-guide to the final accuracy and do a final sync.
-- Tracking Guide: when enabled, hold a target with pulse-guide correction, and
-  recover from an external disturbance by settling first, then either
-  pulse-guiding (small error) or sync + GoTo re-acquisition (large error, gated
-  by ``indi_tracking_guide_goto_recovery_enabled``).
+- Tracking Guide (pifinder mode only): when enabled, hold a target with
+  pulse-guide correction, and recover from an external disturbance by settling
+  first, then either pulse-guiding (small error) or sync + GoTo re-acquisition
+  (large error, gated by ``indi_tracking_guide_goto_recovery_enabled``).
 
 All mount motion is issued as small primitive commands on the mount-control
 queue; Stop/Abort takes priority in every phase.
@@ -353,8 +356,9 @@ class IndiGotoGuideService:
             if not forwarded:
                 return
 
-            self.tracking_target_ra = target_ra
-            self.tracking_target_dec = target_dec
+            # B4: no tracking target in indi_mount mode -- the tracking guide
+            # never acts there, and a stale target must not spring to life on
+            # a later switch to pifinder mode.
             self.service_state = "running"
             self.phase = "indi_mount_goto"
             self.wait_reason = ""
@@ -769,6 +773,22 @@ class IndiGotoGuideService:
             )
 
     def _tick_tracking_guide_states(self) -> None:
+        # B4 mode gate (docs/mf_field_test_20260724_analysis_ko.md): the
+        # tracking guide is a pifinder-mode feature. In indi_mount (or off)
+        # mode the mount moves only on user-issued GoTo/manual/sync commands
+        # and its own tracking -- no pulses, no disturbance recovery, no
+        # auto sync. The Tracking Guide setting only has effect in pifinder
+        # mode.
+        goto_method = str(self.config_values.get("indi_goto_method", "indi_mount"))
+        if goto_method != "pifinder":
+            self._disable_tracking_guide(f"tracking guide inactive: {goto_method} mode")
+            self._reset_tracking_recovery()
+            self.tracking_target_ra = None
+            self.tracking_target_dec = None
+            self.manual_retarget_pending = False
+            self.tracking_guide_state = "off"
+            return
+
         enabled = bool(self.config_values.get("indi_tracking_guide_enabled", True))
         if not enabled:
             self._disable_tracking_guide("disabled in config")

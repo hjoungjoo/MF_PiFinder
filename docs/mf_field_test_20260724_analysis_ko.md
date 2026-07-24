@@ -292,8 +292,16 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
 3. 보조 제어 수단: `Tracking Guide = Off` / `GoTo Recovery = Off`(C9)로
    추적 가이드 개입 자체를 끌 수 있다.
 
-- [ ] **B4. 추적 가이드/자동 정렬 모드 게이트** — `indi_goto_method =
-  indi_mount`이면 **추적 가이드 전체가 동작하지 않는다**:
+- [x] **B4. 추적 가이드/자동 정렬 모드 게이트** — 2026-07-25 구현.
+  `_tick_tracking_guide_states()` 진입부 게이트: `indi_goto_method`가
+  `pifinder`가 아니면 추적 가이드 상태를 `off`로 두고(사유
+  "tracking guide inactive: <mode> mode") 아무 마운트 명령도 내지 않는다.
+  켜져 있던 guide correction은 1회 off로 정리하고, armed 타깃은 제거해
+  이후 모드 전환 시 잔재가 되살아나지 않게 했다. indi_mount GoTo는 더
+  이상 tracking target을 arm하지 않는다. 단위 테스트 2종 추가, 전체
+  smoke+unit 738 통과. 원 계획:
+  `indi_goto_method = indi_mount`이면 **추적 가이드 전체가 동작하지
+  않는다**:
   - 자동 sync 전송 금지.
   - 외란 복구(sync + 원래 타깃 복귀 GoTo) 미실행.
   - **펄스 미세 보정(guide correction)도 미동작** — INDI Mount 모드에서

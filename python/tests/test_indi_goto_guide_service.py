@@ -18,6 +18,8 @@ def _make_service(monkeypatch, clock):
     monkeypatch.setattr(iggs.time, "monotonic", lambda: clock[0])
     service = IndiGotoGuideService(Queue(), DummyMountQueue(), None)
     service.config_values = {
+        # B4: the tracking guide only runs in pifinder mode.
+        "indi_goto_method": "pifinder",
         "indi_tracking_guide_enabled": True,
         "indi_tracking_guide_settle_seconds": 4.0,
         "indi_tracking_guide_motion_arcmin": 15.0,
@@ -171,6 +173,46 @@ def test_large_recovery_error_still_recovers(monkeypatch):
 
     assert service.tracking_guide_state == "recovering_goto"
     assert service.tracking_target_ra is not None
+
+
+def test_indi_mount_mode_deactivates_tracking_guide_entirely(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service.config_values["indi_goto_method"] = "indi_mount"
+    # Simulate a previously armed correction that must be switched off.
+    service.tracking_guide_active_sent = True
+
+    # A full settle window with a 2 deg error: in pifinder mode this fires a
+    # sync + GoTo recovery, in indi_mount mode nothing may move the mount.
+    service._tick_tracking_guide()
+    for _ in range(5):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+
+    assert service.tracking_guide_state == "off"
+    assert "indi_mount mode" in service.tracking_guide_last_action
+    # The armed target is dropped so a later mode switch starts clean.
+    assert service.tracking_target_ra is None
+    assert service.tracking_target_dec is None
+    # The only mount command allowed is switching the guide correction OFF.
+    commands = [c["type"] for c in service.mountcontrol_queue.commands]
+    assert commands == ["toggle_guide_correction"]
+    assert service.mountcontrol_queue.commands[0]["enabled"] is False
+
+
+def test_indi_mount_goto_does_not_arm_tracking_target(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service.config_values["indi_goto_method"] = "indi_mount"
+    service.tracking_target_ra = None
+    service.tracking_target_dec = None
+    monkeypatch.setattr(service, "_forward_to_mountcontrol", lambda command: True)
+
+    service._handle_goto_target({"type": "goto_target", "ra": 120.0, "dec": 10.0})
+
+    assert service.phase == "indi_mount_goto"
+    assert service.tracking_target_ra is None
+    assert service.tracking_target_dec is None
 
 
 def test_clear_tracking_target_command(monkeypatch):
