@@ -1477,9 +1477,18 @@ LiveCam 페이지에서 설정을 바꾸고 다른 페이지를 보고 돌아오
   않아서, 카메라는 auto로 돌아도 config·UI는 이전 수동값을 계속 보여주고
   재시작하면 auto 선택이 사라졌다. 이제 auto 모드도 저장한다
   (`set_exp:native`는 주간 정렬용 임시 모드이므로 종전대로 저장하지 않음).
-- 테스트: 신규 `tests/test_config.py` 7종(교차 프로세스 병합·원자적 쓰기·
-  손상 파일), 전체 761 unit 통과. 실장비 검증: 서비스 재시작 후 `auto_star`
-  유지, 카메라 노출 저장 시 LiveCam `low_percentile` 유지 확인.
+- `config.py` — 저장된 값을 읽는 쪽도 갱신되지 않던 문제.
+  LiveCam에서 Star를 선택하면 config와 카메라는 바뀌는데, main/UI 프로세스는
+  시작 시 읽은 `Config`를 계속 써서 Camera Exp 메뉴 체크와 포커스 화면 서픽스가
+  이전 노출을 그대로 보여줬다(누가 `load_config()`를 호출할 때까지). 이제
+  `get_option()`이 파일의 `(mtime, size)` 변화를 보고 다시 읽는다. 재확인은
+  `REFRESH_INTERVAL`(0.25초) 간격으로 제한해 draw 루프에서 매 호출 `stat`을
+  하지 않는다(실측 1.64µs/호출). equipment/locations는 종전대로 메모리 객체를
+  쓰며 명시적 `load_config()`에서만 재구성한다.
+- 테스트: 신규 `tests/test_config.py` 10종(교차 프로세스 병합·원자적 쓰기·
+  손상 파일·읽기 갱신·재확인 간격), 전체 764 unit 통과. 실장비 검증: 서비스
+  재시작 후 `auto_star` 유지, 카메라 노출 저장 시 LiveCam `low_percentile`
+  유지, 장수명 `Config` 리더가 웹 변경을 반영하는지 확인.
 
 ## 문서 파일
 

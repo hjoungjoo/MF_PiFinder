@@ -1658,10 +1658,20 @@ intent is now commented at the `set_gain` handler so it does not get
   choice was lost on restart. Auto modes are now recorded
   (`set_exp:native` stays unsaved — it is the temporary daytime-align
   mode).
-- Tests: new `tests/test_config.py` (7: cross-process merge, atomic
-  write, corrupt file); full unit suite (761) passing. On-device: after a
-  service restart `auto_star` survives, and a camera-side exposure save
-  keeps the LiveCam `low_percentile`.
+- `config.py` — readers did not see the saved value either. Selecting
+  Star on the LiveCam page changed the config and the camera, but the
+  main/UI process kept serving the `Config` it loaded at startup, so the
+  Camera Exp menu checkmark and the focus-screen suffix still showed the
+  old exposure until something called `load_config()`. `get_option()` now
+  reloads when the file's `(mtime, size)` changed, re-checked at most
+  every `REFRESH_INTERVAL` (0.25s) so draw-loop lookups do not stat per
+  call (measured 1.64µs/call). equipment/locations still come from the
+  in-memory objects, rebuilt only by an explicit `load_config()`.
+- Tests: new `tests/test_config.py` (10: cross-process merge, atomic
+  write, corrupt file, read refresh, recheck interval); full unit suite
+  (764) passing. On-device: after a service restart `auto_star` survives,
+  a camera-side exposure save keeps the LiveCam `low_percentile`, and a
+  long-lived `Config` reader picks up a web-side change.
 
 ## Documentation Files
 
