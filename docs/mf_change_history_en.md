@@ -1667,11 +1667,25 @@ intent is now commented at the `set_gain` handler so it does not get
   every `REFRESH_INTERVAL` (0.25s) so draw-loop lookups do not stat per
   call (measured 1.64µs/call). equipment/locations still come from the
   in-memory objects, rebuilt only by an explicit `load_config()`.
+- `api_extensions.py` — the web Apply recorded the change later than the
+  LCD menu did. The Camera Exp menu writes its `config_option` on
+  selection (`ui/text_menu.py`) and its post_callback queues `set_exp`;
+  the web endpoint only queued, leaving the write to the camera process.
+  An idle unit in low-power sleep drains the camera queue once per ~60
+  loop passes, so until then the page and the menu both reported the
+  previous exposure. The endpoint now records the exposure first and
+  queues after, like the menu. Gain stays unrecorded — the Camera Gain
+  menu does not write config either.
 - Tests: new `tests/test_config.py` (10: cross-process merge, atomic
-  write, corrupt file, read refresh, recheck interval); full unit suite
-  (764) passing. On-device: after a service restart `auto_star` survives,
-  a camera-side exposure save keeps the LiveCam `low_percentile`, and a
-  long-lived `Config` reader picks up a web-side change.
+  write, corrupt file, read refresh, recheck interval), new
+  `tests/test_api_camera_controls.py` (7: the real endpoint driven
+  through a Flask test client — exposure recorded and queued, gain
+  queued only, clamped value recorded, invalid input changes nothing);
+  full unit suite (771) passing. On-device: after a service restart
+  `auto_star` survives, a camera-side exposure save keeps the LiveCam
+  `low_percentile`, a long-lived `Config` reader picks up a web-side
+  change, and right after Apply — before the camera drains its queue —
+  the page and config already report the new exposure.
 
 ## Documentation Files
 
