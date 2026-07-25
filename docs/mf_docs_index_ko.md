@@ -30,7 +30,7 @@
 | [web_catalogs_dev](mf_web_catalogs_dev_ko.md) | ko | living | 기기 웹 카탈로그 페이지(라우트·필터·push·통합검색 지정번호 정렬). |
 | [large_catalog_lazy_load](mf_large_catalog_lazy_load_ko.md) | ko | living | 대형 카탈로그(WDS) lazy load. |
 | [location_catalog](mf_location_catalog_ko.md) | 둘 다 | living | GeoNames 기반 오프라인 위치 카탈로그. |
-| [raw_live_stack_plan](mf_raw_live_stack_plan_ko.md) | 둘 다 | living | LiveCam RAW 프리뷰/롤링 라이브 스택. |
+| [raw_live_stack_plan](mf_raw_live_stack_plan_ko.md) | 둘 다 | living | LiveCam RAW 프리뷰/롤링 라이브 스택, Web 카메라 노출/게인 컨트롤(`/api/camera/controls`). |
 
 ## 설치 · 플랫폼 · 시스템
 

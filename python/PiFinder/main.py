@@ -596,6 +596,7 @@ def main(
                 verbose,
                 mountcontrol_queue,
                 goto_guide_queue,
+                camera_command_queue,  # For web camera exposure/gain control
             ),
         )
         server_process.start()

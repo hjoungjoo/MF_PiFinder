@@ -64,6 +64,10 @@ Related files:
 - `python/PiFinder/api_extensions.py`
   - `/api/camera/raw`
   - `/api/camera/raw-stack/*`
+  - `/api/camera/controls` (global camera exposure/gain)
+- `python/PiFinder/camera_controls.py`
+  - exposure/gain validation, preset definitions, and `set_exp:`/`set_gain:`
+    command formatting
 - `python/PiFinder/ui/preview.py`
   - LCD Preview RAW display helper
 
@@ -597,6 +601,39 @@ UI layout:
 - Stretch low/high controls
 - Download image
 - Last error / reject reason
+- Camera Exposure / Gain card (added 2026-07-25): Exposure select (Auto /
+  Auto (Star) / presets / Manual) plus a `us` number input, Gain select
+  (Profile / presets / Manual) plus a multiplier input, an `Apply Camera`
+  button, and the last frame's applied exposure/gain/mode
+
+Camera exposure/gain controls (2026-07-25):
+
+- These are **global camera settings, not LiveCam-only**. There is one camera and
+  the same frames feed plate solving. They drive exactly what the on-device
+  `Camera Exp` / `Camera Gain` menus drive.
+- The web layer puts the existing commands on the camera process command queue
+  (`set_exp:<us|auto|auto_star>`, `set_gain:<multiplier|profile>`). No new camera
+  control path is introduced.
+- This required wiring `camera_command_queue` through to the web server process
+  (`main.py` → `server.run_server` → `Server.__init__`). Without the queue
+  (standalone runs) the API answers `available=false` and the UI disables
+  `Apply Camera`.
+- Validation and command formatting live in
+  `python/PiFinder/camera_controls.py`. The presets are the same set
+  `ui/menu_structure.py` offers, and a unit test asserts the two lists match.
+- Accepted ranges: exposure 1,000-1,000,000us, gain 1-30x. Out-of-range values are
+  clamped and reported in the response `notes`. The Pi backend never sets
+  `FrameDurationLimits`, so exposures beyond 1s would be silently clamped by
+  picamera2 -- hence the 1s ceiling.
+- Gain is not persisted (runtime only), matching the on-device menu. Manual
+  exposure is still written to `camera_exp` by the camera process, as before.
+- `requested` comes from the `camera_exp` config value; `actual` comes from the
+  last frame's `last_image_metadata()`. Under auto exposure `requested` stays
+  `auto`/`auto_star` while only `actual` moves.
+- The `Apply Camera` response does not re-hydrate the controls: the camera
+  process applies the command on its next loop pass, so the response still
+  carries the previous values and re-hydrating would snap the selection back.
+  Controls hydrate once per page visit.
 
 Web transfer format:
 
@@ -607,6 +644,11 @@ Web transfer format:
   result. Downloads always force `color_mode=color`, even when the Web preview is
   using `color_mode=theme`. If the preview format is WebP, the downloaded file is
   converted to PNG for compatibility and preservation.
+- `/api/camera/controls` (added 2026-07-25): global camera exposure/gain. GET
+  returns the requested/actual values, presets, and accepted ranges. POST
+  (`{"exposure": ..., "gain": ...}`, both optional but at least one required)
+  queues the camera commands and returns the same state. It sits outside
+  `raw-stack/*` because it is a global camera setting, not a stack setting.
 - `/api/camera/raw-stack/control`: saves settings, resets the stack, and restores
   defaults.
 - With `display_size=0`, display images are sent at their original generated
@@ -658,7 +700,10 @@ Debug JSON fields:
 - Do not target debayered color output.
 - Do not build a complex dark/bias calibration library yet.
 - Do not add OpenCV, scikit-image, ccdproc, or astropy as required dependencies yet.
-- Do not change long-exposure or auto-exposure policy.
+- Do not change auto-exposure policy (controller algorithm or targets). The web
+  exposure/gain controls added 2026-07-25 only let the existing `set_exp:` /
+  `set_gain:` commands be sent from the web; a LiveCam-only exposure path and
+  exposures beyond 1s remain out of scope.
 
 ## Draft Data Model
 
@@ -776,8 +821,21 @@ Verified by automated tests/source checks:
 - [x] The LiveCam page uses a wide container so settings and preview panels can
       expand on large browser windows.
 - [x] The status panel reports display shape separately from RAW shape.
-- [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py` passes.
-- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` passes. Latest run: 20 passed.
+- [x] The web exposure/gain presets match the on-device `Camera Exp` /
+      `Camera Gain` menus
+      (`test_camera_controls.py::test_presets_match_the_on_device_menu`).
+- [x] Out-of-range exposure/gain is clamped and annotated; non-numeric values
+      return 400.
+- [x] Manual exposure reaches the queue as integer microseconds
+      (`set_exp:400000`, never `400000.0` -- `camera_interface` parses with
+      `int()`).
+- [x] `camera_command_queue` is wired through to the web server process
+      (`test_camera_controls.py::test_web_server_is_wired_to_the_camera_command_queue`).
+- [x] `/api/camera/controls` GET/POST exercised through the Flask test client:
+      the queue received `set_exp:auto_star`, `set_exp:800000`, `set_gain:12`,
+      `set_exp:1000000` (clamped), `set_gain:profile` in order.
+- [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py python/PiFinder/camera_controls.py` passes.
+- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py python/tests/test_camera_controls.py -q` passes.
 - [x] `git diff --check` passes.
 - [x] The `pifinder` service was restarted and confirmed `active`.
 
@@ -800,11 +858,19 @@ Implemented but still needs field/browser verification:
       without theme tint.
 - [x] Confirm CPU/memory use and service stability on Pi4 during extended
       LiveCam use.
+- [ ] (2026-07-25) Verify the Camera Exposure / Gain card in a real browser:
+      picking a preset fills the number input, the number input is editable only
+      under Manual, `Last frame` updates after `Apply Camera`, and Auto /
+      Auto (Star) are reflected in the on-device `Camera Exp` menu.
+- [ ] (2026-07-25) Verify on hardware how a web-side exposure change affects
+      plate solving (solve failures/latency at long exposures).
 
 Not implemented/follow-up:
 
 - [ ] Full regression check for the default PiFinder solver and `/api/camera/raw`.
-- [ ] Stack reset or reject policy for exposure/gain changes.
+- [ ] Stack reset or reject policy for exposure/gain changes. Now that exposure
+      and gain can be changed from the same page, mixed-brightness stacks are
+      much easier to hit.
 - [ ] Frame alignment.
 - [ ] Quality filter and reject-count policy.
 - [ ] Original RAW or raw/float stack download/save.

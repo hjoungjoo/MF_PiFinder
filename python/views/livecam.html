@@ -118,6 +118,16 @@
   .livecam-number-field input {
     margin-bottom: 0;
   }
+  .livecam-note {
+    color: var(--pf-text-muted);
+    font-size: 0.85rem;
+    margin: 0.25rem 0 0.75rem 0;
+  }
+  .livecam-live-value {
+    color: var(--pf-text-muted);
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+  }
 </style>
 
 <div class="row valign-wrapper" style="margin: 0px;">
@@ -228,6 +238,42 @@
 
 <div class="card grey darken-2">
   <div class="card-content">
+    <h5 class="grey-text">{{ _('Camera Exposure / Gain') }}</h5>
+    <p class="livecam-note">
+      {{ _('Global camera settings, shared with plate solving and the on-device Camera Exp / Camera Gain menus.') }}
+    </p>
+    <div class="row livecam-options-row">
+      <div class="input-field col s12 m3">
+        <select class="browser-default" id="exposureSelect"></select>
+        <label class="active" for="exposureSelect">{{ _('Exposure') }}</label>
+      </div>
+      <div class="col s12 m3 livecam-number-field">
+        <label for="exposureUs">{{ _('Exposure (us)') }}</label>
+        <input type="number" id="exposureUs" min="1000" max="1000000" step="1000" />
+      </div>
+      <div class="input-field col s12 m3">
+        <select class="browser-default" id="gainSelect"></select>
+        <label class="active" for="gainSelect">{{ _('Gain') }}</label>
+      </div>
+      <div class="col s12 m3 livecam-number-field">
+        <label for="gainValue">{{ _('Gain (x)') }}</label>
+        <input type="number" id="gainValue" min="1" max="30" step="0.1" />
+      </div>
+    </div>
+    <div class="livecam-actions">
+      <button type="button" class="btn" id="applyCamera">
+        <i class="material-icons">camera</i>{{ _('Apply Camera') }}
+      </button>
+      <span class="grey-text" id="cameraMessage"></span>
+    </div>
+    <p class="livecam-live-value">
+      {{ _('Last frame') }}: <span id="cameraLiveValues">-</span>
+    </p>
+  </div>
+</div>
+
+<div class="card grey darken-2">
+  <div class="card-content">
     <div class="livecam-preview-header">
       <h5 class="grey-text">{{ _('Preview') }}</h5>
       <div class="livecam-preview-tools">
@@ -314,6 +360,19 @@ const controls = {
   high_percentile: document.getElementById('highPercentile'),
   display_size: document.getElementById('displaySize')
 };
+const cameraControls = {
+  exposureSelect: document.getElementById('exposureSelect'),
+  exposureUs: document.getElementById('exposureUs'),
+  gainSelect: document.getElementById('gainSelect'),
+  gainValue: document.getElementById('gainValue'),
+  applyButton: document.getElementById('applyCamera'),
+  message: document.getElementById('cameraMessage'),
+  liveValues: document.getElementById('cameraLiveValues')
+};
+const MANUAL_OPTION = '__manual__';
+let cameraOptionsBuilt = false;
+let cameraHydrated = false;
+let statusPollCount = 0;
 const image = document.getElementById('livecamImage');
 const placeholder = document.getElementById('livecamPlaceholder');
 const message = document.getElementById('livecamMessage');
@@ -417,6 +476,204 @@ function renderStatus(data, syncControls = false) {
   }
 }
 
+function formatExposureUs(us) {
+  const value = Number(us);
+  if (us === null || us === undefined || Number.isNaN(value)) {
+    return '-';
+  }
+  const seconds = value / 1000000;
+  if (seconds < 0.1) {
+    return `${Math.round(seconds * 1000)}ms`;
+  }
+  return `${parseFloat(seconds.toFixed(3))}s`;
+}
+
+function formatGain(gain) {
+  const value = Number(gain);
+  if (gain === null || gain === undefined || Number.isNaN(value)) {
+    return '-';
+  }
+  return `${parseFloat(value.toFixed(2))}x`;
+}
+
+function addOption(select, value, label) {
+  const option = document.createElement('option');
+  option.value = value;
+  option.textContent = label;
+  select.appendChild(option);
+}
+
+// Presets come from the API so the web page and the on-device Camera Exp /
+// Camera Gain menus stay in step from a single source (camera_controls.py).
+function buildCameraOptions(data) {
+  if (cameraOptionsBuilt) {
+    return;
+  }
+  const exposure = data.exposure || {};
+  const gain = data.gain || {};
+
+  cameraControls.exposureSelect.innerHTML = '';
+  addOption(cameraControls.exposureSelect, 'auto', "{{ _('Auto') }}");
+  addOption(cameraControls.exposureSelect, 'auto_star', "{{ _('Auto (Star)') }}");
+  (exposure.presets_us || []).forEach((us) => {
+    addOption(cameraControls.exposureSelect, String(us), formatExposureUs(us));
+  });
+  addOption(cameraControls.exposureSelect, MANUAL_OPTION, "{{ _('Manual') }}");
+  if (exposure.min_us !== undefined) {
+    cameraControls.exposureUs.min = exposure.min_us;
+  }
+  if (exposure.max_us !== undefined) {
+    cameraControls.exposureUs.max = exposure.max_us;
+  }
+
+  cameraControls.gainSelect.innerHTML = '';
+  const profileLabel = gain.profile_gain
+    ? `{{ _('Profile') }} (${formatGain(gain.profile_gain)})`
+    : "{{ _('Profile') }}";
+  addOption(cameraControls.gainSelect, 'profile', profileLabel);
+  (gain.presets || []).forEach((value) => {
+    addOption(cameraControls.gainSelect, String(value), `${value}x`);
+  });
+  addOption(cameraControls.gainSelect, MANUAL_OPTION, "{{ _('Manual') }}");
+  if (gain.min !== undefined) {
+    cameraControls.gainValue.min = gain.min;
+  }
+  if (gain.max !== undefined) {
+    cameraControls.gainValue.max = gain.max;
+  }
+
+  cameraOptionsBuilt = true;
+}
+
+function matchPresetOption(select, value, tolerance) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const target = Number(value);
+  if (Number.isNaN(target)) {
+    return null;
+  }
+  const match = Array.from(select.options).find((option) => {
+    const optionValue = Number(option.value);
+    return !Number.isNaN(optionValue) && Math.abs(optionValue - target) <= tolerance;
+  });
+  return match ? match.value : null;
+}
+
+function syncCameraInputState() {
+  const exposureMode = cameraControls.exposureSelect.value;
+  cameraControls.exposureUs.disabled = exposureMode !== MANUAL_OPTION;
+  cameraControls.gainValue.disabled = cameraControls.gainSelect.value !== MANUAL_OPTION;
+}
+
+function hydrateCameraControls(data) {
+  const exposure = data.exposure || {};
+  const gain = data.gain || {};
+
+  if (exposure.mode === 'auto' || exposure.mode === 'auto_star') {
+    cameraControls.exposureSelect.value = exposure.mode;
+    // Auto controllers keep moving the exposure; show the last applied value
+    // so switching to Manual starts from where the camera actually is.
+    cameraControls.exposureUs.value = exposure.actual_us ?? '';
+  } else {
+    const preset = matchPresetOption(cameraControls.exposureSelect, exposure.requested, 0);
+    cameraControls.exposureSelect.value = preset || MANUAL_OPTION;
+    cameraControls.exposureUs.value = exposure.requested ?? exposure.actual_us ?? '';
+  }
+
+  // The runtime gain is not persisted anywhere, so the applied value from the
+  // last frame is the only reading available.
+  const actualGain = gain.actual;
+  const profileGain = gain.profile_gain;
+  if (actualGain === null || actualGain === undefined) {
+    cameraControls.gainSelect.value = 'profile';
+    cameraControls.gainValue.value = profileGain ?? '';
+  } else if (
+    profileGain !== null &&
+    profileGain !== undefined &&
+    Math.abs(Number(actualGain) - Number(profileGain)) < 0.05
+  ) {
+    cameraControls.gainSelect.value = 'profile';
+    cameraControls.gainValue.value = parseFloat(Number(actualGain).toFixed(2));
+  } else {
+    const preset = matchPresetOption(cameraControls.gainSelect, actualGain, 0.05);
+    cameraControls.gainSelect.value = preset || MANUAL_OPTION;
+    cameraControls.gainValue.value = parseFloat(Number(actualGain).toFixed(2));
+  }
+
+  syncCameraInputState();
+}
+
+function renderCameraStatus(data, hydrate) {
+  buildCameraOptions(data);
+  if (hydrate) {
+    hydrateCameraControls(data);
+    cameraHydrated = true;
+  }
+  const exposure = data.exposure || {};
+  const gain = data.gain || {};
+  const modeLabels = {
+    auto: "{{ _('Auto') }}",
+    auto_star: "{{ _('Auto (Star)') }}",
+    manual: "{{ _('Manual') }}"
+  };
+  const parts = [
+    `${formatExposureUs(exposure.actual_us)} (${exposure.actual_us ?? '-'} us)`,
+    formatGain(gain.actual),
+    modeLabels[exposure.mode] || exposure.mode || '-'
+  ];
+  cameraControls.liveValues.textContent = parts.join(' / ');
+  if (!data.available) {
+    cameraControls.applyButton.disabled = true;
+    cameraControls.message.textContent = "{{ _('Camera process is not available.') }}";
+  } else {
+    cameraControls.applyButton.disabled = false;
+  }
+}
+
+function collectCameraSettings() {
+  const payload = {};
+  const exposureChoice = cameraControls.exposureSelect.value;
+  if (exposureChoice === 'auto' || exposureChoice === 'auto_star') {
+    payload.exposure = exposureChoice;
+  } else if (exposureChoice === MANUAL_OPTION) {
+    const value = parseInt(cameraControls.exposureUs.value, 10);
+    if (Number.isNaN(value)) {
+      throw new Error("{{ _('Enter an exposure in microseconds.') }}");
+    }
+    payload.exposure = value;
+  } else {
+    payload.exposure = parseInt(exposureChoice, 10);
+  }
+
+  const gainChoice = cameraControls.gainSelect.value;
+  if (gainChoice === 'profile') {
+    payload.gain = 'profile';
+  } else if (gainChoice === MANUAL_OPTION) {
+    const value = parseFloat(cameraControls.gainValue.value);
+    if (Number.isNaN(value)) {
+      throw new Error("{{ _('Enter a gain multiplier.') }}");
+    }
+    payload.gain = value;
+  } else {
+    payload.gain = parseFloat(gainChoice);
+  }
+  return payload;
+}
+
+async function fetchCameraControls(hydrate) {
+  try {
+    const response = await fetch('/api/camera/controls');
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(data.error || 'Camera status failed');
+    }
+    renderCameraStatus(data, hydrate || !cameraHydrated);
+  } catch (error) {
+    cameraControls.message.textContent = error.toString();
+  }
+}
+
 function fitScale() {
   // Width the image may occupy inside the shell, borders excluded.
   const available = shell.clientWidth;
@@ -474,6 +731,14 @@ async function fetchStatus() {
     message.textContent = '';
   } catch (error) {
     message.textContent = error.toString();
+  }
+  try {
+    // Half the status rate: this reads config from disk server-side and the
+    // camera only publishes a new exposure once per capture anyway.
+    statusPollCount += 1;
+    if (!cameraHydrated || statusPollCount % 2 === 0) {
+      await fetchCameraControls(false);
+    }
   } finally {
     if (!PAGE_ALIVE || PAGE_ALIVE()) {
       pollTimer = setTimeout(fetchStatus, 1500);
@@ -521,6 +786,46 @@ document.getElementById('resetDefaults').addEventListener('click', async () => {
   } catch (error) {
     message.textContent = error.toString();
   }
+});
+
+document.getElementById('applyCamera').addEventListener('click', async () => {
+  try {
+    const payload = collectCameraSettings();
+    const response = await fetch('/api/camera/controls', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(data.error || 'Camera update failed');
+    }
+    // Deliberately no re-hydrate: the camera process applies the command on
+    // its next loop pass, so this response still carries the previous
+    // exposure/gain and would snap the controls back to it.
+    renderCameraStatus(data, false);
+    cameraControls.message.textContent = data.message || '';
+  } catch (error) {
+    cameraControls.message.textContent = error.toString();
+  }
+});
+
+cameraControls.exposureSelect.addEventListener('change', () => {
+  const choice = cameraControls.exposureSelect.value;
+  const preset = parseInt(choice, 10);
+  if (!Number.isNaN(preset)) {
+    cameraControls.exposureUs.value = preset;
+  }
+  syncCameraInputState();
+});
+
+cameraControls.gainSelect.addEventListener('change', () => {
+  const choice = cameraControls.gainSelect.value;
+  const preset = parseFloat(choice);
+  if (!Number.isNaN(preset)) {
+    cameraControls.gainValue.value = preset;
+  }
+  syncCameraInputState();
 });
 
 controls.output_source.addEventListener('change', syncStackFromOutput);

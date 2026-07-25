@@ -59,6 +59,9 @@ Picamera2 raw capture request
 - `python/PiFinder/api_extensions.py`
   - `/api/camera/raw`
   - `/api/camera/raw-stack/*`
+  - `/api/camera/controls` (전역 카메라 노출/게인)
+- `python/PiFinder/camera_controls.py`
+  - 노출/게인 값 검증, 프리셋 정의, `set_exp:`/`set_gain:` 명령 문자열 생성
 - `python/PiFinder/ui/preview.py`
   - LCD Preview에서 RAW display helper 사용
 
@@ -578,6 +581,35 @@ UI 구성:
 - Stretch low/high controls
 - Download image
 - Last error / reject reason
+- Camera Exposure / Gain 카드(2026-07-25 추가): Exposure select(Auto / Auto (Star) /
+  프리셋 / Manual) + `us` 숫자 입력, Gain select(Profile / 프리셋 / Manual) + 배율
+  숫자 입력, `Apply Camera` 버튼, 마지막 프레임의 실제 노출/게인/모드 표시
+
+카메라 노출·게인 컨트롤(2026-07-25):
+
+- 이 값은 **LiveCam 전용이 아니라 전역 카메라 설정**이다. 카메라는 하나뿐이고 같은
+  프레임이 plate solving에도 들어간다. 기기의 `Camera Exp` / `Camera Gain` 메뉴와
+  같은 대상을 조작한다.
+- 웹은 카메라 프로세스의 command queue에 기존 명령을 그대로 넣는다
+  (`set_exp:<us|auto|auto_star>`, `set_gain:<배율|profile>`). 새 카메라 제어 경로를
+  만들지 않는다.
+- 이를 위해 `camera_command_queue`를 웹서버 프로세스까지 배선했다
+  (`main.py` → `server.run_server` → `Server.__init__`). 큐가 없으면(standalone 실행)
+  API가 `available=false`로 응답하고 UI의 `Apply Camera`가 비활성화된다.
+- 검증/명령 문자열 생성은 `python/PiFinder/camera_controls.py`에 모았다. 프리셋 값은
+  `ui/menu_structure.py`의 `Camera Exp`/`Camera Gain` 메뉴와 같은 집합이며,
+  단위 테스트가 두 목록의 일치를 검사한다.
+- 허용 범위: 노출 1,000~1,000,000us, 게인 1~30x. 범위를 벗어나면 clamp하고 응답의
+  `notes`로 알린다. Pi 백엔드가 `FrameDurationLimits`를 설정하지 않으므로 1s를 넘는
+  노출은 picamera2가 조용히 잘라낸다 — 상한을 1s로 둔 이유다.
+- 게인은 기기 메뉴와 마찬가지로 config에 저장하지 않는다(런타임 전용). 노출은 기존
+  동작대로 카메라 프로세스가 manual 값을 `camera_exp`에 저장한다.
+- 표시값 구분: `requested`는 config의 `camera_exp`, `actual`은 마지막 프레임
+  metadata(`last_image_metadata()`)의 실제 적용값이다. 자동 노출 중에는 `requested`가
+  `auto`/`auto_star`로 고정되고 `actual`만 움직인다.
+- `Apply Camera` 응답으로는 컨트롤을 다시 채우지 않는다. 카메라 프로세스는 다음 루프
+  패스에서 명령을 적용하므로 응답에는 아직 이전 값이 담겨 있고, 다시 채우면 방금 고른
+  값이 되돌아가 보인다. 컨트롤은 페이지 진입 시 한 번만 hydrate한다.
 
 Web 전달 형식:
 
@@ -588,6 +620,10 @@ Web 전달 형식:
   Web preview가 `color_mode=theme`이어도 항상 `color_mode=color`로 변환한다. WebP 미리보기
   상태에서는 호환성과 보존성을 위해 PNG로 변환해서 내려준다.
 - `/api/camera/raw-stack/control`: 설정 저장, stack reset, 기본값 복원을 처리한다.
+- `/api/camera/controls`(2026-07-25 추가): 전역 카메라 노출/게인. GET은 현재
+  요청값/실제값/프리셋/허용 범위를, POST(`{"exposure": ..., "gain": ...}`, 둘 다
+  선택이지만 최소 하나 필요)는 카메라 큐에 명령을 넣고 같은 상태를 반환한다.
+  raw-stack 계열이 아닌 카메라 전역 설정이라 `raw-stack/*` 아래에 두지 않았다.
 - `display_size=0`이면 표시용 이미지를 원본 크기로 전송한다. 양수이면 서버에서
   `display_size`로 축소한 뒤 전송한다.
 - 브라우저의 수동 확대/축소는 서버의 `display_size`와 별개로 동작한다. 기본은 100%
@@ -636,7 +672,9 @@ debug JSON 포함 후보:
 - debayer color image를 목표로 하지 않는다.
 - dark/bias library를 복잡하게 만들지 않는다.
 - OpenCV/scikit-image/ccdproc를 바로 필수 dependency로 추가하지 않는다.
-- 긴 exposure control 또는 auto exposure 정책을 바꾸지 않는다.
+- auto exposure 정책(컨트롤러 알고리즘·목표값)은 바꾸지 않는다. 2026-07-25에 추가한
+  Web 노출/게인 컨트롤은 기존 `set_exp:`/`set_gain:` 명령을 웹에서 보낼 수 있게 한
+  것일 뿐이고, LiveCam 전용 노출 경로나 1s를 넘는 장노출은 여전히 범위 밖이다.
 
 ## 데이터 모델 초안
 
@@ -738,8 +776,18 @@ class StackState:
 - [x] Preview image는 natural image size 기준으로 표시되고, 브라우저에서 25%~400% zoom과 actual-size reset을 지원한다.
 - [x] LiveCam page는 wide container를 사용해 큰 브라우저 폭에서도 설정/preview 영역이 확장된다.
 - [x] Status panel은 RAW shape와 별도로 서버에서 생성된 display shape를 표시한다.
-- [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py` 통과.
-- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py -q` 통과. 최신 확인 결과: 20 passed.
+- [x] 웹 노출/게인 프리셋이 기기 `Camera Exp`/`Camera Gain` 메뉴 값과 일치한다
+      (`test_camera_controls.py::test_presets_match_the_on_device_menu`).
+- [x] 범위를 벗어난 노출/게인은 clamp되고 note가 붙는다. 숫자가 아닌 값은 400.
+- [x] manual 노출은 정수 us로 큐에 들어간다(`set_exp:400000`, `400000.0` 아님 —
+      `camera_interface`가 `int()`로 파싱).
+- [x] `camera_command_queue`가 웹서버 프로세스까지 배선되어 있다
+      (`test_camera_controls.py::test_web_server_is_wired_to_the_camera_command_queue`).
+- [x] Flask test client로 `/api/camera/controls` GET/POST 실측: 큐에
+      `set_exp:auto_star`, `set_exp:800000`, `set_gain:12`, `set_exp:1000000`(clamp),
+      `set_gain:profile`이 순서대로 들어감.
+- [x] `python -m py_compile python/PiFinder/livecam_config.py python/PiFinder/raw_live_stack.py python/PiFinder/api_extensions.py python/PiFinder/camera_controls.py` 통과.
+- [x] `pytest python/tests/test_raw_live_stack.py python/tests/test_api_extensions.py python/tests/test_camera_controls.py -q` 통과.
 - [x] `git diff --check` 통과.
 - [x] `pifinder` service restart 후 `active` 상태 확인.
 
@@ -753,11 +801,18 @@ class StackState:
 - [x] `color_mode=theme`에서 Red Night preview가 적색 계열로 표시되는지 실제 브라우저에서 확인.
 - [x] `color_mode=color`에서 Bayer 카메라 다운로드 이미지가 RGB로 저장되고 테마 틴트가 없는지 실제 파일로 확인.
 - [x] Pi4에서 장시간 LiveCam 사용 중 CPU/메모리 사용량과 service 안정성 확인.
+- [ ] (2026-07-25) Camera Exposure / Gain 카드를 실제 브라우저에서 확인: 프리셋 선택 시
+      숫자 입력이 채워지고 Manual일 때만 편집 가능한지, `Apply Camera` 후 `Last frame`
+      값이 다음 프레임에 바뀌는지, Auto/Auto (Star) 선택이 기기 `Camera Exp` 메뉴에
+      반영되는지.
+- [ ] (2026-07-25) 웹에서 노출을 바꿨을 때 plate solving이 기대대로 영향받는지
+      (긴 노출에서 solve 실패/지연) 실기기 확인.
 
 아직 미구현/후속 작업:
 
 - [ ] PiFinder 기본 solver와 `/api/camera/raw` 전체 regression 확인.
-- [ ] exposure/gain 변경 시 stack reset 또는 reject 정책.
+- [ ] exposure/gain 변경 시 stack reset 또는 reject 정책. 웹에서 노출/게인을 바로
+      바꿀 수 있게 되면서 stack 밝기가 섞이는 상황이 더 쉽게 발생한다.
 - [ ] frame alignment.
 - [ ] quality filter와 reject count 증가 정책.
 - [ ] 원본 RAW 또는 raw/float stack 다운로드/저장.

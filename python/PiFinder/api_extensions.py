@@ -24,6 +24,7 @@ from flask import request, session, Response
 from PIL import Image
 from PiFinder import utils
 from PiFinder import config
+from PiFinder import camera_controls
 from PiFinder.livecam_config import (
     default_settings_for_config,
     disabled_status,
@@ -915,6 +916,138 @@ def register_api_routes(app, server_instance, require_auth=False):
             return _json_response(data)
         except Exception as e:
             logger.error("api/camera/raw-stack/control error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    def _camera_type():
+        """Sensor id ("imx462", ...) or None when no camera has reported yet."""
+        try:
+            return server_instance.shared_state.camera_type()
+        except Exception:
+            return None
+
+    def _camera_profile_gain():
+        """Analog gain the current camera profile defaults to ("Profile")."""
+        try:
+            from PiFinder.sqm.camera_profiles import get_camera_profile
+
+            camera_type = _camera_type()
+            if not camera_type:
+                return None
+            return float(get_camera_profile(camera_type).analog_gain)
+        except Exception:
+            return None
+
+    def _camera_controls_payload(message=None) -> dict:
+        """Current camera exposure/gain state plus the choices the UI offers.
+
+        ``requested`` values come from config (what was asked for), ``actual``
+        values from the last captured frame's metadata (what the camera
+        applied, after driver clamping and auto-exposure adjustment).
+        """
+        cfg = config.Config()
+        requested_exposure = cfg.get_option("camera_exp")
+
+        try:
+            metadata = server_instance.shared_state.last_image_metadata() or {}
+        except Exception:
+            metadata = {}
+
+        actual_exposure = metadata.get("exposure_time")
+        actual_gain = metadata.get("gain")
+        profile_gain = _camera_profile_gain()
+
+        data = {
+            # No queue means this web server is not attached to a camera
+            # process (standalone/test runs), so commands would be dropped.
+            "available": getattr(server_instance, "camera_command_queue", None)
+            is not None,
+            "camera_type": _camera_type(),
+            "exposure": {
+                "mode": camera_controls.exposure_mode(requested_exposure),
+                "requested": requested_exposure,
+                "actual_us": actual_exposure,
+                "presets_us": list(camera_controls.EXPOSURE_PRESETS_US),
+                "min_us": camera_controls.MIN_EXPOSURE_US,
+                "max_us": camera_controls.MAX_EXPOSURE_US,
+            },
+            "gain": {
+                # Runtime gain lives in the camera process and is not
+                # persisted, so the applied value from frame metadata is the
+                # only reading available here.
+                "actual": actual_gain,
+                "profile_gain": profile_gain,
+                "presets": list(camera_controls.GAIN_PRESETS),
+                "min": camera_controls.MIN_GAIN,
+                "max": camera_controls.MAX_GAIN,
+            },
+        }
+        if message:
+            data["message"] = message
+        return data
+
+    @app.route("/api/camera/controls", methods=["GET", "POST"])
+    def api_camera_controls():
+        """Read or set the camera exposure and gain.
+
+        These are the same global camera settings the on-device Camera Exp /
+        Camera Gain menus drive -- there is one camera, and plate solving uses
+        the same frames the LiveCam preview does.
+
+        POST body (both keys optional, at least one required):
+          {"exposure": 400000 | "auto" | "auto_star", "gain": 20 | "profile"}
+        """
+        try:
+            if request.method == "GET":
+                return _json_response(_camera_controls_payload())
+
+            camera_queue = getattr(server_instance, "camera_command_queue", None)
+            if camera_queue is None:
+                return _json_response(
+                    {"error": "Camera command queue unavailable"}, 503
+                )
+
+            payload = request.get_json(silent=True) or {}
+            if "exposure" not in payload and "gain" not in payload:
+                return _json_response(
+                    {"error": "Provide 'exposure' and/or 'gain'"}, 400
+                )
+
+            commands = []
+            notes = []
+            applied = {}
+            try:
+                if "exposure" in payload:
+                    exposure, note = camera_controls.normalize_exposure(
+                        payload["exposure"]
+                    )
+                    commands.append(camera_controls.exposure_command(exposure))
+                    applied["exposure"] = exposure
+                    if note:
+                        notes.append(note)
+                if "gain" in payload:
+                    gain, note = camera_controls.normalize_gain(payload["gain"])
+                    commands.append(camera_controls.gain_command(gain))
+                    applied["gain"] = gain
+                    if note:
+                        notes.append(note)
+            except ValueError as e:
+                return _json_response({"error": str(e)}, 400)
+
+            for command in commands:
+                camera_queue.put(command)
+                logger.info("api/camera/controls queued: %s", command)
+
+            # The camera process applies these on its next loop pass, so the
+            # payload below still reports the previous frame's metadata; the
+            # UI picks up the new values on a later poll.
+            data = _camera_controls_payload(
+                "; ".join(notes) if notes else "Camera settings sent"
+            )
+            data["applied"] = applied
+            data["notes"] = notes
+            return _json_response(data)
+        except Exception as e:
+            logger.error("api/camera/controls error: %s", e)
             return _json_response({"error": str(e)}, 500)
 
     # ───────────────────────────────────────────────

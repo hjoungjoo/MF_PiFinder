@@ -131,6 +131,7 @@ class Server:
         shared_state=None,
         is_debug=False,
         goto_guide_queue=None,
+        camera_command_queue=None,
     ):
         self.version_txt = f"{utils.pifinder_dir}/version.txt"
         self.keyboard_queue = keyboard_queue or multiprocessing.Queue()
@@ -138,6 +139,10 @@ class Server:
         self.gps_queue = gps_queue or multiprocessing.Queue()
         self.mountcontrol_queue = mountcontrol_queue
         self.goto_guide_queue = goto_guide_queue
+        # Camera process command queue (set_exp:/set_gain:). None when the web
+        # server runs standalone, in which case the camera controls report
+        # themselves as unavailable instead of dropping commands.
+        self.camera_command_queue = camera_command_queue
         self.shared_state = shared_state or MockSharedState()
         if hasattr(self.shared_state, "set_livecam_settings"):
             self.shared_state.set_livecam_settings(
@@ -2555,6 +2560,7 @@ def run_server(
     verbose=False,
     mountcontrol_queue=None,
     goto_guide_queue=None,
+    camera_command_queue=None,
 ):
     MultiprocLogging.configurer(log_queue)
     server = Server(
@@ -2565,6 +2571,7 @@ def run_server(
         shared_state,
         verbose,
         goto_guide_queue=goto_guide_queue,
+        camera_command_queue=camera_command_queue,
     )
     server.run()
 

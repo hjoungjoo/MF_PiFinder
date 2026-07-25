@@ -32,7 +32,7 @@ Last updated: 2026-07-25. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | [web_catalogs_dev](mf_web_catalogs_dev_ko.md) | ko | living | On-device web catalog pages (routes, filters, push, unified search with designation-prefix ranking). |
 | [large_catalog_lazy_load](mf_large_catalog_lazy_load_ko.md) | ko | living | Large catalog (WDS) lazy load. |
 | [location_catalog](mf_location_catalog_en.md) | both | living | GeoNames offline location catalog. |
-| [raw_live_stack_plan](mf_raw_live_stack_plan_en.md) | both | living | LiveCam RAW preview / rolling live stack. |
+| [raw_live_stack_plan](mf_raw_live_stack_plan_en.md) | both | living | LiveCam RAW preview / rolling live stack, web camera exposure/gain controls (`/api/camera/controls`). |
 
 ## Install · platform · system
 
