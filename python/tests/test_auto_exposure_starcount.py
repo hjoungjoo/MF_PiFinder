@@ -100,6 +100,52 @@ class TestExposureStarCountController:
         # f = 1/20 = 0.05 -> raw 50000/0.05 = 1000000 > anchor*8 = 400000
         assert controller.update(1, 50000) == 400000
 
+    def test_reanchors_when_the_clamp_keeps_binding(self):
+        """A working exposure outside the anchor bound must stay reachable.
+
+        Under heavy light pollution the servo asks for a shorter exposure than
+        anchor/8 on every frame. Pinning it at the boundary forever means the
+        deadband is never reached, so the anchor never updates and the
+        controller is stuck (ADR 0021).
+        """
+        controller = ExposureStarCountController(reanchor_after=3)
+        # 160/20 = 8 -> raw 30000/8 = 3750, floored by anchor/8 = 50000.
+        assert controller.update(160, 30000) == 50000
+        assert controller._clamp_streak == 1
+        # Pinned at the boundary: the ask is still 6250, the clamp still 50000,
+        # so the controller reports "no change" -- this is the stuck state.
+        assert controller.update(160, 50000) is None
+        assert controller._clamp_streak == 2
+        # Third consecutive clamp in the same direction: the anchor follows the
+        # boundary, so the servo can carry on down.
+        assert controller.update(160, 50000) == 25000
+        assert controller._anchor == 50000
+
+    def test_clamp_streak_resets_on_an_unclamped_step(self):
+        """Only a sustained ask moves the anchor -- one odd frame does not."""
+        controller = ExposureStarCountController(reanchor_after=3)
+        controller.update(160, 30000)  # clamped low
+        assert controller._clamp_streak == 1
+        controller.update(20, 400000)  # inside deadband, no clamp
+        assert controller._clamp_streak == 0
+        assert controller._anchor == 400000
+
+    def test_clamp_streak_resets_when_direction_flips(self):
+        # ema_alpha=1.0 keeps each step readable (no smoothing across counts);
+        # min_stars_for_control=1 lets a single star drive the servo instead of
+        # falling back to the anchor.
+        controller = ExposureStarCountController(
+            reanchor_after=3,
+            min_stars_for_control=1,
+            ema_alpha=1.0,
+            max_exposure=10000000,
+        )
+        controller.update(160, 30000)  # f=8 -> raw 3750 -> clamped low
+        assert controller._clamp_direction == -1
+        controller.update(1, 400000)  # f=0.05 -> raw 8000000 -> clamped high
+        assert controller._clamp_direction == 1
+        assert controller._clamp_streak == 1
+
     def test_absolute_clamps(self):
         """Absolute [min_exposure, max_exposure] clamp binds last."""
         controller = ExposureStarCountController()

@@ -61,6 +61,14 @@ def generate_exposure_sweep(
 # only; the match-count controller's feedback clamp still reaches 25 ms.
 RECOVERY_LADDER = [400000, 800000, 1000000, 200000]
 
+# Rungs appended once the ladder above has been walked in full without the
+# detections coming back. Under heavy light pollution the working exposure can
+# sit below the 200 ms floor -- a Seoul site solves at 25 ms -- and there the
+# floored ladder cycles its four long rungs forever, never trying the shutter
+# speed that would recover. Escalating instead of widening the first pass keeps
+# ADR 0010's fast common case (8 attempts) intact. See ADR 0021.
+SHORT_RECOVERY_RUNGS = [100000, 50000, 25000]
+
 
 class ZeroMatchRecovery:
     """
@@ -92,6 +100,7 @@ class ZeroMatchRecovery:
         self._trigger_count = trigger_count
         self._repeats_per_exposure = repeats_per_exposure
         self._ladder = list(RECOVERY_LADDER)
+        self._extended = False
         self._exposure_index = 0
         self._repeat_count = 0
 
@@ -150,10 +159,22 @@ class ZeroMatchRecovery:
 
             # Wrap around to start of ladder
             if self._exposure_index >= len(self._ladder):
-                self._exposure_index = 0
-                logger.debug(
-                    f"Recovery: ladder complete, restarting from {self._ladder[0]}µs"
-                )
+                if not self._extended:
+                    # A full pass of the long rungs did not bring detections
+                    # back. Continue into the short rungs rather than replaying
+                    # the same failures -- under a bright sky the working
+                    # exposure can be below the ladder's floor (ADR 0021).
+                    self._extended = True
+                    self._ladder = self._ladder + list(SHORT_RECOVERY_RUNGS)
+                    logger.info(
+                        "Recovery: long rungs exhausted, extending to short "
+                        f"rungs {SHORT_RECOVERY_RUNGS}µs"
+                    )
+                else:
+                    self._exposure_index = 0
+                    logger.debug(
+                        f"Recovery: ladder complete, restarting from {self._ladder[0]}µs"
+                    )
             else:
                 next_exposure = self._ladder[self._exposure_index]
                 logger.debug(f"Recovery: advancing to {next_exposure}µs")
@@ -162,6 +183,8 @@ class ZeroMatchRecovery:
 
     def reset(self) -> None:
         self._active = False
+        self._ladder = list(RECOVERY_LADDER)
+        self._extended = False
         self._exposure_index = 0
         self._repeat_count = 0
         logger.debug("ZeroMatchRecovery reset")

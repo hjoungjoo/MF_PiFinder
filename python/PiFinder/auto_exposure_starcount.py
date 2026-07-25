@@ -55,6 +55,7 @@ class ExposureStarCountController:
         max_exposure: int = 1000000,
         bright_sky_mean: float = 240.0,
         initial_anchor: int = 400000,
+        reanchor_after: int = 3,
         recovery: Optional[ZeroMatchRecovery] = None,
     ):
         """
@@ -75,6 +76,10 @@ class ExposureStarCountController:
                 is not raised -- more light will not add star contrast.
             initial_anchor: Anchor before any deadband hit (shipped
                 default exposure, also the recovery ladder's first rung).
+            reanchor_after: Consecutive adjustments clamped by the anchor
+                bound in the same direction before the anchor follows the
+                bound. Keeps the bound meaningful while letting the servo
+                walk to a working exposure outside it.
             recovery: Zero-match recovery ladder; here it triggers on
                 zero *detected* stars, not zero matches.
         """
@@ -87,11 +92,14 @@ class ExposureStarCountController:
         self.min_exposure = min_exposure
         self.max_exposure = max_exposure
         self.bright_sky_mean = bright_sky_mean
+        self.reanchor_after = reanchor_after
 
         self._anchor = initial_anchor
         self._initial_anchor = initial_anchor
         self._ema: Optional[float] = None
         self._zero_count = 0
+        self._clamp_streak = 0
+        self._clamp_direction = 0
         self._recovery = recovery or ZeroMatchRecovery()
 
         logger.info(
@@ -106,6 +114,8 @@ class ExposureStarCountController:
         self._anchor = self._initial_anchor
         self._ema = None
         self._zero_count = 0
+        self._clamp_streak = 0
+        self._clamp_direction = 0
         self._recovery.reset()
         logger.debug("StarCount controller reset")
 
@@ -181,11 +191,8 @@ class ExposureStarCountController:
             return None
 
         # Star count ~ proportional to exposure, so one division step.
-        new_exposure = int(current_exposure / star_fraction)
-        new_exposure = max(
-            self._anchor // self.anchor_stops,
-            min(self._anchor * self.anchor_stops, new_exposure),
-        )
+        requested = int(current_exposure / star_fraction)
+        new_exposure = self._clamp_to_anchor(requested)
         new_exposure = max(self.min_exposure, min(self.max_exposure, new_exposure))
 
         if new_exposure == current_exposure:
@@ -196,6 +203,51 @@ class ExposureStarCountController:
             f"= {star_fraction:.2f} → {current_exposure}µs → {new_exposure}µs"
         )
         return new_exposure
+
+    def _clamp_to_anchor(self, requested: int) -> int:
+        """
+        Bound an adjustment to anchor/stops..anchor*stops, following the anchor
+        when the bound keeps binding.
+
+        The bound stops a single bad frame from flinging the exposure, but the
+        anchor starts as a shipped guess (400ms) and is only relearned inside
+        the deadband. Where the real working exposure lies outside the bound --
+        heavy light pollution puts it at 25ms, well under 400ms/8 -- the servo
+        asks to go further every frame and is pinned at the boundary forever,
+        so the deadband is never reached and the anchor never updates. After
+        ``reanchor_after`` consecutive clamps in the same direction the ask is
+        no longer noise: move the anchor to the boundary so the search
+        continues from there (ADR 0021).
+        """
+        low = self._anchor // self.anchor_stops
+        high = self._anchor * self.anchor_stops
+        clamped = max(low, min(high, requested))
+        if clamped == requested:
+            self._clamp_streak = 0
+            self._clamp_direction = 0
+            return clamped
+
+        direction = -1 if requested < low else 1
+        if direction == self._clamp_direction:
+            self._clamp_streak += 1
+        else:
+            self._clamp_direction = direction
+            self._clamp_streak = 1
+
+        if self._clamp_streak >= self.reanchor_after:
+            logger.info(
+                f"StarCount: anchor {self._anchor}µs clamped {self._clamp_streak}x "
+                f"toward {'shorter' if direction < 0 else 'longer'} exposures, "
+                f"re-anchoring to {clamped}µs"
+            )
+            self._anchor = clamped
+            self._clamp_streak = 0
+            self._clamp_direction = 0
+            low = self._anchor // self.anchor_stops
+            high = self._anchor * self.anchor_stops
+            clamped = max(low, min(high, requested))
+
+        return clamped
 
     def _return_to_anchor(self, current_exposure: int) -> Optional[int]:
         if current_exposure != self._anchor:
@@ -208,6 +260,7 @@ class ExposureStarCountController:
             "ema": self._ema,
             "anchor": self._anchor,
             "zero_count": self._zero_count,
+            "clamp_streak": self._clamp_streak,
             "recovery_active": self._recovery.is_active(),
             "deadband": (self.deadband_low, self.deadband_high),
             "min_exposure": self.min_exposure,

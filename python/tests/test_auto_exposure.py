@@ -7,6 +7,7 @@ Unit tests for auto_exposure.py - PID controller and zero-match recovery.
 import pytest
 from PiFinder.auto_exposure import (
     RECOVERY_LADDER,
+    SHORT_RECOVERY_RUNGS,
     ZeroMatchRecovery,
     ExposurePIDController,
 )
@@ -25,11 +26,15 @@ class TestZeroMatchRecovery:
         assert recovery._ladder == [400000, 800000, 1000000, 200000]
         assert recovery._repeats_per_exposure == 2
 
-    def test_ladder_floors_at_200ms(self):
-        """The ladder never descends below 200 ms (ADR 0010)."""
+    def test_first_pass_floors_at_200ms(self):
+        """The first pass never descends below 200 ms (ADR 0010).
+
+        Shorter rungs exist but are only reached after that pass fails
+        (ADR 0021), so a dark-sky recovery still spends no attempts down there.
+        """
         assert RECOVERY_LADDER == [400000, 800000, 1000000, 200000]
         assert min(RECOVERY_LADDER) == 200000
-        assert all(rung >= 200000 for rung in RECOVERY_LADDER)
+        assert SHORT_RECOVERY_RUNGS == [100000, 50000, 25000]
 
     def test_custom_initialization(self):
         """Recovery accepts custom trigger and repeat counts."""
@@ -68,18 +73,47 @@ class TestZeroMatchRecovery:
         assert recovery.handle(50000, 7) == 200000
         assert recovery.handle(50000, 8) == 200000
 
-    def test_ladder_wraps_around(self):
-        """Recovery wraps back to 400ms after the full ladder (4 rungs × 2)."""
+    def test_escalates_to_short_rungs_after_a_full_pass(self):
+        """A failed pass of the long rungs continues into the short ones.
+
+        Under heavy light pollution the working exposure can be below the
+        ladder's 200ms floor, where replaying the long rungs never recovers
+        (ADR 0021).
+        """
         recovery = ZeroMatchRecovery(trigger_count=1)
 
-        # 4 rungs × 2 repeats = 8 attempts
-        total_cycles = len(RECOVERY_LADDER) * 2  # = 8
-        for i in range(1, total_cycles + 1):
+        # 4 rungs × 2 repeats = 8 attempts of the long ladder
+        attempts = len(RECOVERY_LADDER) * 2
+        for i in range(1, attempts + 1):
             recovery.handle(50000, i)
 
-        # Next attempt wraps to the first rung
-        result = recovery.handle(50000, total_cycles + 1)
-        assert result == 400000
+        # Short rungs follow, each still tried twice.
+        assert recovery.handle(50000, attempts + 1) == 100000
+        assert recovery.handle(50000, attempts + 2) == 100000
+        assert recovery.handle(50000, attempts + 3) == 50000
+        assert recovery.handle(50000, attempts + 4) == 50000
+        assert recovery.handle(50000, attempts + 5) == 25000
+        assert recovery.handle(50000, attempts + 6) == 25000
+
+    def test_wraps_to_the_full_ladder_after_escalating(self):
+        """Once extended, the cycle covers long and short rungs alike."""
+        recovery = ZeroMatchRecovery(trigger_count=1)
+
+        attempts = (len(RECOVERY_LADDER) + len(SHORT_RECOVERY_RUNGS)) * 2
+        for i in range(1, attempts + 1):
+            recovery.handle(50000, i)
+
+        assert recovery.handle(50000, attempts + 1) == 400000
+        assert recovery._ladder == RECOVERY_LADDER + SHORT_RECOVERY_RUNGS
+
+    def test_first_pass_is_unchanged_by_escalation(self):
+        """The common case still costs 8 attempts before anything is added."""
+        recovery = ZeroMatchRecovery(trigger_count=1)
+
+        for i in range(1, len(RECOVERY_LADDER) * 2):
+            recovery.handle(50000, i)
+
+        assert recovery._ladder == RECOVERY_LADDER
 
     def test_reset(self):
         """Reset clears recovery state."""
@@ -96,6 +130,7 @@ class TestZeroMatchRecovery:
         assert not recovery.is_active()
         assert recovery._exposure_index == 0
         assert recovery._repeat_count == 0
+        assert recovery._ladder == RECOVERY_LADDER
 
         # After reset, needs the trigger count again
         result = recovery.handle(50000, 1)
