@@ -110,6 +110,41 @@ def test_unreadable_file_does_not_wipe_settings(config_dir, caplog):
 
 
 @pytest.mark.unit
+def test_read_picks_up_another_process_write(config_dir, monkeypatch):
+    """The UI must see an exposure the web/camera process just saved."""
+    monkeypatch.setattr(config, "REFRESH_INTERVAL", 0)
+    ui_cfg = config.Config()  # loaded when the main process started
+    assert ui_cfg.get_option("camera_exp") == "auto"  # default_config value
+
+    config.Config().set_option("camera_exp", "auto_star")
+
+    assert ui_cfg.get_option("camera_exp") == "auto_star"
+
+
+@pytest.mark.unit
+def test_read_is_not_rechecked_within_the_interval(config_dir, monkeypatch):
+    """get_option() runs in draw loops, so it must not stat on every call."""
+    monkeypatch.setattr(config, "REFRESH_INTERVAL", 3600)
+    ui_cfg = config.Config()
+    ui_cfg.get_option("camera_exp")
+
+    config.Config().set_option("camera_exp", 25000)
+
+    # Still the value from our last read: the file is only re-checked once
+    # the interval has passed.
+    assert ui_cfg.get_option("camera_exp") == "auto"
+
+
+@pytest.mark.unit
+def test_own_write_is_visible_immediately(config_dir, monkeypatch):
+    """A process always sees its own write, whatever the recheck interval."""
+    monkeypatch.setattr(config, "REFRESH_INTERVAL", 3600)
+    cfg = config.Config()
+    cfg.set_option("camera_exp", 50000)
+    assert cfg.get_option("camera_exp") == 50000
+
+
+@pytest.mark.unit
 def test_session_options_are_not_persisted(config_dir):
     cfg = config.Config()
     cfg.set_option("session.foo", "bar")

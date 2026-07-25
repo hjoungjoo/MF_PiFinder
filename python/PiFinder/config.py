@@ -6,12 +6,19 @@ This module handles non-volatile config options
 
 import json
 import os
+import time
 from pathlib import Path
 from PiFinder import utils, equipment, locations
-from typing import Any
+from typing import Any, Optional, Tuple
 import logging
 
 logger = logging.getLogger("config")
+
+# How often a reader may re-stat config.json to notice another process's
+# writes. get_option() is called from draw loops, so the file is checked at
+# most this often rather than on every lookup; a quarter second is far below
+# what anyone can perceive on screen.
+REFRESH_INTERVAL = 0.25
 
 
 class Config:
@@ -22,6 +29,8 @@ class Config:
         # Set up session config items
         # These are transient
         self._session_config_dict = {}
+        self._file_stamp: Optional[Tuple[int, int]] = None
+        self._last_stamp_check = 0.0
         self.load_config()
 
     def load_config(self):
@@ -32,6 +41,7 @@ class Config:
         self.config_file_path = Path(utils.data_dir, "config.json")
 
         self.default_file_path = Path(utils.pifinder_dir, "default_config.json")
+        self._file_stamp = self._current_file_stamp()
         if not os.path.exists(self.config_file_path):
             self._config_dict = {}
         else:
@@ -112,6 +122,16 @@ class Config:
             return dict(self._config_dict)
         return on_disk if isinstance(on_disk, dict) else {}
 
+    def _current_file_stamp(self) -> Optional[Tuple[int, int]]:
+        """
+        (mtime, size) of the config file, or None when it is missing
+        """
+        try:
+            stat = os.stat(self.config_file_path)
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
     def _refresh_from_disk(self) -> None:
         """
         Pull in config keys other processes wrote since we loaded
@@ -123,9 +143,29 @@ class Config:
         the LiveCam settings the web UI had just written). Everything this
         process changed is already on disk, so the file is the newer state.
         """
+        stamp = self._current_file_stamp()
         on_disk = self._read_config_file()
         if on_disk:
             self._config_dict = on_disk
+        self._file_stamp = stamp
+        self._last_stamp_check = time.monotonic()
+
+    def _refresh_if_file_changed(self) -> None:
+        """
+        Reload when another process has written the file since our last read
+
+        Without this a reader keeps serving the values it loaded at startup:
+        setting the exposure from the web LiveCam page left the Camera Exp
+        menu and its focus-screen suffix showing the old one until the main
+        process happened to reload.
+        """
+        now = time.monotonic()
+        if now - self._last_stamp_check < REFRESH_INTERVAL:
+            return
+        self._last_stamp_check = now
+        if self._current_file_stamp() == self._file_stamp:
+            return
+        self._refresh_from_disk()
 
     def dump_config(self):
         """
@@ -143,6 +183,9 @@ class Config:
                 config_file.flush()
                 os.fsync(config_file.fileno())
             os.replace(tmp_path, self.config_file_path)
+            # Our own write is not a reason to reload on the next read.
+            self._file_stamp = self._current_file_stamp()
+            self._last_stamp_check = time.monotonic()
         except OSError:
             try:
                 os.remove(tmp_path)
@@ -187,6 +230,10 @@ class Config:
             if option == "default":
                 return self.locations.default_location
         else:
+            # equipment/locations above stay on the in-memory objects (they are
+            # rebuilt by an explicit load_config()); plain options come from
+            # whatever is on disk now, whichever process wrote it.
+            self._refresh_if_file_changed()
             return self._config_dict.get(
                 option, self._default_config_dict.get(option, default)
             )
