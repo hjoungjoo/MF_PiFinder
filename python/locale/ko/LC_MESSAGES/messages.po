@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-25 03:29+0900\n"
+"POT-Creation-Date: 2026-07-25 12:20+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -464,20 +464,25 @@ msgstr "백래시 정지를 요청했습니다. 마운트 제어 프로세스 �
 msgid "Pointing reset requested"
 msgstr "좌표 초기화를 요청했습니다"
 
-#: PiFinder/server.py:2177 PiFinder/server.py:2275 views/base.html:70
+#: PiFinder/server.py:2177 PiFinder/server.py:2273 views/base.html:70
 #: views/base.html:84
 msgid "Logs"
 msgstr "로그"
 
-#: PiFinder/server.py:2275
+#: PiFinder/server.py:2273
 msgid "Error creating log archive"
 msgstr "로그 압축 오류"
 
-#: PiFinder/server.py:2332 views/restart_pifinder.html:6
+#: PiFinder/server.py:2296
+# AI-TRANSLATED (claude): needs human review
+msgid "No log files to save"
+msgstr "저장할 로그 파일이 없습니다"
+
+#: PiFinder/server.py:2357 views/restart_pifinder.html:6
 msgid "Restarting PiFinder"
 msgstr "PiFinder 재시작 중"
 
-#: PiFinder/server.py:2394
+#: PiFinder/server.py:2419
 msgid "Restart PiFinder"
 msgstr "PiFinder 재시작"
 
@@ -3373,7 +3378,7 @@ msgstr "저장 중..."
 msgid "Saved: {filename}"
 msgstr "저장됨: {filename}"
 
-#: PiFinder/ui/sqm_correction.py:232
+#: PiFinder/ui/sqm_correction.py:232 views/logs.html:353 views/logs.html:357
 msgid "Save failed"
 msgstr "저장 실패"
 
@@ -4892,63 +4897,73 @@ msgstr "PiFinder Logs"
 msgid "Download All Logs"
 msgstr "Download All Logs"
 
-#: views/logs.html:144 views/logs.html:286 views/logs.html:298
+# AI-TRANSLATED (claude): needs human review
+#: views/logs.html:144
+msgid "Save to SD"
+msgstr "SD로 저장"
+
+#: views/logs.html:147 views/logs.html:289 views/logs.html:301
 msgid "Pause"
 msgstr "Pause"
 
-#: views/logs.html:147
+#: views/logs.html:150
 msgid "Resume from Current"
 msgstr "Resume from Current"
 
-#: views/logs.html:150
+#: views/logs.html:153
 msgid "Restart from End"
 msgstr "Restart from End"
 
-#: views/logs.html:153
+#: views/logs.html:156
 msgid "Copy to Clipboard"
 msgstr "Copy to Clipboard"
 
-#: views/logs.html:156
+#: views/logs.html:159
 msgid "Upload Log Conf"
 msgstr "Upload Log Conf"
 
-#: views/logs.html:160 views/logs.html:364
+#: views/logs.html:163 views/logs.html:393
 msgid "Select Log Configuration"
 msgstr "Select Log Configuration"
 
-#: views/logs.html:164
+#: views/logs.html:167
 msgid "Total lines:"
 msgstr "Total lines:"
 
-#: views/logs.html:172
+#: views/logs.html:175
 msgid "Loading log files..."
 msgstr "Loading log files..."
 
-#: views/logs.html:286
+#: views/logs.html:289
 msgid "Resume"
 msgstr "Resume"
 
-#: views/logs.html:346 views/logs.html:354
+# AI-TRANSLATED (claude): needs human review
+#: views/logs.html:351
+msgid "Saved"
+msgstr "저장됨"
+
+#: views/logs.html:375 views/logs.html:383
 msgid "Failed to copy"
 msgstr "Failed to copy"
 
-#: views/logs.html:351
+#: views/logs.html:380
 msgid "Copied!"
 msgstr "Copied!"
 
-#: views/logs.html:379
+#: views/logs.html:408
 msgid "Switch log configuration to"
 msgstr "Switch log configuration to"
 
-#: views/logs.html:379
+#: views/logs.html:408
 msgid "and restart PiFinder?"
 msgstr "and restart PiFinder?"
 
-#: views/logs.html:399
+#: views/logs.html:428
 msgid "File must be named logconf_<name>.json"
 msgstr "File must be named logconf_<name>.json"
 
-#: views/logs.html:411
+#: views/logs.html:440
 msgid "Upload failed:"
 msgstr "Upload failed:"
 

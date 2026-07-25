@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-25 03:29+0900\n"
+"POT-Creation-Date: 2026-07-25 12:20+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: Jens Scheidtmann\n"
 "Language: de_DE\n"
@@ -437,20 +437,24 @@ msgstr ""
 msgid "Pointing reset requested"
 msgstr ""
 
-#: PiFinder/server.py:2177 PiFinder/server.py:2275 views/base.html:70
+#: PiFinder/server.py:2177 PiFinder/server.py:2273 views/base.html:70
 #: views/base.html:84
 msgid "Logs"
 msgstr "Logs"
 
-#: PiFinder/server.py:2275
+#: PiFinder/server.py:2273
 msgid "Error creating log archive"
 msgstr "Fehler beim zippen der Logs"
 
-#: PiFinder/server.py:2332 views/restart_pifinder.html:6
+#: PiFinder/server.py:2296
+msgid "No log files to save"
+msgstr ""
+
+#: PiFinder/server.py:2357 views/restart_pifinder.html:6
 msgid "Restarting PiFinder"
 msgstr "PiFinder Neustart..."
 
-#: PiFinder/server.py:2394
+#: PiFinder/server.py:2419
 msgid "Restart PiFinder"
 msgstr "PiFinder Neustart..."
 
@@ -3514,7 +3518,7 @@ msgstr "Speichern..."
 msgid "Saved: {filename}"
 msgstr "gespeichert: {filename}"
 
-#: PiFinder/ui/sqm_correction.py:232
+#: PiFinder/ui/sqm_correction.py:232 views/logs.html:353 views/logs.html:357
 msgid "Save failed"
 msgstr "Speichern fehlgeschlagen"
 
@@ -5074,78 +5078,88 @@ msgstr "PiFinder Logs"
 msgid "Download All Logs"
 msgstr "Alle Logs herunterladen"
 
+#: views/logs.html:144
+#, fuzzy
+msgid "Save to SD"
+msgstr "Log speichern"
+
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:144 views/logs.html:286 views/logs.html:298
+#: views/logs.html:147 views/logs.html:289 views/logs.html:301
 msgid "Pause"
 msgstr "Pause"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:147
+#: views/logs.html:150
 msgid "Resume from Current"
 msgstr "Ab Aktuell fortsetzen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:150
+#: views/logs.html:153
 msgid "Restart from End"
 msgstr "Vom Ende neu starten"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:153
+#: views/logs.html:156
 msgid "Copy to Clipboard"
 msgstr "In Zwischenablage kopieren"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:156
+#: views/logs.html:159
 msgid "Upload Log Conf"
 msgstr "Log-Konfig hochladen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:160 views/logs.html:364
+#: views/logs.html:163 views/logs.html:393
 msgid "Select Log Configuration"
 msgstr "Log-Konfiguration wählen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:164
+#: views/logs.html:167
 msgid "Total lines:"
 msgstr "Zeilen gesamt:"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:172
+#: views/logs.html:175
 msgid "Loading log files..."
 msgstr "Log-Dateien werden geladen..."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:286
+#: views/logs.html:289
 msgid "Resume"
 msgstr "Fortsetzen"
 
+#: views/logs.html:351
+#, fuzzy
+msgid "Saved"
+msgstr "Speichern"
+
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:346 views/logs.html:354
+#: views/logs.html:375 views/logs.html:383
 msgid "Failed to copy"
 msgstr "Kopieren fehlgeschlagen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:351
+#: views/logs.html:380
 msgid "Copied!"
 msgstr "Kopiert!"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:379
+#: views/logs.html:408
 msgid "Switch log configuration to"
 msgstr "Log-Konfiguration wechseln zu"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:379
+#: views/logs.html:408
 msgid "and restart PiFinder?"
 msgstr "und PiFinder neu starten?"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:399
+#: views/logs.html:428
 msgid "File must be named logconf_<name>.json"
 msgstr "Datei muss logconf_<name>.json heißen"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:411
+#: views/logs.html:440
 msgid "Upload failed:"
 msgstr "Hochladen fehlgeschlagen:"
 

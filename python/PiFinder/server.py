@@ -2185,7 +2185,7 @@ class Server:
             t0 = time.monotonic()
             try:
                 position = int(request.args.get("position", 0))
-                log_file = os.path.expanduser("~/PiFinder_data/pifinder.log")
+                log_file = str(utils.log_dir / "pifinder.log")
 
                 try:
                     file_size = os.path.getsize(log_file)
@@ -2245,12 +2245,10 @@ class Server:
                     zip_path = temp_file.name
 
                 with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-                    # Add all log files
-                    log_dir = os.path.expanduser("~/PiFinder_data")
-                    for filename in os.listdir(log_dir):
-                        if filename.startswith("pifinder") and filename.endswith(
-                            ".log"
-                        ):
+                    # Add all rotated log files from the tmpfs log dir.
+                    log_dir = str(utils.log_dir)
+                    for filename in sorted(os.listdir(log_dir)):
+                        if filename.startswith("pifinder") and ".log" in filename:
                             file_path = os.path.join(log_dir, filename)
                             zipf.write(file_path, filename)
 
@@ -2274,6 +2272,33 @@ class Server:
                 return app.jinja_env.get_template("logs.html").render(
                     title=_("Logs"), error_message=_("Error creating log archive")
                 )
+
+        @app.route("/logs/save_to_sd", methods=["POST"])
+        @auth_required
+        def save_logs_to_sd():
+            """Copy the current tmpfs log files to the SD card.
+
+            Logs rotate on tmpfs by default (no SD wear, lost on power-off);
+            this on-demand snapshot is how a test session worth keeping is
+            persisted before a reboot.
+            """
+            import shutil
+
+            try:
+                timestamp = timez.local_now().strftime("%Y%m%d_%H%M%S")
+                target_dir = utils.saved_log_dir / f"saved_{timestamp}"
+                utils.create_path(target_dir)
+                copied = 0
+                for path in sorted(utils.log_dir.glob("pifinder*.log*")):
+                    shutil.copy2(path, target_dir / path.name)
+                    copied += 1
+                if not copied:
+                    return jsonify({"ok": False, "error": _("No log files to save")})
+                logger.info("Saved %d log files to %s", copied, target_dir)
+                return jsonify({"ok": True, "saved": copied, "target": str(target_dir)})
+            except Exception as e:
+                logger.error(f"Error saving logs to SD: {e}")
+                return jsonify({"ok": False, "error": str(e)})
 
         @app.route("/logs/configs")
         @auth_required

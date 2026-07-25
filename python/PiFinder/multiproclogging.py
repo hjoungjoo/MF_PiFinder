@@ -135,9 +135,11 @@ class MultiprocLogging:
             rLogger.setLevel(logging.DEBUG)
             rLogger.warning("Starting logging process (console only, no file output)")
         else:
-            # Set maxBytes to 50MB (50 * 1024 * 1024 bytes) and keep 5 backup files
+            # The log dir lives on tmpfs by default (utils.log_dir), so keep
+            # the rotation footprint modest: 20 MB x (1 active + 3 backups).
+            output.parent.mkdir(parents=True, exist_ok=True)
             h = logging.handlers.RotatingFileHandler(
-                output, maxBytes=50 * 1024 * 1024, backupCount=5, encoding="utf-8"
+                output, maxBytes=20 * 1024 * 1024, backupCount=3, encoding="utf-8"
             )
             rLogger.warning("Starting logging process")
             rLogger.warning("Logging to %s", output)

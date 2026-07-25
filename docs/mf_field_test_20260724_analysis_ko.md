@@ -399,9 +399,18 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
 
 ### D. 진단성
 
-- [ ] **D12. INFO 파일 로깅 프로파일 기동** — 이번 분석에서 파일 로그가
-  WARNING만 남아 현장 타임라인 재구성이 어려웠다. `logconf_indi.json` 계열
-  INFO 프로파일 적용 (SD 마모 고려해 tmpfs/회전 정책 확인).
+- [x] **D12. 로그 tmpfs 이전 + 기본 INFO 로깅** — 2026-07-25 구현
+  (사용자 결정: 로그성 데이터는 tmpfs 우선, 필요할 때만 SD 저장).
+  - 로그 파일이 `~/PiFinder_data/pifinder.log`(SD)에서
+    `/dev/shm/pifinder/logs/pifinder.log`(tmpfs)로 이동. 회전 20MB × 3으로
+    축소(구 50MB × 5). 웹 Logs 페이지의 스트림/다운로드도 새 경로 사용.
+  - SD 마모가 사라졌으므로 기본 프로파일에서 INDI 로거
+    (MountControl/IndiGotoGuideService/PointingCoordinateService) +
+    PosServer + GPS.TimeSync + main을 **INFO**로 상향 — 현장 타임라인
+    재구성이 기본으로 가능해짐.
+  - **주의: tmpfs 로그는 재부팅/전원 차단 시 사라진다.** 보존이 필요한
+    세션은 웹 Logs 페이지의 **"SD로 저장"** 버튼으로
+    `~/PiFinder_data/logs/saved_<시각>/`에 스냅숏을 남긴다(부록 참조).
 - [ ] **D13. Moon 추적 주파수 잔존 점검** — 실내 검증 중
   `track_freq_label=Moon`(58.59Hz)이 고정 좌표 타깃 추적 중에도 남아 있었다.
   recent 목록의 달 대상(고정 좌표) GoTo로 lunar feed-forward가 걸린 뒤 정적
@@ -430,5 +439,7 @@ python3 -m json.tool /dev/shm/pifinder/gps_time_status.json
 #   indi_goto_guide_status.json .tracking_guide_recovery_count
 ```
 
-현장에서 문제 재발 시: 전원을 끄기 전에 위 상태 파일 4개를
+현장에서 문제 재발 시: **전원을 끄기 전에** ① 웹 Logs 페이지의 "SD로 저장"
+버튼으로 tmpfs 로그를 `~/PiFinder_data/logs/saved_<시각>/`에 남기고
+(D12 이후 로그는 tmpfs라 재부팅 시 사라진다), ② 위 상태 파일 4개를
 `~/PiFinder_data/`로 복사해 두면 재부팅 후에도 분석할 수 있다.

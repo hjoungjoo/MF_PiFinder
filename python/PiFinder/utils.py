@@ -39,6 +39,12 @@ def _resolve_runtime_dir() -> Path:
 
 
 runtime_dir = _resolve_runtime_dir()
+# Application log files are volatile too (2026-07-25 decision): they rotate on
+# tmpfs by default to spare the SD card, and are only copied to saved_log_dir
+# on demand ("Save to SD" on the web Logs page). A reboot/power loss discards
+# them -- save first when a session must be preserved.
+log_dir = runtime_dir / "logs"
+saved_log_dir = data_dir / "logs"
 
 
 def create_dir(adir: str):

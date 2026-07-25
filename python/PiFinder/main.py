@@ -1276,7 +1276,10 @@ if __name__ == "__main__":
         log_helper = MultiprocLogging(Path("pifinder_logconf.json"), console_only=True)
         MultiprocLogging.configurer(log_helper.get_queue())
     else:
-        log_path = utils.data_dir / "pifinder.log"
+        # Logs live on tmpfs (utils.log_dir); use the web Logs page "Save to
+        # SD" action to persist a session worth keeping.
+        utils.create_path(utils.log_dir)
+        log_path = utils.log_dir / "pifinder.log"
         try:
             log_helper = MultiprocLogging(
                 Path("pifinder_logconf.json"),

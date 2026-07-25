@@ -140,6 +140,9 @@
           <a href="/logs/download" class="btn">
             <i class="material-icons left">download</i>{{ _('Download All Logs') }}
           </a>
+          <button id="saveToSdButton" class="btn">
+            <i class="material-icons left">save</i>{{ _('Save to SD') }}
+          </button>
           <button id="pauseButton" class="btn">
             <i class="material-icons left">pause</i>{{ _('Pause') }}
           </button>
@@ -327,6 +330,32 @@ document.addEventListener('DOMContentLoaded', () => {
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
     clearInterval(updateInterval);
+});
+
+// Save the current tmpfs log files to the SD card (logs are volatile by
+// default and vanish on power-off; this persists a session worth keeping).
+document.getElementById('saveToSdButton').addEventListener('click', function() {
+    const btn = this;
+    const originalText = btn.innerHTML;
+    const showFeedback = (html) => {
+        btn.innerHTML = html;
+        setTimeout(() => { btn.innerHTML = originalText; }, 3000);
+    };
+    btn.disabled = true;
+    fetch('/logs/save_to_sd', {
+        method: 'POST',
+        headers: {'X-Requested-With': 'XMLHttpRequest'}
+    }).then(r => r.json()).then(payload => {
+        btn.disabled = false;
+        if (payload.ok) {
+            showFeedback('<i class="material-icons left">check</i>{{ _('Saved') }} (' + payload.saved + ')');
+        } else {
+            showFeedback('<i class="material-icons left">error</i>' + (payload.error || '{{ _('Save failed') }}'));
+        }
+    }).catch(() => {
+        btn.disabled = false;
+        showFeedback('<i class="material-icons left">error</i>{{ _('Save failed') }}');
+    });
 });
 
 // Add copy to clipboard functionality

@@ -48,21 +48,35 @@
         /////////////////////////////////////////////////////////////////
         ////// INDI mount control / GoTo-Guide / pointing coordinate
         //
-        // Kept at WARNING here so normal operation does not stream INFO
-        // (guide pulses, pointing updates, state transitions) into
-        // pifinder.log on every loop iteration -- that constant SD-card
-        // writing is costly on the Pi.  To capture the verbose
-        // disturbance-recovery trace when diagnosing in the field, switch
-        // the active log config to "Indi" (logconf_indi.json) from the web
-        // Logs page, then switch back to "Default" when done.
+        // INFO by default since 2026-07-25 (field-test item D12): the log
+        // file now rotates on tmpfs (utils.log_dir), so the continuous
+        // INFO stream (GoTo/sync commands, recovery slews, guide pulses,
+        // tracking-guide state transitions) no longer wears the SD card,
+        // and a field incident can be reconstructed afterwards.  Persist a
+        // session worth keeping with "Save to SD" on the web Logs page
+        // BEFORE powering off -- tmpfs logs vanish on reboot.
         "MountControl": {
-            "level": "WARNING"
+            "level": "INFO"
         },
         "IndiGotoGuideService": {
-            "level": "WARNING"
+            "level": "INFO"
         },
         "PointingCoordinateService": {
-            "level": "WARNING"
+            "level": "INFO"
+        },
+        // SkySafari LX200 server: GoTo/sync routing decisions, guide bridge,
+        // clock-jump re-syncs. Same D12 rationale as above.
+        "PosServer": {
+            "level": "INFO"
+        },
+        // Clock-trust marker writes and time-source selection (A4/A5).
+        // Parent "GPS" stays WARNING so parser chatter is not logged.
+        "GPS.TimeSync": {
+            "level": "INFO"
+        },
+        // Main loop: manual time set, GPS time adoption, UI commands.
+        "main": {
+            "level": "INFO"
         },
 
         /////////////////////////////////////////////////////////////////

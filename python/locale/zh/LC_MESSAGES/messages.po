@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-25 03:29+0900\n"
+"POT-Creation-Date: 2026-07-25 12:20+0900\n"
 "PO-Revision-Date: 2025-02-05 15:00+0800\n"
 "Last-Translator: ClawdPulse\n"
 "Language: zh_CN\n"
@@ -470,23 +470,27 @@ msgid "Pointing reset requested"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2177 PiFinder/server.py:2275 views/base.html:70
+#: PiFinder/server.py:2177 PiFinder/server.py:2273 views/base.html:70
 #: views/base.html:84
 msgid "Logs"
 msgstr "日志"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2275
+#: PiFinder/server.py:2273
 msgid "Error creating log archive"
 msgstr "创建日志压缩包失败"
 
+#: PiFinder/server.py:2296
+msgid "No log files to save"
+msgstr ""
+
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2332 views/restart_pifinder.html:6
+#: PiFinder/server.py:2357 views/restart_pifinder.html:6
 msgid "Restarting PiFinder"
 msgstr "正在重启PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2394
+#: PiFinder/server.py:2419
 msgid "Restart PiFinder"
 msgstr "重启PiFinder"
 
@@ -3767,7 +3771,7 @@ msgid "Saved: {filename}"
 msgstr "已保存: {filename}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/sqm_correction.py:232
+#: PiFinder/ui/sqm_correction.py:232 views/logs.html:353 views/logs.html:357
 msgid "Save failed"
 msgstr "保存失败"
 
@@ -5359,77 +5363,88 @@ msgid "Download All Logs"
 msgstr "下载全部日志"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:144 views/logs.html:286 views/logs.html:298
+#: views/logs.html:144
+#, fuzzy
+msgid "Save to SD"
+msgstr "保存日志"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/logs.html:147 views/logs.html:289 views/logs.html:301
 msgid "Pause"
 msgstr "暂停"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:147
+#: views/logs.html:150
 msgid "Resume from Current"
 msgstr "从当前位置继续"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:150
+#: views/logs.html:153
 msgid "Restart from End"
 msgstr "从末尾重新开始"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:153
+#: views/logs.html:156
 msgid "Copy to Clipboard"
 msgstr "复制到剪贴板"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:156
+#: views/logs.html:159
 msgid "Upload Log Conf"
 msgstr "上传日志配置"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:160 views/logs.html:364
+#: views/logs.html:163 views/logs.html:393
 msgid "Select Log Configuration"
 msgstr "选择日志配置"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:164
+#: views/logs.html:167
 msgid "Total lines:"
 msgstr "总行数:"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:172
+#: views/logs.html:175
 msgid "Loading log files..."
 msgstr "正在加载日志文件..."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:286
+#: views/logs.html:289
 msgid "Resume"
 msgstr "继续"
 
+#: views/logs.html:351
+#, fuzzy
+msgid "Saved"
+msgstr "保存"
+
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:346 views/logs.html:354
+#: views/logs.html:375 views/logs.html:383
 msgid "Failed to copy"
 msgstr "复制失败"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:351
+#: views/logs.html:380
 msgid "Copied!"
 msgstr "已复制!"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:379
+#: views/logs.html:408
 msgid "Switch log configuration to"
 msgstr "切换日志配置为"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:379
+#: views/logs.html:408
 msgid "and restart PiFinder?"
 msgstr "并重启PiFinder吗?"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:399
+#: views/logs.html:428
 msgid "File must be named logconf_<name>.json"
 msgstr "文件名必须为logconf_<name>.json"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/logs.html:411
+#: views/logs.html:440
 msgid "Upload failed:"
 msgstr "上传失败:"
 
