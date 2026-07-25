@@ -69,6 +69,13 @@ RECOVERY_LADDER = [400000, 800000, 1000000, 200000]
 # ADR 0010's fast common case (8 attempts) intact. See ADR 0021.
 SHORT_RECOVERY_RUNGS = [100000, 50000, 25000]
 
+# Ladder for a caller that can see the frame is already sky-glow limited
+# (star-count controller, center-ROI mean above its bright-sky threshold).
+# The night-time "climb first" prior is wrong there -- more light only adds
+# glow -- so walk down instead. Callers with no brightness signal (the
+# match-count controller) keep the ascending ladder above.
+BRIGHT_RECOVERY_LADDER = [200000, 100000, 50000, 25000]
+
 
 class ZeroMatchRecovery:
     """
@@ -112,13 +119,20 @@ class ZeroMatchRecovery:
     def is_active(self) -> bool:
         return self._active
 
-    def handle(self, current_exposure: int, zero_count: int) -> Optional[int]:
+    def handle(
+        self, current_exposure: int, zero_count: int, bright: bool = False
+    ) -> Optional[int]:
         """
         Advance recovery for a zero-match solve.
 
         Args:
             current_exposure: Current exposure time in microseconds.
             zero_count: Number of consecutive zero-match solves.
+            bright: The caller can see the frame is already sky-glow
+                limited, so climbing would only add glow. Chooses the
+                descending ladder at activation. Callers with no
+                brightness signal leave this False and keep the
+                night-time prior.
 
         Returns:
             Next exposure to try, or None while waiting for the trigger.
@@ -133,9 +147,12 @@ class ZeroMatchRecovery:
         # Activate if not already active
         if not self._active:
             self._active = True
+            if bright:
+                self._ladder = list(BRIGHT_RECOVERY_LADDER)
             logger.debug(
                 f"Recovery activated after {zero_count} zero-match solves "
-                f"(stuck at {current_exposure}µs)"
+                f"(stuck at {current_exposure}µs, "
+                f"{'bright' if bright else 'dark'} prior)"
             )
 
         # Walk the ladder
@@ -160,15 +177,20 @@ class ZeroMatchRecovery:
             # Wrap around to start of ladder
             if self._exposure_index >= len(self._ladder):
                 if not self._extended:
-                    # A full pass of the long rungs did not bring detections
-                    # back. Continue into the short rungs rather than replaying
-                    # the same failures -- under a bright sky the working
-                    # exposure can be below the ladder's floor (ADR 0021).
+                    # A full pass did not bring detections back, so the prior
+                    # this ladder encodes was wrong. Continue into the rungs it
+                    # does not cover rather than replaying the same failures --
+                    # the working exposure can be on the other side of the
+                    # ladder's floor entirely (ADR 0021).
                     self._extended = True
-                    self._ladder = self._ladder + list(SHORT_RECOVERY_RUNGS)
+                    remaining = [
+                        rung
+                        for rung in RECOVERY_LADDER + SHORT_RECOVERY_RUNGS
+                        if rung not in self._ladder
+                    ]
+                    self._ladder = self._ladder + remaining
                     logger.info(
-                        "Recovery: long rungs exhausted, extending to short "
-                        f"rungs {SHORT_RECOVERY_RUNGS}µs"
+                        f"Recovery: ladder exhausted, extending with {remaining}µs"
                     )
                 else:
                     self._exposure_index = 0

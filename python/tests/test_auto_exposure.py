@@ -6,6 +6,7 @@ Unit tests for auto_exposure.py - PID controller and zero-match recovery.
 
 import pytest
 from PiFinder.auto_exposure import (
+    BRIGHT_RECOVERY_LADDER,
     RECOVERY_LADDER,
     SHORT_RECOVERY_RUNGS,
     ZeroMatchRecovery,
@@ -114,6 +115,39 @@ class TestZeroMatchRecovery:
             recovery.handle(50000, i)
 
         assert recovery._ladder == RECOVERY_LADDER
+
+    def test_bright_caller_walks_down_instead_of_climbing(self):
+        """A sky-glow-limited frame inverts the night-time prior (ADR 0021).
+
+        Only a caller that can see the frame passes this; the match-count
+        controller has no brightness signal and keeps climbing.
+        """
+        recovery = ZeroMatchRecovery(trigger_count=1)
+
+        assert recovery.handle(400000, 1, bright=True) == 200000
+        assert recovery.handle(200000, 2, bright=True) == 200000
+        assert recovery.handle(200000, 3, bright=True) == 100000
+        assert recovery._ladder == BRIGHT_RECOVERY_LADDER
+
+    def test_prior_is_chosen_once_at_activation(self):
+        """A later frame's brightness must not restart the walk mid-ladder."""
+        recovery = ZeroMatchRecovery(trigger_count=1)
+
+        assert recovery.handle(400000, 1, bright=False) == 400000
+        # Still on the ascending ladder, one rung further along.
+        assert recovery.handle(400000, 2, bright=True) == 400000
+        assert recovery.handle(400000, 3, bright=True) == 800000
+
+    def test_bright_ladder_escalates_to_the_long_rungs(self):
+        """Escalation covers whatever the chosen ladder left out."""
+        recovery = ZeroMatchRecovery(trigger_count=1)
+
+        attempts = len(BRIGHT_RECOVERY_LADDER) * 2
+        for i in range(1, attempts + 1):
+            recovery.handle(200000, i, bright=True)
+
+        assert recovery.handle(25000, attempts + 1) == 400000
+        assert recovery._ladder == BRIGHT_RECOVERY_LADDER + [400000, 800000, 1000000]
 
     def test_reset(self):
         """Reset clears recovery state."""

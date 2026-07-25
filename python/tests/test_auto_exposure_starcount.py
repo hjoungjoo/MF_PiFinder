@@ -166,12 +166,46 @@ class TestExposureStarCountController:
         # Already at anchor -> no change
         assert controller.update(2, 300000) is None
 
-    def test_bright_sky_guard_blocks_increase(self):
-        """Short of stars + bright center ROI: don't raise, go to anchor."""
+    def test_bright_sky_guard_steps_down(self):
+        """Short of stars + bright center ROI: halve, don't raise.
+
+        Returning to the anchor here used to loop forever in the field: guard
+        at 1s -> anchor 400ms -> nothing detected -> recovery climbs -> too few
+        stars -> raise to 1s -> guard (ADR 0021).
+        """
         controller = ExposureStarCountController()
         controller.update(20, 300000)  # anchor = 300000
         result = controller.update(10, 500000, center_mean=250.0)
-        assert result == 300000  # anchor, not 500000/f
+        assert result == 250000  # one stop down, not the anchor or 500000/f
+        assert controller._bright_ceiling == 250000
+
+    def test_bright_ceiling_caps_later_raises(self):
+        """Once a frame proved to be sky glow, don't climb back into it."""
+        controller = ExposureStarCountController()
+        controller.update(10, 800000, center_mean=250.0)  # ceiling 400000
+        assert controller._bright_ceiling == 400000
+        # A darker frame short of stars would otherwise raise well past it.
+        assert controller.update(5, 400000, center_mean=100.0) is None
+
+    def test_deadband_retires_the_bright_ceiling(self):
+        """A working exposure means the sky it was measured against is gone."""
+        controller = ExposureStarCountController()
+        controller.update(10, 800000, center_mean=250.0)
+        assert controller._bright_ceiling is not None
+        # ema = 0.5*30 + 0.5*10 = 20 -> exactly on target, inside the deadband
+        controller.update(30, 200000)
+        assert controller._bright_ceiling is None
+
+    def test_bright_sky_walks_down_to_the_floor(self):
+        """Repeated guard hits reach the fast end instead of oscillating."""
+        controller = ExposureStarCountController()
+        exposure = 1000000
+        for _ in range(12):
+            new_exposure = controller.update(10, exposure, center_mean=250.0)
+            if new_exposure is None:
+                break
+            exposure = new_exposure
+        assert exposure == controller.min_exposure
 
     def test_bright_sky_guard_ignored_when_dark(self):
         controller = ExposureStarCountController()

@@ -100,6 +100,7 @@ class ExposureStarCountController:
         self._zero_count = 0
         self._clamp_streak = 0
         self._clamp_direction = 0
+        self._bright_ceiling: Optional[int] = None
         self._recovery = recovery or ZeroMatchRecovery()
 
         logger.info(
@@ -116,6 +117,7 @@ class ExposureStarCountController:
         self._zero_count = 0
         self._clamp_streak = 0
         self._clamp_direction = 0
+        self._bright_ceiling = None
         self._recovery.reset()
         logger.debug("StarCount controller reset")
 
@@ -142,7 +144,11 @@ class ExposureStarCountController:
         # match-count controller, but triggered on detections, not matches).
         if centroid_count == 0:
             self._zero_count += 1
-            return self._recovery.handle(current_exposure, self._zero_count)
+            return self._recovery.handle(
+                current_exposure,
+                self._zero_count,
+                bright=self._is_bright(center_mean),
+            )
 
         if self._recovery.is_active():
             logger.debug(
@@ -172,28 +178,35 @@ class ExposureStarCountController:
         star_fraction = self._ema / self.target_stars
 
         # Bright-sky guard: short of stars but the background is already
-        # bright -- more exposure adds sky glow, not star contrast.
-        if (
-            star_fraction < 1.0
-            and center_mean is not None
-            and center_mean > self.bright_sky_mean
-        ):
+        # bright -- more exposure adds sky glow, not star contrast, so step
+        # down instead and remember that this exposure was too long.
+        #
+        # Returning to the anchor here (what this did originally) produced an
+        # endless loop under a light-polluted sky: guard fires at 1s -> anchor
+        # 400ms -> nothing detected -> recovery climbs to 800ms -> too few
+        # stars -> raise to 1s -> guard. Observed in the field; the exposure
+        # that actually solves at that site is 25ms, and nothing in the cycle
+        # ever walked down to it (ADR 0021).
+        if star_fraction < 1.0 and self._is_bright(center_mean):
+            self._bright_ceiling = max(self.min_exposure, current_exposure // 2)
             logger.debug(
                 f"StarCount: bright sky (center mean {center_mean:.0f} > "
-                f"{self.bright_sky_mean:.0f}), not raising exposure"
+                f"{self.bright_sky_mean:.0f}) at {current_exposure}µs, "
+                f"stepping down (ceiling now {self._bright_ceiling}µs)"
             )
-            return self._return_to_anchor(current_exposure)
+            return self._apply_clamps(current_exposure, current_exposure // 2)
 
         # Deadband: close enough. Learn this exposure as the known-good
-        # anchor and hold still.
+        # anchor and hold still. A working exposure also retires the bright
+        # ceiling -- the sky it was measured against is gone.
         if self.deadband_low <= star_fraction <= self.deadband_high:
             self._anchor = current_exposure
+            self._bright_ceiling = None
             return None
 
         # Star count ~ proportional to exposure, so one division step.
         requested = int(current_exposure / star_fraction)
-        new_exposure = self._clamp_to_anchor(requested)
-        new_exposure = max(self.min_exposure, min(self.max_exposure, new_exposure))
+        new_exposure = self._apply_clamps(current_exposure, requested)
 
         if new_exposure == current_exposure:
             return None
@@ -203,6 +216,24 @@ class ExposureStarCountController:
             f"= {star_fraction:.2f} → {current_exposure}µs → {new_exposure}µs"
         )
         return new_exposure
+
+    def _is_bright(self, center_mean: Optional[float]) -> bool:
+        """Whether the frame is already sky-glow limited (None = unknown)."""
+        return center_mean is not None and center_mean > self.bright_sky_mean
+
+    def _apply_clamps(self, current_exposure: int, requested: int) -> int:
+        """
+        Bound a requested exposure by the anchor, the bright ceiling and the
+        absolute range, in that order.
+
+        The bright ceiling ratchets down while the guard keeps firing: without
+        it the servo raises straight back into the exposure that just proved
+        to be sky glow, which is the loop this controller used to sit in.
+        """
+        new_exposure = self._clamp_to_anchor(requested)
+        if self._bright_ceiling is not None:
+            new_exposure = min(new_exposure, self._bright_ceiling)
+        return max(self.min_exposure, min(self.max_exposure, new_exposure))
 
     def _clamp_to_anchor(self, requested: int) -> int:
         """
@@ -261,6 +292,7 @@ class ExposureStarCountController:
             "anchor": self._anchor,
             "zero_count": self._zero_count,
             "clamp_streak": self._clamp_streak,
+            "bright_ceiling": self._bright_ceiling,
             "recovery_active": self._recovery.is_active(),
             "deadband": (self.deadband_low, self.deadband_high),
             "min_exposure": self.min_exposure,
