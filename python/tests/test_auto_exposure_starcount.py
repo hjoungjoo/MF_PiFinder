@@ -1,0 +1,199 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+"""
+Unit tests for auto_exposure_starcount.py - the star-count controller.
+
+The star-count controller is the opt-in alternative to the match-count
+controller (camera_ae_controller = "star_count"): feedback comes from
+detected centroids instead of catalog matches, with a bright-sky guard,
+a slewing fallback, and an anchor learned in the deadband.
+See docs/mf_auto_exposure_plan_ko.md.
+"""
+
+import pytest
+
+from PiFinder.auto_exposure import RECOVERY_LADDER, ZeroMatchRecovery
+from PiFinder.auto_exposure_starcount import ExposureStarCountController
+from PiFinder.types.positioning import SolveDiagnostics
+
+
+@pytest.mark.unit
+class TestCentroidsDiagnostics:
+    """The Centroids field the controller consumes."""
+
+    def test_centroids_defaults_to_zero(self):
+        """Centroids defaults to 0 like Matches (auto-exposure expects int)."""
+        diagnostics = SolveDiagnostics()
+        assert diagnostics.Centroids == 0
+        assert diagnostics.Matches == 0
+
+    def test_centroids_carries_count(self):
+        diagnostics = SolveDiagnostics(Matches=0, Centroids=23)
+        assert diagnostics.Centroids == 23
+
+
+@pytest.mark.unit
+class TestExposureStarCountController:
+    """Tests for the star-count controller's control law."""
+
+    def test_initialization_defaults(self):
+        """Defaults follow cedar-server's field-proven servo values."""
+        controller = ExposureStarCountController()
+        assert controller.target_stars == 20
+        assert controller.ema_alpha == 0.5
+        assert controller.deadband_low == 0.8
+        assert controller.deadband_high == 1.6
+        assert controller.min_stars_for_control == 4
+        assert controller.min_exposure == 25000
+        assert controller.max_exposure == 1000000
+        assert controller._anchor == 400000
+
+    def test_deadband_holds_and_learns_anchor(self):
+        """Inside the deadband: no adjustment, exposure becomes the anchor."""
+        controller = ExposureStarCountController()
+        # 20/20 = 1.0 -> inside [0.8, 1.6]
+        assert controller.update(20, 300000) is None
+        assert controller._anchor == 300000
+
+    def test_deadband_is_asymmetric(self):
+        """Excess stars are tolerated up to 1.6x; shortfall acts below 0.8x."""
+        controller = ExposureStarCountController()
+        # 30/20 = 1.5 -> still inside deadband (tolerated excess)
+        assert controller.update(30, 400000) is None
+        # Fresh controller: 15/20 = 0.75 -> below 0.8, acts
+        controller = ExposureStarCountController()
+        assert controller.update(15, 400000) is not None
+
+    def test_increases_exposure_for_too_few_stars(self):
+        """Division law: new = current / (ema/target)."""
+        controller = ExposureStarCountController()
+        # First update seeds EMA with the raw count: 10/20 = 0.5
+        new_exposure = controller.update(10, 400000)
+        assert new_exposure == int(400000 / 0.5)
+
+    def test_decreases_exposure_for_too_many_stars(self):
+        controller = ExposureStarCountController()
+        # 80/20 = 4.0 -> divide exposure by 4
+        new_exposure = controller.update(80, 400000)
+        assert new_exposure == int(400000 / 4.0)
+
+    def test_ema_smooths_counts(self):
+        """Second update blends: ema = 0.5*count + 0.5*prev_ema."""
+        controller = ExposureStarCountController()
+        controller.update(20, 400000)  # seeds ema=20, in deadband
+        new_exposure = controller.update(4, 400000)
+        # ema = 0.5*4 + 0.5*20 = 12 -> f = 0.6 -> 400000/0.6
+        assert new_exposure == int(400000 / 0.6)
+
+    def test_anchor_stop_clamp(self):
+        """Adjustments are clamped to anchor/8 .. anchor*8."""
+        controller = ExposureStarCountController(
+            initial_anchor=50000, max_exposure=10000000
+        )
+        # 4 == min_stars_for_control, so the servo (not the fallback) runs:
+        # ema seeds at 4 -> f = 0.2 -> 50000/0.2 = 250000 < 50000*8, unclamped
+        assert controller.update(4, 50000) == 250000
+        # Now force a huge shortfall repeatedly to hit the anchor clamp:
+        controller = ExposureStarCountController(
+            initial_anchor=50000, max_exposure=10000000, min_stars_for_control=1
+        )
+        # f = 1/20 = 0.05 -> raw 50000/0.05 = 1000000 > anchor*8 = 400000
+        assert controller.update(1, 50000) == 400000
+
+    def test_absolute_clamps(self):
+        """Absolute [min_exposure, max_exposure] clamp binds last."""
+        controller = ExposureStarCountController()
+        # Shortfall from 400000: raw = 400000/0.25=1600000 -> max 1000000
+        new_exposure = controller.update(5, 400000)
+        assert new_exposure == 1000000
+        # Excess from 30000: raw = 30000/8=3750: anchor clamp floors at
+        # 400000//8=50000 first, then min_exposure=25000 does not bind.
+        controller = ExposureStarCountController()
+        new_exposure = controller.update(160, 30000)
+        assert new_exposure == 50000
+
+    def test_few_stars_returns_to_anchor(self):
+        """<4 stars = slewing/blocked: return to anchor, no servo step."""
+        controller = ExposureStarCountController()
+        controller.update(20, 300000)  # learn anchor 300000
+        assert controller.update(2, 100000) == 300000
+        # Already at anchor -> no change
+        assert controller.update(2, 300000) is None
+
+    def test_bright_sky_guard_blocks_increase(self):
+        """Short of stars + bright center ROI: don't raise, go to anchor."""
+        controller = ExposureStarCountController()
+        controller.update(20, 300000)  # anchor = 300000
+        result = controller.update(10, 500000, center_mean=250.0)
+        assert result == 300000  # anchor, not 500000/f
+
+    def test_bright_sky_guard_ignored_when_dark(self):
+        controller = ExposureStarCountController()
+        new_exposure = controller.update(10, 400000, center_mean=20.0)
+        assert new_exposure == int(400000 / 0.5)
+
+    def test_bright_sky_guard_skipped_without_mean(self):
+        """center_mean=None (no image available) skips the guard."""
+        controller = ExposureStarCountController()
+        assert controller.update(10, 400000, center_mean=None) == 800000
+
+    def test_zero_detection_delegates_to_recovery(self):
+        """0 detected -> recovery ladder after the trigger count."""
+        controller = ExposureStarCountController()
+        # First zero: below trigger count, no action
+        assert controller.update(0, 400000) is None
+        # Second zero: recovery activates, first rung
+        assert controller.update(0, 400000) == RECOVERY_LADDER[0]
+        assert controller._recovery.is_active()
+
+    def test_detection_exits_recovery_and_resets_ema(self):
+        """First nonzero detection ends recovery; EMA restarts clean."""
+        controller = ExposureStarCountController()
+        controller.update(20, 400000)  # seed ema
+        controller.update(0, 400000)
+        controller.update(0, 400000)  # recovery active
+        assert controller._recovery.is_active()
+        # Detection returns; 10/20=0.5 must use fresh EMA (10), not blend
+        new_exposure = controller.update(10, 400000)
+        assert not controller._recovery.is_active()
+        assert controller._zero_count == 0
+        assert new_exposure == int(400000 / 0.5)
+
+    def test_low_but_nonzero_does_not_trigger_recovery(self):
+        """1-3 detected stars is a fallback case, never the ladder."""
+        controller = ExposureStarCountController()
+        for _ in range(5):
+            controller.update(1, 400000)
+        assert not controller._recovery.is_active()
+
+    def test_custom_recovery_injected(self):
+        recovery = ZeroMatchRecovery(trigger_count=1)
+        controller = ExposureStarCountController(recovery=recovery)
+        assert controller.update(0, 400000) == RECOVERY_LADDER[0]
+
+    def test_reset_clears_state(self):
+        controller = ExposureStarCountController()
+        controller.update(20, 300000)  # anchor learned
+        controller.update(0, 300000)
+        controller.reset()
+        assert controller._anchor == 400000
+        assert controller._ema is None
+        assert controller._zero_count == 0
+        assert not controller._recovery.is_active()
+
+    def test_excess_above_deadband_decreases(self):
+        """f just above deadband_high still steps down by division."""
+        controller = ExposureStarCountController()
+        # 35/20 = 1.75 > 1.6 -> new = int(400000/1.75)
+        assert controller.update(35, 400000) == int(400000 / 1.75)
+
+    def test_get_status(self):
+        controller = ExposureStarCountController()
+        controller.update(20, 300000)
+        status = controller.get_status()
+        assert status["target_stars"] == 20
+        assert status["ema"] == 20.0
+        assert status["anchor"] == 300000
+        assert status["zero_count"] == 0
+        assert status["recovery_active"] is False
+        assert status["deadband"] == (0.8, 1.6)

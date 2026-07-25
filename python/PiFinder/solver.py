@@ -359,6 +359,7 @@ def _build_successful_solve(
     last_image_metadata: dict,
     last_solve_attempt: float,
     last_solve_success: float,
+    centroid_count: int = 0,
 ) -> SuccessfulSolve:
     """Fold a successful tetra3 ``solution`` dict into a
     :class:`SuccessfulSolve` message.
@@ -391,6 +392,7 @@ def _build_successful_solve(
         last_solve_success=last_solve_success,
         diagnostics=SolveDiagnostics(
             Matches=solution.get("Matches", 0),
+            Centroids=centroid_count,
             RMSE=solution.get("RMSE"),
             Prob=solution.get("Prob"),
             FOV=solution.get("FOV"),
@@ -410,15 +412,20 @@ def _build_failed_solve(
     last_solve_attempt: float,
     last_solve_success,
     t_extract_ms: float,
+    centroid_count: int = 0,
 ) -> FailedSolve:
     """Build a :class:`FailedSolve` message for an attempt that produced
     no pointing. The integrator's long-lived estimate preserves the
-    previous ``solve`` cells so IMU dead-reckoning continues."""
+    previous ``solve`` cells so IMU dead-reckoning continues.
+
+    ``centroid_count`` defaults to 0 for the exception path, where the
+    ``centroids`` list may be stale from a previous loop iteration."""
     return FailedSolve(
         last_solve_attempt=last_solve_attempt,
         last_solve_success=last_solve_success,
         diagnostics=SolveDiagnostics(
             Matches=0,
+            Centroids=centroid_count,
             T_extract=t_extract_ms,
         ),
     )
@@ -596,6 +603,7 @@ def solver(
                             last_image_metadata=last_image_metadata,
                             last_solve_attempt=last_solve_attempt,
                             last_solve_success=last_solve_success,
+                            centroid_count=len(centroids),
                         )
 
                         total_tetra_time = t_extract + (solution.get("T_solve") or 0)
@@ -641,6 +649,7 @@ def solver(
                                 last_solve_attempt=last_solve_attempt,
                                 last_solve_success=last_solve_success,
                                 t_extract_ms=t_extract,
+                                centroid_count=len(centroids),
                             )
                         )
                 except Exception as e:

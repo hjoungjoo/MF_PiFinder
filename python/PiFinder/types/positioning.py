@@ -244,9 +244,16 @@ class SolveDiagnostics:
 
     ``Matches`` defaults to 0 (not ``None``) because auto-exposure reads
     it on every solve, including failures, and expects an int.
+
+    ``Centroids`` is the number of stars cedar-detect extracted from the
+    frame, published on every attempt like ``Matches``. The star-count
+    controller reads it; the difference between the two separates
+    exposure/optics problems (0 detected) from solver-side failures
+    (N detected, 0 matched).
     """
 
     Matches: int = 0
+    Centroids: int = 0
     RMSE: Optional[float] = None
     Prob: Optional[float] = None
     FOV: Optional[float] = None

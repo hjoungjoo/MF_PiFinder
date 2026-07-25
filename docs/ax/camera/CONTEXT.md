@@ -26,12 +26,20 @@ The regime where the user fixes the exposure time. Any manual adjustment (includ
 ### Controllers
 
 **Controller**:
-The feedback loop inside solver-driven auto-exposure that turns the latest solve result into an exposure adjustment. Exactly one of two is active: the **match-count controller** (the default) or the **background controller**.
+The feedback loop inside solver-driven auto-exposure that turns the latest solve result into an exposure adjustment. Exactly one is active: the **match-count controller** (the default), the **star-count controller** (opt-in via `camera_ae_controller`), or the **background controller** (SQM screen only, overrides the other two while active).
 _Avoid_: mode (see flagged ambiguities), algorithm.
 
 **Match-count controller**:
 Drives exposure toward a target `Matches` count, adjusting gently downward and aggressively upward, and holding still inside a deadband around the target. Delegates to zero-match recovery when a solve attempt matches nothing.
 _Avoid_: PID controller, PID mode (the code/wire name — it names the algorithm, not the job).
+
+**Star-count controller**:
+The opt-in alternative to the match-count controller (`camera_ae_controller = "star_count"`, Camera AE menu). Drives exposure toward a target count of **detected centroids** (`Centroids`) with a division step, an asymmetric deadband (act on shortfall below 0.8×, tolerate excess to 1.6×), a bright-sky guard, and a <4-star slewing fallback. Delegates to zero-match recovery only on zero *detections* — a star-filled but unsolvable frame does not walk the ladder. Control law and defaults come from cedar-server's exposure servo.
+_Avoid_: cedar controller (provenance, not the job), detection mode ("mode" is overloaded).
+
+**Anchor exposure**:
+The exposure the star-count controller remembers as known-good: any exposure that lands inside its deadband. Bounds adjustments (±3 stops) and is the fallback target for the slewing/bright-sky cases. Learned while running (no calibration step); resets to the shipped default on restart.
+_Avoid_: calibrated exposure (cedar's one-shot calibration — we deliberately don't have one).
 
 **Background controller**:
 Drives the frame's dark-pixel background to sit just above the noise floor, producing the longer, steadier exposures SQM measurement needs. Active only while the SQM screen is; ignores `Matches` entirely and has no zero-match recovery.
@@ -60,7 +68,8 @@ _Avoid_: AE algo, zero-star handler, handler, plugin.
 
 ### Cross-context terms
 
-- **`Matches`** — defined in [Positioning](../positioning/CONTEXT.md): count of stars tetra3 matched in the most recent solve attempt, published on every attempt (success or failure) because auto-exposure depends on it. The feedback signal for solver-driven auto-exposure.
+- **`Matches`** — defined in [Positioning](../positioning/CONTEXT.md): count of stars tetra3 matched in the most recent solve attempt, published on every attempt (success or failure) because auto-exposure depends on it. The feedback signal for the match-count controller.
+- **`Centroids`** — defined in [Positioning](../positioning/CONTEXT.md): count of stars cedar-detect extracted from the frame, published on every attempt. The feedback signal for the star-count controller; 0 detected vs "N detected, 0 matched" is what lets it keep recovery scoped to exposure problems.
 - **Noise floor** — defined in [SQM](../sqm/CONTEXT.md): the published ADU value below which pixels are treated as empty sky plus sensor noise. Consumed here as the minimum acceptable background.
 
 ## Flagged ambiguities

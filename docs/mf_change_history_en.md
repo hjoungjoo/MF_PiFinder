@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-07-20
+Last updated: 2026-07-25
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -1575,6 +1575,35 @@ sudo systemctl start pifinder
 - Camera and LCD can be checked without going through PiFinder UI or solver.
 - OLED SPI issues can be separated from camera input issues.
 - The selected SSD1351 32MHz value can be revalidated later.
+
+## Auto-exposure — star-count controller option (2026-07-25)
+
+Addressing the structural problems of match-count-driven auto-exposure
+(cause conflation, catalog dependence, no bright-sky guard — see
+[mf_auto_exposure_methods_en.md](mf_auto_exposure_methods_en.md)), a
+cedar-server-style detected-star-count servo was added as an **opt-in
+option**. Existing controllers, recovery, and the default are untouched.
+Design: [mf_auto_exposure_plan_ko.md](mf_auto_exposure_plan_ko.md) (ko),
+decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
+
+- New `python/PiFinder/auto_exposure_starcount.py`:
+  `ExposureStarCountController` (target 20 detected, EMA α=0.5, deadband
+  0.8–1.6, division step, anchor ±3-stop clamp, center-ROI mean>240
+  guard, <4-star anchor fallback, 0 detected → reuses the recovery ladder).
+- `types/positioning.py`: `SolveDiagnostics.Centroids` (published on
+  every attempt).
+- `solver.py`: `centroid_count` wired into both builders (exception path
+  reports 0).
+- `camera_interface.py`: `camera_ae_controller` config load (unknown
+  values fall back), `set_ae_controller:` command, star_count dispatch
+  branch (lazy creation).
+- `default_config.json`: `"camera_ae_controller": "match_count"`.
+- `ui/menu_structure.py` / `ui/callbacks.py`: "Camera AE" menu
+  (Match Count / Star Count) + `set_ae_controller` callback.
+- i18n: 3 new strings translated for de/es/fr/ko/zh (AI-TRANSLATED
+  markers), .mo recompiled.
+- Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
+  suite (754) passing.
 
 ## Documentation Files
 

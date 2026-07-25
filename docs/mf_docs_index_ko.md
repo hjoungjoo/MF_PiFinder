@@ -60,6 +60,8 @@
 | [goto_tracking_recovery_analysis](mf_goto_tracking_recovery_analysis_ko.md) | ko | **1회성**(2026-07-18) | OnStepX GoTo 무동작(wedge) 장애 분석·복구 검증. |
 | [indi_onstep_driver_test_checklist](mf_indi_onstep_driver_test_checklist_ko.md) | ko | **1회성**(2026-07-01) | INDI 드라이버 vs 직접 LX200 사전 검증 기록. |
 | [solve_motion_gate_review](mf_solve_motion_gate_review_ko.md) | 둘 다 | **plan(미구현)** | 노출 중 이동 프레임 솔브 게이트 미배선 검토(협의 대기). |
+| [auto_exposure_methods](mf_auto_exposure_methods_ko.md) | 둘 다 | **조사(완료)** | 자동 노출·게인 제어 방법 조사 — 현행 매치 수 기반의 문제(P1~P7)와 대안(검출 별 수 서보 등) 비교, 권고 초안. |
+| [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **구현 완료(현장 검증 대기)** | 검출 별 수 컨트롤러 설계+구현 — 기존 기능 유지, `camera_ae_controller` 옵션으로 선택(기본 match_count). ADR 0020. |
 | [gps_aiding_plan](mf_gps_aiding_plan_ko.md) | 둘 다 | **plan(구현 전)** | u-blox GPS aiding(MGA-INI/DBD) 설계 초안. |
 
 ## 메타 · 이력 · 프로세스

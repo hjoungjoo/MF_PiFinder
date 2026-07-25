@@ -1,7 +1,7 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
-최종 업데이트: 2026-07-20
+최종 업데이트: 2026-07-25
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
@@ -1407,6 +1407,29 @@ sudo systemctl start pifinder
 - PiFinder UI나 solver를 거치지 않고 LCD와 카메라를 직접 확인할 수 있다.
 - OLED SPI 속도 문제와 카메라 입력 문제를 분리해서 볼 수 있다.
 - 이번 작업에서 결정한 SSD1351 `32MHz` 값을 이후에도 쉽게 재확인할 수 있다.
+
+## 자동 노출 — 검출 별 수 컨트롤러 옵션 (2026-07-25)
+
+기존 매치 수 기반 자동 노출의 구조적 문제(원인 미구분, 카탈로그 의존,
+밝은 하늘 가드 부재 — [mf_auto_exposure_methods_ko.md](mf_auto_exposure_methods_ko.md))
+대응으로, cedar-server 방식의 검출 별 수 서보를 **옵트인 옵션**으로 추가했다.
+기존 컨트롤러/복구/기본값은 무수정 유지. 설계:
+[mf_auto_exposure_plan_ko.md](mf_auto_exposure_plan_ko.md), 결정:
+[ADR 0020](adr/0020-star-count-controller-opt-in.md).
+
+- 신규 `python/PiFinder/auto_exposure_starcount.py`:
+  `ExposureStarCountController` (목표 검출 20, EMA α=0.5, 데드밴드 0.8~1.6,
+  나눗셈 스텝, 앵커 ±3스톱 클램프, 중앙 ROI 평균>240 가드, <4개 앵커 폴백,
+  검출 0 → 기존 사다리 재사용).
+- `types/positioning.py`: `SolveDiagnostics.Centroids` 추가(모든 시도 게시).
+- `solver.py`: 성공/실패 빌더에 `centroid_count` 배선(예외 경로는 0).
+- `camera_interface.py`: `camera_ae_controller` config 로드(무효값 폴백),
+  `set_ae_controller:` 명령, star_count 디스패치 분기(lazy 생성).
+- `default_config.json`: `"camera_ae_controller": "match_count"`.
+- `ui/menu_structure.py`·`ui/callbacks.py`: "Camera AE" 메뉴
+  (Match Count/Star Count) + `set_ae_controller` 콜백.
+- i18n: de/es/fr/ko/zh 신규 3문자열 번역(AI-TRANSLATED 마커), .mo 재컴파일.
+- 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
 ## 문서 파일
 

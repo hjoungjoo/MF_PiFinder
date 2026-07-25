@@ -100,6 +100,16 @@ def set_exposure(ui_module: UIModule) -> None:
     ui_module.command_queues["camera"].put(f"set_exp:{new_exposure}")
 
 
+def set_ae_controller(ui_module: UIModule) -> None:
+    """
+    Send the selected auto-exposure controller (match_count / star_count)
+    to the camera process. The config value is already saved by the menu.
+    """
+    choice = ui_module.config_object.get_option("camera_ae_controller")
+    logger.info("Set AE controller %s", choice)
+    ui_module.command_queues["camera"].put(f"set_ae_controller:{choice}")
+
+
 def _format_gain(gain: float | int | None) -> str:
     if gain is None:
         return ""

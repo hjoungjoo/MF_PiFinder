@@ -1,12 +1,15 @@
 # Camera architecture: exposure control
 
 This document describes how PiFinder decides the camera exposure time —
-the three exposure regimes, the two feedback controllers inside
+the three exposure regimes, the feedback controllers inside
 solver-driven auto-exposure, and zero-match recovery.
 
 It focuses on the runtime path in the camera process:
 
-- `PiFinder/auto_exposure.py` — the controllers and recovery logic.
+- `PiFinder/auto_exposure.py` — the match-count/background controllers
+  and recovery logic.
+- `PiFinder/auto_exposure_starcount.py` — the opt-in star-count
+  controller (see §3b).
 - `PiFinder/camera_interface.py` — `get_image_loop`, the capture loop that
   wires solve results and UI commands into the controllers.
 
@@ -26,6 +29,9 @@ solver process                          camera process (get_image_loop)
                                             ▼
                               ┌─ match-count controller (default)
                               │    └─ Matches == 0 → zero-match recovery
+                              ├─ star-count controller (opt-in via
+                              │  camera_ae_controller = "star_count")
+                              │    └─ Centroids == 0 → zero-match recovery
                               └─ background controller (SQM screen only)
                                    └─ reads shared_state.noise_floor()  ◄── SQM
                                             │
@@ -80,6 +86,45 @@ solver keeps matching a healthy number of stars.
 - **Integral hygiene**: the integral resets when the error changes sign,
   and anti-windup backs out the integral contribution when the output
   clamps to `[min_exposure, max_exposure]` = [25 ms, 1 s].
+
+## 3b. Star-count controller (opt-in)
+
+`ExposureStarCountController` (`auto_exposure_starcount.py`). An
+alternative to the match-count controller, selected with the
+`camera_ae_controller` config option (`"match_count"` default /
+`"star_count"`), the Camera AE menu, or the `set_ae_controller:` camera
+command. The choice only swaps which controller runs in the default
+branch — the background controller still takes over while the SQM screen
+is active, and all regime transitions are unchanged.
+
+Feedback signal: **`Centroids`** (stars cedar-detect extracted from the
+frame, published on every attempt) instead of `Matches`. That separates
+failure causes the match-count controller cannot: 0 detected is an
+exposure/optics problem (recovery's job); N detected with 0 matched is a
+solver-side failure (recovery must not run).
+
+Control law and defaults follow cedar-server's exposure servo
+(same solver stack, field-proven numbers — see
+`docs/mf_auto_exposure_plan_ko.md`):
+
+- **Target** 20 detected stars, smoothed by an EMA (α = 0.5).
+- **Asymmetric deadband**: act when `ema/target` < 0.8, tolerate excess
+  up to 1.6.
+- **Division step**: `new = current / (ema/target)` — star count is
+  roughly proportional to exposure, so one step converges in a few
+  solves. No PID state.
+- **Anchor**: any exposure landing inside the deadband is remembered as
+  known-good. Adjustments clamp to anchor ±3 stops, then to the absolute
+  [25 ms, 1 s] range. The anchor is also the fallback target and resets
+  to 400 ms (the shipped default) on restart.
+- **Bright-sky guard**: short of stars but center-ROI mean > 240
+  (8-bit) → return to anchor instead of raising exposure.
+- **Slewing fallback**: fewer than 4 detected stars → return to anchor,
+  no servo step, no recovery.
+- **Zero-detection recovery**: `Centroids == 0` walks the same recovery
+  ladder (`ZeroMatchRecovery` instance of its own), triggered after 2
+  consecutive zero-detection attempts. Exiting recovery clears the EMA
+  so the excursion doesn't bias the next step.
 
 ## 4. Zero-match recovery
 
@@ -161,10 +206,20 @@ for offline analysis. Auto-exposure is disabled for the duration.
   either controller.
 - **Controller choice is screen-scoped, in-memory only.** A restart while
   the SQM screen was last active comes back in match-count mode.
+- **Two different "controller choices" exist.** The pid/snr split
+  (`set_ae_mode`) is the screen-scoped, non-persisted SQM override above.
+  The match-count/star-count split (`camera_ae_controller`,
+  `set_ae_controller`) is a persisted user option and only decides which
+  controller runs in the default (non-SQM) branch. The AE gate still
+  requires `_auto_exposure_pid` to exist even when star_count is
+  selected — the match-count controller object is always created.
 - **Failed solves drive feedback.** `CAM_FAILED` results carry
   `Matches = 0` into the controller; that is what makes zero-match
   recovery possible at all, but it also means solver-side failures look
-  identical to darkness from the camera's point of view.
+  identical to darkness from the camera's point of view. This conflation
+  is specific to the match-count controller — the star-count controller
+  reads `Centroids` and does not walk the ladder while stars are still
+  being detected (§3b).
 - **Zero `Matches` ≠ empty frame.** A star-filled but unsolvable frame
   (defocus, motion, distortion) walks the same recovery path. By ADR 0010
   recovery does not try to fix those — expect ladder cycling until the

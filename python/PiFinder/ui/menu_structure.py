@@ -1013,6 +1013,24 @@ pifinder_menu = {
                     ],
                 },
                 {
+                    "name": _("Camera AE"),
+                    "class": UITextMenu,
+                    "select": "single",
+                    "config_option": "camera_ae_controller",
+                    "label": "camera_ae_controller",
+                    "post_callback": callbacks.set_ae_controller,
+                    "items": [
+                        {
+                            "name": _("Match Count"),
+                            "value": "match_count",
+                        },
+                        {
+                            "name": _("Star Count"),
+                            "value": "star_count",
+                        },
+                    ],
+                },
+                {
                     "name": _("Camera Gain"),
                     "class": UITextMenu,
                     "select": "single",

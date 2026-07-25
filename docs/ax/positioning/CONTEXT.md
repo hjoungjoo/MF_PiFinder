@@ -115,6 +115,10 @@ _Avoid_: empty PointingEstimate, hollow estimate, clearing the estimate on failu
 Count of stars tetra3 matched in the most recent solve attempt. Published on every attempt (success or failure) because auto-exposure depends on it.
 _Avoid_: matched stars, hit count.
 
+**`Centroids`**:
+Count of stars cedar-detect extracted from the frame in the most recent solve attempt. Published on every attempt like `Matches`; the star-count controller (Camera context) reads it. The pair separates failure causes: 0 detected = exposure/optics problem, N detected with 0 matched = solver-side failure. Defaults to 0 on the solver's exception path, where the centroid list may be stale.
+_Avoid_: detected stars (unqualified — say detected centroids), star count (that names the controller).
+
 **`RMSE`**:
 Tetra3 residual in pixels for the most recent solve. Diagnostic only.
 _Avoid_: error, residual.
