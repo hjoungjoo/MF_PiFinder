@@ -1631,6 +1631,47 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.
 
+## LiveCam camera settings are committed (2026-07-25)
+
+Exposure/gain changed on the LiveCam page reverted after navigating to
+another page and back. Three causes; the first is the root one.
+
+- `config.py` — cross-process config clobbering (root cause).
+  `config.json` is shared by the main/UI, camera and web processes, each
+  holding a `Config` loaded at its own start. `set_option()` dumped that
+  in-memory snapshot over the file, so saving one setting reverted every
+  key another process had changed since (the camera process saving
+  `camera_exp` undid the LiveCam settings the web UI had just written).
+  Writes now re-read and merge the current file first
+  (`_refresh_from_disk()`), and are written to a temp file and renamed
+  (`os.replace()`) so no reader sees a half-written config.
+  `reset_filters()` merges the same way. A corrupt file keeps the
+  in-memory copy, so one write can never turn into a full reset.
+- `camera_interface.py` — Auto exposure modes were never saved.
+  Only manual exposures were written to `camera_exp`;
+  `set_exp:auto`/`auto_star` was not, so the config and both UIs kept
+  showing the previous manual value while the camera ran auto, and the
+  choice was lost on restart. Auto modes are now recorded
+  (`set_exp:native` stays unsaved — it is the temporary daytime-align
+  mode).
+- `camera_interface.py` — gain was not persisted at all. `set_gain` only
+  changed the runtime value, so every restart fell back to the camera
+  profile default. The requested value is now saved to `camera_gain`
+  ("profile" stays a reference rather than a number, so another camera
+  keeps its own default) and reapplied at startup by
+  `restore_saved_gain()`. `exp_save`'s `int(self.gain)` truncation fixed
+  to store the float.
+- `api_extensions.py` / `views/livecam.html`: `/api/camera/controls` also
+  reports the gain `requested` (config), and the page hydrates its
+  controls from that committed value instead of the last frame's applied
+  gain (which made the control snap back before a new frame landed).
+- Tests: new `tests/test_config.py` (7: cross-process merge, atomic
+  write, corrupt file), 4 gain-restore tests in
+  `tests/test_camera_interface.py`; full unit suite (765) passing.
+  On-device: after a service restart `auto_star` + 8x gain survive, the
+  camera actually applies 8x (not the 30x profile), and a camera-side
+  save keeps the LiveCam `low_percentile`.
+
 ## Documentation Files
 
 ### `docs/mf_bookworm_install_ko.md`

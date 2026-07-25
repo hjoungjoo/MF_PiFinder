@@ -26,6 +26,7 @@ from PiFinder.auto_exposure import (
     generate_exposure_sweep,
 )
 from PiFinder.auto_exposure_starcount import ExposureStarCountController
+from PiFinder.camera_controls import GAIN_PROFILE
 from PiFinder.sqm.camera_profiles import detect_camera_type
 from PiFinder.livecam_config import settings_from_config
 
@@ -63,6 +64,10 @@ class CameraInterface:
     # frame decline to start a second, concurrent capture on a camera that is
     # not thread-safe.
     _capture_thread: Optional[threading.Thread] = None
+    # Live camera settings, owned by each backend's __init__ but declared here
+    # because the shared command loop reads and writes them.
+    exposure_time: float
+    gain: float
 
     def set_native_ae(self, enabled: bool) -> bool:
         """Enable/disable the camera's native (driver) auto-exposure.
@@ -79,6 +84,30 @@ class CameraInterface:
         if profile is not None and hasattr(profile, "analog_gain"):
             return float(profile.analog_gain)
         return float(getattr(self, "gain", 1.0))
+
+    def restore_saved_gain(self, cfg) -> Optional[float]:
+        """Apply the saved ``camera_gain`` on startup.
+
+        Gain is a global camera setting the Camera Gain menu and the web
+        LiveCam page both write, so a saved value has to survive a restart
+        instead of dropping back to the camera profile default. ``"profile"``
+        (or no saved value) means "whatever this camera's profile says", which
+        is what the backend already started with.
+
+        Returns the applied gain, or None when the profile default is kept.
+        """
+        saved = cfg.get_option("camera_gain")
+        if saved is None or saved == GAIN_PROFILE:
+            return None
+        try:
+            gain = float(saved)
+        except (TypeError, ValueError):
+            logger.warning("Ignoring invalid camera_gain %r", saved)
+            return None
+
+        self.exposure_time, self.gain = self.set_camera_config(self.exposure_time, gain)
+        logger.info(f"Gain restored from config: {self.gain:g}x")
+        return self.gain
 
     def initialize(self) -> None:
         pass
@@ -203,6 +232,8 @@ class CameraInterface:
                 else:
                     self._auto_exposure_pid.reset()
                 logger.info(f"Auto-exposure mode enabled from config ({config_exp})")
+
+            self.restore_saved_gain(cfg)
 
             screen_direction = cfg.get_option("screen_direction")
             camera_rotation = cfg.get_option("camera_rotation")
@@ -452,6 +483,12 @@ class CameraInterface:
                                     self._auto_exposure_pid.reset()
                                 if self._auto_exposure_star is not None:
                                     self._auto_exposure_star.reset()
+                                # Record the mode the same way a manual exposure
+                                # is recorded below: the Camera Exp menu and the
+                                # web LiveCam page both read camera_exp back to
+                                # show what is in effect, and the loop above
+                                # restores it on the next start.
+                                cfg.set_option("camera_exp", exp_value)
                                 if exp_value == "auto_star":
                                     console_queue.put("CAM: Auto-Exp (Star)")
                                 else:
@@ -505,6 +542,15 @@ class CameraInterface:
                             self.exposure_time, self.gain = self.set_camera_config(
                                 self.exposure_time, self.gain
                             )
+                            # Persist what was asked for, not the applied float:
+                            # "profile" has to stay a profile reference so a
+                            # different camera keeps using its own default.
+                            cfg.set_option(
+                                "camera_gain",
+                                GAIN_PROFILE
+                                if gain_value == GAIN_PROFILE
+                                else self.gain,
+                            )
                             gain_text = f"{self.gain:g}"
                             console_queue.put("CAM: Gain=" + gain_text)
                             logger.info(f"Gain changed: {old_gain:g}x → {gain_text}x")
@@ -538,7 +584,7 @@ class CameraInterface:
                             # Saving exposure disables auto-exposure and locks to current value
                             self._auto_exposure_enabled = False
                             cfg.set_option("camera_exp", self.exposure_time)
-                            cfg.set_option("camera_gain", int(self.gain))
+                            cfg.set_option("camera_gain", self.gain)
                             console_queue.put(
                                 f"CAM: Exp Saved ({self.exposure_time}µs)"
                             )

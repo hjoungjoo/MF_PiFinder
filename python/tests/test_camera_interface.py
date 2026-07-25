@@ -7,7 +7,7 @@ without ever overlapping two captures on a non-thread-safe camera.
 """
 
 import threading
-from typing import Optional
+from typing import Optional, Tuple
 
 import pytest
 from PIL import Image
@@ -120,3 +120,64 @@ class TestCaptureWithTimeout:
         assert cam.capture_calls == 2
         assert cam._capture_thread is not wedged_thread
         assert cam._capture_thread is None
+
+
+class _GainCamera(CameraInterface):
+    """A CameraInterface that records what set_camera_config() was handed."""
+
+    def __init__(self, profile_gain: float = 30.0):
+        self.exposure_time = 400000
+        self.gain = profile_gain
+        self._profile_gain = profile_gain
+        self.applied: list = []
+
+    def get_default_gain(self) -> float:
+        return self._profile_gain
+
+    def set_camera_config(
+        self, exposure_time: float, gain: float
+    ) -> Tuple[float, float]:
+        self.applied.append((exposure_time, gain))
+        return exposure_time, gain
+
+
+class _FakeConfig:
+    def __init__(self, values: dict):
+        self._values = values
+
+    def get_option(self, option, default=None):
+        return self._values.get(option, default)
+
+
+@pytest.mark.unit
+class TestRestoreSavedGain:
+    """The saved gain has to come back after a restart.
+
+    Gain is a global camera setting the Camera Gain menu and the web LiveCam
+    page both write; before this it lived only in the camera process, so every
+    restart silently reverted it to the camera profile default.
+    """
+
+    def test_saved_gain_is_applied(self):
+        cam = _GainCamera()
+        assert cam.restore_saved_gain(_FakeConfig({"camera_gain": 4})) == 4.0
+        assert cam.gain == 4.0
+        assert cam.applied == [(400000, 4.0)]
+
+    def test_profile_keeps_backend_default(self):
+        """A "profile" value is a reference, not a number: leave the backend alone."""
+        cam = _GainCamera()
+        assert cam.restore_saved_gain(_FakeConfig({"camera_gain": "profile"})) is None
+        assert cam.gain == 30.0
+        assert cam.applied == []
+
+    def test_missing_value_keeps_backend_default(self):
+        cam = _GainCamera()
+        assert cam.restore_saved_gain(_FakeConfig({})) is None
+        assert cam.applied == []
+
+    def test_invalid_value_is_ignored(self):
+        cam = _GainCamera()
+        assert cam.restore_saved_gain(_FakeConfig({"camera_gain": "bogus"})) is None
+        assert cam.gain == 30.0
+        assert cam.applied == []

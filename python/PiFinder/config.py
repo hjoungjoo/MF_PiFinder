@@ -96,12 +96,59 @@ class Config:
         """
         self.set_option("locations", self.locations.to_dict())
 
+    def _read_config_file(self) -> dict:
+        """
+        Current on-disk config, or {} when it is missing/unreadable
+        """
+        try:
+            with open(self.config_file_path, "r") as config_file:
+                on_disk = json.load(config_file)
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as e:
+            # A partially written or corrupt file: better to keep what we have
+            # in memory than to throw away every setting.
+            logger.warning("Could not read config %s: %s", self.config_file_path, e)
+            return dict(self._config_dict)
+        return on_disk if isinstance(on_disk, dict) else {}
+
+    def _refresh_from_disk(self) -> None:
+        """
+        Pull in config keys other processes wrote since we loaded
+
+        config.json is shared by the main/UI, camera and web processes, each
+        holding its own Config instance loaded at startup. Writing our own
+        in-memory copy back would revert every key another process changed in
+        the meantime (e.g. the camera process saving camera_exp used to undo
+        the LiveCam settings the web UI had just written). Everything this
+        process changed is already on disk, so the file is the newer state.
+        """
+        on_disk = self._read_config_file()
+        if on_disk:
+            self._config_dict = on_disk
+
     def dump_config(self):
         """
         Write config to config file
+
+        Writes to a temporary file and renames it into place so a reader in
+        another process never sees a half-written config.json.
         """
-        with open(self.config_file_path, "w") as config_file:
-            json.dump(self._config_dict, config_file, indent=4)
+        tmp_path = self.config_file_path.with_name(
+            f"{self.config_file_path.name}.{os.getpid()}.tmp"
+        )
+        try:
+            with open(tmp_path, "w") as config_file:
+                json.dump(self._config_dict, config_file, indent=4)
+                config_file.flush()
+                os.fsync(config_file.fileno())
+            os.replace(tmp_path, self.config_file_path)
+        except OSError:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def set_option(self, option, value):
         if option.startswith("session."):
@@ -120,6 +167,9 @@ class Config:
             self.save_locations()
 
         else:
+            # Merge onto the current file rather than over it: another process
+            # may have changed unrelated keys since we loaded.
+            self._refresh_from_disk()
             self._config_dict[option] = value
             self.dump_config()
 
@@ -147,6 +197,7 @@ class Config:
         config dict and writes it out.
         Effectively resetting filters to default
         """
+        self._refresh_from_disk()
         keys_to_remove = []
         for _k in self._config_dict:
             if _k.startswith("filter."):

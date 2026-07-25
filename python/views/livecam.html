@@ -581,10 +581,18 @@ function hydrateCameraControls(data) {
     cameraControls.exposureUs.value = exposure.requested ?? exposure.actual_us ?? '';
   }
 
-  // The runtime gain is not persisted anywhere, so the applied value from the
-  // last frame is the only reading available.
-  const actualGain = gain.actual;
+  // Prefer the saved request over the last frame's applied gain: the camera
+  // needs a frame or two to catch up, and the applied value drifts (driver
+  // clamping), which would make the control snap back to a value the user did
+  // not choose.
   const profileGain = gain.profile_gain;
+  if (gain.requested === 'profile') {
+    cameraControls.gainSelect.value = 'profile';
+    cameraControls.gainValue.value = profileGain ?? gain.actual ?? '';
+    syncCameraInputState();
+    return;
+  }
+  const actualGain = gain.requested ?? gain.actual;
   if (actualGain === null || actualGain === undefined) {
     cameraControls.gainSelect.value = 'profile';
     cameraControls.gainValue.value = profileGain ?? '';
