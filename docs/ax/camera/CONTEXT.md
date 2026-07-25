@@ -26,7 +26,7 @@ The regime where the user fixes the exposure time. Any manual adjustment (includ
 ### Controllers
 
 **Controller**:
-The feedback loop inside solver-driven auto-exposure that turns the latest solve result into an exposure adjustment. Exactly one is active: the **match-count controller** (the default), the **star-count controller** (opt-in via `camera_ae_controller`), or the **background controller** (SQM screen only, overrides the other two while active).
+The feedback loop inside solver-driven auto-exposure that turns the latest solve result into an exposure adjustment. Exactly one is active: the **match-count controller** (Camera Exp "Auto", the default), the **star-count controller** (Camera Exp "Auto Star"), or the **background controller** (SQM screen only, overrides the other two while active).
 _Avoid_: mode (see flagged ambiguities), algorithm.
 
 **Match-count controller**:
@@ -34,7 +34,7 @@ Drives exposure toward a target `Matches` count, adjusting gently downward and a
 _Avoid_: PID controller, PID mode (the code/wire name — it names the algorithm, not the job).
 
 **Star-count controller**:
-The opt-in alternative to the match-count controller (`camera_ae_controller = "star_count"`, Camera AE menu). Drives exposure toward a target count of **detected centroids** (`Centroids`) with a division step, an asymmetric deadband (act on shortfall below 0.8×, tolerate excess to 1.6×), a bright-sky guard, and a <4-star slewing fallback. Delegates to zero-match recovery only on zero *detections* — a star-filled but unsolvable frame does not walk the ladder. Control law and defaults come from cedar-server's exposure servo.
+The opt-in alternative to the match-count controller (Camera Exp menu "Auto Star", `camera_exp = "auto_star"` — a sibling of "Auto", so it is reachable from the focus screen's marking menu). Drives exposure toward a target count of **detected centroids** (`Centroids`) with a division step, an asymmetric deadband (act on shortfall below 0.8×, tolerate excess to 1.6×), a bright-sky guard, and a <4-star slewing fallback. Delegates to zero-match recovery only on zero *detections* — a star-filled but unsolvable frame does not walk the ladder. Control law and defaults come from cedar-server's exposure servo.
 _Avoid_: cedar controller (provenance, not the job), detection mode ("mode" is overloaded).
 
 **Anchor exposure**:

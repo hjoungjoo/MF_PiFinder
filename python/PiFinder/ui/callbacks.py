@@ -90,24 +90,15 @@ def activate_debug(ui_module: UIModule) -> None:
 def set_exposure(ui_module: UIModule) -> None:
     """
     Sets exposure to current value in config option
-    Can be either a numeric value (microseconds) or "auto" for auto-exposure
+    Can be a numeric value (microseconds), "auto" for match-count
+    auto-exposure, or "auto_star" for star-count auto-exposure
     """
     new_exposure = ui_module.config_object.get_option("camera_exp")
-    if new_exposure == "auto":
-        logger.info("Set exposure to auto mode")
+    if new_exposure in ("auto", "auto_star"):
+        logger.info("Set exposure to %s mode", new_exposure)
     else:
         logger.info("Set exposure %f", new_exposure)
     ui_module.command_queues["camera"].put(f"set_exp:{new_exposure}")
-
-
-def set_ae_controller(ui_module: UIModule) -> None:
-    """
-    Send the selected auto-exposure controller (match_count / star_count)
-    to the camera process. The config value is already saved by the menu.
-    """
-    choice = ui_module.config_object.get_option("camera_ae_controller")
-    logger.info("Set AE controller %s", choice)
-    ui_module.command_queues["camera"].put(f"set_ae_controller:{choice}")
 
 
 def _format_gain(gain: float | int | None) -> str:
@@ -242,15 +233,16 @@ def capture_exposure_sweep(ui_module: UIModule) -> None:
     ui_module.add_to_stack(sweep_item)
 
 
-def get_camera_exposure_display(ui_module: UIModule) -> str:
+def _camera_exposure_suffix(ui_module: UIModule, auto_value: str) -> str:
     """
     Returns formatted current camera exposure for display.
-    Used to show current value when in auto-exposure mode.
+    Shows the live exposure beside the matching auto menu item
+    ("auto" / "auto_star") while that controller is selected.
     """
     config_exp = ui_module.config_object.get_option("camera_exp")
 
-    # For auto mode, get actual exposure from metadata
-    if config_exp == "auto":
+    # For the selected auto mode, get actual exposure from metadata
+    if config_exp == auto_value:
         try:
             metadata = ui_module.shared_state.last_image_metadata()
             if metadata and "exposure_time" in metadata:
@@ -265,7 +257,7 @@ def get_camera_exposure_display(ui_module: UIModule) -> str:
         return ""
 
     # Format numeric exposure nicely for manual mode
-    if isinstance(config_exp, (int, float)):
+    if auto_value == "auto" and isinstance(config_exp, (int, float)):
         exp_sec = config_exp / 1_000_000
         if exp_sec < 0.1:
             return f" ({int(exp_sec * 1000)}ms)"
@@ -273,6 +265,16 @@ def get_camera_exposure_display(ui_module: UIModule) -> str:
             return f" ({exp_sec:g}s)"
 
     return ""
+
+
+def get_camera_exposure_display(ui_module: UIModule) -> str:
+    """Suffix for the "Auto" (match-count) Camera Exp menu item."""
+    return _camera_exposure_suffix(ui_module, "auto")
+
+
+def get_camera_exposure_star_display(ui_module: UIModule) -> str:
+    """Suffix for the "Auto Star" (star-count) Camera Exp menu item."""
+    return _camera_exposure_suffix(ui_module, "auto_star")
 
 
 def shutdown(ui_module: UIModule) -> None:

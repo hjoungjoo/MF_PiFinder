@@ -295,8 +295,8 @@ def get_images(shared_state, camera_image, command_queue, console_queue, log_que
     cfg = config.Config()
     exposure_time = cfg.get_option("camera_exp")
 
-    # Handle auto-exposure mode: use default value, auto-exposure will adjust
-    if exposure_time == "auto":
+    # Handle auto-exposure modes: use default value, auto-exposure will adjust
+    if exposure_time in ("auto", "auto_star"):
         exposure_time = 400000  # Start with default 400ms
 
     camera_hardware = CameraPI(exposure_time)

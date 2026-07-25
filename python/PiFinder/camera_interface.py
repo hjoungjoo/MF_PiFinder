@@ -46,9 +46,10 @@ class CameraInterface:
     _auto_exposure_enabled = False
     _auto_exposure_mode = "pid"  # "pid" or "snr"
     # Which controller drives the default (non-SQM) branch:
-    # "match_count" (ExposurePIDController, the default) or "star_count"
-    # (ExposureStarCountController). The SQM screen's background controller
-    # ("snr" mode above) takes precedence over this choice while active.
+    # "match_count" (ExposurePIDController, camera_exp "auto") or
+    # "star_count" (ExposureStarCountController, camera_exp "auto_star").
+    # Set by the Camera Exp menu via `set_exp:`. The SQM screen's
+    # background controller ("snr" mode above) takes precedence while active.
     _ae_controller_choice = "match_count"
     _auto_exposure_pid: Optional[ExposurePIDController] = None
     _auto_exposure_snr: Optional[ExposureSNRController] = None
@@ -187,28 +188,21 @@ class CameraInterface:
 
             debug = False
 
-            # Which controller drives the default auto-exposure branch.
-            # Unknown values fall back to match_count (stale-config rule,
-            # same treatment as ADR 0010's retired config values).
-            ae_controller = cfg.get_option("camera_ae_controller", "match_count")
-            if ae_controller not in ("match_count", "star_count"):
-                logger.warning(
-                    f"Unknown camera_ae_controller '{ae_controller}', "
-                    "falling back to match_count"
-                )
-                ae_controller = "match_count"
-            self._ae_controller_choice = ae_controller
-
-            # Check if auto-exposure was previously enabled in config
+            # Check if auto-exposure was previously enabled in config.
+            # "auto" selects the match-count controller, "auto_star" the
+            # star-count controller (both Camera Exp menu items).
             config_exp = cfg.get_option("camera_exp")
-            if config_exp == "auto":
+            if config_exp in ("auto", "auto_star"):
                 self._auto_exposure_enabled = True
+                self._ae_controller_choice = (
+                    "star_count" if config_exp == "auto_star" else "match_count"
+                )
                 self._last_solve_time = None
                 if self._auto_exposure_pid is None:
                     self._auto_exposure_pid = ExposurePIDController()
                 else:
                     self._auto_exposure_pid.reset()
-                logger.info("Auto-exposure mode enabled from config")
+                logger.info(f"Auto-exposure mode enabled from config ({config_exp})")
 
             screen_direction = cfg.get_option("screen_direction")
             camera_rotation = cfg.get_option("camera_rotation")
@@ -440,19 +434,29 @@ class CameraInterface:
 
                         if command.startswith("set_exp"):
                             exp_value = command.split(":")[1]
-                            if exp_value == "auto":
-                                # Enable auto-exposure mode
+                            if exp_value in ("auto", "auto_star"):
+                                # Enable auto-exposure mode. "auto" runs the
+                                # match-count controller, "auto_star" the
+                                # star-count controller.
                                 self._auto_exposure_enabled = True
                                 self._native_ae_enabled = False
                                 self._last_solve_time = None  # Reset solve tracking
+                                self._ae_controller_choice = (
+                                    "star_count"
+                                    if exp_value == "auto_star"
+                                    else "match_count"
+                                )
                                 if self._auto_exposure_pid is None:
                                     self._auto_exposure_pid = ExposurePIDController()
                                 else:
                                     self._auto_exposure_pid.reset()
                                 if self._auto_exposure_star is not None:
                                     self._auto_exposure_star.reset()
-                                console_queue.put("CAM: Auto-Exposure Enabled")
-                                logger.info("Auto-exposure mode enabled")
+                                if exp_value == "auto_star":
+                                    console_queue.put("CAM: Auto-Exp (Star)")
+                                else:
+                                    console_queue.put("CAM: Auto-Exposure Enabled")
+                                logger.info(f"Auto-exposure mode enabled ({exp_value})")
                             elif exp_value == "native":
                                 # Native (driver) auto-exposure for daytime align.
                                 # Disable the solver-driven AE so it doesn't fight
@@ -504,30 +508,6 @@ class CameraInterface:
                             gain_text = f"{self.gain:g}"
                             console_queue.put("CAM: Gain=" + gain_text)
                             logger.info(f"Gain changed: {old_gain:g}x → {gain_text}x")
-
-                        if command.startswith("set_ae_controller"):
-                            choice = command.split(":")[1]
-                            if choice in ("match_count", "star_count"):
-                                self._ae_controller_choice = choice
-                                self._last_solve_time = None
-                                if choice == "star_count":
-                                    if self._auto_exposure_star is None:
-                                        self._auto_exposure_star = (
-                                            ExposureStarCountController()
-                                        )
-                                    else:
-                                        self._auto_exposure_star.reset()
-                                    console_queue.put("CAM: AE=Star Count")
-                                else:
-                                    if self._auto_exposure_pid is not None:
-                                        self._auto_exposure_pid.reset()
-                                    console_queue.put("CAM: AE=Match Count")
-                                logger.info(f"AE controller changed to: {choice}")
-                            else:
-                                logger.warning(
-                                    f"Unknown AE controller: {choice} "
-                                    "(valid: match_count, star_count)"
-                                )
 
                         if command.startswith("set_ae_mode"):
                             mode = command.split(":")[1]

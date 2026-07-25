@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-25 17:13+0900\n"
+"POT-Creation-Date: 2026-07-25 18:46+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -153,7 +153,7 @@ msgstr "Invalid Password"
 msgid "Remote"
 msgstr "Remote"
 
-#: PiFinder/server.py:345 PiFinder/ui/menu_structure.py:1289
+#: PiFinder/server.py:345 PiFinder/ui/menu_structure.py:1276
 msgid "Advanced"
 msgstr "고급"
 
@@ -195,13 +195,13 @@ msgstr "Altitude must be between -1000 and 10000 meters"
 msgid "Error must be between 0 and 10000 meters"
 msgstr "Error must be between 0 and 10000 meters"
 
-#: PiFinder/server.py:648 PiFinder/ui/menu_structure.py:1763
+#: PiFinder/server.py:648 PiFinder/ui/menu_structure.py:1750
 msgid "Restart"
 msgstr "재시작"
 
 #: PiFinder/server.py:669 PiFinder/server.py:678 PiFinder/server.py:682
 #: PiFinder/server.py:686 PiFinder/server.py:1041
-#: PiFinder/ui/menu_structure.py:1610 views/base.html:68 views/base.html:82
+#: PiFinder/ui/menu_structure.py:1597 views/base.html:68 views/base.html:82
 #: views/tools.html:6
 msgid "Tools"
 msgstr "도구"
@@ -225,7 +225,7 @@ msgstr "New passwords do not match"
 #: PiFinder/server.py:711 PiFinder/server.py:722 PiFinder/server.py:739
 #: PiFinder/server.py:821 PiFinder/server.py:877 PiFinder/server.py:890
 #: PiFinder/server.py:963 PiFinder/server.py:976
-#: PiFinder/ui/menu_structure.py:1615 views/base.html:65 views/base.html:79
+#: PiFinder/ui/menu_structure.py:1602 views/base.html:65 views/base.html:79
 #: views/equipment.html:6
 msgid "Equipment"
 msgstr "장비"
@@ -606,7 +606,7 @@ msgstr "새로고침"
 msgid "No BT devices"
 msgstr "BT 장치 없음"
 
-#: PiFinder/ui/bluetooth_keyboard.py:106 PiFinder/ui/menu_structure.py:1519
+#: PiFinder/ui/bluetooth_keyboard.py:106 PiFinder/ui/menu_structure.py:1506
 msgid "Keyboard"
 msgstr "키보드"
 
@@ -639,7 +639,7 @@ msgid "Remove"
 msgstr "제거"
 
 #: PiFinder/ui/bluetooth_keyboard.py:201 PiFinder/ui/menu_structure.py:360
-#: PiFinder/ui/menu_structure.py:1759 PiFinder/ui/menu_structure.py:1772
+#: PiFinder/ui/menu_structure.py:1746 PiFinder/ui/menu_structure.py:1759
 #: PiFinder/ui/software.py:299 PiFinder/ui/software.py:354
 #: PiFinder/ui/software.py:448 PiFinder/ui/sqm_correction.py:70
 #: views/edit_eyepiece.html:54 views/edit_instrument.html:108
@@ -661,18 +661,18 @@ msgstr ""
 msgid "Filters Reset"
 msgstr "필터 초기화"
 
-#: PiFinder/ui/callbacks.py:87 PiFinder/ui/menu_structure.py:1665
+#: PiFinder/ui/callbacks.py:87 PiFinder/ui/menu_structure.py:1652
 msgid "Test Mode"
 msgstr "테스트 모드"
 
-#: PiFinder/ui/callbacks.py:197
+#: PiFinder/ui/callbacks.py:188
 msgid "Config updated"
 msgstr ""
 "GPS config\n"
 "updated"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:203
+#: PiFinder/ui/callbacks.py:194
 msgid ""
 "IMU command\n"
 "unavailable"
@@ -681,29 +681,29 @@ msgstr ""
 "사용 불가"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:210
+#: PiFinder/ui/callbacks.py:201
 msgid "IMU Cal Save"
 msgstr "IMU 보정 저장"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:214
+#: PiFinder/ui/callbacks.py:205
 msgid "IMU Cal Load"
 msgstr "IMU 보정 불러오기"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:218
+#: PiFinder/ui/callbacks.py:209
 msgid "IMU Cal Clear"
 msgstr "IMU 보정 삭제"
 
-#: PiFinder/ui/callbacks.py:282
+#: PiFinder/ui/callbacks.py:284
 msgid "Shutting Down"
 msgstr "종료 중"
 
-#: PiFinder/ui/callbacks.py:291 PiFinder/ui/callbacks.py:406
+#: PiFinder/ui/callbacks.py:293 PiFinder/ui/callbacks.py:408
 msgid "Restarting..."
 msgstr "재시작 중..."
 
-#: PiFinder/ui/callbacks.py:298
+#: PiFinder/ui/callbacks.py:300
 msgid ""
 "Mount Control\n"
 "On"
@@ -711,7 +711,7 @@ msgstr ""
 "마운트 제어\n"
 "켜짐"
 
-#: PiFinder/ui/callbacks.py:298
+#: PiFinder/ui/callbacks.py:300
 msgid ""
 "Mount Control\n"
 "Off"
@@ -719,11 +719,11 @@ msgstr ""
 "마운트 제어\n"
 "꺼짐"
 
-#: PiFinder/ui/callbacks.py:306 PiFinder/ui/indi.py:56
+#: PiFinder/ui/callbacks.py:308 PiFinder/ui/indi.py:56
 msgid "Mount Control Off"
 msgstr "마운트 제어 꺼짐"
 
-#: PiFinder/ui/callbacks.py:311
+#: PiFinder/ui/callbacks.py:313
 msgid ""
 "Mount Control\n"
 "Unavailable"
@@ -732,33 +732,33 @@ msgstr ""
 "사용 불가"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:348
+#: PiFinder/ui/callbacks.py:350
 msgid "Pointing Reset"
 msgstr "좌표 초기화"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:351
+#: PiFinder/ui/callbacks.py:353
 msgid "Reset Failed"
 msgstr "초기화 실패"
 
-#: PiFinder/ui/callbacks.py:411 PiFinder/ui/callbacks.py:417
-#: PiFinder/ui/callbacks.py:423
+#: PiFinder/ui/callbacks.py:413 PiFinder/ui/callbacks.py:419
+#: PiFinder/ui/callbacks.py:425
 msgid "Switching cam"
 msgstr "카메라 전환"
 
-#: PiFinder/ui/callbacks.py:464
+#: PiFinder/ui/callbacks.py:466
 msgid "WiFi to AP"
 msgstr "WiFi AP로"
 
-#: PiFinder/ui/callbacks.py:470
+#: PiFinder/ui/callbacks.py:472
 msgid "WiFi to Client"
 msgstr "WiFi Client로"
 
-#: PiFinder/ui/callbacks.py:476
+#: PiFinder/ui/callbacks.py:478
 msgid "WiFi to AP+STA"
 msgstr "WiFi AP+STA로"
 
-#: PiFinder/ui/callbacks.py:499
+#: PiFinder/ui/callbacks.py:501
 #, python-brace-format
 msgid ""
 "{lat:.2f}, {lon:.2f}\n"
@@ -767,19 +767,19 @@ msgstr ""
 "{lat:.2f}, {lon:.2f}\n"
 "{alt}m alt"
 
-#: PiFinder/ui/callbacks.py:506
+#: PiFinder/ui/callbacks.py:508
 msgid "Location Reset"
 msgstr "위치 초기화"
 
-#: PiFinder/ui/callbacks.py:511
+#: PiFinder/ui/callbacks.py:513
 msgid "Time/Date Reset"
 msgstr "시간/날짜 초기화"
 
-#: PiFinder/ui/callbacks.py:518
+#: PiFinder/ui/callbacks.py:520
 msgid "No location lock"
 msgstr "위치 고정 없음"
 
-#: PiFinder/ui/callbacks.py:532
+#: PiFinder/ui/callbacks.py:534
 #, python-brace-format
 msgid ""
 "Saved\n"
@@ -788,23 +788,23 @@ msgstr ""
 "저장됨\n"
 "{name}"
 
-#: PiFinder/ui/callbacks.py:536 PiFinder/ui/gpsstatus.py:79
+#: PiFinder/ui/callbacks.py:538 PiFinder/ui/gpsstatus.py:79
 #: PiFinder/ui/location_list.py:135 views/location_form.html:6
 #: views/locations.html:117
 msgid "Location Name"
 msgstr "위치 이름"
 
-#: PiFinder/ui/callbacks.py:539 PiFinder/ui/gpsstatus.py:82
+#: PiFinder/ui/callbacks.py:541 PiFinder/ui/gpsstatus.py:82
 #, python-brace-format
 msgid "Loc {number}"
 msgstr "위치 {number}"
 
-#: PiFinder/ui/callbacks.py:570
+#: PiFinder/ui/callbacks.py:572
 #, python-brace-format
 msgid "Time: {time}"
 msgstr "시간: {time}"
 
-#: PiFinder/ui/callbacks.py:588
+#: PiFinder/ui/callbacks.py:590
 #, python-brace-format
 msgid ""
 "{date}\n"
@@ -813,7 +813,7 @@ msgstr ""
 "{date}\n"
 "{time}"
 
-#: PiFinder/ui/callbacks.py:608
+#: PiFinder/ui/callbacks.py:610
 #, python-brace-format
 msgid ""
 "User object created\n"
@@ -822,31 +822,31 @@ msgstr ""
 "User object created\n"
 "{name}"
 
-#: PiFinder/ui/callbacks.py:741
+#: PiFinder/ui/callbacks.py:743
 msgid ""
 "Checking GPS\n"
 "config..."
 msgstr ""
 "Checking GPS\n"
 "config..."
-
-#: PiFinder/ui/callbacks.py:746
-msgid ""
-"GPS config\n"
-"updated"
-msgstr ""
-"GPS config\n"
-"updated"
 
 #: PiFinder/ui/callbacks.py:748
 msgid ""
 "GPS config\n"
+"updated"
+msgstr ""
+"GPS config\n"
+"updated"
+
+#: PiFinder/ui/callbacks.py:750
+msgid ""
+"GPS config\n"
 "OK"
 msgstr ""
 "GPS config\n"
 "OK"
 
-#: PiFinder/ui/callbacks.py:751
+#: PiFinder/ui/callbacks.py:753
 msgid ""
 "GPS config\n"
 "failed"
@@ -1127,7 +1127,7 @@ msgstr "정확"
 msgid "Precise"
 msgstr "정밀"
 
-#: PiFinder/ui/gpsstatus.py:45 PiFinder/ui/menu_structure.py:1592
+#: PiFinder/ui/gpsstatus.py:45 PiFinder/ui/menu_structure.py:1579
 #: PiFinder/ui/sqm_correction.py:71 views/gps.html:77 views/network.html:203
 msgid "Save"
 msgstr "저장"
@@ -1543,8 +1543,8 @@ msgstr "GoTo 전송됨"
 msgid "Point Confirmed"
 msgstr "정렬점 확정"
 
-#: PiFinder/ui/location_list.py:28 PiFinder/ui/menu_structure.py:1596
-#: PiFinder/ui/menu_structure.py:1737
+#: PiFinder/ui/location_list.py:28 PiFinder/ui/menu_structure.py:1583
+#: PiFinder/ui/menu_structure.py:1724
 msgid "Load"
 msgstr "불러오기"
 
@@ -1618,7 +1618,7 @@ msgid "󰍴 Delete  󰐕 E/W"
 msgstr "󰍴 Delete  󰐕 E/W"
 
 #: PiFinder/ui/locationentry.py:312 PiFinder/ui/locationentry.py:324
-#: PiFinder/ui/menu_structure.py:1635
+#: PiFinder/ui/menu_structure.py:1622
 msgid "Enter Coords"
 msgstr "좌표 입력"
 
@@ -1729,7 +1729,7 @@ msgstr "정렬"
 msgid "Align (Day)"
 msgstr "주간정렬"
 
-#: PiFinder/ui/menu_structure.py:76 PiFinder/ui/menu_structure.py:1622
+#: PiFinder/ui/menu_structure.py:76 PiFinder/ui/menu_structure.py:1609
 msgid "GPS Status"
 msgstr "GPS 상태"
 
@@ -1741,7 +1741,7 @@ msgstr "상태"
 msgid "INIT"
 msgstr "초기화"
 
-#: PiFinder/ui/menu_structure.py:98 PiFinder/ui/menu_structure.py:1630
+#: PiFinder/ui/menu_structure.py:98 PiFinder/ui/menu_structure.py:1617
 msgid "Set Location"
 msgstr "위치 설정"
 
@@ -1901,8 +1901,8 @@ msgstr "필터 설정"
 msgid "Reset All"
 msgstr "전체 초기화"
 
-#: PiFinder/ui/menu_structure.py:357 PiFinder/ui/menu_structure.py:1758
-#: PiFinder/ui/menu_structure.py:1769 PiFinder/ui/software.py:354
+#: PiFinder/ui/menu_structure.py:357 PiFinder/ui/menu_structure.py:1745
+#: PiFinder/ui/menu_structure.py:1756 PiFinder/ui/software.py:354
 #: PiFinder/ui/software.py:450
 msgid "Confirm"
 msgstr "확인"
@@ -1954,14 +1954,14 @@ msgstr "절전 시간"
 #: PiFinder/ui/menu_structure.py:723 PiFinder/ui/menu_structure.py:846
 #: PiFinder/ui/menu_structure.py:870 PiFinder/ui/menu_structure.py:894
 #: PiFinder/ui/menu_structure.py:918 PiFinder/ui/menu_structure.py:949
-#: PiFinder/ui/menu_structure.py:965 PiFinder/ui/menu_structure.py:1158
-#: PiFinder/ui/menu_structure.py:1179 PiFinder/ui/menu_structure.py:1196
-#: PiFinder/ui/menu_structure.py:1227 PiFinder/ui/menu_structure.py:1258
-#: PiFinder/ui/menu_structure.py:1275 PiFinder/ui/menu_structure.py:1456
-#: PiFinder/ui/menu_structure.py:1473 PiFinder/ui/menu_structure.py:1490
-#: PiFinder/ui/menu_structure.py:1507 PiFinder/ui/menu_structure.py:1538
-#: PiFinder/ui/menu_structure.py:1577 PiFinder/ui/menu_structure.py:1684
-#: PiFinder/ui/menu_structure.py:1711 PiFinder/ui/menu_structure.py:1727
+#: PiFinder/ui/menu_structure.py:965 PiFinder/ui/menu_structure.py:1145
+#: PiFinder/ui/menu_structure.py:1166 PiFinder/ui/menu_structure.py:1183
+#: PiFinder/ui/menu_structure.py:1214 PiFinder/ui/menu_structure.py:1245
+#: PiFinder/ui/menu_structure.py:1262 PiFinder/ui/menu_structure.py:1443
+#: PiFinder/ui/menu_structure.py:1460 PiFinder/ui/menu_structure.py:1477
+#: PiFinder/ui/menu_structure.py:1494 PiFinder/ui/menu_structure.py:1525
+#: PiFinder/ui/menu_structure.py:1564 PiFinder/ui/menu_structure.py:1671
+#: PiFinder/ui/menu_structure.py:1698 PiFinder/ui/menu_structure.py:1714
 #: views/indi_mount.html:481
 msgid "Off"
 msgstr "끔"
@@ -1976,7 +1976,7 @@ msgstr "빠름"
 
 #: PiFinder/ui/menu_structure.py:707 PiFinder/ui/menu_structure.py:731
 #: PiFinder/ui/menu_structure.py:854 PiFinder/ui/menu_structure.py:878
-#: PiFinder/ui/menu_structure.py:902 PiFinder/ui/menu_structure.py:1556
+#: PiFinder/ui/menu_structure.py:902 PiFinder/ui/menu_structure.py:1543
 msgid "Medium"
 msgstr "보통"
 
@@ -2069,12 +2069,12 @@ msgid "Reticle"
 msgstr "십자선"
 
 #: PiFinder/ui/menu_structure.py:850 PiFinder/ui/menu_structure.py:874
-#: PiFinder/ui/menu_structure.py:898 PiFinder/ui/menu_structure.py:1550
+#: PiFinder/ui/menu_structure.py:898 PiFinder/ui/menu_structure.py:1537
 msgid "Low"
 msgstr "낮음"
 
 #: PiFinder/ui/menu_structure.py:858 PiFinder/ui/menu_structure.py:882
-#: PiFinder/ui/menu_structure.py:906 PiFinder/ui/menu_structure.py:1562
+#: PiFinder/ui/menu_structure.py:906 PiFinder/ui/menu_structure.py:1549
 msgid "High"
 msgstr "높음"
 
@@ -2107,13 +2107,13 @@ msgid "NSEW Labels"
 msgstr "방위 표시"
 
 #: PiFinder/ui/menu_structure.py:945 PiFinder/ui/menu_structure.py:961
-#: PiFinder/ui/menu_structure.py:1183 PiFinder/ui/menu_structure.py:1200
-#: PiFinder/ui/menu_structure.py:1231 PiFinder/ui/menu_structure.py:1262
-#: PiFinder/ui/menu_structure.py:1279 PiFinder/ui/menu_structure.py:1460
-#: PiFinder/ui/menu_structure.py:1477 PiFinder/ui/menu_structure.py:1494
-#: PiFinder/ui/menu_structure.py:1511 PiFinder/ui/menu_structure.py:1581
-#: PiFinder/ui/menu_structure.py:1688 PiFinder/ui/menu_structure.py:1715
-#: PiFinder/ui/menu_structure.py:1731
+#: PiFinder/ui/menu_structure.py:1170 PiFinder/ui/menu_structure.py:1187
+#: PiFinder/ui/menu_structure.py:1218 PiFinder/ui/menu_structure.py:1249
+#: PiFinder/ui/menu_structure.py:1266 PiFinder/ui/menu_structure.py:1447
+#: PiFinder/ui/menu_structure.py:1464 PiFinder/ui/menu_structure.py:1481
+#: PiFinder/ui/menu_structure.py:1498 PiFinder/ui/menu_structure.py:1568
+#: PiFinder/ui/menu_structure.py:1675 PiFinder/ui/menu_structure.py:1702
+#: PiFinder/ui/menu_structure.py:1718
 msgid "On"
 msgstr "켬"
 
@@ -2125,425 +2125,414 @@ msgstr "천체 크기"
 msgid "Camera Exp"
 msgstr "노출"
 
-#: PiFinder/ui/menu_structure.py:981 PiFinder/ui/menu_structure.py:1400
+#: PiFinder/ui/menu_structure.py:981 PiFinder/ui/menu_structure.py:1387
 #: views/indi_mount.html:319 views/indi_mount.html:442 views/network.html:32
 msgid "Auto"
 msgstr "자동"
 
 #: PiFinder/ui/menu_structure.py:986
+# AI-TRANSLATED (claude): needs human review
+msgid "Auto Star"
+msgstr "자동(별 수)"
+
+#: PiFinder/ui/menu_structure.py:991
 msgid "0.025s"
 msgstr "0.025s"
 
-#: PiFinder/ui/menu_structure.py:990
+#: PiFinder/ui/menu_structure.py:995
 msgid "0.05s"
 msgstr "0.05s"
 
-#: PiFinder/ui/menu_structure.py:994
+#: PiFinder/ui/menu_structure.py:999
 msgid "0.1s"
 msgstr "0.1s"
 
-#: PiFinder/ui/menu_structure.py:998
+#: PiFinder/ui/menu_structure.py:1003
 msgid "0.2s"
 msgstr "0.2s"
 
-#: PiFinder/ui/menu_structure.py:1002
+#: PiFinder/ui/menu_structure.py:1007
 msgid "0.4s"
 msgstr "0.4s"
 
-#: PiFinder/ui/menu_structure.py:1006
+#: PiFinder/ui/menu_structure.py:1011
 msgid "0.8s"
 msgstr "0.8s"
 
-#: PiFinder/ui/menu_structure.py:1010
+#: PiFinder/ui/menu_structure.py:1015
 msgid "1s"
 msgstr "1s"
 
-#: PiFinder/ui/menu_structure.py:1016
-# AI-TRANSLATED (claude): needs human review
-msgid "Camera AE"
-msgstr "카메라 AE"
-
-# AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1024
-# AI-TRANSLATED (claude): needs human review
-msgid "Match Count"
-msgstr "매치 수"
-
-#: PiFinder/ui/menu_structure.py:1028
-# AI-TRANSLATED (claude): needs human review
-msgid "Star Count"
-msgstr "검출 별 수"
-
-#: PiFinder/ui/menu_structure.py:1034
+#: PiFinder/ui/menu_structure.py:1021
 msgid "Camera Gain"
 msgstr "Gain"
 
-#: PiFinder/ui/menu_structure.py:1042
+#: PiFinder/ui/menu_structure.py:1029
 msgid "Profile"
 msgstr "Profile"
 
-#: PiFinder/ui/menu_structure.py:1047
+#: PiFinder/ui/menu_structure.py:1034
 msgid "1x"
 msgstr "1x"
 
-#: PiFinder/ui/menu_structure.py:1051
+#: PiFinder/ui/menu_structure.py:1038
 msgid "2x"
 msgstr "2x"
 
-#: PiFinder/ui/menu_structure.py:1055
+#: PiFinder/ui/menu_structure.py:1042
 msgid "4x"
 msgstr "4x"
 
-#: PiFinder/ui/menu_structure.py:1059
+#: PiFinder/ui/menu_structure.py:1046
 msgid "8x"
 msgstr "8x"
 
-#: PiFinder/ui/menu_structure.py:1063
+#: PiFinder/ui/menu_structure.py:1050
 msgid "12x"
 msgstr "12x"
 
-#: PiFinder/ui/menu_structure.py:1067
+#: PiFinder/ui/menu_structure.py:1054
 msgid "15x"
 msgstr "15x"
 
-#: PiFinder/ui/menu_structure.py:1071
+#: PiFinder/ui/menu_structure.py:1058
 msgid "16x"
 msgstr "16x"
 
-#: PiFinder/ui/menu_structure.py:1075
+#: PiFinder/ui/menu_structure.py:1062
 msgid "20x"
 msgstr "20x"
 
-#: PiFinder/ui/menu_structure.py:1079
+#: PiFinder/ui/menu_structure.py:1066
 msgid "22x"
 msgstr "22x"
 
-#: PiFinder/ui/menu_structure.py:1083
+#: PiFinder/ui/menu_structure.py:1070
 msgid "24x"
 msgstr "24x"
 
-#: PiFinder/ui/menu_structure.py:1087
+#: PiFinder/ui/menu_structure.py:1074
 msgid "30x"
 msgstr "30x"
 
-#: PiFinder/ui/menu_structure.py:1093
+#: PiFinder/ui/menu_structure.py:1080
 msgid "WiFi Mode"
 msgstr "WiFi 모드"
 
-#: PiFinder/ui/menu_structure.py:1099
+#: PiFinder/ui/menu_structure.py:1086
 msgid "Client Mode"
 msgstr "Client 모드"
 
-#: PiFinder/ui/menu_structure.py:1104
+#: PiFinder/ui/menu_structure.py:1091
 msgid "AP Mode"
 msgstr "AP 모드"
 
-#: PiFinder/ui/menu_structure.py:1109
+#: PiFinder/ui/menu_structure.py:1096
 msgid "AP+STA Mode"
 msgstr "AP+STA 모드"
 
-#: PiFinder/ui/menu_structure.py:1116 views/edit_instrument.html:61
+#: PiFinder/ui/menu_structure.py:1103 views/edit_instrument.html:61
 #: views/equipment.html:73
 msgid "Mount Type"
 msgstr "가대 종류"
 
-#: PiFinder/ui/menu_structure.py:1123 views/edit_instrument.html:57
+#: PiFinder/ui/menu_structure.py:1110 views/edit_instrument.html:57
 #: views/indi_mount.html:443
 msgid "Alt/Az"
 msgstr "경위대"
 
-#: PiFinder/ui/menu_structure.py:1127 views/edit_instrument.html:58
+#: PiFinder/ui/menu_structure.py:1114 views/edit_instrument.html:58
 msgid "Equatorial"
 msgstr "적도의"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1133
+#: PiFinder/ui/menu_structure.py:1120
 msgid "INDI Setting"
 msgstr "INDI 설정"
 
-#: PiFinder/ui/menu_structure.py:1138
+#: PiFinder/ui/menu_structure.py:1125
 msgid "Multi Align"
 msgstr "멀티 정렬"
 
-#: PiFinder/ui/menu_structure.py:1142 views/indi_mount.html:346
+#: PiFinder/ui/menu_structure.py:1129 views/indi_mount.html:346
 #: views/indi_mount.html:599
 msgid "Backlash"
 msgstr "백래시"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1146
+#: PiFinder/ui/menu_structure.py:1133
 msgid "Goto/Guide"
 msgstr "GoTo/Guide"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1151 views/indi_mount.html:485
+#: PiFinder/ui/menu_structure.py:1138 views/indi_mount.html:485
 msgid "GoTo Type"
 msgstr "GoTo 유형"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1162 views/indi_mount.html:482
+#: PiFinder/ui/menu_structure.py:1149 views/indi_mount.html:482
 msgid "INDI Mount"
 msgstr "INDI 마운트"
 
-#: PiFinder/ui/menu_structure.py:1166 views/indi_mount.html:483
+#: PiFinder/ui/menu_structure.py:1153 views/indi_mount.html:483
 msgid "PiFinder"
 msgstr "PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1172 views/indi_mount.html:496
+#: PiFinder/ui/menu_structure.py:1159 views/indi_mount.html:496
 msgid "Tracking Guide"
 msgstr "추적 가이드"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1189
+#: PiFinder/ui/menu_structure.py:1176
 msgid "GoTo Recovery"
 msgstr "GoTo 복구"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1206
+#: PiFinder/ui/menu_structure.py:1193
 #, fuzzy
 msgid "Recovery Range"
 msgstr "복구"
 
-#: PiFinder/ui/menu_structure.py:1220
+#: PiFinder/ui/menu_structure.py:1207
 msgid "Manual Re-target"
 msgstr "수동 재타겟"
 
-#: PiFinder/ui/menu_structure.py:1237
+#: PiFinder/ui/menu_structure.py:1224
 msgid "Max GoTos"
 msgstr "최대 GoTo 횟수"
 
-#: PiFinder/ui/menu_structure.py:1251
+#: PiFinder/ui/menu_structure.py:1238
 msgid "Invert Guide RA/Az"
 msgstr "가이드 RA/Az 반전"
 
-#: PiFinder/ui/menu_structure.py:1268
+#: PiFinder/ui/menu_structure.py:1255
 msgid "Invert Guide Dec/Alt"
 msgstr "가이드 Dec/Alt 반전"
 
-#: PiFinder/ui/menu_structure.py:1295
+#: PiFinder/ui/menu_structure.py:1282
 msgid "PiFinder Type"
 msgstr "PiFinder형"
 
-#: PiFinder/ui/menu_structure.py:1302
+#: PiFinder/ui/menu_structure.py:1289
 msgid "Left"
 msgstr "왼쪽"
 
-#: PiFinder/ui/menu_structure.py:1306
+#: PiFinder/ui/menu_structure.py:1293
 msgid "Right"
 msgstr "오른쪽"
 
-#: PiFinder/ui/menu_structure.py:1310
+#: PiFinder/ui/menu_structure.py:1297
 msgid "Straight"
 msgstr "직선형"
 
-#: PiFinder/ui/menu_structure.py:1314
+#: PiFinder/ui/menu_structure.py:1301
 msgid "Flat v3"
 msgstr "Flat v3"
 
-#: PiFinder/ui/menu_structure.py:1318
+#: PiFinder/ui/menu_structure.py:1305
 msgid "Flat v2"
 msgstr "Flat v2"
 
-#: PiFinder/ui/menu_structure.py:1322
+#: PiFinder/ui/menu_structure.py:1309
 msgid "AS Bloom"
 msgstr "AS Bloom"
 
-#: PiFinder/ui/menu_structure.py:1328
+#: PiFinder/ui/menu_structure.py:1315
 msgid "Camera Type"
 msgstr "카메라 종류"
 
-#: PiFinder/ui/menu_structure.py:1334
+#: PiFinder/ui/menu_structure.py:1321
 msgid "v2 - imx477"
 msgstr "v2 - imx477"
 
-#: PiFinder/ui/menu_structure.py:1339
+#: PiFinder/ui/menu_structure.py:1326
 msgid "v3 - imx296"
 msgstr "v3 - imx296"
 
-#: PiFinder/ui/menu_structure.py:1344
+#: PiFinder/ui/menu_structure.py:1331
 msgid "v3 - imx462"
 msgstr "v3 - imx462"
 
-#: PiFinder/ui/menu_structure.py:1351 views/gps.html:6
+#: PiFinder/ui/menu_structure.py:1338 views/gps.html:6
 msgid "GPS Settings"
 msgstr "GPS 설정"
 
-#: PiFinder/ui/menu_structure.py:1356
+#: PiFinder/ui/menu_structure.py:1343
 msgid "GPS Type"
 msgstr "GPS 종류"
 
-#: PiFinder/ui/menu_structure.py:1364
+#: PiFinder/ui/menu_structure.py:1351
 msgid "UBlox"
 msgstr "UBlox"
 
-#: PiFinder/ui/menu_structure.py:1368
+#: PiFinder/ui/menu_structure.py:1355
 msgid "GPSD (generic)"
 msgstr "GPSD"
 
-#: PiFinder/ui/menu_structure.py:1374
+#: PiFinder/ui/menu_structure.py:1361
 msgid "GPS Baud Rate"
 msgstr "GPS Baud"
 
-#: PiFinder/ui/menu_structure.py:1382
+#: PiFinder/ui/menu_structure.py:1369
 msgid "9600 (standard)"
 msgstr "9600 (standard)"
 
-#: PiFinder/ui/menu_structure.py:1386
+#: PiFinder/ui/menu_structure.py:1373
 msgid "115200 (UBlox-10)"
 msgstr "115200 (UBlox-10)"
 
-#: PiFinder/ui/menu_structure.py:1392
+#: PiFinder/ui/menu_structure.py:1379
 msgid "GPS Port"
 msgstr "GPS 포트"
 
-#: PiFinder/ui/menu_structure.py:1404
+#: PiFinder/ui/menu_structure.py:1391
 msgid "ttyAMA1"
 msgstr "ttyAMA1"
 
-#: PiFinder/ui/menu_structure.py:1408
+#: PiFinder/ui/menu_structure.py:1395
 msgid "ttyAMA2"
 msgstr "ttyAMA2"
 
-#: PiFinder/ui/menu_structure.py:1412
+#: PiFinder/ui/menu_structure.py:1399
 msgid "ttyAMA3"
 msgstr "ttyAMA3"
 
-#: PiFinder/ui/menu_structure.py:1416
+#: PiFinder/ui/menu_structure.py:1403
 msgid "serial0"
 msgstr "serial0"
 
-#: PiFinder/ui/menu_structure.py:1420
+#: PiFinder/ui/menu_structure.py:1407
 msgid "ttyAMA0"
 msgstr "ttyAMA0"
 
-#: PiFinder/ui/menu_structure.py:1424
+#: PiFinder/ui/menu_structure.py:1411
 msgid "ttyAMA10"
 msgstr "ttyAMA10"
 
-#: PiFinder/ui/menu_structure.py:1428
+#: PiFinder/ui/menu_structure.py:1415
 msgid "ttyS0"
 msgstr "ttyS0"
 
-#: PiFinder/ui/menu_structure.py:1432
+#: PiFinder/ui/menu_structure.py:1419
 msgid "ttyACM0"
 msgstr "ttyACM0"
 
-#: PiFinder/ui/menu_structure.py:1436
+#: PiFinder/ui/menu_structure.py:1423
 msgid "ttyUSB0"
 msgstr "ttyUSB0"
 
-#: PiFinder/ui/menu_structure.py:1444 PiFinder/ui/menu_structure.py:1449
-#: PiFinder/ui/menu_structure.py:1626
+#: PiFinder/ui/menu_structure.py:1431 PiFinder/ui/menu_structure.py:1436
+#: PiFinder/ui/menu_structure.py:1613
 msgid "Time Sync"
 msgstr "시간 동기화"
 
-#: PiFinder/ui/menu_structure.py:1466
+#: PiFinder/ui/menu_structure.py:1453
 msgid "Chrony Source"
 msgstr "Chrony 소스"
 
-#: PiFinder/ui/menu_structure.py:1483
+#: PiFinder/ui/menu_structure.py:1470
 msgid "GPS Source"
 msgstr "GPS 소스"
 
-#: PiFinder/ui/menu_structure.py:1500
+#: PiFinder/ui/menu_structure.py:1487
 msgid "RTC Sync"
 msgstr "RTC 동기화"
 
-#: PiFinder/ui/menu_structure.py:1526
+#: PiFinder/ui/menu_structure.py:1513
 msgid "IMU Settings"
 msgstr "IMU 설정"
 
-#: PiFinder/ui/menu_structure.py:1531
+#: PiFinder/ui/menu_structure.py:1518
 msgid "Sensitivity"
 msgstr "감도"
 
-#: PiFinder/ui/menu_structure.py:1544
+#: PiFinder/ui/menu_structure.py:1531
 msgid "Very Low"
 msgstr "아주 낮음"
 
-#: PiFinder/ui/menu_structure.py:1570
+#: PiFinder/ui/menu_structure.py:1557
 msgid "Compass"
 msgstr "나침반"
 
-#: PiFinder/ui/menu_structure.py:1587
+#: PiFinder/ui/menu_structure.py:1574
 msgid "Calibration"
 msgstr "캘리브레이션"
 
-#: PiFinder/ui/menu_structure.py:1600
+#: PiFinder/ui/menu_structure.py:1587
 msgid "Clear"
 msgstr "지우기"
 
-#: PiFinder/ui/menu_structure.py:1614 views/livecam.html:263
+#: PiFinder/ui/menu_structure.py:1601 views/livecam.html:263
 #: views/network.html:116
 msgid "Status"
 msgstr "상태"
 
-#: PiFinder/ui/menu_structure.py:1617
+#: PiFinder/ui/menu_structure.py:1604
 msgid "Place & Time"
 msgstr "위치/시간"
 
-#: PiFinder/ui/menu_structure.py:1639 views/locations.html:86
+#: PiFinder/ui/menu_structure.py:1626 views/locations.html:86
 msgid "Load Location"
 msgstr "위치 불러오기"
 
-#: PiFinder/ui/menu_structure.py:1643 views/location_form.html:105
+#: PiFinder/ui/menu_structure.py:1630 views/location_form.html:105
 msgid "Save Location"
 msgstr "위치 저장"
 
-#: PiFinder/ui/menu_structure.py:1649
+#: PiFinder/ui/menu_structure.py:1636
 msgid "Set Time/Date"
 msgstr "시간/날짜"
 
-#: PiFinder/ui/menu_structure.py:1656
+#: PiFinder/ui/menu_structure.py:1643
 msgid "Reset Location"
 msgstr "위치 초기화"
 
-#: PiFinder/ui/menu_structure.py:1658
+#: PiFinder/ui/menu_structure.py:1645
 msgid "Reset Time/Date"
 msgstr "시간 초기화"
 
-#: PiFinder/ui/menu_structure.py:1663
+#: PiFinder/ui/menu_structure.py:1650
 msgid "Console"
 msgstr "Console"
 
-#: PiFinder/ui/menu_structure.py:1664
+#: PiFinder/ui/menu_structure.py:1651
 msgid "Software Upd"
 msgstr "SW 업데이트"
 
-#: PiFinder/ui/menu_structure.py:1667
+#: PiFinder/ui/menu_structure.py:1654
 msgid "Experimental"
 msgstr "실험적"
 
-#: PiFinder/ui/menu_structure.py:1672
+#: PiFinder/ui/menu_structure.py:1659
 msgid "Polar Align"
 msgstr "극축정렬"
 
-#: PiFinder/ui/menu_structure.py:1677 views/indi_mount.html:226
+#: PiFinder/ui/menu_structure.py:1664 views/indi_mount.html:226
 msgid "Mount Control"
 msgstr "마운트 제어"
 
-#: PiFinder/ui/menu_structure.py:1694
+#: PiFinder/ui/menu_structure.py:1681
 msgid "Dev Tools"
 msgstr "개발도구"
 
-#: PiFinder/ui/menu_structure.py:1699
+#: PiFinder/ui/menu_structure.py:1686
 msgid "Telemetry"
 msgstr "Telemetry"
 
-#: PiFinder/ui/menu_structure.py:1704
+#: PiFinder/ui/menu_structure.py:1691
 msgid "Record"
 msgstr "기록"
 
-#: PiFinder/ui/menu_structure.py:1721
+#: PiFinder/ui/menu_structure.py:1708
 msgid "Images"
 msgstr "이미지"
 
-#: PiFinder/ui/menu_structure.py:1747
+#: PiFinder/ui/menu_structure.py:1734
 msgid "Power"
 msgstr "전원"
 
-#: PiFinder/ui/menu_structure.py:1753
+#: PiFinder/ui/menu_structure.py:1740
 msgid "Shutdown"
 msgstr "종료"
 
@@ -5654,4 +5643,16 @@ msgstr ""
 
 #~ msgid "Software PPS"
 #~ msgstr "소프트웨어 PPS"
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "Camera AE"
+#~ msgstr "카메라 AE"
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "Match Count"
+#~ msgstr "매치 수"
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "Star Count"
+#~ msgstr "검출 별 수"
 

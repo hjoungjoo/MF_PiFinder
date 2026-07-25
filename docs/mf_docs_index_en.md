@@ -63,7 +63,7 @@ Last updated: 2026-07-25. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | [indi_onstep_driver_test_checklist](mf_indi_onstep_driver_test_checklist_ko.md) | ko | **one-time** (2026-07-01) | INDI driver vs raw LX200 pre-integration verification record. |
 | [solve_motion_gate_review](mf_solve_motion_gate_review_en.md) | both | **plan (unbuilt)** | Unwired solve gate for frames exposed during motion (pending decision). |
 | [auto_exposure_methods](mf_auto_exposure_methods_en.md) | both | **survey (done)** | Survey of auto exposure/gain control methods — problems of the current match-count approach (P1–P7), alternatives (detected-star-count servo etc.), draft recommendation. |
-| [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **implemented (field validation pending)** | Detected-star-count controller design+implementation — existing behavior kept, selected via new `camera_ae_controller` option (default match_count). ADR 0020. |
+| [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **implemented (field validation pending)** | Detected-star-count controller design+implementation — existing behavior kept, selected via the Camera Exp menu's "Auto Star" item (`camera_exp=auto_star`). ADR 0020. |
 | [gps_aiding_plan](mf_gps_aiding_plan_en.md) | both | **plan (pre-impl)** | u-blox GPS aiding (MGA-INI/DBD) design draft. |
 
 ## Meta · history · process

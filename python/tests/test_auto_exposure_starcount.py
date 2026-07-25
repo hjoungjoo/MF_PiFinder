@@ -4,7 +4,7 @@
 Unit tests for auto_exposure_starcount.py - the star-count controller.
 
 The star-count controller is the opt-in alternative to the match-count
-controller (camera_ae_controller = "star_count"): feedback comes from
+controller (camera_exp = "auto_star"): feedback comes from
 detected centroids instead of catalog matches, with a bright-sky guard,
 a slewing fallback, and an anchor learned in the deadband.
 See docs/mf_auto_exposure_plan_ko.md.

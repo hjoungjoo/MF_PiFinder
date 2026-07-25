@@ -1423,12 +1423,13 @@ sudo systemctl start pifinder
   검출 0 → 기존 사다리 재사용).
 - `types/positioning.py`: `SolveDiagnostics.Centroids` 추가(모든 시도 게시).
 - `solver.py`: 성공/실패 빌더에 `centroid_count` 배선(예외 경로는 0).
-- `camera_interface.py`: `camera_ae_controller` config 로드(무효값 폴백),
-  `set_ae_controller:` 명령, star_count 디스패치 분기(lazy 생성).
-- `default_config.json`: `"camera_ae_controller": "match_count"`.
-- `ui/menu_structure.py`·`ui/callbacks.py`: "Camera AE" 메뉴
-  (Match Count/Star Count) + `set_ae_controller` 콜백.
-- i18n: de/es/fr/ko/zh 신규 3문자열 번역(AI-TRANSLATED 마커), .mo 재컴파일.
+- `camera_interface.py`·`camera_pi.py`: `camera_exp`의 새 값
+  `"auto_star"` 처리 — `set_exp:auto_star`로 star_count 컨트롤러 선택,
+  디스패치 분기(lazy 생성). 별도 config 키 없음.
+- `ui/menu_structure.py`·`ui/callbacks.py`: Camera Exp 메뉴에
+  "Auto Star" 항목 추가(라이브 노출 서픽스 포함) — 포커스 화면 마킹
+  메뉴(롱키 → Exposure)에서 그대로 접근·전환 가능.
+- i18n: de/es/fr/ko/zh "Auto Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
 - 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
 ## 문서 파일

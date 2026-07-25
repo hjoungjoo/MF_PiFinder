@@ -30,7 +30,7 @@ solver process                          camera process (get_image_loop)
                               ┌─ match-count controller (default)
                               │    └─ Matches == 0 → zero-match recovery
                               ├─ star-count controller (opt-in via
-                              │  camera_ae_controller = "star_count")
+                              │  camera_exp = "auto_star")
                               │    └─ Centroids == 0 → zero-match recovery
                               └─ background controller (SQM screen only)
                                    └─ reads shared_state.noise_floor()  ◄── SQM
@@ -54,7 +54,7 @@ Exactly one of three authorities decides exposure at any moment:
 
 | Regime | Entered by | Exposure decided by |
 | --- | --- | --- |
-| Solver-driven auto-exposure | `set_exp:auto` (menu "Auto", or restored from `camera_exp: "auto"` at startup) | match-count or background controller |
+| Solver-driven auto-exposure | `set_exp:auto` / `set_exp:auto_star` (menu "Auto" / "Auto Star", or restored from `camera_exp: "auto"` / `"auto_star"` at startup) | match-count, star-count, or background controller |
 | Native auto-exposure | `set_exp:native` (daytime alignment only) | the camera driver |
 | Manual exposure | `set_exp:<µs>` (menu), `exp_up` / `exp_dn` | the user |
 
@@ -69,7 +69,8 @@ Transitions worth knowing:
   auto-exposure regimes. The new value is *not* persisted until
   `exp_save`, which also writes `camera_gain`.
 - Selecting a manual value from the menu persists it to `camera_exp`
-  immediately; selecting "Auto" persists the string `"auto"`.
+  immediately; selecting "Auto" persists the string `"auto"`, "Auto Star"
+  the string `"auto_star"`.
 
 ## 3. Match-count controller
 
@@ -90,12 +91,15 @@ solver keeps matching a healthy number of stars.
 ## 3b. Star-count controller (opt-in)
 
 `ExposureStarCountController` (`auto_exposure_starcount.py`). An
-alternative to the match-count controller, selected with the
-`camera_ae_controller` config option (`"match_count"` default /
-`"star_count"`), the Camera AE menu, or the `set_ae_controller:` camera
-command. The choice only swaps which controller runs in the default
-branch — the background controller still takes over while the SQM screen
-is active, and all regime transitions are unchanged.
+alternative to the match-count controller, selected as a fourth Camera
+Exp menu item: "Auto Star" persists `camera_exp: "auto_star"` and sends
+`set_exp:auto_star` (the plain "Auto" item stays the match-count
+controller). Living inside the Camera Exp menu keeps it reachable from
+the focus/preview screen's marking menu (long press → Exposure), so the
+controller can be switched while watching the focus strip. The choice
+only swaps which controller runs in the default branch — the background
+controller still takes over while the SQM screen is active, and all
+regime transitions (manual nudges, native AE, `exp_save`) are unchanged.
 
 Feedback signal: **`Centroids`** (stars cedar-detect extracted from the
 frame, published on every attempt) instead of `Matches`. That separates
@@ -208,9 +212,9 @@ for offline analysis. Auto-exposure is disabled for the duration.
   the SQM screen was last active comes back in match-count mode.
 - **Two different "controller choices" exist.** The pid/snr split
   (`set_ae_mode`) is the screen-scoped, non-persisted SQM override above.
-  The match-count/star-count split (`camera_ae_controller`,
-  `set_ae_controller`) is a persisted user option and only decides which
-  controller runs in the default (non-SQM) branch. The AE gate still
+  The match-count/star-count split rides on `camera_exp` itself
+  (`"auto"` vs `"auto_star"`, both solver-driven regime values) and is
+  persisted like any other Camera Exp selection. The AE gate still
   requires `_auto_exposure_pid` to exist even when star_count is
   selected — the match-count controller object is always created.
 - **Failed solves drive feedback.** `CAM_FAILED` results carry

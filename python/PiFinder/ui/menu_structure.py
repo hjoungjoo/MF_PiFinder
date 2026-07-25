@@ -983,6 +983,11 @@ pifinder_menu = {
                             "name_suffix_callback": callbacks.get_camera_exposure_display,
                         },
                         {
+                            "name": _("Auto Star"),
+                            "value": "auto_star",
+                            "name_suffix_callback": callbacks.get_camera_exposure_star_display,
+                        },
+                        {
                             "name": _("0.025s"),
                             "value": 25000,
                         },
@@ -1009,24 +1014,6 @@ pifinder_menu = {
                         {
                             "name": _("1s"),
                             "value": 1000000,
-                        },
-                    ],
-                },
-                {
-                    "name": _("Camera AE"),
-                    "class": UITextMenu,
-                    "select": "single",
-                    "config_option": "camera_ae_controller",
-                    "label": "camera_ae_controller",
-                    "post_callback": callbacks.set_ae_controller,
-                    "items": [
-                        {
-                            "name": _("Match Count"),
-                            "value": "match_count",
-                        },
-                        {
-                            "name": _("Star Count"),
-                            "value": "star_count",
                         },
                     ],
                 },

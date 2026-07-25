@@ -25,10 +25,14 @@ Zero-*detection* walks the existing recovery ladder — which finally
 enforces ADR 0010's scope at the signal level: a star-filled but
 unsolvable frame no longer triggers recovery.
 
-**The default does not change.** `camera_ae_controller` ships as
-`"match_count"`; `"star_count"` is selected per user via the Camera AE
-menu (or `set_ae_controller:`). Unknown config values fall back to
-match_count, the same stale-config rule as ADR 0010. Reasons for opt-in
+**The default does not change.** The controller choice rides on
+`camera_exp` itself: the Camera Exp menu gains an "Auto Star" item that
+persists `"auto_star"`, next to the existing "Auto" (match-count). One
+menu is deliberate — the focus/preview screen's marking menu jumps to
+Camera Exp, so the user can switch controllers and manual exposures from
+the same place while watching the focus strip. (A separate `Camera AE`
+menu with a `camera_ae_controller` key was built first and removed the
+same day for this reason.) Reasons for opt-in
 rather than replacement: the match-count controller is the shipped,
 field-tested default and the new signal's numbers (target, deadband,
 guard threshold) come from cedar's optics, not ours — they need A/B field

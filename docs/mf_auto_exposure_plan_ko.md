@@ -176,6 +176,18 @@ v1은 기존과 동일하게 **새 솔브 시도가 있을 때만** 1스텝 동�
 
 ## 5. Phase 3 — 선택 옵션 배선
 
+> **개정 (2026-07-25, 사용자 결정)**: 초판은 별도 config 키
+> `camera_ae_controller` + "Camera AE" 메뉴로 배선했으나, **Camera Exp
+> 메뉴의 "Auto Star" 항목(`camera_exp = "auto_star"`)으로 통합**했다.
+> 이유: 포커스(preview) 화면의 마킹 메뉴(롱키)가 `camera_exposure`
+> 메뉴로 점프하므로, 포커스 화면에서 노출을 바꿔가며 확인하는 기존
+> 워크플로 안에서 컨트롤러 선택까지 한 곳에서 이루어져야 한다.
+> `camera_ae_controller` 키·"Camera AE" 메뉴·`set_ae_controller:` 명령은
+> 같은 날 제거했다(릴리즈 전이라 마이그레이션 불필요). 컨트롤러 선택은
+> `set_exp:auto`/`set_exp:auto_star`가 실어 나른다. 아래 5.1~5.5는 초판
+> 설계 기록이며, 최종 구현은 이 개정 내용과
+> [docs/ax/camera.md](ax/camera.md) §3b를 따른다.
+
 ### 5.1 config 키
 
 `default_config.json`:
@@ -297,15 +309,17 @@ else:                                         # 기본 — 기존 그대로
       밝은 하늘 가드, 검출0 → 사다리 위임/복귀, EMA 리셋, 클램프(±3스톱, 절대)
 - [x] `get_status()` 테스트
 
-### Phase 3 — 옵션 배선 — 완료 (2026-07-25)
+### Phase 3 — 옵션 배선 — 완료 (2026-07-25, §5 개정 반영)
 
-- [x] `default_config.json`에 `camera_ae_controller: "match_count"` 추가
-- [x] `set_ae_controller:` 명령 파서 + 시작 시 config 로드(무효값
-      match_count 폴백) (`camera_interface.py`)
+- [x] ~~`default_config.json`에 `camera_ae_controller` 추가~~ → 개정으로
+      제거. 선택은 기존 `camera_exp` 키의 새 값 `"auto_star"`가 담당
+- [x] `set_exp:auto|auto_star` 파서에서 컨트롤러 선택 + 시작 시
+      `camera_exp` 로드 (`camera_interface.py`, `camera_pi.py`)
 - [x] 디스패치 분기 — star 컨트롤러는 lazy 생성(기존 SNR 컨트롤러 관례),
       중앙 ROI 평균은 호출부에서 계산 (`camera_interface.py`)
-- [x] 메뉴 "Camera AE"(Camera Exp와 Camera Gain 사이) +
-      `callbacks.set_ae_controller`
+- [x] 메뉴: Camera Exp에 "Auto Star" 항목(Auto 다음) + 라이브 노출 서픽스
+      (`get_camera_exposure_star_display`) — 포커스 화면 마킹 메뉴에서
+      접근 가능
 - [x] i18n: `nox -s babel` + de/es/fr/ko/zh 번역(AI-TRANSLATED 마커)
 - [x] 검증: lint/format/mypy 통과, smoke 7, unit 754 통과
 - [x] 문서: `docs/ax/camera.md` §3b, `docs/ax/camera/CONTEXT.md` 용어,
@@ -326,7 +340,7 @@ else:                                         # 기본 — 기존 그대로
 | Q1 | `target_stars` 20(cedar) vs 17(기존 매치 목표)과의 관계 | 20으로 시작. 검출≥매치이므로 두 값은 비교 대상이 아님. 현장 A/B 후 조정 |
 | Q2 | 검출 수 EMA를 컨트롤러 안(α=0.5)에서만 쓰는가 | 예 — 원시값은 진단에 그대로 남기고 평활은 컨트롤러 내부 상태 |
 | Q3 | 밝은 하늘 가드 발동 시 게인 1단계 하향(조사 §4)도 넣는가 | v1 제외 — 게인 불변 원칙 유지, 가드는 "안 올림+앵커 복귀"만 |
-| Q4 | 메뉴 명칭 — "Camera AE"? 항목명 "Star Count"가 사용자에게 자명한가 | 구현 시 결정. 후보: "Auto Exp Type" / 항목 "Standard·Star Detect" |
+| Q4 | ~~메뉴 명칭~~ — **해결(2026-07-25)**: 별도 메뉴 대신 Camera Exp의 "Auto Star" 항목(§5 개정) | 포커스 화면 워크플로와 통합 |
 | Q5 | star_count 선택 시 실패 경로 예외(`Centroids=0`)가 사다리를 촉발할 수 있음 — 예외 빈도가 낮아 무시 가능한가 | trigger_count=2 + 예외는 산발적이므로 무시. 현장 로그로 재확인 |
 | Q6 | 앵커를 config에 영속화(재시작 후 즉시 정상 노출)할 것인가 | v1 제외 — 복구 사다리 400 ms 시작이 이미 그 역할. 필요성 확인 후 |
 
