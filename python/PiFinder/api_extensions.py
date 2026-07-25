@@ -1033,13 +1033,24 @@ def register_api_routes(app, server_instance, require_auth=False):
             except ValueError as e:
                 return _json_response({"error": str(e)}, 400)
 
+            # Record the exposure before queueing, exactly like the Camera Exp
+            # menu does (ui/text_menu.py writes config_option, then its
+            # post_callback queues set_exp). The camera process saves it again
+            # when it applies the command, but that can be a while on an idle
+            # unit -- it only drains the queue once per ~60 loop passes while
+            # asleep -- and until then every reader would still report the old
+            # exposure. Gain is deliberately not recorded: the Camera Gain menu
+            # does not write config either (see camera_interface set_gain).
+            if "exposure" in applied:
+                config.Config().set_option("camera_exp", applied["exposure"])
+
             for command in commands:
                 camera_queue.put(command)
                 logger.info("api/camera/controls queued: %s", command)
 
-            # The camera process applies these on its next loop pass, so the
-            # payload below still reports the previous frame's metadata; the
-            # UI picks up the new values on a later poll.
+            # The camera applies these on its next loop pass, so the payload
+            # below still reports the previous frame's metadata; the requested
+            # exposure is already the new one.
             data = _camera_controls_payload(
                 "; ".join(notes) if notes else "Camera settings sent"
             )
