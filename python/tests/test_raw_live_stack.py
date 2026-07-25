@@ -232,6 +232,51 @@ def test_display_size_zero_keeps_original_display_dimensions():
     assert image.size == (10, 5)
 
 
+def test_raw_display_is_linear_not_normalized():
+    """Raw Display maps ADU linearly: doubling the signal doubles the pixels.
+
+    The percentile stretch renormalizes every frame to the same display
+    range, which cancels a global multiplication -- with it applied to
+    Raw Display too, changing gain/exposure was invisible in the preview.
+    """
+    builder = DisplayFrameBuilder(
+        preview_mode="raw_display", color_mode="color", raw_format="SRGGB12"
+    )
+    base = np.full((8, 8), 400, dtype=np.uint16)
+
+    dim = np.asarray(builder.build(base).convert("L"), dtype=float).mean()
+    bright = np.asarray(builder.build(base * 2).convert("L"), dtype=float).mean()
+
+    # 400/4095*255 ~ 24.9, 800/4095*255 ~ 49.8
+    assert 23 <= dim <= 27
+    assert 48 <= bright <= 52
+
+
+def test_stretched_mode_still_normalizes():
+    """The stretched preview keeps the old per-frame normalization."""
+    builder = DisplayFrameBuilder(preview_mode="stretched", color_mode="color")
+    frame = np.arange(64, dtype=np.uint16).reshape(8, 8)
+
+    dim = np.asarray(builder.build(frame).convert("L"), dtype=float).mean()
+    bright = np.asarray(builder.build(frame * 8).convert("L"), dtype=float).mean()
+
+    assert abs(dim - bright) < 2  # renormalized to the same display range
+
+
+def test_raw_display_bit_depth_falls_back_to_dtype():
+    """No parseable raw format: uint8 scales by 255, uint16 by 65535."""
+    builder = DisplayFrameBuilder(
+        preview_mode="raw_display", color_mode="color", raw_format=None
+    )
+    eight_bit = np.full((4, 4), 128, dtype=np.uint8)
+    mean8 = np.asarray(builder.build(eight_bit).convert("L"), dtype=float).mean()
+    assert 126 <= mean8 <= 130
+
+    sixteen_bit = np.full((4, 4), 32768, dtype=np.uint16)
+    mean16 = np.asarray(builder.build(sixteen_bit).convert("L"), dtype=float).mean()
+    assert 126 <= mean16 <= 130
+
+
 def test_stack_frame_limit_allows_large_livecam_windows():
     assert normalize_settings({"stack_frame_limit": 999})["stack_frame_limit"] == 500
     assert normalize_settings({"stack_frame_limit": 0})["stack_frame_limit"] == 1

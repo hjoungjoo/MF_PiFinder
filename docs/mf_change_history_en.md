@@ -1631,6 +1631,24 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.
 
+## LiveCam Raw Display mode does what its name says (2026-07-26)
+
+Following the observation that the preview normalizes brightness even in
+`raw_display` mode: `DisplayFrameBuilder.build()` applied the percentile
+stretch unconditionally, so `raw_display` and `stretched` were identical
+in code (the only mode branch was `bayer_2x2_average`). The design doc
+lists them as distinct modes; the distinction was never implemented.
+
+- `raw_live_stack.py`: `raw_display` now renders with a fixed linear
+  mapping (`ADU x 255/(2^bit_depth-1)`, bit depth parsed from the raw
+  format name "SRGGB12", dtype fallback) — gain/exposure changes show up
+  as brightness. `stretched`/`bayer_2x2_average` keep the percentile
+  stretch. A `sum` stack can clip on the fixed scale (inherent to
+  summing); inspect sum stacks in stretched mode.
+- `livecam_config.py`: `PREVIEW_MODE_RAW` constant.
+- Tests: linearity (double signal -> double pixels), stretched-mode
+  normalization kept, bit-depth fallback; full unit suite (783) passing.
+
 ## LiveCam status shows applied sensor values / RAW levels (2026-07-26)
 
 Verified the report that changing gain shows no difference on the LiveCam

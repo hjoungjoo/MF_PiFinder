@@ -1454,6 +1454,24 @@ sudo systemctl start pifinder
 - i18n: de/es/fr/ko/zh "Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
 - 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
+## LiveCam Raw Display 모드가 이름대로 동작 (2026-07-26)
+
+프리뷰 모드가 `raw_display`인데도 밝기가 정규화된다는 지적으로 확인한 결과,
+`DisplayFrameBuilder.build()`가 preview_mode와 무관하게 percentile stretch를
+무조건 적용하고 있었다 — `raw_display`와 `stretched`가 코드상 완전히 동일했다
+(모드 분기는 `bayer_2x2_average` 하나뿐). 설계 문서(`mf_raw_live_stack_plan_ko.md`
+§설정 후보)에는 두 모드가 별개로 나열되어 있으나 구분이 구현되지 않은 상태였다.
+
+- `raw_live_stack.py`: `raw_display`는 센서 비트심도 기반 고정 선형 매핑
+  (`ADU × 255/(2^bit_depth−1)`, 비트심도는 raw 포맷명 "SRGGB12"에서 파싱,
+  실패 시 dtype 폴백)으로 렌더링 — 게인/노출 변화가 화면 밝기에 그대로
+  보인다. `stretched`/`bayer_2x2_average`는 종전 percentile stretch 유지.
+  sum 스택은 고정 스케일에서 포화될 수 있음(합산의 본질) — sum 확인은
+  stretched 모드 사용.
+- `livecam_config.py`: `PREVIEW_MODE_RAW` 상수 추가.
+- 테스트: 선형성(2배 신호→2배 픽셀)·stretched 정규화 유지·비트심도 폴백 3종
+  추가, 전체 783 unit 통과.
+
 ## LiveCam 상태에 센서 적용값/RAW 레벨 표시 (2026-07-26)
 
 게인을 바꿔도 LiveCam 화면에 변화가 없다는 관측을 실측으로 확인했다. 결론:

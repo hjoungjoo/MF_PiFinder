@@ -28,7 +28,10 @@ OUTPUT_STACK = "stack"
 VALID_SOURCES = {SOURCE_ORIGINAL, SOURCE_CROPPED}
 VALID_OUTPUTS = {OUTPUT_LATEST, OUTPUT_STACK}
 VALID_STACK_MODES = {"mean", "sum", "max"}
-VALID_PREVIEW_MODES = {"raw_display", "stretched", "bayer_2x2_average"}
+# Raw Display = fixed linear ADU->8bit mapping (gain/exposure changes stay
+# visible); the other modes percentile-stretch each frame for inspection.
+PREVIEW_MODE_RAW = "raw_display"
+VALID_PREVIEW_MODES = {PREVIEW_MODE_RAW, "stretched", "bayer_2x2_average"}
 VALID_IMAGE_FORMATS = {"png", "jpeg", "webp"}
 COLOR_MODE_THEME = "theme"
 COLOR_MODE_COLOR = "color"

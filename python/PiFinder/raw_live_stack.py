@@ -22,6 +22,7 @@ from PiFinder.livecam_config import (
     COLOR_MODE_COLOR,
     COLOR_MODE_THEME,
     OUTPUT_LATEST,
+    PREVIEW_MODE_RAW,
     SOURCE_CROPPED,
     SOURCE_ORIGINAL,
     VALID_IMAGE_FORMATS,
@@ -185,11 +186,19 @@ class DisplayFrameBuilder:
             np.asarray(frame), self.preview_mode, self.raw_format
         )
 
-        scaled = _percentile_stretch(
-            arr,
-            low_percentile=self.low_percentile,
-            high_percentile=self.high_percentile,
-        )
+        if self.preview_mode == PREVIEW_MODE_RAW:
+            # "Raw Display" means what it says: a fixed linear mapping of the
+            # sensor's ADU range to 8 bit, no per-frame normalization. The
+            # percentile stretch below rescales every frame to the same
+            # display range, which cancels a global multiplication -- with it,
+            # changing gain or exposure produced a visually identical preview.
+            scaled = _linear_scale(arr, self.raw_format)
+        else:
+            scaled = _percentile_stretch(
+                arr,
+                low_percentile=self.low_percentile,
+                high_percentile=self.high_percentile,
+            )
         if self.color_mode == COLOR_MODE_THEME:
             image = Image.fromarray(
                 _theme_tint(_luminance(scaled), self.web_theme), mode="RGB"
@@ -501,6 +510,41 @@ def _shared_entry(shared_state) -> dict[str, Any] | None:
     if not entry or not isinstance(entry, dict) or "frame" not in entry:
         return None
     return entry
+
+
+def _bit_depth_from_raw_format(raw_format: str | None) -> int | None:
+    """Sensor bit depth parsed from a raw format name ("SRGGB12" -> 12)."""
+    if not raw_format:
+        return None
+    digits = "".join(ch for ch in str(raw_format) if ch.isdigit())
+    if not digits:
+        return None
+    try:
+        depth = int(digits)
+    except ValueError:
+        return None
+    return depth if 8 <= depth <= 16 else None
+
+
+def _linear_scale(frame: np.ndarray, raw_format: str | None) -> np.ndarray:
+    """Fixed linear ADU -> 8-bit mapping (no per-frame normalization).
+
+    The white point comes from the sensor bit depth, not the frame content,
+    so a brighter capture renders brighter instead of being renormalized
+    away. A stack in ``sum`` mode can exceed the sensor range and clips
+    white -- that is inherent to summing onto a fixed scale; use the
+    stretched preview to inspect a sum stack.
+    """
+    arr = np.asarray(frame, dtype=np.float32)
+    if arr.size == 0:
+        return np.zeros((1, 1), dtype=np.uint8)
+    depth = _bit_depth_from_raw_format(raw_format)
+    if depth is None:
+        dtype = np.asarray(frame).dtype
+        depth = 8 if dtype == np.uint8 else 16
+    max_adu = float(2**depth - 1)
+    scaled = arr * (255.0 / max_adu)
+    return np.clip(scaled, 0, 255).astype(np.uint8)
 
 
 def _percentile_stretch(
