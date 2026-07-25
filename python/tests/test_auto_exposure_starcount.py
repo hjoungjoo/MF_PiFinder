@@ -184,8 +184,17 @@ class TestExposureStarCountController:
         controller = ExposureStarCountController()
         controller.update(10, 800000, center_mean=250.0)  # ceiling 400000
         assert controller._bright_ceiling == 400000
-        # A darker frame short of stars would otherwise raise well past it.
-        assert controller.update(5, 400000, center_mean=100.0) is None
+        # A frame that merely dipped under the guard threshold is still short
+        # of stars and would otherwise raise straight back into the glow.
+        assert controller.update(5, 400000, center_mean=200.0) is None
+
+    def test_clearly_dark_frame_retires_the_ceiling(self):
+        """When the sky really does darken, the cap must not starve the servo."""
+        controller = ExposureStarCountController()
+        controller.update(10, 800000, center_mean=250.0)  # ceiling 400000
+        # Well below bright_clear_mean: the bright sky is gone.
+        assert controller.update(5, 400000, center_mean=20.0) is not None
+        assert controller._bright_ceiling is None
 
     def test_deadband_retires_the_bright_ceiling(self):
         """A working exposure means the sky it was measured against is gone."""

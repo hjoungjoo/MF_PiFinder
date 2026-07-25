@@ -1657,9 +1657,29 @@ ADR 0010's 200 ms floor to the ladder's first pass.
   consecutive clamps in the same direction; an unclamped step or a
   direction flip resets the streak, so a single odd frame still cannot
   fling the exposure.
-- Tests: 3 ladder-escalation tests in `tests/test_auto_exposure.py` (plus
-  the wrap test updated to the new behaviour) and 3 re-anchoring tests in
-  `tests/test_auto_exposure_starcount.py`; full unit suite (776) passing.
+- `auto_exposure_starcount.py` / `auto_exposure.py` — every arm of the
+  control law moved up or sideways. With both bounds relaxed, a debug
+  trace showed a closed cycle: `1s -> bright-sky guard (center ROI mean
+  251 > 240) -> anchor 400ms -> 0 detected -> recovery climbs -> 800ms ->
+  6-8 detected, short of the target of 20 -> raise to 1s -> guard ...`.
+  Two inversions: (1) the guard **halves** the exposure instead of
+  returning to the anchor and records a ceiling there, capping later
+  raises so the servo cannot climb back into the frame that just proved
+  to be sky glow; the ceiling is retired by a deadband hit or a clearly
+  dark frame (mean below `bright_clear_mean`, 120 — the gap from 240 is
+  deliberate hysteresis). (2) Zero-detection recovery takes a descending
+  ladder `[200, 100, 50, 25] ms` when the caller can see the frame is
+  sky-glow limited; the prior is chosen once at activation and a failed
+  pass escalates into the rungs the chosen ladder left out. The
+  match-count controller has no brightness signal and is unchanged.
+- Tests: 6 ladder tests in `tests/test_auto_exposure.py` (escalation and
+  the bright ladder, plus the wrap test updated) and 7 in
+  `tests/test_auto_exposure_starcount.py` (re-anchoring, bright ceiling);
+  full unit suite (783) passing.
+- On-device (Seoul, imx462): after switching to `auto_star` the recovery
+  ladder was logged walking `400 -> 800 -> 1000 -> 200 -> [escalation] ->
+  100 -> 50 -> 25 ms`, reaching 25000µs. It previously ping-ponged
+  between 400 ms and 1 s indefinitely.
 
 ## LiveCam camera settings are committed (2026-07-25)
 

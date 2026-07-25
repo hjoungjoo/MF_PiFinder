@@ -38,11 +38,40 @@ is wrong; a single odd frame is not, and still cannot fling the exposure — tha
 is what the bound is for. Any unclamped step or a direction flip resets the
 streak.
 
+**Every arm of the control law moved up or sideways.** With both bounds
+relaxed, a debug trace of the same site showed a closed cycle:
+
+    1s    -> bright-sky guard (center ROI mean 251 > 240) -> anchor 400ms
+    400ms -> 0 detected -> recovery climbs -> 800ms
+    800ms -> 6-8 detected, short of the target of 20 -> raise to 1s -> guard
+
+Nothing in it walks down, so the fast shutter stayed unreachable no matter how
+far the bounds were widened. Two inversions close it:
+
+- The bright-sky guard **halves** the exposure instead of returning to the
+  anchor, and records a ceiling at that point. The ceiling caps later raises,
+  so a darker-looking frame that is still short of stars cannot climb straight
+  back into the exposure that just proved to be sky glow. A deadband hit
+  retires the ceiling — a working exposure means that sky is gone.
+- Zero-detection recovery takes a **descending** ladder `[200, 100, 50, 25] ms`
+  when the caller can see the frame is sky-glow limited. The prior is chosen
+  once, at activation, so a later frame cannot restart the walk mid-ladder.
+
+Only the star-count controller passes that brightness signal; the match-count
+controller has no view of the frame and keeps the night-time ladder unchanged.
+
 ## Consequences
 
 - Recovery's worst case grows: a sky where nothing is detectable at any
   exposure now cycles 7 rungs (14 attempts) instead of 4 (8). The first pass is
   unchanged.
+- Under a genuinely bright sky the exposure now ratchets toward the floor
+  rather than oscillating. The ceiling is retired by a deadband hit, by a
+  clearly dark frame (center ROI mean below `bright_clear_mean`, 120), or by a
+  controller reset. The gap between 240 (set) and 120 (release) is the point:
+  releasing at the guard threshold itself would let a frame that merely dipped
+  below it restart the climb-and-guard cycle, while never releasing would
+  starve the servo when dusk ends.
 - ADR 0010's 200 ms floor is narrowed, not revoked: it still governs the first
   pass. Its stated reason ("going shorter is unlikely to beat 200 ms even under
   a bright sky") is contradicted by this site and should not be relied on

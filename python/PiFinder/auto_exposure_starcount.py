@@ -54,6 +54,7 @@ class ExposureStarCountController:
         min_exposure: int = 25000,
         max_exposure: int = 1000000,
         bright_sky_mean: float = 240.0,
+        bright_clear_mean: float = 120.0,
         initial_anchor: int = 400000,
         reanchor_after: int = 3,
         recovery: Optional[ZeroMatchRecovery] = None,
@@ -73,7 +74,12 @@ class ExposureStarCountController:
             min_exposure: Absolute exposure floor in microseconds.
             max_exposure: Absolute exposure ceiling in microseconds.
             bright_sky_mean: Center-ROI mean (8-bit) above which exposure
-                is not raised -- more light will not add star contrast.
+                is not raised -- more light will not add star contrast --
+                and is stepped down instead.
+            bright_clear_mean: Center-ROI mean below which a bright-sky
+                ceiling is retired. Well under bright_sky_mean on purpose:
+                the gap is the hysteresis that stops the servo climbing
+                straight back into the sky glow it just left.
             initial_anchor: Anchor before any deadband hit (shipped
                 default exposure, also the recovery ladder's first rung).
             reanchor_after: Consecutive adjustments clamped by the anchor
@@ -92,6 +98,7 @@ class ExposureStarCountController:
         self.min_exposure = min_exposure
         self.max_exposure = max_exposure
         self.bright_sky_mean = bright_sky_mean
+        self.bright_clear_mean = bright_clear_mean
         self.reanchor_after = reanchor_after
 
         self._anchor = initial_anchor
@@ -159,6 +166,24 @@ class ExposureStarCountController:
             # The recovery excursion must not bias the next adjustment.
             self._ema = None
         self._zero_count = 0
+
+        # A clearly dark frame retires the bright ceiling: the sky it was
+        # measured against is gone (clouds moved off, dusk ended, the scope
+        # swung away from a streetlight). Deliberately hysteretic -- the
+        # ceiling is set above bright_sky_mean and only released well below it,
+        # so a frame that merely dipped under the guard threshold cannot start
+        # the climb-and-guard oscillation again (ADR 0021).
+        if (
+            self._bright_ceiling is not None
+            and center_mean is not None
+            and center_mean < self.bright_clear_mean
+        ):
+            logger.debug(
+                f"StarCount: center mean {center_mean:.0f} < "
+                f"{self.bright_clear_mean:.0f}, retiring bright ceiling "
+                f"{self._bright_ceiling}µs"
+            )
+            self._bright_ceiling = None
 
         # Too few stars to trust as a control signal: probably slewing or
         # partially blocked. Hold at the anchor rather than chasing noise.
