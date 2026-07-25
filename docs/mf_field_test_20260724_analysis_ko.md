@@ -389,13 +389,21 @@ indi_goto_guide_service ──{"type":"sync", ra, dec}──> mountcontrol_queue
   "방금 정렬이 누구 요청이었고 솔브 기반이었는지 IMU 폴백이었는지"를 바로
   확인할 수 있다.
 
-### C. 다음 관측 전 임시 설정 (코드 수정 전 방어)
+### C. 다음 관측 전 임시 설정 — 전체 대체됨 (2026-07-25 종결)
 
-- [ ] **C9.** GoTo Type = INDI Mount 유지, `GoTo Recovery = Off`
-  (LCD: INDI Setting > Goto/Guide). 필요시 Tracking Guide 자체 Off.
-- [ ] **C10.** config에 `"skysafari_pifinder_align": false` 추가.
-- [ ] **C11.** 현장 도착 후 폰 핫스팟으로 NTP 1회 동기 또는 시간 수동 확인
-  (A 구현 전까지의 임시 수단).
+A·B절 구현으로 임시 설정이 모두 불필요해졌다. 적용하지 않는다.
+
+- [x] ~~**C9.** GoTo Recovery / Tracking Guide Off~~ → **B4가 대체**:
+  GoTo Type = INDI Mount이면 추적 가이드 전체(펄스/복구/자동 정렬)가
+  코드에서 비활성. 별도 설정 불필요.
+- [x] ~~**C10.** `"skysafari_pifinder_align": false` 추가~~ → **B6가 대체**:
+  `:CM#`이 모드별로 라우팅되어 INDI Mount 모드에서는 얼라인을 건드리지
+  않는다. 지금 이 키를 false로 하면 오히려 PiFinder 모드의 의도된
+  동작(얼라인+정렬 동시)이 꺼진다 — 기본 true 유지. 단서 조항 발동 시에만
+  false로 쓰는 비상 스위치로 남긴다.
+- [x] ~~**C11.** 핫스팟 NTP 1회 동기~~ → **A절이 대체**: gpsd `-n` +
+  chrony `makestep 1 -1` + 신뢰 게이트(A4) + 점프 재동기(A5)로 현장에서
+  GPS만으로 시계가 복구되고, 미신뢰 동안 마운트 time sync가 보류된다.
 
 ### D. 진단성
 
