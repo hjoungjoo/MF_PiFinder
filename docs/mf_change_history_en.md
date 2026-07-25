@@ -1631,6 +1631,27 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.
 
+## LiveCam status shows applied sensor values / RAW levels (2026-07-26)
+
+Verified the report that changing gain shows no difference on the LiveCam
+page. Conclusion: gain is applied correctly (requested 1/15/20/30 ->
+driver 1.0/14.79/19.5/29.51, RAW p50 332 -> 3022). The preview's
+percentile stretch normalizes each frame's own histogram to the full
+display range, so a global multiplication (gain) cancels out of the
+rendered image by construction — an unchanged image is expected. The LCD
+focus screen uses absolute scaling (bias subtract -> digital gain ->
+255/4095) so it does change, and its background-anchored EMA stretch can
+make the frames right after a gain switch look odd. In low-power sleep
+frames refresh only about once a minute, so a stale mid-transition frame
+lingers — a large part of the perceived oddness.
+
+- `views/livecam.html`: status panel gains "Sensor (applied)"
+  (driver-reported gain/exposure) and "RAW Levels (p1/p50/p99.5)" rows,
+  so gain/exposure changes the stretch erases are visible as numbers.
+  The data was already in `/api/camera/raw-stack/status`; it just was
+  not displayed.
+- i18n: two ko strings added (AI-TRANSLATED), .mo recompiled.
+
 ## Auto-exposure reaches fast shutter speeds (2026-07-26)
 
 Field-observed (Seoul, imx462): manual 25 ms solves repeatedly, but

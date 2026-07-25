@@ -333,6 +333,14 @@
         <div class="livecam-status-value" id="statusAcceptedRejected">0 / 0</div>
       </div>
       <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('Sensor (applied)') }}</div>
+        <div class="livecam-status-value" id="statusSensor">-</div>
+      </div>
+      <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('RAW Levels (p1/p50/p99.5)') }}</div>
+        <div class="livecam-status-value" id="statusRawLevels">-</div>
+      </div>
+      <div class="livecam-status-item">
         <div class="livecam-status-label">{{ _('Last Error') }}</div>
         <div class="livecam-status-value" id="statusError">-</div>
       </div>
@@ -448,6 +456,25 @@ function renderStatus(data, syncControls = false) {
   setText('statusDtype', frame.dtype);
   setText('statusFrameCount', `${stack.frame_count || 0} / ${stack.frame_limit || settings.stack_frame_limit || 0}`);
   setText('statusAcceptedRejected', `${stack.accepted_count || 0} / ${stack.rejected_count || 0}`);
+  // Sensor values as the driver reported them for this RAW frame. The
+  // preview's percentile stretch maps each frame's own histogram to the full
+  // display range, so a gain/exposure change is invisible in the image itself
+  // -- these numbers are where it shows.
+  const sensorParts = [];
+  if (frame.gain !== null && frame.gain !== undefined) {
+    sensorParts.push(`${formatGain(frame.gain)}`);
+  }
+  if (frame.exposure_us !== null && frame.exposure_us !== undefined) {
+    sensorParts.push(formatExposureUs(frame.exposure_us));
+  }
+  setText('statusSensor', sensorParts.length ? sensorParts.join(' / ') : null);
+  const levels = [frame.p01, frame.p50, frame.p995];
+  setText(
+    'statusRawLevels',
+    levels.every((v) => v !== null && v !== undefined)
+      ? levels.map((v) => Math.round(v)).join(' / ')
+      : null
+  );
   setText('statusError', stack.last_error || stack.last_reject_reason || '-');
   if (data.enabled && data.has_frame) {
     waitingSince = null;

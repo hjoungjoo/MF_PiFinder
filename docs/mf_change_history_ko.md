@@ -1454,6 +1454,23 @@ sudo systemctl start pifinder
 - i18n: de/es/fr/ko/zh "Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
 - 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
+## LiveCam 상태에 센서 적용값/RAW 레벨 표시 (2026-07-26)
+
+게인을 바꿔도 LiveCam 화면에 변화가 없다는 관측을 실측으로 확인했다. 결론:
+게인은 정상 적용되고 있었다(요청 1/15/20/30 → 드라이버 1.0/14.79/19.5/29.51,
+RAW p50 332→3022). 프리뷰의 percentile stretch가 프레임 자체 히스토그램을 화면
+전체 범위로 정규화하므로 **전역 곱(게인)은 수학적으로 표시에서 소거**된다 —
+이미지가 안 변하는 게 정상이다. LCD 포커스 화면은 절대 스케일(bias 차감 →
+digital gain → 255/4095)이라 변화가 보이고, 배경 앵커 EMA stretch가 게인 전환
+직후 과도기 프레임을 이상하게 보이게 할 수 있다. 절전 모드에서는 프레임 갱신이
+~1분 간격이라 전환 중의 오래된 프레임이 한동안 남는 것도 "이상함"의 큰 몫이다.
+
+- `views/livecam.html`: 상태 패널에 "센서 (적용값)"(드라이버 보고 게인/노출)과
+  "RAW 레벨 (p1/p50/p99.5)" 행 추가 — stretch가 지워버리는 게인/노출 변화를
+  숫자로 확인할 수 있다. 데이터는 `/api/camera/raw-stack/status`의 frame 필드에
+  이미 있었고 표시만 없었다.
+- i18n: ko 두 문자열 추가(AI-TRANSLATED), .mo 재컴파일.
+
 ## 자동 노출 — 빠른 셔터속도 도달 (2026-07-26)
 
 현장 관측(서울, imx462): 수동 25ms에서는 solve가 반복 성공하는데, `auto_star`로

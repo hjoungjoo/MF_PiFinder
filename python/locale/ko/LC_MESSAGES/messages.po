@@ -4757,6 +4757,16 @@ msgid "Frame Source"
 msgstr "프레임 소스"
 
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:340
+msgid "Sensor (applied)"
+msgstr "센서 (적용값)"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:344
+msgid "RAW Levels (p1/p50/p99.5)"
+msgstr "RAW 레벨 (p1/p50/p99.5)"
+
+# AI-TRANSLATED (claude): needs human review
 #: views/livecam.html:316
 msgid "RAW Shape"
 msgstr "RAW 형상"
