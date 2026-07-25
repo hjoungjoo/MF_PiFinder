@@ -971,11 +971,9 @@ def register_api_routes(app, server_instance, require_auth=False):
                 "max_us": camera_controls.MAX_EXPOSURE_US,
             },
             "gain": {
-                # What was last asked for (config) vs what the last frame
-                # actually used (metadata). The requested value is what the UI
-                # hydrates from, so a page reload shows the committed setting
-                # even before the next frame lands.
-                "requested": cfg.get_option("camera_gain"),
+                # Runtime gain lives in the camera process and is not
+                # persisted, so the applied value from frame metadata is the
+                # only reading available here.
                 "actual": actual_gain,
                 "profile_gain": profile_gain,
                 "presets": list(camera_controls.GAIN_PRESETS),

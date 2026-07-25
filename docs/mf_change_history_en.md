@@ -1633,8 +1633,12 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 
 ## LiveCam camera settings are committed (2026-07-25)
 
-Exposure/gain changed on the LiveCam page reverted after navigating to
-another page and back. Three causes; the first is the root one.
+Settings changed on the LiveCam page reverted after navigating to another
+page and back. Two causes; the first is the root one. Gain not being
+persisted is intended behaviour and was left alone (a restart returns to
+the camera profile default; only the Exp Save item commits a gain) — the
+intent is now commented at the `set_gain` handler so it does not get
+"fixed" later.
 
 - `config.py` — cross-process config clobbering (root cause).
   `config.json` is shared by the main/UI, camera and web processes, each
@@ -1654,23 +1658,10 @@ another page and back. Three causes; the first is the root one.
   choice was lost on restart. Auto modes are now recorded
   (`set_exp:native` stays unsaved — it is the temporary daytime-align
   mode).
-- `camera_interface.py` — gain was not persisted at all. `set_gain` only
-  changed the runtime value, so every restart fell back to the camera
-  profile default. The requested value is now saved to `camera_gain`
-  ("profile" stays a reference rather than a number, so another camera
-  keeps its own default) and reapplied at startup by
-  `restore_saved_gain()`. `exp_save`'s `int(self.gain)` truncation fixed
-  to store the float.
-- `api_extensions.py` / `views/livecam.html`: `/api/camera/controls` also
-  reports the gain `requested` (config), and the page hydrates its
-  controls from that committed value instead of the last frame's applied
-  gain (which made the control snap back before a new frame landed).
 - Tests: new `tests/test_config.py` (7: cross-process merge, atomic
-  write, corrupt file), 4 gain-restore tests in
-  `tests/test_camera_interface.py`; full unit suite (765) passing.
-  On-device: after a service restart `auto_star` + 8x gain survive, the
-  camera actually applies 8x (not the 30x profile), and a camera-side
-  save keeps the LiveCam `low_percentile`.
+  write, corrupt file); full unit suite (761) passing. On-device: after a
+  service restart `auto_star` survives, and a camera-side exposure save
+  keeps the LiveCam `low_percentile`.
 
 ## Documentation Files
 

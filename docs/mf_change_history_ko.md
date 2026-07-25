@@ -1456,8 +1456,11 @@ sudo systemctl start pifinder
 
 ## LiveCam 카메라 설정 확정 저장 (2026-07-25)
 
-LiveCam 페이지에서 노출/게인을 바꾸고 다른 페이지를 보고 돌아오면 값이
-원복되던 문제를 수정했다. 원인은 세 가지였고, 첫 번째가 근본 원인이다.
+LiveCam 페이지에서 설정을 바꾸고 다른 페이지를 보고 돌아오면 값이
+원복되던 문제를 수정했다. 원인은 두 가지였고, 첫 번째가 근본 원인이다.
+게인이 저장되지 않는 것은 의도된 동작이라 그대로 두었다(재시작 시 카메라
+프로파일 기본값 복귀, 저장은 Exp Save 항목만). 나중에 결함으로 오인해
+"고치는" 일이 없도록 `set_gain` 처리부에 의도를 주석으로 남겼다.
 
 - `config.py` — 프로세스 간 config 덮어쓰기(근본 원인).
   `config.json`은 main/UI·카메라·웹 세 프로세스가 각자 시작 시점에 읽은
@@ -1474,20 +1477,9 @@ LiveCam 페이지에서 노출/게인을 바꾸고 다른 페이지를 보고 �
   않아서, 카메라는 auto로 돌아도 config·UI는 이전 수동값을 계속 보여주고
   재시작하면 auto 선택이 사라졌다. 이제 auto 모드도 저장한다
   (`set_exp:native`는 주간 정렬용 임시 모드이므로 종전대로 저장하지 않음).
-- `camera_interface.py` — 게인이 어디에도 저장되지 않던 문제.
-  `set_gain`이 런타임 값만 바꿔 재시작하면 항상 카메라 프로파일 기본값으로
-  돌아갔다. 이제 요청값을 `camera_gain`에 저장하고(프로파일 선택은 숫자가
-  아니라 `"profile"` 그대로 저장해 다른 카메라에서도 자기 기본값 사용),
-  시작 시 `restore_saved_gain()`이 복원한다. `exp_save`의 `int(self.gain)`
-  절삭도 실수 저장으로 수정.
-- `api_extensions.py`·`views/livecam.html`: `/api/camera/controls`가 게인
-  `requested`(config)를 함께 반환하고, 페이지는 마지막 프레임의 적용값
-  대신 이 확정값으로 컨트롤을 채운다(프레임 도착 전 되돌아 보이던 현상 제거).
 - 테스트: 신규 `tests/test_config.py` 7종(교차 프로세스 병합·원자적 쓰기·
-  손상 파일), `tests/test_camera_interface.py`에 게인 복원 4종 추가,
-  전체 765 unit 통과. 실장비 검증: 서비스 재시작 후 `auto_star`+게인 8x
-  유지, 카메라 실제 적용값 8x(프로파일 30x 아님), 카메라 저장 시
-  LiveCam `low_percentile` 유지 확인.
+  손상 파일), 전체 761 unit 통과. 실장비 검증: 서비스 재시작 후 `auto_star`
+  유지, 카메라 노출 저장 시 LiveCam `low_percentile` 유지 확인.
 
 ## 문서 파일
 
