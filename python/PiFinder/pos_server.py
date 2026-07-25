@@ -975,7 +975,9 @@ def _set_imu_alignment_from_target_if_no_solve(
     shared_state, ra_deg: float, dec_deg: float
 ) -> bool:
     # Always enabled: a SkySafari Align before the first plate solve is the
-    # supported way to bootstrap IMU-only pointing.
+    # supported way to bootstrap IMU-only pointing. Confirmed as intended in
+    # both GoTo modes (B7, docs/mf_field_test_20260724_analysis_ko.md): no
+    # mount transmission, target_pixel untouched, IMU-fallback display only.
     if _has_solved_pointing(shared_state):
         return False
 
