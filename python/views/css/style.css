@@ -390,9 +390,14 @@ html[data-theme="red"] .btn-large[disabled] {
   color: var(--pf-text-muted) !important;
 }
 
-html[data-theme="red"] .sidenav,
-html[data-theme="red"] .modal,
-html[data-theme="red"] .modal .modal-footer {
+/* Materialize paints the side menu #fff and modals #fafafa, but their text
+   inherits the page colour -- which on both dark themes means light text on a
+   near-white panel (e.g. the Network "Save and Restart" dialog). This was
+   scoped to Red Night only; the grey theme has the same problem, and the
+   variables make one rule serve both. */
+.sidenav,
+.modal,
+.modal .modal-footer {
   background-color: var(--pf-surface) !important;
   color: var(--pf-text) !important;
 }
@@ -409,7 +414,9 @@ html[data-theme="red"] .tooltip-content {
   color: var(--pf-link) !important;
 }
 
-html[data-theme="red"] .sidenav li > a {
+/* Both themes: Materialize's side-menu links are rgba(0, 0, 0, 0.87), which
+   disappears once the panel above turns dark. */
+.sidenav li > a {
   color: var(--pf-text) !important;
 }
 
@@ -421,14 +428,37 @@ html[data-theme="red"] select {
   color: var(--pf-text);
 }
 
-html[data-theme="red"] [type="checkbox"] + span:not(.lever)::before,
-html[data-theme="red"] [type="checkbox"]:not(.filled-in) + span:not(.lever)::before {
-  border-color: var(--pf-border) !important;
+/* Checkboxes (both themes): Materialize draws the empty box as a 2px #5a5a5a
+   outline and the tick in #BABABA -- values picked for a white page, where the
+   outline lands around 6.5:1. Over the grey theme's card (#616161) that same
+   outline is 1.0:1, i.e. a row of unchecked options reads as no options at all
+   (e.g. INDI > GoTo / Guide Settings). The text colour restores the contrast
+   Materialize intended (4.7:1 grey, 5.2:1 Red Night; the muted colour only
+   reaches 2.3:1, under the 3:1 a UI component needs), and the tick takes the
+   link colour so checked state stays unmistakable.
+
+   Only the *unchecked* box may take a full border-colour: Materialize builds
+   the tick out of that same ::before by rotating it 40deg and leaving the top
+   and left borders transparent, so colouring all four sides turns the tick
+   back into a tilted rectangle. */
+[type="checkbox"]:not(:checked):not(:indeterminate) + span:not(.lever)::before {
+  border-color: var(--pf-text) !important;
 }
 
-html[data-theme="red"] [type="checkbox"]:checked + span:not(.lever)::before {
+[type="checkbox"]:checked + span:not(.lever)::before {
   border-right-color: var(--pf-link) !important;
   border-bottom-color: var(--pf-link) !important;
+}
+
+/* Disabled boxes are filled rgba(0, 0, 0, 0.42), i.e. a black square here. */
+[type="checkbox"]:not(:checked):disabled + span:not(.lever)::before {
+  background-color: var(--pf-border) !important;
+}
+
+/* The caption beside a checkbox inherits Materialize's #9e9e9e label colour,
+   which sits well below the surrounding body text and reads as disabled. */
+[type="checkbox"] + span:not(.lever) {
+  color: var(--pf-text);
 }
 
 html[data-theme="red"] input:not([type]):focus:not([readonly]),
@@ -452,13 +482,18 @@ html[data-theme="red"] textarea.materialize-textarea:focus:not([readonly]) + lab
   color: var(--pf-link);
 }
 
-html[data-theme="red"] select option {
+/* Materialize's own select skin and dropdown panel are built for a light page:
+   the caret is painted rgba(0, 0, 0, 0.87) and the popup is #fff with dark
+   items. That was overridden for Red Night only, so on the grey theme the caret
+   was invisible against the dark surface and opening a select flashed a white
+   panel. All of it is variable-driven, so the rules below serve both themes. */
+select option {
   background-color: var(--pf-input-bg);
   color: var(--pf-text);
 }
 
-html[data-theme="red"] .select-wrapper input.select-dropdown,
-html[data-theme="red"] .select-wrapper input.select-dropdown:focus {
+.select-wrapper input.select-dropdown,
+.select-wrapper input.select-dropdown:focus {
   background-color: var(--pf-input-bg);
   border-bottom-color: var(--pf-border);
   color: var(--pf-text);
@@ -476,39 +511,63 @@ html[data-theme="red"] .select-wrapper input.select-dropdown:focus {
   top: -0.4rem;
 }
 
-html[data-theme="red"] .select-wrapper .caret {
+.select-wrapper .caret {
   fill: var(--pf-text);
 }
 
-html[data-theme="red"] .dropdown-content,
-html[data-theme="red"] .dropdown-content li,
-html[data-theme="red"] .dropdown-content li > a,
-html[data-theme="red"] .dropdown-content li > span {
+.select-wrapper.disabled input.select-dropdown,
+.select-wrapper input.select-dropdown:disabled {
+  color: var(--pf-text-muted);
+}
+
+.select-wrapper.disabled .caret {
+  fill: var(--pf-text-muted);
+}
+
+.dropdown-content,
+.dropdown-content li,
+.dropdown-content li > a,
+.dropdown-content li > span {
   background-color: var(--pf-input-bg) !important;
   color: var(--pf-text) !important;
 }
 
-html[data-theme="red"] .dropdown-content li:hover,
-html[data-theme="red"] .dropdown-content li.active,
-html[data-theme="red"] .dropdown-content li.selected,
-html[data-theme="red"] .dropdown-content li.active > span,
-html[data-theme="red"] .dropdown-content li.selected > span {
+.dropdown-content li:hover,
+.dropdown-content li.active,
+.dropdown-content li.selected,
+.dropdown-content li.active > span,
+.dropdown-content li.selected > span {
   background-color: var(--pf-button-hover) !important;
   color: var(--pf-link) !important;
 }
 
-html[data-theme="red"] .dropdown-content li.disabled,
-html[data-theme="red"] .dropdown-content li.disabled > span {
+.dropdown-content li.disabled,
+.dropdown-content li.disabled > span {
   background-color: var(--pf-surface) !important;
   color: var(--pf-text-muted) !important;
 }
 
-html[data-theme="red"] table.striped > tbody > tr:nth-child(odd) {
+/* Striped tables (both themes): Materialize tints every other row
+   rgba(242, 242, 242, 0.5), which over a dark card renders as a pale band. The
+   INDI pages put `.grey-text` rows on it, so half the driver-state table was
+   grey text on light grey. Red Night already had this override; the grey theme
+   needs the same. */
+table.striped > tbody > tr:nth-child(odd) {
   background-color: var(--pf-surface-alt) !important;
 }
 
-html[data-theme="red"] table.striped > tbody > tr:nth-child(even) {
+table.striped > tbody > tr:nth-child(even) {
   background-color: var(--pf-surface) !important;
+}
+
+/* Those tables are marked `.grey-text`, i.e. Materialize's #9e9e9e !important,
+   which only reaches 2.3:1 against the rows above. Red Night already promotes
+   every .grey-text to the theme text colour; do the same inside striped tables
+   on the grey theme so the driver-state values are readable (4.7-5.7:1). */
+table.striped.grey-text > tbody > tr > td,
+table.striped.grey-text > tbody > tr > th,
+table.striped.grey-text > thead > tr > th {
+  color: var(--pf-text) !important;
 }
 
 .ap-password-field {
@@ -648,4 +707,85 @@ html[data-theme="red"] input:not(.browser-default)::placeholder,
 html[data-theme="red"] textarea.materialize-textarea::placeholder {
   color: var(--pf-text-muted);
   opacity: 1;
+}
+
+/* Plain <select> boxes (both themes)
+   ==========================================================================
+   Materialize hides every select it wraps itself and only leaves
+   `.browser-default` ones visible -- and it paints those with
+   `background-color: rgba(255, 255, 255, 0.9)`. Nothing overrode that outside
+   the Red Night block, so on the grey theme the LiveCam / Logs selects came out
+   as white boxes carrying the theme's light text: unreadable. The catalog pages
+   had already fixed this locally (`.pfcat select.browser-default` in
+   catalogs.css); these rules lift the same treatment to every page and drive it
+   from the theme variables, so grey and Red Night both stay legible. Page-level
+   rules with a class of their own (.pfcat, .pf-theme-select) still win. */
+select.browser-default {
+  background-color: var(--pf-input-bg);
+  border: 1px solid var(--pf-border);
+  color: var(--pf-text);
+  /* The dropdown list and the spin/scroll chrome are painted by the OS. */
+  color-scheme: dark;
+}
+
+/* Popup list items: some engines fall back to the platform's light popup
+   unless the options themselves are coloured. */
+select.browser-default option {
+  background-color: var(--pf-input-bg);
+  color: var(--pf-text);
+}
+
+select.browser-default:focus {
+  outline: none;
+  border-color: var(--pf-link);
+  box-shadow: 0 0 0 1px var(--pf-link);
+}
+
+/* The native arrow follows the UA's own palette and stays invisible on these
+   backgrounds in some engines, so draw it from the theme colour instead.
+   Longhand background-* only, so a page-level background-color still applies. */
+select.browser-default:not([multiple]):not([size]) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--pf-text-muted) 50%),
+    linear-gradient(135deg, var(--pf-text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 26px;
+}
+
+select.browser-default:disabled {
+  color: var(--pf-text-muted);
+  /* Browsers additionally fade disabled controls, which on a dark surface
+     takes them to the edge of invisible. The muted colour above is the
+     inactive signal. */
+  opacity: 1;
+}
+
+/* Materialize dims disabled/readonly text inputs to rgba(0, 0, 0, 0.42) --
+   black on black for both dark themes (e.g. the LiveCam exposure/gain number
+   boxes, which are disabled while a preset is selected). Keep the dotted
+   underline as the inactive cue but make the value readable. The type
+   selectors are needed to outweigh Materialize's own. */
+input:not([type]):disabled,
+input:not([type])[readonly="readonly"],
+input[type=text]:not(.browser-default):disabled,
+input[type=text]:not(.browser-default)[readonly="readonly"],
+input[type=password]:not(.browser-default):disabled,
+input[type=password]:not(.browser-default)[readonly="readonly"],
+input[type=email]:not(.browser-default):disabled,
+input[type=email]:not(.browser-default)[readonly="readonly"],
+input[type=number]:not(.browser-default):disabled,
+input[type=number]:not(.browser-default)[readonly="readonly"],
+input[type=search]:not(.browser-default):disabled,
+input[type=search]:not(.browser-default)[readonly="readonly"],
+input[type=date]:not(.browser-default):disabled,
+input[type=date]:not(.browser-default)[readonly="readonly"],
+input[type=time]:not(.browser-default):disabled,
+input[type=time]:not(.browser-default)[readonly="readonly"],
+textarea.materialize-textarea:disabled,
+textarea.materialize-textarea[readonly="readonly"] {
+  color: var(--pf-text-muted);
+  border-bottom-color: var(--pf-border);
 }

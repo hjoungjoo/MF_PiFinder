@@ -1212,6 +1212,28 @@ python/tests/test_web_theme_static.py
 - 로그 페이지의 로그 본문 색상은 기존 level 색상 그대로 유지한다.
 - manifest는 `display: fullscreen`을 사용하되, PiFinder 웹 UI 내부의 nav/footer는 유지한다.
 - service worker는 캐싱 없이 네트워크 요청을 통과시키는 최소 형태로 두어 실시간 UI 동작에 영향을 주지 않는다.
+- (2026-07-25) Materialize의 밝은 기본 위젯 스타일을 **두 테마 공통**으로 바꿨다.
+  기존에는 `html[data-theme="red"]` 아래에만 덮어써서, Gray 테마에서
+  `select.browser-default`가 흰 상자(`rgba(255,255,255,0.9)`)에 밝은 글자로 나와
+  읽을 수 없었다(LiveCam/Logs). 같은 원인으로 Gray 테마에서 select caret(검정),
+  dropdown 패널(`#fff`), modal(`#fafafa`), sidenav도 밝은 기본값이었다. 규칙이 모두
+  테마 변수 기반이라 `html[data-theme="red"]` 접두사만 떼어 공통 규칙으로 승격했고,
+  browser-default select에는 catalogs.css(`.pfcat`)에서 검증된 방식(커스텀 화살표 +
+  `color-scheme: dark`)을 전 페이지로 확장했다. Materialize가 비활성 입력을
+  `rgba(0,0,0,0.42)`(어두운 배경에서 안 보임)로 칠하는 것도 함께 수정했다.
+- (2026-07-25) 같은 원인으로 남아 있던 두 가지를 추가로 고쳤다(INDI 페이지에서 발견).
+  ① `table.striped` 홀수 행이 `rgba(242,242,242,0.5)` — 어두운 카드 위에서 밝은 띠가
+  되어 `.grey-text` 본문이 밝은 회색 위 회색(1.2:1)이었다. 행 배경을 테마 변수로
+  바꾸고, striped 테이블 안의 `.grey-text`는 적색 테마와 동일하게 `--pf-text`로
+  승격했다(4.7~5.7:1). ② 체크박스 빈 상자가 `2px solid #5a5a5a` — Gray 테마 카드
+  대비 1.1:1로 사실상 안 보였다(INDI GoTo/Guide 옵션들). 외곽선을 `--pf-text`
+  (Gray 4.7:1 / Red 5.2:1), 체크 표시를 `--pf-link`로 바꾸고 체크박스 캡션도
+  Materialize의 `#9e9e9e` label 색 대신 본문 색을 쓰게 했다. 단, 외곽선 색은
+  **`:not(:checked)`로 한정해야 한다** — Materialize는 체크 표시를 같은 `::before`를
+  40도 회전시키고 위/왼쪽 테두리를 `transparent`로 두어 만들기 때문에, 네 변을 모두
+  칠하면 체크가 기울어진 사각형으로 보인다(실제로 한 번 발생시켰고 회귀 테스트
+  `test_checkbox_outline_colour_never_reaches_the_checked_state`로 고정했다).
+  `base.html`의 `style.css?v=` 캐시 버스터를 7로 올렸다.
 
 ## `default_config.json`
 

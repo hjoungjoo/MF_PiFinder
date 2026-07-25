@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 
@@ -339,3 +340,69 @@ def test_log_viewer_keeps_its_own_console_scrollbars():
 
     assert ".log-container" not in style_css
     assert ".log-container::-webkit-scrollbar" in logs_html
+
+
+def _rule_block(css: str, selector: str) -> str:
+    """Return the declarations of the first rule whose selector list has this one."""
+    match = re.search(rf"^{re.escape(selector)}\s*[,{{]", css, re.MULTILINE)
+    assert match, f"no rule for {selector}"
+    open_brace = css.index("{", match.start())
+    return css[open_brace : css.index("}", open_brace)]
+
+
+def test_light_materialize_widgets_are_themed_for_both_themes():
+    # Materialize ships light defaults for these widgets (select
+    # rgba(255,255,255,0.9), dropdown #fff, modal #fafafa, caret near-black).
+    # They were overridden under html[data-theme="red"] only, which left the
+    # grey theme with white boxes carrying the theme's light text. Every rule
+    # below must stay theme-agnostic and variable-driven so both themes work.
+    style_css = (VIEWS_DIR / "css" / "style.css").read_text()
+
+    for selector in (
+        "select.browser-default",
+        "select option",
+        ".select-wrapper .caret",
+        ".dropdown-content",
+        ".sidenav",
+        ".sidenav li > a",
+    ):
+        assert f'html[data-theme="red"] {selector} {{' not in style_css, selector
+        block = _rule_block(style_css, selector)
+        assert "var(--pf-" in block, selector
+        # A hard-coded colour here would pin one theme's palette.
+        assert "#" not in block, selector
+
+    # The white select box is the specific defect this guards.
+    assert "background-color: var(--pf-input-bg)" in _rule_block(
+        style_css, "select.browser-default"
+    )
+    # Disabled controls must not fall back to Materialize's rgba(0, 0, 0, 0.42),
+    # which is black on black here.
+    assert "input[type=number]:not(.browser-default):disabled" in style_css
+
+
+def test_checkbox_outline_colour_never_reaches_the_checked_state():
+    # Materialize renders the tick from the *same* ::before as the empty box: it
+    # rotates it 40deg and keeps the top/left borders transparent. Setting the
+    # `border-color` shorthand without excluding :checked paints those two sides
+    # back in and the tick renders as a tilted rectangle.
+    style_css = (VIEWS_DIR / "css" / "style.css").read_text()
+
+    outline = '[type="checkbox"]:not(:checked):not(:indeterminate)'
+    assert f"{outline} + span:not(.lever)::before" in style_css
+    assert '[type="checkbox"] + span:not(.lever)::before' not in style_css
+
+    # The checked state may only tint the two sides that form the tick.
+    checked = _rule_block(
+        style_css, '[type="checkbox"]:checked + span:not(.lever)::before'
+    )
+    assert "border-right-color" in checked
+    assert "border-bottom-color" in checked
+    assert "border-color" not in checked
+
+
+def test_style_css_cache_buster_is_bumped_when_the_file_changes():
+    # base.html pins ?v=N; browsers keep serving the old sheet until it moves.
+    base_html = (VIEWS_DIR / "base.html").read_text()
+
+    assert "/css/style.css?v=7" in base_html

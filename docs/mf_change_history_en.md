@@ -1353,6 +1353,32 @@ python/tests/test_web_theme_static.py
   stay visible.
 - The service worker is a minimal pass-through worker with no caching, so live
   UI behavior is not changed.
+- (2026-07-25) Materialize's light widget defaults are now themed for **both**
+  themes. They had only been overridden under `html[data-theme="red"]`, so on the
+  Gray theme a `select.browser-default` rendered as a white box
+  (`rgba(255,255,255,0.9)`) carrying the theme's light text -- unreadable on
+  LiveCam and Logs. The same gap left the Gray theme with a near-black select
+  caret, a `#fff` dropdown panel, `#fafafa` modals, and a white side menu. Every
+  rule was already variable-driven, so the `html[data-theme="red"]` prefix was
+  simply dropped, and browser-default selects got the treatment already proven in
+  catalogs.css (`.pfcat`): a custom arrow plus `color-scheme: dark`, now applied
+  site-wide. Materialize's `rgba(0,0,0,0.42)` disabled-input colour (invisible on
+  a dark surface) was fixed alongside.
+- (2026-07-25) Two more instances of the same root cause, found on the INDI page.
+  (1) `table.striped` tints odd rows `rgba(242,242,242,0.5)`, a pale band over a
+  dark card, leaving the `.grey-text` body at 1.2:1. Row backgrounds now come
+  from the theme variables, and `.grey-text` inside striped tables is promoted to
+  `--pf-text` the way Red Night already did (4.7-5.7:1). (2) The empty checkbox
+  box is `2px solid #5a5a5a`, which is 1.1:1 against the grey theme's card -- the
+  INDI GoTo/Guide options looked like there were none. The outline now uses
+  `--pf-text` (4.7:1 grey, 5.2:1 Red Night), the tick `--pf-link`, and the
+  checkbox caption takes body text colour instead of Materialize's `#9e9e9e`
+  label colour. The outline colour **must be scoped to `:not(:checked)`**:
+  Materialize renders the tick from that same `::before`, rotated 40deg with its
+  top/left borders transparent, so colouring all four sides makes the tick show
+  up as a tilted rectangle (this was hit once and is now pinned by
+  `test_checkbox_outline_colour_never_reaches_the_checked_state`). The
+  `style.css?v=` cache buster in `base.html` was bumped to 7.
 
 ## `default_config.json`
 
