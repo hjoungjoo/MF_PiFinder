@@ -114,7 +114,7 @@
         <div class="row">
           <div class="input-field col s12">
             <input id="name-edit_form_{{ loop.index0 }}" type="text" name="name" value="{{ location.name }}" required/>
-            <label for="name-edit_form_{{ loop.index0 }}">{{ _('Location Name') }}</label>
+            <label class="active" for="name-edit_form_{{ loop.index0 }}">{{ _('Location Name') }}</label>
           </div>
         </div>
         <div class="row">
@@ -128,12 +128,12 @@
         <div class="row" id="decimalFormat-edit_form_{{ loop.index0 }}">
           <div class="input-field col s6">
             <input id="latitude-edit_form_{{ loop.index0 }}" type="number" step="any" name="latitude" value="{{ location.latitude }}" required/>
-            <label for="latitude-edit_form_{{ loop.index0 }}">{{ _('Latitude (Decimal)') }}</label>
+            <label class="active" for="latitude-edit_form_{{ loop.index0 }}">{{ _('Latitude (Decimal)') }}</label>
             <span class="helper-text"></span>
           </div>
           <div class="input-field col s6">
             <input id="longitude-edit_form_{{ loop.index0 }}" type="number" step="any" name="longitude" value="{{ location.longitude }}" required/>
-            <label for="longitude-edit_form_{{ loop.index0 }}">{{ _('Longitude (Decimal)') }}</label>
+            <label class="active" for="longitude-edit_form_{{ loop.index0 }}">{{ _('Longitude (Decimal)') }}</label>
             <span class="helper-text"></span>
           </div>
         </div>
@@ -166,19 +166,19 @@
         <div class="row">
           <div class="input-field col s12">
             <input id="altitude-edit_form_{{ loop.index0 }}" type="number" step="any" name="altitude" value="{{ location.height }}" required/>
-            <label for="altitude-edit_form_{{ loop.index0 }}">{{ _('Altitude (meters)') }}</label>
+            <label class="active" for="altitude-edit_form_{{ loop.index0 }}">{{ _('Altitude (meters)') }}</label>
             <span class="helper-text"></span>
           </div>
         </div>
         <div class="row">
           <div class="input-field col s6">
             <input id="error_in_m-edit_form_{{ loop.index0 }}" type="number" step="any" name="error_in_m" value="{{ location.error_in_m }}"/>
-            <label for="error_in_m-edit_form_{{ loop.index0 }}">{{ _('Error (meters)') }}</label>
+            <label class="active" for="error_in_m-edit_form_{{ loop.index0 }}">{{ _('Error (meters)') }}</label>
             <span class="helper-text"></span>
           </div>
           <div class="input-field col s6">
             <input id="source-edit_form_{{ loop.index0 }}" type="text" name="source" value="{{ location.source }}"/>
-            <label for="source-edit_form_{{ loop.index0 }}">{{ _('Source') }}</label>
+            <label class="active" for="source-edit_form_{{ loop.index0 }}">{{ _('Source') }}</label>
           </div>
         </div>
         <div class="row">
@@ -344,6 +344,9 @@ function toggleFormat(id = '') {
         setupDecimalValidation(id);
     }
     checkFields(id);
+    // The fields just revealed were filled programmatically; float their
+    // labels so they don't overlap the values.
+    M.updateTextFields();
 }
 
 function setupDMSValidation(id = '') {
@@ -709,8 +712,15 @@ function setupLocationCatalogLookup() {
 
 document.addEventListener('DOMContentLoaded', function() {
     var elems = document.querySelectorAll('.modal');
-    var instances = M.Modal.init(elems);
+    // Re-run label activation whenever a modal opens: the edit forms are
+    // prefilled server-side, and Materialize only floats a label above its
+    // value when the label carries .active -- without this the label text
+    // renders on top of the value.
+    var instances = M.Modal.init(elems, {
+        onOpenEnd: function() { M.updateTextFields(); }
+    });
     M.FormSelect.init(document.querySelectorAll('select'));
+    M.updateTextFields();
     setupLocationCatalogLookup();
 
     var forms = document.querySelectorAll('form[id^="edit_form_"], #location_form');

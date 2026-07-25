@@ -1454,6 +1454,20 @@ sudo systemctl start pifinder
 - i18n: de/es/fr/ko/zh "Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
 - 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
+## Locations 수정 폼 라벨 겹침 수정 (2026-07-26)
+
+Location Management의 Edit Location 모달에서 라벨("Latitude (Decimal)" 등)이
+서버에서 미리 채워진 값 위에 겹쳐 보이던 문제. Materialize는 라벨에 `active`
+클래스가 있어야 값 위로 띄우는데, 수정 모달 라벨에 없었고 페이지에서
+`M.updateTextFields()`도 호출하지 않았다.
+
+- `views/locations.html`: 미리 채워지는 6개 라벨(name/lat/lon/alt/error/source)에
+  `class="active"` 추가, DOMContentLoaded와 모달 `onOpenEnd`에서
+  `M.updateTextFields()` 호출, DMS 전환(`toggleFormat`)이 프로그램적으로 채운
+  필드도 같은 방식으로 라벨 활성화.
+- `views/location_form.html`: 추가 폼의 미리 채워지는 2개 라벨
+  (`error_in_m`=10, `source`="Manual Entry")에 `class="active"` 추가.
+
 ## LiveCam Raw Display 모드가 이름대로 동작 (2026-07-26)
 
 프리뷰 모드가 `raw_display`인데도 밝기가 정규화된다는 지적으로 확인한 결과,

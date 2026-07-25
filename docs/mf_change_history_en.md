@@ -1631,6 +1631,20 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.
 
+## Locations edit form label overlap fixed (2026-07-26)
+
+In Location Management's Edit Location modal the labels ("Latitude
+(Decimal)" etc.) rendered on top of the server-prefilled values.
+Materialize only floats a label above its value when the label carries
+`active`; the edit-modal labels did not, and the page never called
+`M.updateTextFields()`.
+
+- `views/locations.html`: `class="active"` on the six prefilled labels,
+  `M.updateTextFields()` on DOMContentLoaded and on modal `onOpenEnd`,
+  and after the DMS toggle fills fields programmatically.
+- `views/location_form.html`: `class="active"` on the add form's two
+  prefilled labels (`error_in_m`=10, `source`="Manual Entry").
+
 ## LiveCam Raw Display mode does what its name says (2026-07-26)
 
 Following the observation that the preview normalizes brightness even in
