@@ -1631,6 +1631,36 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.
 
+## Auto-exposure reaches fast shutter speeds (2026-07-26)
+
+Field-observed (Seoul, imx462): manual 25 ms solves repeatedly, but
+switching to `auto_star` never gets back there. Two bounds kept the
+exposure above the shutter speed that works; both are relaxed. Decision:
+[ADR 0021](adr/0021-auto-exposure-reaches-fast-shutter.md), which narrows
+ADR 0010's 200 ms floor to the ladder's first pass.
+
+- `auto_exposure.py` — recovery never searched below its floor. ADR 0010
+  floored the ladder at `[400, 800, 1000, 200] ms` on the reasoning that
+  going shorter cannot beat 200 ms even under a bright sky. Under heavy
+  light pollution that fails: this site solves at 25 ms and detects
+  nothing at 400 ms–1 s, so recovery ping-ponged between 400 ms and 1 s
+  indefinitely (observed). A failed pass of the long rungs now continues
+  into `[100, 50, 25] ms` rather than replaying them; the dark-sky common
+  case still costs 8 attempts.
+- `auto_exposure_starcount.py` — the anchor bound was unreachable by
+  construction. Adjustments clamp to anchor/8..anchor×8, the anchor
+  starts as a 400 ms guess and is only relearned inside the deadband, so
+  where the working exposure is shorter than anchor/8 (25 ms < 50 ms) the
+  servo asked to go shorter every frame, sat pinned at exactly 50 ms and
+  returned "no change" — never reaching the deadband, so the anchor never
+  updated. The anchor now follows the boundary after `reanchor_after` (3)
+  consecutive clamps in the same direction; an unclamped step or a
+  direction flip resets the streak, so a single odd frame still cannot
+  fling the exposure.
+- Tests: 3 ladder-escalation tests in `tests/test_auto_exposure.py` (plus
+  the wrap test updated to the new behaviour) and 3 re-anchoring tests in
+  `tests/test_auto_exposure_starcount.py`; full unit suite (776) passing.
+
 ## LiveCam camera settings are committed (2026-07-25)
 
 Settings changed on the LiveCam page reverted after navigating to another

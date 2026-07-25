@@ -43,7 +43,13 @@ def _populated() -> PointingEstimate:
         last_solve_success=1234.5,
         constellation="Ori",
         diagnostics=SolveDiagnostics(
-            Matches=12, RMSE=0.3, Prob=1e-9, FOV=10.2, T_solve=0.05, T_extract=0.01
+            Matches=12,
+            Centroids=31,
+            RMSE=0.3,
+            Prob=1e-9,
+            FOV=10.2,
+            T_solve=0.05,
+            T_extract=0.01,
         ),
     )
 
@@ -69,6 +75,7 @@ def test_empty_estimate_serializes_without_error():
     assert d["camera_solve"] == {"RA": None, "Dec": None, "Roll": None}
     assert d["solve_source"] is None
     assert d["Matches"] == 0  # diagnostics default
+    assert d["Centroids"] == 0  # diagnostics default
 
 
 @pytest.mark.unit
@@ -91,6 +98,8 @@ def test_diagnostics_and_timing_keys_preserved():
     d = _solution_to_dict(_populated())
     assert d["FOV"] == 10.2
     assert d["Matches"] == 12
+    # Detected vs matched: the auto-exposure signal, not the solve result.
+    assert d["Centroids"] == 31
     assert d["solve_source"] == "CAM"
     # solve_time keeps the old key name (estimate_time under the hood)
     assert d["solve_time"] == 1234.5
