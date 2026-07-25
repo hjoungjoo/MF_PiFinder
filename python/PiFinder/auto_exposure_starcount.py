@@ -5,7 +5,7 @@ Star-count controller for solver-driven auto-exposure.
 
 An alternative to the match-count controller
 (``auto_exposure.ExposurePIDController``), selected with the Camera Exp
-menu's "Auto Star" item (``camera_exp = "auto_star"``). The feedback
+menu's "Star" item (``camera_exp = "auto_star"``). The feedback
 signal is the number of centroids cedar-detect extracted from the frame
 (``SolveDiagnostics.Centroids``) rather than the number of stars tetra3
 matched against the catalog. That distinction is the point:

@@ -983,7 +983,7 @@ pifinder_menu = {
                             "name_suffix_callback": callbacks.get_camera_exposure_display,
                         },
                         {
-                            "name": _("Auto Star"),
+                            "name": _("Star"),
                             "value": "auto_star",
                             "name_suffix_callback": callbacks.get_camera_exposure_star_display,
                         },

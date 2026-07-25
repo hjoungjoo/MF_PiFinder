@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-25 18:46+0900\n"
+"POT-Creation-Date: 2026-07-25 19:10+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -90,7 +90,7 @@ msgid "Dark Nebula"
 msgstr "암흑성운"
 
 #. TRANSLATORS: Object type
-#: PiFinder/obj_types.py:17
+#: PiFinder/obj_types.py:17 PiFinder/ui/menu_structure.py:986
 msgid "Star"
 msgstr "항성"
 
@@ -2129,11 +2129,6 @@ msgstr "노출"
 #: views/indi_mount.html:319 views/indi_mount.html:442 views/network.html:32
 msgid "Auto"
 msgstr "자동"
-
-#: PiFinder/ui/menu_structure.py:986
-# AI-TRANSLATED (claude): needs human review
-msgid "Auto Star"
-msgstr "자동(별 수)"
 
 #: PiFinder/ui/menu_structure.py:991
 msgid "0.025s"
@@ -5655,4 +5650,8 @@ msgstr ""
 # AI-TRANSLATED (claude): needs human review
 #~ msgid "Star Count"
 #~ msgstr "검출 별 수"
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "Auto Star"
+#~ msgstr "자동(별 수)"
 

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-25 18:46+0900\n"
+"POT-Creation-Date: 2026-07-25 19:10+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: xxxxxx <xxxxx@xxxxx.com>\n"
 "Language: fr_FR\n"
@@ -92,7 +92,7 @@ msgstr "Nébuleuse obscure"
 
 # AI-TRANSLATED (claude): needs human review
 #. TRANSLATORS: Object type
-#: PiFinder/obj_types.py:17
+#: PiFinder/obj_types.py:17 PiFinder/ui/menu_structure.py:986
 msgid "Star"
 msgstr "Étoile"
 
@@ -2296,12 +2296,6 @@ msgstr "Expo. Caméra"
 #: views/indi_mount.html:319 views/indi_mount.html:442 views/network.html:32
 msgid "Auto"
 msgstr "Auto"
-
-# AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:986
-# AI-TRANSLATED (claude): needs human review
-msgid "Auto Star"
-msgstr "Auto (étoiles)"
 
 #: PiFinder/ui/menu_structure.py:991
 msgid "0.025s"
@@ -6184,4 +6178,8 @@ msgstr ""
 # AI-TRANSLATED (claude): needs human review
 #~ msgid "Star Count"
 #~ msgstr "Nb étoiles"
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "Auto Star"
+#~ msgstr "Auto (étoiles)"
 

@@ -273,7 +273,7 @@ def get_camera_exposure_display(ui_module: UIModule) -> str:
 
 
 def get_camera_exposure_star_display(ui_module: UIModule) -> str:
-    """Suffix for the "Auto Star" (star-count) Camera Exp menu item."""
+    """Suffix for the "Star" (star-count) Camera Exp menu item."""
     return _camera_exposure_suffix(ui_module, "auto_star")
 
 

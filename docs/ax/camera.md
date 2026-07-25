@@ -54,7 +54,7 @@ Exactly one of three authorities decides exposure at any moment:
 
 | Regime | Entered by | Exposure decided by |
 | --- | --- | --- |
-| Solver-driven auto-exposure | `set_exp:auto` / `set_exp:auto_star` (menu "Auto" / "Auto Star", or restored from `camera_exp: "auto"` / `"auto_star"` at startup) | match-count, star-count, or background controller |
+| Solver-driven auto-exposure | `set_exp:auto` / `set_exp:auto_star` (menu "Auto" / "Star", or restored from `camera_exp: "auto"` / `"auto_star"` at startup) | match-count, star-count, or background controller |
 | Native auto-exposure | `set_exp:native` (daytime alignment only) | the camera driver |
 | Manual exposure | `set_exp:<µs>` (menu), `exp_up` / `exp_dn` | the user |
 
@@ -69,7 +69,7 @@ Transitions worth knowing:
   auto-exposure regimes. The new value is *not* persisted until
   `exp_save`, which also writes `camera_gain`.
 - Selecting a manual value from the menu persists it to `camera_exp`
-  immediately; selecting "Auto" persists the string `"auto"`, "Auto Star"
+  immediately; selecting "Auto" persists the string `"auto"`, "Star"
   the string `"auto_star"`.
 
 ## 3. Match-count controller
@@ -92,7 +92,7 @@ solver keeps matching a healthy number of stars.
 
 `ExposureStarCountController` (`auto_exposure_starcount.py`). An
 alternative to the match-count controller, selected as a fourth Camera
-Exp menu item: "Auto Star" persists `camera_exp: "auto_star"` and sends
+Exp menu item: "Star" persists `camera_exp: "auto_star"` and sends
 `set_exp:auto_star` (the plain "Auto" item stays the match-count
 controller). Living inside the Camera Exp menu keeps it reachable from
 the focus/preview screen's marking menu (long press → Exposure), so the

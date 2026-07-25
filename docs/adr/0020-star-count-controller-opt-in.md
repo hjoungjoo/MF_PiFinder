@@ -26,7 +26,7 @@ enforces ADR 0010's scope at the signal level: a star-filled but
 unsolvable frame no longer triggers recovery.
 
 **The default does not change.** The controller choice rides on
-`camera_exp` itself: the Camera Exp menu gains an "Auto Star" item that
+`camera_exp` itself: the Camera Exp menu gains a "Star" item that
 persists `"auto_star"`, next to the existing "Auto" (match-count). One
 menu is deliberate — the focus/preview screen's marking menu jumps to
 Camera Exp, so the user can switch controllers and manual exposures from

@@ -1597,10 +1597,10 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - `camera_interface.py` / `camera_pi.py`: new `camera_exp` value
   `"auto_star"` — `set_exp:auto_star` selects the star-count controller;
   dispatch branch with lazy creation. No separate config key.
-- `ui/menu_structure.py` / `ui/callbacks.py`: "Auto Star" item added to
+- `ui/menu_structure.py` / `ui/callbacks.py`: "Star" item added to
   the Camera Exp menu (with live exposure suffix) — reachable from the
   focus screen's marking menu (long press → Exposure).
-- i18n: "Auto Star" translated for de/es/fr/ko/zh (AI-TRANSLATED
+- i18n: "Star" translated for de/es/fr/ko/zh (AI-TRANSLATED
   markers), .mo recompiled.
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.

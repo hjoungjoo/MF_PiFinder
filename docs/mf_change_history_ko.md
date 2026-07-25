@@ -1427,9 +1427,9 @@ sudo systemctl start pifinder
   `"auto_star"` 처리 — `set_exp:auto_star`로 star_count 컨트롤러 선택,
   디스패치 분기(lazy 생성). 별도 config 키 없음.
 - `ui/menu_structure.py`·`ui/callbacks.py`: Camera Exp 메뉴에
-  "Auto Star" 항목 추가(라이브 노출 서픽스 포함) — 포커스 화면 마킹
+  "Star" 항목 추가(라이브 노출 서픽스 포함) — 포커스 화면 마킹
   메뉴(롱키 → Exposure)에서 그대로 접근·전환 가능.
-- i18n: de/es/fr/ko/zh "Auto Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
+- i18n: de/es/fr/ko/zh "Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
 - 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
 ## 문서 파일
