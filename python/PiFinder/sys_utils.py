@@ -8,6 +8,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable
@@ -194,6 +195,11 @@ UHID_MODULE = "uhid"
 BT_PAIRING_STA_INTERFACE = "wlan0"
 BT_PAIRING_AP_INTERFACE = "uap0"
 BT_PAIRING_WIFI_SAFETY_TIMEOUT = 60
+# In-process WiFi restore fired this many seconds after a pause, regardless of
+# whether the caller's own resume path survives (see pause_wifi_for_bt_pairing).
+# Matches the pairing screen's WIFI_MAX_PAUSE so behavior stays the same when
+# everything is healthy.
+BT_PAIRING_WIFI_APP_RESUME_SECONDS = 35
 # Where we stash the active wlan0 connection UUID while WiFi is paused, so both
 # the normal restore and the detached watchdog bring back exactly that profile
 # instead of guessing (nmcli "device connect" can fail to pick an existing one).
@@ -2698,6 +2704,19 @@ def pause_wifi_for_bt_pairing(
     ensure_uhid_loaded()
     # Remember exactly which client profile is up so we can bring it back cleanly.
     _capture_wlan_connection()
+    # In-process fallback: restore WiFi even if the caller's resume path never
+    # runs (the pairing screen's per-frame timeout check stops with the screen,
+    # and its wall-clock timers used to freeze on a GPS/NTP clock jump). The
+    # threading.Timer runs on a monotonic schedule and resume is idempotent, so
+    # firing after a normal resume is harmless.
+    try:
+        timer = threading.Timer(
+            BT_PAIRING_WIFI_APP_RESUME_SECONDS, resume_wifi_after_bt_pairing
+        )
+        timer.daemon = True
+        timer.start()
+    except Exception as e:
+        logger.warning("SYS: could not arm in-process WiFi resume: %s", e)
     # Safety net: an independent, session-detached process that re-enables WiFi
     # even if this process dies while WiFi is down.
     try:

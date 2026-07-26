@@ -1631,6 +1631,33 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.
 
+## WiFi not restored during BT pairing fixed (2026-07-26)
+
+Field incident: pairing a joystick (VR-PARK) froze the pairing screen and
+left SSH/web dead until a reboot; the pairing itself had succeeded. The
+WiFi pause is intentional (BLE coexistence; 35s cap + 60s watchdog), but
+restoration failed.
+
+Analysis (previous boot's journal was volatile; confirmed from code):
+
+- The device has no RTC, so `time.time()` jumps when GPS/NTP corrects the
+  clock after boot. Every pairing timeout (35s WiFi resume, 90s pair
+  timeout, post-done cleanup) compared wall-clock against `pair_started`,
+  so a backward jump froze them all — exactly the observed stuck screen
+  with WiFi never returning. The 60s watchdog (`sleep` is monotonic)
+  remains, but repeated retries keep re-arming pauses.
+- The 35s resume only ran inside the pairing screen's update loop, so a
+  screen that stops updating leaves only the watchdog.
+
+Fixes: pairing timing switched to `time.monotonic()`;
+`pause_wifi_for_bt_pairing()` now also arms an in-process
+`threading.Timer` (35s) that resumes WiFi regardless of the UI loop
+(resume is idempotent; the detached 60s watchdog stays as the last
+resort).
+
+Note: starting a pairing from the web remote cuts the operator's own
+connection by design (coexistence) — pair from the LCD.
+
 ## Joystick button mapping (2026-07-26)
 
 Map buttons of a Bluetooth-paired joystick/gamepad to PiFinder functions.

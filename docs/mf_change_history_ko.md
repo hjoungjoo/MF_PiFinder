@@ -1454,6 +1454,35 @@ sudo systemctl start pifinder
 - i18n: de/es/fr/ko/zh "Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
 - 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
+## BT 페어링 중 WiFi 미복구 수정 (2026-07-26)
+
+실장비 사고: 조이스틱(VR-PARK) 페어링 중 화면이 멈추고 SSH/웹이 죽은 채
+복구되지 않아 재부팅. 페어링 자체는 성공해 있었다. WiFi 정지는 BLE 공존
+문제 때문에 의도된 동작이지만(35초 상한 + 60초 워치독), 복구가 안 됐다.
+
+원인 분석(이전 부팅 저널은 휘발되어 코드 검증으로 확정):
+
+- 이 장비는 RTC가 없어(`timedatectl` RTC n/a) 부팅 후 GPS/NTP가 시계를
+  맞출 때 `time.time()`이 점프한다. 페어링 화면의 모든 타임아웃
+  (`pair_started` 기준 35초 WiFi 복구·90초 페어 타임아웃·완료 후 정리)이
+  벽시계 기준이라, 뒤로 점프하면 전부 얼어붙는다 — 멈춘 화면과 WiFi 미복구
+  증상 그대로. 60초 워치독(`sleep`은 단조 시계)이 남지만 재시도로 pause가
+  반복되면 창이 계속 밀린다.
+- 35초 복구는 페어링 화면의 update 루프 안에서만 검사되어, 화면이 갱신을
+  멈추면(다른 화면 이동 등) 워치독 하나에만 의존하게 된다.
+
+수정:
+
+- `ui/bluetooth_keyboard.py`: 페어링 타이밍 전부 `time.monotonic()`으로 전환.
+- `sys_utils.py`: `pause_wifi_for_bt_pairing()`이 프로세스 내
+  `threading.Timer`(35초, `BT_PAIRING_WIFI_APP_RESUME_SECONDS`)로 복구를
+  예약 — UI 루프 생존 여부와 무관하게 동작하고, resume은 멱등이라 정상
+  경로 복구 후 발화해도 무해. 기존 60초 분리 프로세스 워치독은 유지(최후
+  안전망).
+
+참고: 페어링을 웹 원격(/remote)에서 시작하면 WiFi 정지로 조작 화면 자체가
+끊긴다 — 공존 제약상 불가피하며, 페어링은 LCD에서 하는 것을 권장.
+
 ## 조이스틱 버튼 매핑 (2026-07-26)
 
 블루투스로 페어링한 조이스틱/게임패드의 버튼을 PiFinder 기능에 매핑하는 기능.

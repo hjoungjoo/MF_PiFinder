@@ -245,7 +245,9 @@ class UIBluetoothKeyboard(UITextMenu):
         self._close_pair_process()
         self.pair_address = address
         self.pair_name = name or address
-        self.pair_started = time.time()
+        # Monotonic: a GPS/NTP clock jump (no RTC on this device) must not
+        # freeze the WiFi-resume and pairing timeouts below.
+        self.pair_started = time.monotonic()
         self.pair_status = "Starting"
         self.pair_output = ""
         self.pair_done_at = None
@@ -370,7 +372,7 @@ class UIBluetoothKeyboard(UITextMenu):
         if self.pair_done_at is not None:
             return
         self.pair_success = success
-        self.pair_done_at = time.time()
+        self.pair_done_at = time.monotonic()
         self._send_pair_command("quit")
 
     def _close_pair_process(self):
@@ -404,14 +406,14 @@ class UIBluetoothKeyboard(UITextMenu):
         self._read_pair_output()
         # Bound the WiFi-off window independently of how long pairing runs, so a
         # slow attempt can't lock the user out of the network.
-        if self.wifi_paused and time.time() - self.pair_started > WIFI_MAX_PAUSE:
+        if self.wifi_paused and time.monotonic() - self.pair_started > WIFI_MAX_PAUSE:
             self._resume_wifi()
-        if time.time() - self.pair_started > PAIR_TIMEOUT:
+        if time.monotonic() - self.pair_started > PAIR_TIMEOUT:
             self.pair_status = "Pair timeout"
             self._finish_pairing(False)
         if self.pair_process.poll() is not None and self.pair_done_at is None:
             self._finish_pairing(self.pair_success)
-        if self.pair_done_at and time.time() - self.pair_done_at > 2.5:
+        if self.pair_done_at and time.monotonic() - self.pair_done_at > 2.5:
             self._close_pair_process()
             self.action_menu_active = False
             self._refresh_devices()
