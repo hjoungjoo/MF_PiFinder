@@ -23,9 +23,25 @@ STACK_FRAME_LIMIT_MAX = 500
 SESSION_ONLY_KEYS = {"processing_enabled"}
 SOURCE_ORIGINAL = "original_raw"
 SOURCE_CROPPED = "cropped_raw"
+# Post-processing pipeline stages between the cropped raw and the solver
+# (camera_pi.capture() order). Selecting one shows that stage live, so the
+# step that loses the stars can be found by eye instead of via one-shot
+# stage dumps (camera_stage_dump).
+SOURCE_BIAS_SUBTRACTED = "bias_subtracted"
+SOURCE_DIGITAL_GAIN = "digital_gain"
+SOURCE_STRETCHED_8BIT = "stretched_8bit"
+SOURCE_RESIZED_512 = "resized_512"
+SOURCE_SOLVER_INPUT = "solver_input"
+STAGE_SOURCES = (
+    SOURCE_BIAS_SUBTRACTED,
+    SOURCE_DIGITAL_GAIN,
+    SOURCE_STRETCHED_8BIT,
+    SOURCE_RESIZED_512,
+    SOURCE_SOLVER_INPUT,
+)
 OUTPUT_LATEST = "latest_selected_raw"
 OUTPUT_STACK = "stack"
-VALID_SOURCES = {SOURCE_ORIGINAL, SOURCE_CROPPED}
+VALID_SOURCES = {SOURCE_ORIGINAL, SOURCE_CROPPED, *STAGE_SOURCES}
 VALID_OUTPUTS = {OUTPUT_LATEST, OUTPUT_STACK}
 VALID_STACK_MODES = {"mean", "sum", "max"}
 # Raw Display = fixed linear ADU->8bit mapping (gain/exposure changes stay

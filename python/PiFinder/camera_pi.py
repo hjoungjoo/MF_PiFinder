@@ -16,7 +16,16 @@ from PiFinder.sqm import get_camera_profile, detect_camera_type
 from typing import Tuple
 import logging
 from PiFinder.multiproclogging import MultiprocLogging
-from PiFinder.livecam_config import processing_enabled
+from PiFinder.livecam_config import (
+    SOURCE_BIAS_SUBTRACTED,
+    SOURCE_DIGITAL_GAIN,
+    SOURCE_ORIGINAL,
+    SOURCE_RESIZED_512,
+    SOURCE_SOLVER_INPUT,
+    SOURCE_STRETCHED_8BIT,
+    normalize_settings,
+    processing_enabled,
+)
 import numpy as np
 
 logger = logging.getLogger("Camera.Pi")
@@ -95,16 +104,26 @@ class CameraPI(CameraInterface):
 
         livecam_settings = {}
         livecam_active = False
+        livecam_source = None
         if hasattr(self, "shared_state") and hasattr(
             self.shared_state, "livecam_settings"
         ):
             livecam_settings = self.shared_state.livecam_settings()
             livecam_active = processing_enabled(livecam_settings)
+            if livecam_active:
+                livecam_source = normalize_settings(livecam_settings)[
+                    "input_frame_source"
+                ]
 
-        original_raw = raw_capture if livecam_active else None
+        # Only the full-sensor frame needs keeping past the crop, and only
+        # when the LiveCam viewer is actually looking at it.
+        original_raw = raw_capture if livecam_source == SOURCE_ORIGINAL else None
 
         # Apply camera-specific crop and rotation
         raw_capture = self.profile.crop_and_rotate(raw_capture)
+        # The uint16 cropped frame survives the float processing below
+        # (astype rebinds raw_capture); LiveCam publishes from this reference.
+        cropped_raw = raw_capture
 
         # One-shot pipeline stage dump (save_stages command): collect a copy
         # of every processing stage of THIS frame; written at the end of this
@@ -113,26 +132,14 @@ class CameraPI(CameraInterface):
         stages = []
         if stage_dump_dir:
             stages.append(("raw_cropped", raw_capture.copy()))
+        # LiveCam "Input Frame" pipeline stage view: keep only the stage the
+        # viewer selected (solver_input is published by the camera loop after
+        # rotation, not here).
+        stage_frames = {}
 
         # Store raw in shared state (before processing) for calibration and analysis
         if hasattr(self, "shared_state"):
             self.shared_state.set_cam_raw(raw_capture.copy())
-            if livecam_active and original_raw is not None:
-                try:
-                    from PiFinder.raw_live_stack import publish_selected_frame
-
-                    publish_selected_frame(
-                        self.shared_state,
-                        livecam_settings,
-                        self.profile,
-                        self.camera_type,
-                        original_raw,
-                        raw_capture,
-                        metadata,
-                    )
-                except Exception as exc:
-                    logger.warning("LiveCam RAW publish failed: %s", exc)
-        del original_raw
 
         # covert to 32 bit int to avoid overflow
         raw_capture = raw_capture.astype(np.float32)
@@ -141,11 +148,15 @@ class CameraPI(CameraInterface):
         raw_capture -= self.profile.bias_offset
         if stage_dump_dir:
             stages.append(("bias_subtracted", raw_capture.copy()))
+        if livecam_source == SOURCE_BIAS_SUBTRACTED:
+            stage_frames[livecam_source] = raw_capture.copy()
 
         # apply digital gain
         raw_capture *= self.profile.digital_gain
         if stage_dump_dir:
             stages.append(("digital_gain", raw_capture.copy()))
+        if livecam_source == SOURCE_DIGITAL_GAIN:
+            stage_frames[livecam_source] = raw_capture.copy()
 
         # rescale to 8 bit
         raw_capture = (
@@ -158,13 +169,34 @@ class CameraPI(CameraInterface):
         raw_capture = np.clip(raw_capture.astype(np.int32), 0, 255).astype(np.uint8)
         if stage_dump_dir:
             stages.append(("stretched_8bit", raw_capture.copy()))
+        if livecam_source == SOURCE_STRETCHED_8BIT:
+            stage_frames[livecam_source] = raw_capture.copy()
 
         # convert to PIL image and resize to 512x512
         raw_image = Image.fromarray(raw_capture).resize((512, 512))
+        if livecam_source == SOURCE_RESIZED_512:
+            stage_frames[livecam_source] = np.asarray(raw_image)
 
         if stage_dump_dir:
             stages.append(("resized_512", np.asarray(raw_image)))
             self._write_stage_dump(stage_dump_dir, stages)
+
+        if livecam_active and livecam_source != SOURCE_SOLVER_INPUT:
+            try:
+                from PiFinder.raw_live_stack import publish_selected_frame
+
+                publish_selected_frame(
+                    self.shared_state,
+                    livecam_settings,
+                    self.profile,
+                    self.camera_type,
+                    original_raw,
+                    cropped_raw,
+                    metadata,
+                    stage_frames=stage_frames,
+                )
+            except Exception as exc:
+                logger.warning("LiveCam RAW publish failed: %s", exc)
 
         return raw_image
 

@@ -29,7 +29,7 @@ from PiFinder.auto_exposure import (
 )
 from PiFinder.auto_exposure_starcount import ExposureStarCountController
 from PiFinder.sqm.camera_profiles import detect_camera_type
-from PiFinder.livecam_config import settings_from_config
+from PiFinder.livecam_config import SOURCE_SOLVER_INPUT, settings_from_config
 
 logger = logging.getLogger("Camera.Interface")
 
@@ -316,6 +316,40 @@ class CameraInterface:
                         "gain": self.gain,
                     }
                     shared_state.set_last_image_metadata(image_metadata)
+
+                    # LiveCam "Input Frame" solver_input stage: what the
+                    # solver actually reads exists only here, after rotation,
+                    # so this stage is published by the loop and not by
+                    # capture() (which publishes every other source).
+                    if hasattr(shared_state, "livecam_settings"):
+                        livecam_settings = shared_state.livecam_settings()
+                        if (
+                            livecam_settings
+                            and livecam_settings.get("input_frame_source")
+                            == SOURCE_SOLVER_INPUT
+                        ):
+                            try:
+                                from PiFinder.raw_live_stack import (
+                                    publish_selected_frame,
+                                )
+
+                                publish_selected_frame(
+                                    shared_state,
+                                    livecam_settings,
+                                    getattr(self, "profile", None),
+                                    self.get_cam_type(),
+                                    None,
+                                    None,
+                                    {
+                                        "ExposureTime": self.exposure_time,
+                                        "AnalogueGain": self.gain,
+                                    },
+                                    stage_frames={
+                                        SOURCE_SOLVER_INPUT: np.asarray(base_image)
+                                    },
+                                )
+                            except Exception:
+                                logger.exception("LiveCam solver_input publish failed")
 
                     # Final stage of a pending pipeline dump: base_image after
                     # rotation is exactly what the solver reads.

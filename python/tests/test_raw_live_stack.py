@@ -153,6 +153,77 @@ def test_publish_original_rotates_without_crop():
     np.testing.assert_array_equal(entry["frame"], np.rot90(original, 1))
 
 
+def test_publish_stage_source_uses_stage_frame():
+    shared = DummySharedState()
+    stage = np.full((2, 2), 7.5, dtype=np.float32)
+
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True, "input_frame_source": "bias_subtracted"},
+        _profile(),
+        "test",
+        np.ones((3, 4), dtype=np.uint16),
+        np.ones((1, 2), dtype=np.uint16),
+        stage_frames={"bias_subtracted": stage},
+    )
+
+    entry = shared.raw_live_frame()
+    assert entry["info"]["source"] == "bias_subtracted"
+    assert np.array_equal(entry["frame"], stage)
+    # Float stages are still in sensor ADU: the profile format is kept.
+    assert entry["info"]["raw_format"] == "R10"
+
+
+def test_publish_uint8_stage_drops_raw_format():
+    """8-bit stages are not ADU; Raw Display must scale by dtype, not
+    the sensor bit depth."""
+    shared = DummySharedState()
+
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True, "input_frame_source": "solver_input"},
+        _profile(),
+        "test",
+        None,
+        None,
+        stage_frames={"solver_input": np.full((2, 2), 200, dtype=np.uint8)},
+    )
+
+    assert shared.raw_live_frame()["info"]["raw_format"] is None
+
+
+def test_publish_stage_source_without_frame_publishes_nothing():
+    """capture() does not have solver_input; the loop publishes it later.
+    A stage-selecting call site missing that stage must stay silent."""
+    shared = DummySharedState()
+
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True, "input_frame_source": "solver_input"},
+        _profile(),
+        "test",
+        np.ones((3, 4), dtype=np.uint16),
+        np.ones((1, 2), dtype=np.uint16),
+        stage_frames={},
+    )
+
+    assert shared.raw_live_frame() is None
+
+
+def test_stage_sources_survive_normalize():
+    for source in (
+        "bias_subtracted",
+        "digital_gain",
+        "stretched_8bit",
+        "resized_512",
+        "solver_input",
+    ):
+        assert (
+            normalize_settings({"input_frame_source": source})["input_frame_source"]
+            == source
+        )
+
+
 def test_publish_cropped_uses_cropped_frame():
     shared = DummySharedState()
     original = np.arange(12, dtype=np.uint16).reshape(3, 4)

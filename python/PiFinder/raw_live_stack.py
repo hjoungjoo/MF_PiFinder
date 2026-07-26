@@ -25,6 +25,7 @@ from PiFinder.livecam_config import (
     PREVIEW_MODE_RAW,
     SOURCE_CROPPED,
     SOURCE_ORIGINAL,
+    STAGE_SOURCES,
     VALID_IMAGE_FORMATS,
     normalize_settings,
 )
@@ -116,15 +117,22 @@ def publish_selected_frame(
     settings: dict[str, Any],
     profile,
     camera_type: str,
-    original_raw: np.ndarray,
-    cropped_raw: np.ndarray,
+    original_raw: np.ndarray | None,
+    cropped_raw: np.ndarray | None,
     metadata: dict[str, Any] | None = None,
+    stage_frames: dict[str, np.ndarray] | None = None,
 ) -> None:
     """Publish the currently selected RAW frame for LiveCam consumers.
 
     Disabled processing returns before touching shared state. The control API
     clears any previous shared frame once when the top-level switch is turned
     off, so the camera loop does not pay a per-frame manager write cost.
+
+    ``stage_frames`` carries the post-processing pipeline stages
+    (``STAGE_SOURCES``); when the selected source is a stage the caller does
+    not have, nothing is published for this frame -- a later call site in the
+    pipeline owns it (``solver_input`` is published by the camera loop, after
+    rotation, not by ``capture()``).
     """
 
     normalized = normalize_settings(settings)
@@ -135,13 +143,22 @@ def publish_selected_frame(
     source = normalized["input_frame_source"]
     rotation_90 = int(getattr(profile, "rotation_90", 0) or 0)
     display_rotation = int(normalized.get("display_rotation_degrees", 0) or 0) % 360
+    raw_format = getattr(profile, "format", None)
 
     if source == SOURCE_CROPPED:
         selected = cropped_raw
+    elif source in STAGE_SOURCES:
+        selected = (stage_frames or {}).get(source)
+        # 8-bit stages are no longer in sensor ADU: leave raw_format out so
+        # the Raw Display preview scales by the frame's own dtype.
+        if selected is not None and np.asarray(selected).dtype == np.uint8:
+            raw_format = None
     else:
         selected = original_raw
-        if rotation_90:
+        if selected is not None and rotation_90:
             selected = np.rot90(selected, rotation_90)
+    if selected is None:
+        return
 
     selected = _rotate_display(selected, display_rotation)
     selected = np.ascontiguousarray(selected).copy()
@@ -152,7 +169,7 @@ def publish_selected_frame(
         source=source,
         rotation_90=rotation_90 if source == SOURCE_ORIGINAL else 0,
         display_rotation_degrees=display_rotation,
-        raw_format=getattr(profile, "format", None),
+        raw_format=raw_format,
         camera_type=camera_type,
         exposure_us=_optional_float(metadata.get("ExposureTime")),
         gain=_optional_float(metadata.get("AnalogueGain")),
