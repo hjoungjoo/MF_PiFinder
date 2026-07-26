@@ -387,8 +387,15 @@ class CameraInterface:
                         solution = shared_state.solution()
                         solve_source = solution.solve_source if solution else None
 
-                        # Handle camera solves (successful or failed)
-                        if solve_source in ("CAM", "CAM_FAILED"):
+                        # Any solution with solve attempts feeds the controller.
+                        # This must include "IMU": once a solve has succeeded
+                        # and the IMU progresses the estimate, failed camera
+                        # attempts leave solve_source at IMU -- gating on
+                        # CAM/CAM_FAILED alone froze auto-exposure exactly when
+                        # the frames stopped solving (observed: saturated sky,
+                        # exposure stuck). The per-attempt gate below is the
+                        # real rate limiter.
+                        if solve_source in ("CAM", "CAM_FAILED", "IMU"):
                             matched_stars = solution.diagnostics.Matches
                             solve_attempt_time = solution.last_solve_attempt
                             solve_rmse = solution.diagnostics.RMSE
@@ -455,11 +462,18 @@ class CameraInterface:
                                             w // 4 : w - w // 4,
                                         ].mean()
                                     )
+                                    # Per-attempt success: on success the
+                                    # solver stamps last_solve_success with
+                                    # the attempt time. solve_source cannot
+                                    # tell this (IMU masks it, see gate above).
                                     new_exposure = self._auto_exposure_star.update(
                                         solution.diagnostics.Centroids,
                                         self.exposure_time,
                                         center_mean=center_mean,
-                                        solve_success=(solve_source == "CAM"),
+                                        solve_success=(
+                                            solution.last_solve_success
+                                            == solve_attempt_time
+                                        ),
                                     )
                                 else:
                                     # Match-count controller (default)

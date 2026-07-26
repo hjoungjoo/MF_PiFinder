@@ -232,6 +232,19 @@ class TestExposureStarCountController:
         # Already at anchor -> no change
         assert controller.update(2, 300000) is None
 
+    def test_few_stars_on_bright_frame_steps_down(self):
+        """1-3 'detections' on a near-saturated frame are noise on a white
+        field, not blockage: step down instead of pinning at a bright anchor
+        (field failure: all-white sky held at 500 ms forever)."""
+        controller = ExposureStarCountController()
+        controller.update(20, 500000)  # learn anchor 500000
+        assert controller.update(2, 500000, center_mean=250.0) == 250000
+        assert controller._bright_ceiling == 250000
+        # Dark low-star frames still return to the anchor.
+        controller = ExposureStarCountController()
+        controller.update(20, 300000)
+        assert controller.update(2, 100000, center_mean=30.0) == 300000
+
     def test_bright_sky_guard_steps_down(self):
         """Short of stars + bright center ROI: halve, don't raise.
 

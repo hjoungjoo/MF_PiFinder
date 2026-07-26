@@ -190,8 +190,21 @@ class ExposureStarCountController:
             self._bright_ceiling = None
 
         # Too few stars to trust as a control signal: probably slewing or
-        # partially blocked. Hold at the anchor rather than chasing noise.
+        # partially blocked. Hold at the anchor rather than chasing noise --
+        # unless the frame is bright: a near-saturated frame with 1-3
+        # "detections" (noise/hot pixels on a white field) is overexposure,
+        # not blockage, and returning to a bright anchor pins the exposure on
+        # a saturated sky forever (observed: all-white frames held at 500 ms).
+        # Step down like the bright-sky guard instead.
         if centroid_count < self.min_stars_for_control:
+            if self._is_bright(center_mean):
+                self._bright_ceiling = max(self.min_exposure, current_exposure // 2)
+                logger.debug(
+                    f"StarCount: {centroid_count} stars on a bright frame "
+                    f"(mean {center_mean:.0f}), stepping down "
+                    f"(ceiling {self._bright_ceiling}µs)"
+                )
+                return self._apply_clamps(current_exposure, current_exposure // 2)
             logger.debug(
                 f"StarCount: only {centroid_count} stars "
                 f"(<{self.min_stars_for_control}), returning to anchor"
