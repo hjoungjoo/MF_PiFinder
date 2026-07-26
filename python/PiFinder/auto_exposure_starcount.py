@@ -225,7 +225,7 @@ class ExposureStarCountController:
         # anchor and hold still. A working exposure also retires the bright
         # ceiling -- the sky it was measured against is gone.
         if self.deadband_low <= star_fraction <= self.deadband_high:
-            self._anchor = current_exposure
+            self._anchor = self._clamp_absolute(current_exposure)
             self._bright_ceiling = None
             return None
 
@@ -246,6 +246,10 @@ class ExposureStarCountController:
         """Whether the frame is already sky-glow limited (None = unknown)."""
         return center_mean is not None and center_mean > self.bright_sky_mean
 
+    def _clamp_absolute(self, exposure: int) -> int:
+        """Bound an exposure to the absolute [min_exposure, max_exposure]."""
+        return max(self.min_exposure, min(self.max_exposure, exposure))
+
     def _apply_clamps(self, current_exposure: int, requested: int) -> int:
         """
         Bound a requested exposure by the anchor, the bright ceiling and the
@@ -258,7 +262,7 @@ class ExposureStarCountController:
         new_exposure = self._clamp_to_anchor(requested)
         if self._bright_ceiling is not None:
             new_exposure = min(new_exposure, self._bright_ceiling)
-        return max(self.min_exposure, min(self.max_exposure, new_exposure))
+        return self._clamp_absolute(new_exposure)
 
     def _clamp_to_anchor(self, requested: int) -> int:
         """
@@ -274,6 +278,11 @@ class ExposureStarCountController:
         ``reanchor_after`` consecutive clamps in the same direction the ask is
         no longer noise: move the anchor to the boundary so the search
         continues from there (ADR 0021).
+
+        The anchor itself must stay inside the absolute range: an anchor
+        boundary can lie outside it (400ms * 8 = 3.2s > the 1s ceiling), and
+        the low-star fallback returns the anchor verbatim -- an unclamped
+        re-anchor put a 3.2s exposure on the sensor in the field.
         """
         low = self._anchor // self.anchor_stops
         high = self._anchor * self.anchor_stops
@@ -291,12 +300,13 @@ class ExposureStarCountController:
             self._clamp_streak = 1
 
         if self._clamp_streak >= self.reanchor_after:
+            new_anchor = self._clamp_absolute(clamped)
             logger.info(
                 f"StarCount: anchor {self._anchor}µs clamped {self._clamp_streak}x "
                 f"toward {'shorter' if direction < 0 else 'longer'} exposures, "
-                f"re-anchoring to {clamped}µs"
+                f"re-anchoring to {new_anchor}µs"
             )
-            self._anchor = clamped
+            self._anchor = new_anchor
             self._clamp_streak = 0
             self._clamp_direction = 0
             low = self._anchor // self.anchor_stops
@@ -306,8 +316,12 @@ class ExposureStarCountController:
         return clamped
 
     def _return_to_anchor(self, current_exposure: int) -> Optional[int]:
-        if current_exposure != self._anchor:
-            return self._anchor
+        # Clamp on the way out too: this value goes straight to the sensor,
+        # so no anchor state -- however it was arrived at -- may put an
+        # exposure outside the absolute range on the camera.
+        anchor = self._clamp_absolute(self._anchor)
+        if current_exposure != anchor:
+            return anchor
         return None
 
     def get_status(self) -> dict:

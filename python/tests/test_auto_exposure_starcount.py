@@ -121,6 +121,43 @@ class TestExposureStarCountController:
         assert controller.update(160, 50000) == 25000
         assert controller._anchor == 50000
 
+    def test_reanchor_cannot_raise_anchor_past_absolute_max(self):
+        """The anchor must never leave [min_exposure, max_exposure].
+
+        Field failure (2026-07-26): a dark sky with a handful of detections
+        asked for more than anchor*8 on every solve; after three clamps the
+        anchor followed the bound to 400ms*8 = 3.2s, above the 1s absolute
+        ceiling. The next <4-star frame then returned that anchor verbatim
+        and the sensor ran a 3.2s exposure.
+        """
+        controller = ExposureStarCountController()
+        exposure = 1000000  # pinned at the absolute ceiling, dark scene
+        for _ in range(6):
+            # 6 detections -> f ~ 0.3 -> asks for ~3.3s, above anchor*8
+            new_exposure = controller.update(6, exposure, center_mean=10.0)
+            if new_exposure is not None:
+                exposure = new_exposure
+        assert controller._anchor == 1000000
+        # The low-star fallback holds at the (in-range) anchor.
+        assert controller.update(2, exposure, center_mean=10.0) is None
+
+    def test_reanchor_cannot_lower_anchor_past_absolute_min(self):
+        """Walking the anchor down stops at min_exposure, not anchor/8 of it."""
+        controller = ExposureStarCountController(ema_alpha=1.0)
+        exposure = 30000
+        for _ in range(10):
+            # A sky drowning in detections: f = 8, asks below anchor/8
+            new_exposure = controller.update(160, exposure, center_mean=10.0)
+            if new_exposure is not None:
+                exposure = new_exposure
+        assert controller._anchor >= controller.min_exposure
+
+    def test_low_star_fallback_clamps_an_out_of_range_anchor(self):
+        """Defence in depth: the fallback output is clamped on the way out."""
+        controller = ExposureStarCountController()
+        controller._anchor = 3200000  # outside the absolute range
+        assert controller.update(2, 400000) == 1000000
+
     def test_clamp_streak_resets_on_an_unclamped_step(self):
         """Only a sustained ask moves the anchor -- one odd frame does not."""
         controller = ExposureStarCountController(reanchor_after=3)
