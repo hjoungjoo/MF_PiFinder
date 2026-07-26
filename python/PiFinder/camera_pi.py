@@ -106,6 +106,14 @@ class CameraPI(CameraInterface):
         # Apply camera-specific crop and rotation
         raw_capture = self.profile.crop_and_rotate(raw_capture)
 
+        # One-shot pipeline stage dump (save_stages command): collect a copy
+        # of every processing stage of THIS frame; written at the end of this
+        # capture so the writes don't sit between the processing steps.
+        stage_dump_dir = getattr(self, "_stage_dump_dir", None)
+        stages = []
+        if stage_dump_dir:
+            stages.append(("raw_cropped", raw_capture.copy()))
+
         # Store raw in shared state (before processing) for calibration and analysis
         if hasattr(self, "shared_state"):
             self.shared_state.set_cam_raw(raw_capture.copy())
@@ -131,9 +139,13 @@ class CameraPI(CameraInterface):
 
         # sensor offset (bias pedestal from camera profile)
         raw_capture -= self.profile.bias_offset
+        if stage_dump_dir:
+            stages.append(("bias_subtracted", raw_capture.copy()))
 
         # apply digital gain
         raw_capture *= self.profile.digital_gain
+        if stage_dump_dir:
+            stages.append(("digital_gain", raw_capture.copy()))
 
         # rescale to 8 bit
         raw_capture = (
@@ -144,11 +156,37 @@ class CameraPI(CameraInterface):
 
         # clip to avoid <0 or >255 values
         raw_capture = np.clip(raw_capture.astype(np.int32), 0, 255).astype(np.uint8)
+        if stage_dump_dir:
+            stages.append(("stretched_8bit", raw_capture.copy()))
 
         # convert to PIL image and resize to 512x512
         raw_image = Image.fromarray(raw_capture).resize((512, 512))
 
+        if stage_dump_dir:
+            stages.append(("resized_512", np.asarray(raw_image)))
+            self._write_stage_dump(stage_dump_dir, stages)
+
         return raw_image
+
+    def _write_stage_dump(self, stage_dump_dir, stages) -> None:
+        """Write stages 0-4 and hand off to the camera loop for the final
+        (rotated) solver-input stage. One-shot: disarm whatever happens."""
+        from pathlib import Path
+
+        from PiFinder import camera_stage_dump
+
+        try:
+            dump_dir = Path(stage_dump_dir)
+            stats = [
+                camera_stage_dump.save_stage(dump_dir, i, name, arr)
+                for i, (name, arr) in enumerate(stages)
+            ]
+            self._stage_dump_stats = stats
+            self._stage_dump_pending = stage_dump_dir
+        except Exception:
+            logger.exception("Stage dump failed")
+        finally:
+            self._stage_dump_dir = None
 
     def capture_bias(self) -> np.ndarray:
         """Capture a bias frame for measuring black level offset.

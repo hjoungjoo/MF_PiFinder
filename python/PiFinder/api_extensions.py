@@ -19,6 +19,7 @@ import io
 import json
 import logging
 import time
+from pathlib import Path
 
 from flask import request, session, Response
 from PIL import Image
@@ -737,7 +738,13 @@ def register_api_routes(app, server_instance, require_auth=False):
 
     @app.route("/api/camera/raw")
     def api_camera_raw():
-        """Return the raw CMOS image, if available"""
+        """Return the raw CMOS image, if available.
+
+        The stored frame is the sensor's raw values (uint16 holding
+        10/12-bit data). Scale linearly by the sensor bit depth to 8-bit
+        for display -- reinterpreting the buffer (what this did before)
+        wrapped values modulo 256 and produced garbage brightness.
+        """
         try:
             raw = server_instance.shared_state.cam_raw()
             if raw is None:
@@ -749,6 +756,23 @@ def register_api_routes(app, server_instance, require_auth=False):
                 import numpy as np
 
                 arr = np.asarray(raw)
+                if arr.dtype == np.uint16:
+                    bit_depth = 16
+                    try:
+                        from PiFinder.sqm import get_camera_profile
+
+                        camera_type = server_instance.shared_state.camera_type()
+                        if camera_type:
+                            bit_depth = get_camera_profile(camera_type).bit_depth
+                    except Exception:
+                        logger.warning(
+                            "api/camera/raw: no camera profile, assuming 16-bit"
+                        )
+                    arr = np.clip(
+                        arr.astype(np.float32) * 255.0 / (2**bit_depth - 1),
+                        0,
+                        255,
+                    ).astype(np.uint8)
                 if arr.ndim == 2:
                     img = Image.fromarray(arr, mode="L").convert("RGB")
                 else:
@@ -756,6 +780,75 @@ def register_api_routes(app, server_instance, require_auth=False):
             return _png_response(img)
         except Exception as e:
             logger.error("api/camera/raw error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    @app.route("/api/camera/stages", methods=["GET", "POST"])
+    def api_camera_stages():
+        """Trigger or list pipeline stage dumps.
+
+        POST arms a one-shot dump: the next captured frame is written stage
+        by stage (cropped raw -> bias subtract -> digital gain -> 8-bit
+        stretch -> 512 resize -> rotated solver input) plus stats.json --
+        see camera_stage_dump. GET lists the dumps taken so far.
+        """
+        try:
+            stages_root = Path(utils.data_dir) / "captures"
+            if request.method == "POST":
+                camera_queue = getattr(server_instance, "camera_command_queue", None)
+                if camera_queue is None:
+                    return _json_response(
+                        {"error": "Camera command queue unavailable"}, 503
+                    )
+                camera_queue.put("save_stages")
+                return _json_response(
+                    {
+                        "note": "Stage dump armed; the next frame is written "
+                        "stage by stage. Poll GET /api/camera/stages -- the "
+                        "dump is complete once stats.json is listed."
+                    }
+                )
+
+            dumps = []
+            if stages_root.exists():
+                for dump_dir in sorted(stages_root.glob("stages_*")):
+                    if dump_dir.is_dir():
+                        dumps.append(
+                            {
+                                "name": dump_dir.name,
+                                "files": sorted(
+                                    f.name for f in dump_dir.iterdir() if f.is_file()
+                                ),
+                            }
+                        )
+            return _json_response({"dumps": dumps})
+        except Exception as e:
+            logger.error("api/camera/stages error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    @app.route("/api/camera/stages/<dirname>/<filename>")
+    def api_camera_stages_file(dirname, filename):
+        """Download one file from a pipeline stage dump."""
+        try:
+            # Path components come from the URL: allow only flat names inside
+            # a stages_* directory.
+            if (
+                not dirname.startswith("stages_")
+                or "/" in filename
+                or ".." in dirname
+                or ".." in filename
+            ):
+                return _json_response({"error": "Invalid path"}, 400)
+            path = Path(utils.data_dir) / "captures" / dirname / filename
+            if not path.is_file():
+                return _json_response({"error": "Not found"}, 404)
+            mimetype = {
+                ".png": "image/png",
+                ".json": "application/json",
+                ".npy": "application/octet-stream",
+            }.get(path.suffix, "application/octet-stream")
+            return Response(path.read_bytes(), content_type=mimetype)
+        except Exception as e:
+            logger.error("api/camera/stages file error: %s", e)
             return _json_response({"error": str(e)}, 500)
 
     @app.route("/api/camera/debug")

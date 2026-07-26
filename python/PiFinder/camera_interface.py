@@ -18,7 +18,9 @@ import queue
 import threading
 import logging
 
-from PiFinder import state_utils, timez, utils
+from pathlib import Path
+
+from PiFinder import camera_stage_dump, state_utils, timez, utils
 import PiFinder.pointing_model.quaternion_transforms as qt
 from PiFinder.auto_exposure import (
     ExposurePIDController,
@@ -63,6 +65,13 @@ class CameraInterface:
     # frame decline to start a second, concurrent capture on a camera that is
     # not thread-safe.
     _capture_thread: Optional[threading.Thread] = None
+    # One-shot pipeline stage dump (save_stages command). _stage_dump_dir arms
+    # the backend's capture() to write stages 0-4 (Pi camera only); it then
+    # hands the dir over via _stage_dump_pending for the loop below to add the
+    # final rotated solver-input stage and the stats file.
+    _stage_dump_dir: Optional[str] = None
+    _stage_dump_pending: Optional[str] = None
+    _stage_dump_stats: Optional[list] = None
 
     def set_native_ae(self, enabled: bool) -> bool:
         """Enable/disable the camera's native (driver) auto-exposure.
@@ -307,6 +316,36 @@ class CameraInterface:
                         "gain": self.gain,
                     }
                     shared_state.set_last_image_metadata(image_metadata)
+
+                    # Final stage of a pending pipeline dump: base_image after
+                    # rotation is exactly what the solver reads.
+                    if self._stage_dump_pending:
+                        try:
+                            dump_dir = Path(self._stage_dump_pending)
+                            stats = self._stage_dump_stats or []
+                            stats.append(
+                                camera_stage_dump.save_stage(
+                                    dump_dir,
+                                    len(stats),
+                                    "solver_input",
+                                    np.asarray(base_image),
+                                )
+                            )
+                            camera_stage_dump.finalize(
+                                dump_dir,
+                                stats,
+                                {
+                                    "camera": self.get_cam_type(),
+                                    "exposure_us": self.exposure_time,
+                                    "gain": self.gain,
+                                },
+                            )
+                            console_queue.put("CAM: Stages saved")
+                        except Exception:
+                            logger.exception("Stage dump finalize failed")
+                        finally:
+                            self._stage_dump_pending = None
+                            self._stage_dump_stats = None
 
                     # Auto-exposure: adjust based on plate solve results
                     # Updates as fast as new solve results arrive (naturally rate-limited)
@@ -560,6 +599,25 @@ class CameraInterface:
                                 f"Exposure saved and auto-exposure disabled: {self.exposure_time}µs"
                             )
 
+                        if command == "save_stages":
+                            # Arm a one-shot dump of every pipeline stage of
+                            # the next frame (camera_stage_dump). GPS time for
+                            # the name when available, Pi time otherwise --
+                            # same fallback as the exposure sweep below.
+                            gps_time = shared_state.datetime()
+                            timestamp = (
+                                gps_time.strftime("%Y%m%d_%H%M%S")
+                                if gps_time
+                                else timez.local_now().strftime("%Y%m%d_%H%M%S")
+                            )
+                            self._stage_dump_dir = str(
+                                Path(utils.data_dir)
+                                / "captures"
+                                / f"stages_{timestamp}"
+                            )
+                            console_queue.put("CAM: Stage dump armed")
+                            logger.info("Stage dump armed: %s", self._stage_dump_dir)
+
                         if command.startswith("save_image:"):
                             # Save current camera frame to specified path
                             save_path = command.split(":", 1)[1]
@@ -656,8 +714,6 @@ class CameraInterface:
                                 )
 
                             # Create sweep directory
-                            from pathlib import Path
-
                             sweep_dir = Path(
                                 f"{utils.data_dir}/captures/sweep_{timestamp}"
                             )
