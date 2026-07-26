@@ -1,10 +1,15 @@
 # 자동 노출 — 검출 별 수 컨트롤러 추가 설계
 
-> 상태: **Phase 1~3 구현 완료 — 현장 검증 진행 중** (2026-07-26)
-> 현장 결과(서울, 심한 광해): 목표 20개가 도달 불가능하고 스위트스팟(100–200 ms)
-> 밖에서는 노출↑=검출↓로 모델이 역전됨 → **솔브 성공 시 현재 노출을 앵커로
-> 학습·홀드**하는 게이트 추가([ADR 0022](adr/0022-solve-success-holds-star-count-exposure.md)).
-> 앵커의 절대 클램프 탈출 결함도 같은 날 수정(bcde58a1).
+> 상태: **Phase 1~3 구현 완료 — 현장 검증 결과 접근법 재검토 중** (2026-07-26)
+> 현장 결과(서울, 심한 광해+이동 구름): 목표 20개가 도달 불가능하고 스위트스팟
+> (100–200 ms) 밖에서는 노출↑=검출↓로 모델이 역전됨. 당일 보강 5건 —
+> 앵커 절대 클램프(bcde58a1), 솔브 성공 홀드([ADR 0022](adr/0022-solve-success-holds-star-count-exposure.md),
+> 2b068db2), IMU 소스 AE 동결 해제+시도별 성공 판정(80443cc6), 밝기 헤드룸
+> 상향 캡(0b314906), 저검출 앵커 탈출(24292966) — 으로 동결·포화·주차는
+> 제거됐으나, **검출 별 1~3개 하늘에서는 어떤 노출 정책도 솔브를 만들 수 없음**
+> (tetra3 최소 4개). 병목이 노출 제어가 아니라 검출 감도로 이동 →
+> [mf_auto_exposure_field_review_20260726_ko.md](mf_auto_exposure_field_review_20260726_ko.md)에서
+> 전처리/검출기 대안 검토 중.
 > 결정 기록: [ADR 0020](adr/0020-star-count-controller-opt-in.md)
 > 근거 조사: [mf_auto_exposure_methods_ko.md](mf_auto_exposure_methods_ko.md) (방법 조사, §6 권고안)
 > 관련 문서: [docs/ax/camera.md](ax/camera.md) (현행 노출 제어 아키텍처, 정규 소유자),

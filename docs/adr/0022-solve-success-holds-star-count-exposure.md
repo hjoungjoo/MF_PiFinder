@@ -42,6 +42,37 @@ Convergence from a cold start needs no new mechanism: the recovery ladder
 (ADR 0010/0021) already visits 200 ms and shorter rungs, and the first rung
 that solves is captured by the hold.
 
+## Addendum — same-night follow-ups (2026-07-26 field session)
+
+Three more failures surfaced while testing this decision under moving
+cloud, each fixed the same night:
+
+1. **AE froze under IMU solve source** (80443cc6). The dispatch gated on
+   `CAM`/`CAM_FAILED`; after any successful solve the IMU progresses the
+   estimate, failed attempts surface as `IMU`, and auto-exposure stopped
+   exactly when frames stopped solving (observed: saturated all-white
+   frames pinned at 500 ms). The gate now admits `IMU`, and per-attempt
+   success is `last_solve_success == last_solve_attempt` — which also
+   corrects this ADR's original `solve_source == "CAM"` wiring.
+2. **Raises jumped into saturation** (0b314906). A marginal sky (few
+   stars) computed f ≈ 0.25 and raised 3–20× in one step, saturating the
+   sensor and collapsing detections. Raises are now capped by brightness
+   headroom: predicted background mean after the raise must stay ≤ the
+   bright threshold (linear pipeline ⇒ mean scales with exposure).
+3. **Low-star frames parked at the anchor forever** (24292966). The
+   <4-star fallback assumed a transient; a sky that only ever shows 1–3
+   stars at the anchor never expired the assumption. After 4 consecutive
+   low-star attempts at the anchor the servo searches (safe under the
+   headroom cap) until the count recovers. Bright low-star frames step
+   down instead of returning to a bright anchor, and anchor returns
+   respect an active bright ceiling.
+
+**Outcome**: the controller no longer freezes, saturates, or parks — but
+the night also showed the deeper limit: with only 1–3 detectable stars,
+no exposure policy can produce a solve (tetra3 needs ≥4). The binding
+constraint moved from control to detection sensitivity; see
+[mf_auto_exposure_field_review_20260726_ko.md](../mf_auto_exposure_field_review_20260726_ko.md).
+
 ## Alternatives considered
 
 - **Lower `target_stars`.** Fixes this site, mistunes dark sky, and still

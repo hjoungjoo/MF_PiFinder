@@ -117,18 +117,48 @@ Control law and defaults follow cedar-server's exposure servo
 - **Division step**: `new = current / (ema/target)` — star count is
   roughly proportional to exposure, so one step converges in a few
   solves. No PID state.
-- **Anchor**: any exposure landing inside the deadband is remembered as
-  known-good. Adjustments clamp to anchor ±3 stops, then to the absolute
-  [25 ms, 1 s] range. The anchor is also the fallback target and resets
-  to 400 ms (the shipped default) on restart.
+- **Solve-success hold** (ADR 0022): an attempt that actually solved
+  learns the current exposure as the anchor and holds, even short of
+  target — under heavy light pollution the reachable count tops out
+  below 20 and the only exposures that solve sit in a narrow sweet
+  spot. Excess above the deadband still steps down.
+- **Brightness headroom cap**: the pipeline is linear up to the 8-bit
+  clip, so a raise of R multiplies the background mean by ~R. Raises
+  are capped so the predicted mean stays ≤ the bright threshold —
+  without this a marginal sky asked for 3–20× in one step and landed
+  saturated.
+- **Anchor**: any exposure landing inside the deadband (or that solved)
+  is remembered as known-good. Adjustments clamp to anchor ±3 stops,
+  then to the absolute [25 ms, 1 s] range; the anchor itself can never
+  leave the absolute range, and anchor returns respect an active bright
+  ceiling. Resets to 400 ms (the shipped default) on restart.
 - **Bright-sky guard**: short of stars but center-ROI mean > 240
-  (8-bit) → return to anchor instead of raising exposure.
-- **Slewing fallback**: fewer than 4 detected stars → return to anchor,
-  no servo step, no recovery.
+  (8-bit) → step down (ratcheting a bright ceiling), released with
+  hysteresis when the mean falls under 120 (ADR 0021).
+- **Low-star fallback with escape**: 1–3 detected stars → return to
+  anchor (transient slew/blockage hypothesis) — but a bright frame
+  steps down instead (noise "detections" on a white field are
+  overexposure), and after 4 consecutive low-star attempts at the
+  anchor the hypothesis expires and the servo searches with the low
+  count, staying in control until the count recovers.
 - **Zero-detection recovery**: `Centroids == 0` walks the same recovery
   ladder (`ZeroMatchRecovery` instance of its own), triggered after 2
   consecutive zero-detection attempts. Exiting recovery clears the EMA
   so the excursion doesn't bias the next step.
+
+Dispatch note: the AE update gate admits solutions with solve_source
+`CAM`, `CAM_FAILED` **and `IMU`** — once a solve has succeeded and the
+IMU progresses the estimate, failed attempts surface as `IMU`, and
+gating on the camera sources alone froze auto-exposure exactly when
+frames stopped solving. Per-attempt success is
+`last_solve_success == last_solve_attempt` (stamped equal on success).
+
+Field status (2026-07-26 Seoul, heavy light pollution + moving cloud):
+even with all of the above the controller cannot stabilise when the
+detector only ever finds 1–3 stars — exposure control cannot
+manufacture detections. The binding constraint is detection
+sensitivity; see
+`docs/mf_auto_exposure_field_review_20260726_ko.md`.
 
 ## 4. Zero-match recovery
 
