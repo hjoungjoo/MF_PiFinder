@@ -632,8 +632,8 @@ msgid "No BT devices"
 msgstr "无天体"
 
 #: PiFinder/ui/bluetooth_keyboard.py:106 PiFinder/ui/menu_structure.py:1506
-msgid "Keyboard"
-msgstr ""
+msgid "Bluetooth"
+msgstr "蓝牙"
 
 #: PiFinder/ui/bluetooth_keyboard.py:144
 msgid "BT scanning"

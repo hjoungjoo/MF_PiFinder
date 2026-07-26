@@ -1,6 +1,8 @@
 from __future__ import annotations
 import pytest
 
+from PiFinder import sys_utils
+
 try:
     from PiFinder.ui import bluetooth_keyboard as bk
 
@@ -33,3 +35,38 @@ try:
 
 except ImportError:
     pass
+
+
+@pytest.mark.unit
+class TestBluetoothInputDeviceDetection:
+    """Reconnect filtering covers keyboards and joysticks/gamepads alike.
+
+    The Bluetooth settings screen (previously "Keyboard") manages both, so
+    startup auto-reconnect must not skip a paired controller.
+    """
+
+    def test_keyboards_still_match(self):
+        assert sys_utils.is_bluetooth_input_device({"name": "Logitech Keyboard"})
+        assert sys_utils.is_bluetooth_input_device(
+            {"name": "K380", "icon": "input-keyboard"}
+        )
+
+    def test_joysticks_and_gamepads_match(self):
+        assert sys_utils.is_bluetooth_input_device({"name": "Xbox Wireless Controller"})
+        assert sys_utils.is_bluetooth_input_device({"name": "8BitDo Zero 2"})
+        assert sys_utils.is_bluetooth_input_device({"name": "Wireless Gamepad"})
+        assert sys_utils.is_bluetooth_input_device({"name": "DualSense"})
+        assert sys_utils.is_bluetooth_input_device(
+            {"name": "Pro 2", "icon": "input-gaming"}
+        )
+
+    def test_unrelated_devices_do_not_match(self):
+        assert not sys_utils.is_bluetooth_input_device({"name": "JBL Flip 6"})
+        assert not sys_utils.is_bluetooth_input_device(
+            {"name": "Galaxy Buds", "icon": "audio-headset"}
+        )
+
+    def test_legacy_keyboard_helper_is_unchanged(self):
+        """Kept for compatibility: still keyboard-only."""
+        assert sys_utils.is_bluetooth_keyboard({"name": "BT Keyboard"})
+        assert not sys_utils.is_bluetooth_keyboard({"name": "Xbox Wireless Controller"})

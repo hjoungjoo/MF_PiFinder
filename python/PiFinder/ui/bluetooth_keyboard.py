@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding:utf-8 -*-
 """
-Bluetooth keyboard pairing and connection UI.
+Bluetooth device pairing and connection UI (keyboards and joysticks/gamepads).
 """
 
 from __future__ import annotations
@@ -49,11 +49,12 @@ WIFI_MAX_PAUSE = 35
 
 class UIBluetoothKeyboard(UITextMenu):
     """
-    Small Bluetooth HID manager for pairing keyboards from the PiFinder UI.
-    USB keyboards need no pairing; they are handled by the normal libinput path.
+    Small Bluetooth HID manager for pairing keyboards and joysticks/gamepads
+    from the PiFinder UI. USB devices need no pairing; they are handled by the
+    normal libinput path.
     """
 
-    __title__ = "Keyboard"
+    __title__ = "Bluetooth"
 
     def __init__(self, *args, **kwargs):
         self.devices: list[dict[str, Any]] = []
@@ -103,7 +104,7 @@ class UIBluetoothKeyboard(UITextMenu):
             )
         if not self.devices:
             items.append({"name": _("No BT devices"), "value": None})
-        return {"name": _("Keyboard"), "select": "single", "items": items}
+        return {"name": _("Bluetooth"), "select": "single", "items": items}
 
     def _rebuild_menu(self):
         self.item_definition = self._create_menu_definition()

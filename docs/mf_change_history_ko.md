@@ -1454,6 +1454,30 @@ sudo systemctl start pifinder
 - i18n: de/es/fr/ko/zh "Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
 - 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
+## Bluetooth 설정 메뉴 — 조이스틱 지원, 이름 변경 (2026-07-26)
+
+Settings > Advanced의 "Keyboard" 항목을 "Bluetooth"(ko: 블루투스)로 바꾸고,
+키보드 전용이던 재연결 필터를 조이스틱/게임패드까지 넓혔다. 페어링/연결 UI
+자체는 원래 장치 종류를 가리지 않았고, 키보드 전용이던 부분은 이름과 재연결
+필터뿐이었다.
+
+- `ui/menu_structure.py`·`ui/bluetooth_keyboard.py`: 메뉴/타이틀 "Bluetooth"로
+  변경(레이블 `keyboard_settings`와 모듈/클래스명은 유지 — 코드 식별자까지
+  바꾸면 diff만 커짐).
+- `sys_utils.py`: `is_bluetooth_input_device()` 추가 — 키보드 키워드에 더해
+  joystick/joypad/gamepad/controller와 흔한 컨트롤러 브랜딩(8BitDo, DualShock,
+  DualSense, Joy-Con), 아이콘 `input-gaming`/`input-mouse` 인식. 재연결
+  (`reconnect_bluetooth_keyboards`)과 부팅 자동 재연결이 이 필터를 사용.
+  기존 `is_bluetooth_keyboard()`는 호환용으로 유지.
+- i18n: "Bluetooth" msgid를 ko(블루투스)/zh(蓝牙)/de/es/fr에 추가, .mo 재컴파일.
+- 테스트: 감지 필터 4종 추가(`tests/test_bluetooth_keyboard.py`), 전체 787
+  unit 통과.
+
+주의: 이 변경은 **연결 관리**(스캔/페어/자동 재연결)까지다. 연결된 조이스틱의
+버튼 입력을 UI 키로 매핑하는 것은 별도 작업 — 현재 입력 계층(`keyboard_pi.py`)은
+libinput 키보드 이벤트만 처리하며, libinput은 조이스틱 장치를 키보드로 분류하지
+않는 경우가 많다(키보드 모드를 지원하는 컨트롤러는 예외).
+
 ## Locations 수정 폼 라벨 겹침 수정 (2026-07-26)
 
 Location Management의 Edit Location 모달에서 라벨("Latitude (Decimal)" 등)이

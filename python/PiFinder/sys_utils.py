@@ -2836,9 +2836,43 @@ def _parse_bluetooth_info(output: str) -> dict[str, Any]:
     return info
 
 
+# Name fragments that mark a device as a HID input device we want to
+# auto-reconnect: keyboards plus joysticks/gamepads (the Bluetooth settings
+# screen manages both). Common controller brandings are included because many
+# report a plain model name ("8BitDo Zero 2") with no generic keyword.
+_BT_INPUT_NAME_FRAGMENTS = (
+    "keyboard",
+    "keys",
+    "joystick",
+    "joypad",
+    "gamepad",
+    "game pad",
+    "controller",
+    "8bitdo",
+    "dualshock",
+    "dualsense",
+    "joy-con",
+)
+# bluetoothctl Icon values for HID input devices.
+_BT_INPUT_ICONS = ("input-keyboard", "input-gaming", "input-mouse")
+
+
+def is_bluetooth_input_device(device: dict[str, Any]) -> bool:
+    """
+    Best-effort HID input device detection (keyboard/joystick/gamepad) for
+    reconnect filtering.
+    """
+    name = str(device.get("name", "")).lower()
+    icon = str(device.get("icon", "")).lower()
+    return icon in _BT_INPUT_ICONS or any(
+        fragment in name for fragment in _BT_INPUT_NAME_FRAGMENTS
+    )
+
+
 def is_bluetooth_keyboard(device: dict[str, Any]) -> bool:
     """
-    Best-effort keyboard detection for reconnect filtering.
+    Kept for compatibility; reconnect filtering now uses
+    is_bluetooth_input_device().
     """
     name = str(device.get("name", "")).lower()
     icon = str(device.get("icon", "")).lower()
@@ -2945,13 +2979,14 @@ def remove_bluetooth_device(address: str) -> str:
 
 def reconnect_bluetooth_keyboards(connect_timeout: int = 25) -> int:
     """
-    Connect paired keyboard-like devices. If none are identifiable as keyboards,
-    try all paired devices so generic HID names still work.
+    Connect paired HID input devices (keyboards and joysticks/gamepads). If
+    none are identifiable as input devices, try all paired devices so generic
+    HID names still work.
     """
     devices = [
         d for d in list_bluetooth_devices() if d.get("paired") or d.get("trusted")
     ]
-    targets = [d for d in devices if is_bluetooth_keyboard(d)] or devices
+    targets = [d for d in devices if is_bluetooth_input_device(d)] or devices
     count = 0
     for device in targets:
         if device.get("connected"):
@@ -2967,7 +3002,7 @@ def auto_reconnect_bluetooth_keyboards(
     connect_timeout: int = 10,
 ) -> int:
     """
-    Retry Bluetooth keyboard reconnection in the background during startup.
+    Retry Bluetooth input device reconnection in the background during startup.
 
     Bluetooth controllers and HID devices can appear a few seconds after the
     PiFinder service starts, especially after a reboot. This helper is designed
@@ -2987,7 +3022,7 @@ def auto_reconnect_bluetooth_keyboards(
                 for d in list_bluetooth_devices()
                 if d.get("paired") or d.get("trusted")
             ]
-            targets = [d for d in devices if is_bluetooth_keyboard(d)] or devices
+            targets = [d for d in devices if is_bluetooth_input_device(d)] or devices
             if targets and any(d.get("connected") for d in targets):
                 logger.info("SYS: Bluetooth keyboard reconnect complete")
                 return total_attempted

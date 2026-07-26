@@ -381,7 +381,7 @@ journalctl -u bluetooth -b -n 120 --no-pager
 PiFinder menu:
 
 ```text
-Settings > Advanced > Keyboard
+Settings > Advanced > Bluetooth
 ```
 
 Check:

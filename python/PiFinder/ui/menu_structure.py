@@ -1503,7 +1503,7 @@ pifinder_menu = {
                             ],
                         },
                         {
-                            "name": _("Keyboard"),
+                            "name": _("Bluetooth"),
                             "class": UIBluetoothKeyboard,
                             "label": "keyboard_settings",
                         },

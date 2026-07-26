@@ -1631,6 +1631,29 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.
 
+## Bluetooth settings menu — joystick support, renamed (2026-07-26)
+
+Settings > Advanced "Keyboard" is now "Bluetooth", and the
+keyboard-only reconnect filter covers joysticks/gamepads. The
+pairing/connect UI itself never cared about device type; the
+keyboard-specific parts were the name and the reconnect filter.
+
+- `ui/menu_structure.py` / `ui/bluetooth_keyboard.py`: menu/title renamed
+  (label `keyboard_settings` and code identifiers kept).
+- `sys_utils.py`: new `is_bluetooth_input_device()` — keyboard keywords
+  plus joystick/joypad/gamepad/controller and common controller brandings
+  (8BitDo, DualShock, DualSense, Joy-Con), icons
+  `input-gaming`/`input-mouse`. Reconnect and startup auto-reconnect use
+  it; `is_bluetooth_keyboard()` kept for compatibility.
+- i18n: "Bluetooth" msgid for ko/zh/de/es/fr, .mo recompiled.
+- Tests: 4 detection tests; full unit suite (787) passing.
+
+Note: this covers **connection management** (scan/pair/auto-reconnect).
+Mapping a connected joystick's buttons to UI keys is separate work — the
+input layer (`keyboard_pi.py`) only processes libinput keyboard events,
+and libinput usually does not classify joysticks as keyboards
+(controllers with a keyboard mode being the exception).
+
 ## Locations edit form label overlap fixed (2026-07-26)
 
 In Location Management's Edit Location modal the labels ("Latitude
