@@ -121,6 +121,35 @@ class TestExposureStarCountController:
         assert controller.update(160, 50000) == 25000
         assert controller._anchor == 50000
 
+    def test_solve_success_holds_below_target(self):
+        """A solving exposure is held even short of target_stars.
+
+        Seoul field data (2026-07-26): the only exposures that solve at all
+        yield 9-14 detections -- under target 20 -- and raising exposure from
+        there loses stars to sky glow. Without this hold the shortfall walks
+        the servo out of the solving regime every time (ADR 0022).
+        """
+        controller = ExposureStarCountController()
+        # 12/20 = 0.6 < deadband_low: would normally raise, but it solved.
+        assert controller.update(12, 200000, solve_success=True) is None
+        assert controller._anchor == 200000
+        # Same reading without a solve raises as before.
+        controller = ExposureStarCountController()
+        assert controller.update(12, 200000) == 333333
+
+    def test_solve_success_learns_clamped_anchor(self):
+        controller = ExposureStarCountController()
+        controller._bright_ceiling = 100000
+        assert controller.update(12, 200000, solve_success=True) is None
+        assert controller._bright_ceiling is None
+
+    def test_solve_success_with_excess_stars_still_steps_down(self):
+        """Above the deadband a solving exposure is still shortened: the
+        solve survives and motion blur shrinks."""
+        controller = ExposureStarCountController(ema_alpha=1.0)
+        # 160/20 = 8 > deadband_high -> step down even though it solved.
+        assert controller.update(160, 400000, solve_success=True) == 50000
+
     def test_reanchor_cannot_raise_anchor_past_absolute_max(self):
         """The anchor must never leave [min_exposure, max_exposure].
 

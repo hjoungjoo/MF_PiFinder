@@ -133,6 +133,7 @@ class ExposureStarCountController:
         centroid_count: int,
         current_exposure: int,
         center_mean: Optional[float] = None,
+        solve_success: bool = False,
     ) -> Optional[int]:
         """
         Update exposure from the latest solve attempt's detected-star count.
@@ -142,6 +143,9 @@ class ExposureStarCountController:
             current_exposure: Current exposure time in microseconds.
             center_mean: Mean pixel value of the frame's center ROI
                 (8-bit), or None to skip the bright-sky guard.
+            solve_success: Whether this solve attempt produced a plate
+                solve. A solving exposure is held even when the star
+                count falls short of target (ADR 0022).
 
         Returns:
             New exposure time in microseconds, or None if no change needed.
@@ -201,6 +205,21 @@ class ExposureStarCountController:
                 self.ema_alpha * centroid_count + (1.0 - self.ema_alpha) * self._ema
             )
         star_fraction = self._ema / self.target_stars
+
+        # Solving is the point of this controller, not the star count -- a
+        # successful solve overrides a shortfall. Under heavy light pollution
+        # the reachable count tops out below target_stars, and past the sweet
+        # spot MORE exposure means FEWER detections (sky glow eats the star
+        # contrast), so "short of target -> raise" walks straight out of the
+        # only regime that solves. Measured in Seoul (2026-07-26, imx462):
+        # 100-200 ms solved 16/18 attempts at 9-14 stars; 400 ms+ solved
+        # almost never. Hold the solving exposure and learn it as the anchor.
+        # Excess stars (f above the deadband) still step down: shortening a
+        # solving exposure keeps the solve and reduces motion blur (ADR 0022).
+        if solve_success and star_fraction <= self.deadband_high:
+            self._anchor = self._clamp_absolute(current_exposure)
+            self._bright_ceiling = None
+            return None
 
         # Bright-sky guard: short of stars but the background is already
         # bright -- more exposure adds sky glow, not star contrast, so step

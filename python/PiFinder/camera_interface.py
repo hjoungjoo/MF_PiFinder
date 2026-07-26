@@ -386,6 +386,7 @@ class CameraInterface:
                                         solution.diagnostics.Centroids,
                                         self.exposure_time,
                                         center_mean=center_mean,
+                                        solve_success=(solve_source == "CAM"),
                                     )
                                 else:
                                     # Match-count controller (default)
