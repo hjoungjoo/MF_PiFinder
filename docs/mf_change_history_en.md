@@ -1631,6 +1631,35 @@ decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
 - Tests: 21 new in `tests/test_auto_exposure_starcount.py`; full unit
   suite (754) passing.
 
+## Joystick button mapping (2026-07-26)
+
+Map buttons of a Bluetooth-paired joystick/gamepad to PiFinder functions.
+libinput (`keyboard_pi.py`) ignores joystick-class devices, so a
+connected controller's buttons never reached the UI.
+
+- New `python/PiFinder/joystick_input.py`: evdev reader thread (daemon in
+  the main process). Rescans devices every 3s (BT event nodes appear
+  late), handles EV_KEY buttons and ABS_HAT0X/Y hat axes (d-pads that
+  report axes; `HAT0X-`-style pseudo-buttons). Pure mapping/dispatch is
+  `JoystickDispatcher` (testable). Mapping persists in config
+  `joystick_mapping` ({action: button_id}).
+- Two action families, deliberately: **keypad** actions inject normal
+  keycodes (arrows; GoTo = the keypad's 5, so it starts a GoTo on Object
+  Details); **mount** actions go straight to the mountcontrol queue
+  regardless of screen: hold-to-move N/S/W/E with the guide screen's
+  lease/keepalive scheme (a dead reader can never leave the mount
+  slewing), slew rate +/-, Tracking Off (new `set_tracking` queue
+  command wired to the existing, previously uncalled readback-confirming
+  method). Mount actions are ignored while `mount_control` is off.
+- New `python/PiFinder/ui/joystick.py`: Settings > Advanced > Joystick —
+  per-function bindings, capture mode (next pressed button binds; one
+  button serves one function), live button tester, Clear All.
+- `mf_pifinder_setup.sh`: install python3-evdev (already installed on
+  this device).
+- i18n: 9 ko strings, zh/de/es/fr for the menu name.
+- Tests: 12 in `tests/test_joystick_input.py`; full unit suite (799)
+  passing.
+
 ## Bluetooth settings menu — joystick support, renamed (2026-07-26)
 
 Settings > Advanced "Keyboard" is now "Bluetooth", and the

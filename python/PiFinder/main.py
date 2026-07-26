@@ -515,6 +515,17 @@ def main(
     gps_time_monitor = gps_time_sync.GpsTimeSyncMonitor.from_config(cfg)
     gps_time_monitor.write_startup_status()
 
+    # Joystick/gamepad input: libinput (keyboard_pi) ignores joystick-class
+    # devices, so a paired controller needs its own evdev reader. Buttons the
+    # user mapped in Settings > Advanced > Joystick become keypad keycodes or
+    # direct mount commands (see PiFinder.joystick_input).
+    try:
+        from PiFinder import joystick_input
+
+        joystick_input.manager().start(keyboard_queue, mountcontrol_queue, cfg)
+    except Exception:
+        logger.exception("Joystick input unavailable")
+
     # init screen
     screen_brightness = cfg.get_option("display_brightness")
     set_brightness(screen_brightness, cfg)

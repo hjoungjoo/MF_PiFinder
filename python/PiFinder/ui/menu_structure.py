@@ -22,6 +22,7 @@ from PiFinder.ui.locationentry import UILocationEntry
 from PiFinder.ui.radec_entry import UIRADecEntry
 from PiFinder.ui.telemetry_list import UITelemetryList
 from PiFinder.ui.bluetooth_keyboard import UIBluetoothKeyboard
+from PiFinder.ui.joystick import UIJoystick
 from PiFinder.ui.indi import (
     UIIndiBacklash,
     UIIndiGuide,
@@ -1506,6 +1507,11 @@ pifinder_menu = {
                             "name": _("Bluetooth"),
                             "class": UIBluetoothKeyboard,
                             "label": "keyboard_settings",
+                        },
+                        {
+                            "name": _("Joystick"),
+                            "class": UIJoystick,
+                            "label": "joystick_settings",
                         },
                     ],
                 },

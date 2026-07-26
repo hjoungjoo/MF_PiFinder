@@ -634,6 +634,10 @@ msgstr "无天体"
 #: PiFinder/ui/bluetooth_keyboard.py:106 PiFinder/ui/menu_structure.py:1506
 msgid "Bluetooth"
 msgstr "蓝牙"
+# AI-TRANSLATED (claude): needs human review
+msgid "Joystick"
+msgstr "游戏手柄"
+
 
 #: PiFinder/ui/bluetooth_keyboard.py:144
 msgid "BT scanning"

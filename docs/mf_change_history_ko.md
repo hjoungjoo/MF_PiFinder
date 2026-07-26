@@ -1454,6 +1454,37 @@ sudo systemctl start pifinder
 - i18n: de/es/fr/ko/zh "Star" 번역(AI-TRANSLATED 마커), .mo 재컴파일.
 - 테스트: `tests/test_auto_exposure_starcount.py` 21종 + 기존 754 unit 통과.
 
+## 조이스틱 버튼 매핑 (2026-07-26)
+
+블루투스로 페어링한 조이스틱/게임패드의 버튼을 PiFinder 기능에 매핑하는 기능.
+libinput(`keyboard_pi.py`)은 조이스틱 클래스 장치를 무시하므로, 연결은 되어도
+버튼 입력이 UI에 전달되지 않던 간극을 메운다.
+
+- 신규 `python/PiFinder/joystick_input.py`: evdev 기반 리더 스레드(main 프로세스
+  데몬). 3초마다 장치 재검색(BT 연결로 늦게 생기는 event 노드 대응), EV_KEY
+  버튼과 ABS_HAT0X/Y 햇 축(십자키를 축으로 보내는 패드용, `HAT0X-` 형식 의사
+  버튼) 처리. 순수 매핑/디스패치 로직은 `JoystickDispatcher`로 분리(테스트
+  가능). 매핑은 config `joystick_mapping`({action: button_id})에 저장.
+- 액션 두 계열(의도적 구분):
+  - **키패드 계열** — 키보드 큐에 일반 키코드 주입: 상하좌우 화살표,
+    GoTo(키패드 5와 동일 — Object Details에서 GoTo 시작, 다른 화면에서는
+    키패드 5의 원래 의미 유지).
+  - **마운트 계열** — 화면과 무관하게 mountcontrol 큐 직행: 수동 이동
+    상/하/좌/우(north/south/west/east, LCD 가이드 화면과 동일한
+    lease 1.2s + keepalive 0.4s 방식이라 리더가 죽어도 마운트가 스스로 정지),
+    슬루 속도 +/-, 트래킹 Off(`set_tracking` 명령 신설 — 기존에 호출자 없던
+    readback 확인형 `set_tracking()` 메서드를 큐에 배선). `mount_control`
+    꺼져 있으면 마운트 계열은 무시.
+- 신규 `python/PiFinder/ui/joystick.py`: Settings > Advanced > Joystick(조이스틱)
+  메뉴 — 기능별 현재 바인딩 표시, 선택 시 캡처 모드(15초 내 누른 버튼 할당,
+  한 버튼은 한 기능만 — 재할당 시 기존 기능에서 회수), "버튼 확인"(눌린 버튼
+  id 실시간 표시, 캡처 모드라 기존 매핑 발동 억제), "전체 지우기".
+- `mf_pifinder_setup.sh`: python3-evdev 설치 추가(장비에는 설치 완료).
+- i18n: ko 9개 문자열(조이스틱/버튼 확인 등), zh 游戏手柄, de/es/fr.
+- 테스트: 신규 `tests/test_joystick_input.py` 12종(매핑 정규화, 키패드/마운트
+  디스패치, keepalive, 방향 교체 시 이전 릴리스 무시, mount off 무시, 요청
+  기능 전체 커버). 전체 799 unit 통과.
+
 ## Bluetooth 설정 메뉴 — 조이스틱 지원, 이름 변경 (2026-07-26)
 
 Settings > Advanced의 "Keyboard" 항목을 "Bluetooth"(ko: 블루투스)로 바꾸고,

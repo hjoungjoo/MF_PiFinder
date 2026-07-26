@@ -251,6 +251,10 @@ if [[ "$(pifinder_board_profile)" == "pi5_class" ]]; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-rpi-lgpio \
         || echo "WARNING: could not install python3-rpi-lgpio; keypad GPIO may not work on Pi 5." >&2
 fi
+# Joystick/gamepad button input (PiFinder/joystick_input.py reads evdev
+# directly; libinput does not deliver joystick events).
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-evdev \
+    || echo "WARNING: could not install python3-evdev; joystick input will be disabled." >&2
 # Note: camera types are added lateron by python/PiFinder/switch_camera.py
 
 # Disable unwanted services

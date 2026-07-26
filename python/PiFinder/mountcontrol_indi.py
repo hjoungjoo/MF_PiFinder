@@ -3487,6 +3487,11 @@ class MountControlIndi(BacklashCalibrationMixin):
             )
         elif command_type == "stop_movement":
             self.stop_mount()
+        elif command_type == "set_tracking":
+            # Joystick "Tracking Off" button. GoTo/sync paths re-enable
+            # tracking themselves, so an off state lasts until the next GoTo
+            # or an explicit on.
+            self.set_tracking(bool(command.get("enabled", True)))
         elif command_type == "manual_movement":
             self.manual_move(
                 str(command.get("direction", "")),
