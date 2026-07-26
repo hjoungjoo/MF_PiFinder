@@ -57,6 +57,7 @@ class ExposureStarCountController:
         bright_clear_mean: float = 120.0,
         initial_anchor: int = 400000,
         reanchor_after: int = 3,
+        low_star_escape_after: int = 4,
         recovery: Optional[ZeroMatchRecovery] = None,
     ):
         """
@@ -86,6 +87,9 @@ class ExposureStarCountController:
                 bound in the same direction before the anchor follows the
                 bound. Keeps the bound meaningful while letting the servo
                 walk to a working exposure outside it.
+            low_star_escape_after: Consecutive low-star (but nonzero)
+                attempts at the anchor before the transient hypothesis
+                (slew/blockage) expires and the servo searches instead.
             recovery: Zero-match recovery ladder; here it triggers on
                 zero *detected* stars, not zero matches.
         """
@@ -100,6 +104,7 @@ class ExposureStarCountController:
         self.bright_sky_mean = bright_sky_mean
         self.bright_clear_mean = bright_clear_mean
         self.reanchor_after = reanchor_after
+        self.low_star_escape_after = low_star_escape_after
 
         self._anchor = initial_anchor
         self._initial_anchor = initial_anchor
@@ -108,6 +113,8 @@ class ExposureStarCountController:
         self._clamp_streak = 0
         self._clamp_direction = 0
         self._bright_ceiling: Optional[int] = None
+        self._low_star_streak = 0
+        self._low_star_escaped = False
         self._recovery = recovery or ZeroMatchRecovery()
 
         logger.info(
@@ -125,6 +132,8 @@ class ExposureStarCountController:
         self._clamp_streak = 0
         self._clamp_direction = 0
         self._bright_ceiling = None
+        self._low_star_streak = 0
+        self._low_star_escaped = False
         self._recovery.reset()
         logger.debug("StarCount controller reset")
 
@@ -169,6 +178,10 @@ class ExposureStarCountController:
             self._recovery.reset()
             # The recovery excursion must not bias the next adjustment.
             self._ema = None
+            # The ladder owns the search during recovery; start the low-star
+            # bookkeeping fresh on the exposure it found.
+            self._low_star_streak = 0
+            self._low_star_escaped = False
         self._zero_count = 0
 
         # A clearly dark frame retires the bright ceiling: the sky it was
@@ -196,6 +209,15 @@ class ExposureStarCountController:
         # not blockage, and returning to a bright anchor pins the exposure on
         # a saturated sky forever (observed: all-white frames held at 500 ms).
         # Step down like the bright-sky guard instead.
+        #
+        # The transient hypothesis (slew, passing cloud) also expires: after
+        # ``low_star_escape_after`` consecutive low-star attempts AT the
+        # anchor, this is simply what the sky looks like here, and parking
+        # forever finds nothing (observed: 1-3 stars through cloud held at
+        # 400 ms indefinitely). Escape to the servo, which searches with the
+        # low count -- safe now that raises are headroom-capped -- and stay
+        # escaped until the count recovers, so the next low-star frame does
+        # not snap back to the anchor and undo the search.
         if centroid_count < self.min_stars_for_control:
             if self._is_bright(center_mean):
                 self._bright_ceiling = max(self.min_exposure, current_exposure // 2)
@@ -205,11 +227,27 @@ class ExposureStarCountController:
                     f"(ceiling {self._bright_ceiling}µs)"
                 )
                 return self._apply_clamps(current_exposure, current_exposure // 2)
-            logger.debug(
-                f"StarCount: only {centroid_count} stars "
-                f"(<{self.min_stars_for_control}), returning to anchor"
-            )
-            return self._return_to_anchor(current_exposure)
+            if not self._low_star_escaped:
+                if current_exposure != self._effective_anchor():
+                    self._low_star_streak = 0
+                    return self._return_to_anchor(current_exposure)
+                self._low_star_streak += 1
+                if self._low_star_streak < self.low_star_escape_after:
+                    logger.debug(
+                        f"StarCount: only {centroid_count} stars "
+                        f"(<{self.min_stars_for_control}), holding at anchor "
+                        f"({self._low_star_streak}/{self.low_star_escape_after})"
+                    )
+                    return None
+                self._low_star_escaped = True
+                logger.info(
+                    f"StarCount: {self._low_star_streak} consecutive low-star "
+                    f"attempts at the anchor -- escaping to servo control"
+                )
+            # escaped: fall through and let the servo act on the low count
+        else:
+            self._low_star_streak = 0
+            self._low_star_escaped = False
 
         if self._ema is None:
             self._ema = float(centroid_count)
@@ -365,11 +403,21 @@ class ExposureStarCountController:
 
         return clamped
 
+    def _effective_anchor(self) -> int:
+        """The anchor as it may actually be applied: inside the absolute
+        range and under any active bright ceiling -- returning to an anchor
+        the ceiling just ruled out would re-enter the glow it stepped away
+        from."""
+        anchor = self._clamp_absolute(self._anchor)
+        if self._bright_ceiling is not None:
+            anchor = min(anchor, self._bright_ceiling)
+        return anchor
+
     def _return_to_anchor(self, current_exposure: int) -> Optional[int]:
         # Clamp on the way out too: this value goes straight to the sensor,
         # so no anchor state -- however it was arrived at -- may put an
         # exposure outside the absolute range on the camera.
-        anchor = self._clamp_absolute(self._anchor)
+        anchor = self._effective_anchor()
         if current_exposure != anchor:
             return anchor
         return None
@@ -382,6 +430,8 @@ class ExposureStarCountController:
             "zero_count": self._zero_count,
             "clamp_streak": self._clamp_streak,
             "bright_ceiling": self._bright_ceiling,
+            "low_star_streak": self._low_star_streak,
+            "low_star_escaped": self._low_star_escaped,
             "recovery_active": self._recovery.is_active(),
             "deadband": (self.deadband_low, self.deadband_high),
             "min_exposure": self.min_exposure,

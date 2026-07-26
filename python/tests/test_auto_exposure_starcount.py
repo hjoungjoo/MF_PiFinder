@@ -232,6 +232,37 @@ class TestExposureStarCountController:
         # Already at anchor -> no change
         assert controller.update(2, 300000) is None
 
+    def test_persistent_low_stars_escape_to_servo(self):
+        """The slew/blockage hypothesis expires: a sky that only ever shows
+        1-3 stars at the anchor must be searched, not parked on (field
+        failure: 1-3 stars through cloud held at 400 ms indefinitely)."""
+        controller = ExposureStarCountController(ema_alpha=1.0)
+        # At the anchor, low counts hold for low_star_escape_after attempts.
+        for _ in range(3):
+            assert controller.update(3, 400000, center_mean=100.0) is None
+        # 4th consecutive: escape -- servo raises, capped by headroom
+        # (240/100 = 2.4x -> 960000).
+        assert controller.update(3, 400000, center_mean=100.0) == 960000
+        # Still escaped: the next low-star frame keeps servo control instead
+        # of snapping back to the anchor.
+        result = controller.update(3, 960000, center_mean=120.0)
+        assert result != 400000
+        # A healthy count clears the escape...
+        controller.update(20, 200000, center_mean=50.0)
+        assert controller.get_status()["low_star_escaped"] is False
+        # ...so a later low-star frame returns to the (new) anchor again.
+        assert controller.update(2, 100000, center_mean=50.0) == 200000
+
+    def test_return_to_anchor_respects_bright_ceiling(self):
+        """Returning to an anchor above an active bright ceiling would
+        re-enter the glow the guard just stepped away from."""
+        controller = ExposureStarCountController()
+        controller.update(20, 400000)  # anchor 400000
+        controller._bright_ceiling = 200000
+        # mean 150: inside the hysteresis band (not bright, not clear), so
+        # the ceiling stays active and caps the anchor return.
+        assert controller.update(2, 100000, center_mean=150.0) == 200000
+
     def test_raise_capped_by_brightness_headroom(self):
         """A raise may not push the predicted background past the bright
         threshold. Field failure: 50 ms with a few stars asked for 20x in
