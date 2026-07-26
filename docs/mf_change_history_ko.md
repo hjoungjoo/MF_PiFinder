@@ -1507,7 +1507,9 @@ libinput(`keyboard_pi.py`)은 조이스틱 클래스 장치를 무시하므로, 
 - 신규 `python/PiFinder/ui/joystick.py`: Settings > Advanced > Joystick(조이스틱)
   메뉴 — 기능별 현재 바인딩 표시, 선택 시 캡처 모드(15초 내 누른 버튼 할당,
   한 버튼은 한 기능만 — 재할당 시 기존 기능에서 회수), "버튼 확인"(눌린 버튼
-  id 실시간 표시, 캡처 모드라 기존 매핑 발동 억제), "전체 지우기".
+  id와 커널 이벤트 코드 숫자를 함께 실시간 표시 — 서로 다른 물리 버튼이 같은
+  코드를 보내 이름이 겹치는 경우를 숫자로 구분, 캡처 모드라 기존 매핑 발동
+  억제), "전체 지우기".
 - `mf_pifinder_setup.sh`: python3-evdev 설치 추가(장비에는 설치 완료).
 - i18n: ko 9개 문자열(조이스틱/버튼 확인 등), zh 游戏手柄, de/es/fr.
 - 테스트: 신규 `tests/test_joystick_input.py` 12종(매핑 정규화, 키패드/마운트

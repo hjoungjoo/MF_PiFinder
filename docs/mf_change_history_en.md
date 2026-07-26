@@ -1680,7 +1680,10 @@ connected controller's buttons never reached the UI.
   method). Mount actions are ignored while `mount_control` is off.
 - New `python/PiFinder/ui/joystick.py`: Settings > Advanced > Joystick —
   per-function bindings, capture mode (next pressed button binds; one
-  button serves one function), live button tester, Clear All.
+  button serves one function), live button tester showing the name and
+  the kernel event code number (distinct physical buttons sending the
+  same code surface as the same name; the number makes that visible),
+  Clear All.
 - `mf_pifinder_setup.sh`: install python3-evdev (already installed on
   this device).
 - i18n: 9 ko strings, zh/de/es/fr for the menu name.

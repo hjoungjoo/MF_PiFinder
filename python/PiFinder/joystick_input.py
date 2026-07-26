@@ -204,6 +204,10 @@ class JoystickManager:
         self._mapping_stamp: Any = None
         self.supported = True
         self.last_button: str = ""
+        # Kernel event code of the last button. Shown next to the name in the
+        # tester: distinct physical buttons can surface under the same name
+        # (or the same code), and only the number makes that visible.
+        self.last_button_code: int | None = None
         self.last_button_at: float = 0.0
         self.device_names: list[str] = []
         self._capturing = False
@@ -263,9 +267,10 @@ class JoystickManager:
         )
         self._thread.start()
 
-    def _record_button(self, button_id: str) -> None:
+    def _record_button(self, button_id: str, code: int | None = None) -> None:
         with self._lock:
             self.last_button = button_id
+            self.last_button_code = code
             self.last_button_at = time.time()
             if self._capturing:
                 self._captured = button_id
@@ -352,7 +357,7 @@ class JoystickManager:
             button_id = button_name(event.code)
             pressed = event.value == 1
             if pressed:
-                self._record_button(button_id)
+                self._record_button(button_id, event.code)
             if dispatcher is not None and not self._capture_active():
                 dispatcher.handle_button(button_id, pressed, now)
         elif event.type == ecodes.EV_ABS and event.code in _HAT_AXES:
@@ -369,7 +374,7 @@ class JoystickManager:
                     dispatcher.handle_button(released, False, now)
             if value != 0:
                 button_id = hat_button_id(axis, value)
-                self._record_button(button_id)
+                self._record_button(button_id, event.code)
                 if dispatcher is not None and not self._capture_active():
                     dispatcher.handle_button(button_id, True, now)
 

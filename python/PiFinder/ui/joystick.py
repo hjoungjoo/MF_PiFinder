@@ -137,6 +137,11 @@ class UIJoystick(UITextMenu):
         lines = [_("Press buttons")]
         if self.manager.last_button and time.time() - self.manager.last_button_at < 10:
             lines.extend(["", self.manager.last_button])
+            # The kernel event code: distinct buttons can share a name (or a
+            # name can hide the fact that two buttons send the same code), and
+            # only the number tells them apart.
+            if self.manager.last_button_code is not None:
+                lines.append(f"code {self.manager.last_button_code}")
         if self.manager.device_names:
             lines.append("")
             lines.extend(self.manager.device_names[:2])
