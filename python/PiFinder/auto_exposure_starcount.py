@@ -263,6 +263,24 @@ class ExposureStarCountController:
 
         # Star count ~ proportional to exposure, so one division step.
         requested = int(current_exposure / star_fraction)
+
+        # Brightness headroom cap on raises: the pipeline is linear up to the
+        # 8-bit clip, so raising exposure by R multiplies the background mean
+        # by ~R. Cap the raise so the predicted mean stays at or below the
+        # bright-sky threshold -- without this, a marginal sky (few stars at
+        # 50-400 ms under fast-moving cloud glow) asked for 3-20x in one step,
+        # landed saturated, collapsed to zero detections and cycled through
+        # recovery instead of settling (observed in the field, 2026-07-26).
+        if requested > current_exposure and center_mean is not None and center_mean > 0:
+            headroom = self.bright_sky_mean / center_mean
+            max_raise = int(current_exposure * max(1.0, headroom))
+            if requested > max_raise:
+                logger.debug(
+                    f"StarCount: raise capped by brightness headroom "
+                    f"(mean {center_mean:.0f}): {requested}µs → {max_raise}µs"
+                )
+                requested = max_raise
+
         new_exposure = self._apply_clamps(current_exposure, requested)
 
         if new_exposure == current_exposure:

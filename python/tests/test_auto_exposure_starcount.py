@@ -232,6 +232,25 @@ class TestExposureStarCountController:
         # Already at anchor -> no change
         assert controller.update(2, 300000) is None
 
+    def test_raise_capped_by_brightness_headroom(self):
+        """A raise may not push the predicted background past the bright
+        threshold. Field failure: 50 ms with a few stars asked for 20x in
+        one step, landed saturated, and cycled instead of settling."""
+        controller = ExposureStarCountController(ema_alpha=1.0)
+        # 5/20 = 0.25 -> raw ask 200000. Mean 60 allows 240/60 = 4x = 200000:
+        # exactly at the cap, so the ask goes through.
+        assert controller.update(5, 50000, center_mean=60.0) == 200000
+        # Mean 150 allows only 240/150 = 1.6x from 400000 -> 640000,
+        # far below the raw ask of 1600000.
+        controller = ExposureStarCountController(ema_alpha=1.0)
+        assert controller.update(5, 400000, center_mean=150.0) == 640000
+        # Without a mean the cap cannot apply (raw ask, absolute-clamped).
+        controller = ExposureStarCountController(ema_alpha=1.0)
+        assert controller.update(5, 400000) == 1000000
+        # Downward steps are never capped.
+        controller = ExposureStarCountController(ema_alpha=1.0)
+        assert controller.update(160, 400000, center_mean=200.0) == 50000
+
     def test_few_stars_on_bright_frame_steps_down(self):
         """1-3 'detections' on a near-saturated frame are noise on a white
         field, not blockage: step down instead of pinning at a bright anchor
