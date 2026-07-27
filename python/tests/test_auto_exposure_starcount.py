@@ -150,6 +150,45 @@ class TestExposureStarCountController:
         # 160/20 = 8 > deadband_high -> step down even though it solved.
         assert controller.update(160, 400000, solve_success=True) == 50000
 
+    def test_anchor_trust_holds_through_passing_cloud(self):
+        """After a solve, failed attempts hold the solved exposure instead
+        of hunting (field feedback: exposure jitter under moving cloud)."""
+        controller = ExposureStarCountController()
+        assert controller.update(12, 200000, solve_success=True) is None
+        # zero detections (cloud): held at anchor, ladder does NOT engage
+        for _ in range(controller.trusted_zero_limit):
+            assert controller.update(0, 200000, center_mean=100.0) is None
+        assert controller.get_status()["recovery_active"] is False
+        # 1-3 stars: held, no escape
+        assert controller.update(2, 200000, center_mean=100.0) is None
+        # shortfall (>=4 stars but under target): held, no raise
+        assert controller.update(6, 200000, center_mean=100.0) is None
+        # off-anchor exposure snaps back to the solved anchor
+        assert controller.update(2, 400000, center_mean=100.0) == 200000
+
+    def test_anchor_trust_zero_streak_limit_engages_ladder(self):
+        controller = ExposureStarCountController()
+        controller.update(12, 200000, solve_success=True)
+        for _ in range(controller.trusted_zero_limit):
+            controller.update(0, 200000, center_mean=100.0)
+        # streak beyond the limit: recovery takes over
+        result = controller.update(0, 200000, center_mean=100.0)
+        assert result is not None
+        assert controller.get_status()["recovery_active"] is True
+
+    def test_anchor_trust_expires(self):
+        controller = ExposureStarCountController(anchor_trust_s=90.0)
+        controller.update(12, 200000, solve_success=True)
+        controller._anchor_solved_time -= 1000  # age the trust out
+        # shortfall now adjusts again (headroom-capped raise)
+        assert controller.update(6, 200000, center_mean=60.0) is not None
+
+    def test_anchor_trust_still_steps_down_when_bright(self):
+        """Trust never overrides the saturation defence."""
+        controller = ExposureStarCountController()
+        controller.update(12, 400000, solve_success=True)
+        assert controller.update(2, 400000, center_mean=250.0) == 200000
+
     def test_reanchor_cannot_raise_anchor_past_absolute_max(self):
         """The anchor must never leave [min_exposure, max_exposure].
 

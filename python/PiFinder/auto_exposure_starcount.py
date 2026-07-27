@@ -28,6 +28,7 @@ Design doc: docs/mf_auto_exposure_plan_ko.md.
 """
 
 import logging
+import time
 from typing import Optional
 
 from PiFinder.auto_exposure import ZeroMatchRecovery
@@ -58,6 +59,8 @@ class ExposureStarCountController:
         initial_anchor: int = 400000,
         reanchor_after: int = 3,
         low_star_escape_after: int = 4,
+        anchor_trust_s: float = 90.0,
+        trusted_zero_limit: int = 8,
         recovery: Optional[ZeroMatchRecovery] = None,
     ):
         """
@@ -90,6 +93,15 @@ class ExposureStarCountController:
             low_star_escape_after: Consecutive low-star (but nonzero)
                 attempts at the anchor before the transient hypothesis
                 (slew/blockage) expires and the servo searches instead.
+            anchor_trust_s: For this long after a successful solve, the
+                controller HOLDS the solved anchor through failed
+                attempts (passing cloud) instead of hunting -- the
+                exposure that solved seconds ago is a better bet than a
+                search. Zero-detection streaks beyond
+                ``trusted_zero_limit`` still break the hold (the sky is
+                really gone); a bright frame still steps down.
+            trusted_zero_limit: Consecutive zero-detection attempts the
+                trust window absorbs before the recovery ladder engages.
             recovery: Zero-match recovery ladder; here it triggers on
                 zero *detected* stars, not zero matches.
         """
@@ -105,6 +117,8 @@ class ExposureStarCountController:
         self.bright_clear_mean = bright_clear_mean
         self.reanchor_after = reanchor_after
         self.low_star_escape_after = low_star_escape_after
+        self.anchor_trust_s = anchor_trust_s
+        self.trusted_zero_limit = trusted_zero_limit
 
         self._anchor = initial_anchor
         self._initial_anchor = initial_anchor
@@ -115,6 +129,7 @@ class ExposureStarCountController:
         self._bright_ceiling: Optional[int] = None
         self._low_star_streak = 0
         self._low_star_escaped = False
+        self._anchor_solved_time: Optional[float] = None
         self._recovery = recovery or ZeroMatchRecovery()
 
         logger.info(
@@ -134,6 +149,7 @@ class ExposureStarCountController:
         self._bright_ceiling = None
         self._low_star_streak = 0
         self._low_star_escaped = False
+        self._anchor_solved_time = None
         self._recovery.reset()
         logger.debug("StarCount controller reset")
 
@@ -162,8 +178,22 @@ class ExposureStarCountController:
         # Exception path: nothing detected at all -- exposure may be badly
         # wrong. Delegate to the recovery ladder (same ladder as the
         # match-count controller, but triggered on detections, not matches).
+        # Inside the anchor trust window (a solve seconds/minutes ago) a
+        # short zero streak is a passing cloud, not a wrong exposure: hold
+        # the solved anchor and let the sky come back, engaging the ladder
+        # only when the streak outlives ``trusted_zero_limit``.
         if centroid_count == 0:
             self._zero_count += 1
+            if (
+                self._anchor_trusted()
+                and self._zero_count <= self.trusted_zero_limit
+                and not self._is_bright(center_mean)
+            ):
+                logger.debug(
+                    f"StarCount: zero detections {self._zero_count}/"
+                    f"{self.trusted_zero_limit} inside anchor trust, holding"
+                )
+                return self._return_to_anchor(current_exposure)
             return self._recovery.handle(
                 current_exposure,
                 self._zero_count,
@@ -227,6 +257,12 @@ class ExposureStarCountController:
                     f"(ceiling {self._bright_ceiling}µs)"
                 )
                 return self._apply_clamps(current_exposure, current_exposure // 2)
+            if self._anchor_trusted():
+                # A solve moments ago: 1-3 stars through cloud is a
+                # transient by definition -- hold the solved anchor, no
+                # escape bookkeeping.
+                self._low_star_streak = 0
+                return self._return_to_anchor(current_exposure)
             if not self._low_star_escaped:
                 if current_exposure != self._effective_anchor():
                     self._low_star_streak = 0
@@ -270,6 +306,7 @@ class ExposureStarCountController:
         if solve_success and star_fraction <= self.deadband_high:
             self._anchor = self._clamp_absolute(current_exposure)
             self._bright_ceiling = None
+            self._anchor_solved_time = time.time()
             return None
 
         # Bright-sky guard: short of stars but the background is already
@@ -298,6 +335,17 @@ class ExposureStarCountController:
             self._anchor = self._clamp_absolute(current_exposure)
             self._bright_ceiling = None
             return None
+
+        # Inside the anchor trust window a shortfall does not justify
+        # leaving the exposure that just solved -- thin cloud is eating
+        # stars, not the exposure. Hold; excess stars (f above the
+        # deadband) still fall through to the step-down below.
+        if self._anchor_trusted() and star_fraction < 1.0:
+            logger.debug(
+                f"StarCount: shortfall (f={star_fraction:.2f}) inside anchor "
+                f"trust, holding at anchor"
+            )
+            return self._return_to_anchor(current_exposure)
 
         # Star count ~ proportional to exposure, so one division step.
         requested = int(current_exposure / star_fraction)
@@ -333,6 +381,14 @@ class ExposureStarCountController:
     def _is_bright(self, center_mean: Optional[float]) -> bool:
         """Whether the frame is already sky-glow limited (None = unknown)."""
         return center_mean is not None and center_mean > self.bright_sky_mean
+
+    def _anchor_trusted(self) -> bool:
+        """Whether the anchor solved recently enough to hold through
+        failed attempts instead of hunting."""
+        return (
+            self._anchor_solved_time is not None
+            and time.time() - self._anchor_solved_time < self.anchor_trust_s
+        )
 
     def _clamp_absolute(self, exposure: int) -> int:
         """Bound an exposure to the absolute [min_exposure, max_exposure]."""
@@ -432,6 +488,7 @@ class ExposureStarCountController:
             "bright_ceiling": self._bright_ceiling,
             "low_star_streak": self._low_star_streak,
             "low_star_escaped": self._low_star_escaped,
+            "anchor_trusted": self._anchor_trusted(),
             "recovery_active": self._recovery.is_active(),
             "deadband": (self.deadband_low, self.deadband_high),
             "min_exposure": self.min_exposure,
