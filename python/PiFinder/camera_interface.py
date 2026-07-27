@@ -175,7 +175,7 @@ class CameraInterface:
             else timez.local_now().strftime("%Y%m%d_%H%M%S")
         )
         self._stage_dump_dir = str(
-            Path(utils.data_dir) / "captures" / f"stages_{timestamp}"
+            Path(utils.runtime_capture_dir) / f"stages_{timestamp}"
         )
         return self._stage_dump_dir
 
@@ -446,6 +446,9 @@ class CameraInterface:
                                     "exposure_us": self.exposure_time,
                                     "gain": self.gain,
                                 },
+                            )
+                            camera_stage_dump.prune_dumps(
+                                Path(utils.runtime_capture_dir)
                             )
                             console_queue.put("CAM: Stages saved")
                         except Exception:

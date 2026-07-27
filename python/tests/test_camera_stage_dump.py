@@ -51,6 +51,24 @@ class TestSaveStage:
 
 
 @pytest.mark.unit
+class TestPrune:
+    def test_keeps_newest_dumps(self, tmp_path):
+        for i in range(5):
+            d = tmp_path / f"stages_2026072{i}_000000"
+            d.mkdir()
+            (d / "stats.json").write_text("{}")
+        (tmp_path / "unrelated").mkdir()
+        removed = camera_stage_dump.prune_dumps(tmp_path, keep=2)
+        assert removed == 3
+        left = sorted(p.name for p in tmp_path.glob("stages_*"))
+        assert left == ["stages_20260723_000000", "stages_20260724_000000"]
+        assert (tmp_path / "unrelated").exists()
+
+    def test_missing_root_is_noop(self, tmp_path):
+        assert camera_stage_dump.prune_dumps(tmp_path / "nope") == 0
+
+
+@pytest.mark.unit
 class TestFinalize:
     def test_writes_stats_json(self, tmp_path):
         arr = np.zeros((2, 2), dtype=np.uint8)

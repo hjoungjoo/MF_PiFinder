@@ -792,7 +792,10 @@ def register_api_routes(app, server_instance, require_auth=False):
         see camera_stage_dump. GET lists the dumps taken so far.
         """
         try:
-            stages_root = Path(utils.data_dir) / "captures"
+            # Dumps live on tmpfs and rotate (see utils.runtime_capture_dir);
+            # download what matters before power-off. Older sessions saved to
+            # the SD (PiFinder_data/captures) are on the filesystem only.
+            stages_root = Path(utils.runtime_capture_dir)
             if request.method == "POST":
                 camera_queue = getattr(server_instance, "camera_command_queue", None)
                 if camera_queue is None:
@@ -838,7 +841,7 @@ def register_api_routes(app, server_instance, require_auth=False):
                 or ".." in filename
             ):
                 return _json_response({"error": "Invalid path"}, 400)
-            path = Path(utils.data_dir) / "captures" / dirname / filename
+            path = Path(utils.runtime_capture_dir) / dirname / filename
             if not path.is_file():
                 return _json_response({"error": "Not found"}, 404)
             mimetype = {

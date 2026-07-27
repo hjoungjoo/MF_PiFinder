@@ -76,3 +76,28 @@ def finalize(dump_dir: Path, stats: list, metadata: dict) -> None:
     with open(dump_dir / "stats.json", "w") as f:
         json.dump(payload, f, indent=2)
     logger.info("Stage dump complete: %s (%d stages)", dump_dir, len(stats))
+
+
+def prune_dumps(root: Path, keep: int = 30) -> int:
+    """Delete the oldest ``stages_*`` dirs under ``root`` beyond ``keep``.
+
+    Dumps live on tmpfs (utils.runtime_capture_dir); without a bound, a
+    night of automatic corpus collection (~9 MB every 3 minutes) would
+    fill /dev/shm and take the logs and cedar's shared memory with it.
+    Returns the number of dumps removed.
+    """
+    import shutil
+
+    if not root.exists():
+        return 0
+    dumps = sorted(d for d in root.glob("stages_*") if d.is_dir())
+    removed = 0
+    for stale in dumps[: max(0, len(dumps) - keep)]:
+        try:
+            shutil.rmtree(stale)
+            removed += 1
+        except OSError:
+            logger.exception("Stage dump prune failed for %s", stale)
+    if removed:
+        logger.info("Pruned %d stage dump(s), keeping newest %d", removed, keep)
+    return removed

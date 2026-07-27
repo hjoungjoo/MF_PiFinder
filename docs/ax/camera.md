@@ -229,10 +229,14 @@ lossless dump of the next frame at every processing stage between the sensor
 and the solver: cropped raw (16-bit PNG) → bias subtract → digital gain
 (both `.npy`, bit-exact floats) → 8-bit stretch → 512×512 resize → rotated
 solver input (8-bit PNGs), plus a `stats.json` with per-stage percentiles and
-the capture's exposure/gain. Files land in
-`~/PiFinder_data/captures/stages_<timestamp>/`; list and download them via
-`GET /api/camera/stages[/<dir>/<file>]`. Built to answer "which stage lost
-the stars" when detection misbehaves (`camera_stage_dump.py`). Stages 0–4
+the capture's exposure/gain. Files land on tmpfs
+(`utils.runtime_capture_dir`, i.e. `/dev/shm/pifinder/captures/stages_<ts>/`)
+and rotate — only the newest 30 dumps are kept (`prune_dumps`), so automatic
+collection cannot fill `/dev/shm`. Volatile by decision (2026-07-28): lost on
+power-off; list and download what matters via
+`GET /api/camera/stages[/<dir>/<file>]` before shutdown. SD writes are
+reserved for deliberate debugging. Built to answer "which stage lost the
+stars" when detection misbehaves (`camera_stage_dump.py`). The raw stages
 are written by the Pi camera backend only; other backends ignore the arm.
 
 ## 7. Gotchas

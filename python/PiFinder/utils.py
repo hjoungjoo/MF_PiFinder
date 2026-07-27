@@ -45,6 +45,12 @@ runtime_dir = _resolve_runtime_dir()
 # them -- save first when a session must be preserved.
 log_dir = runtime_dir / "logs"
 saved_log_dir = data_dir / "logs"
+# Pipeline stage dumps are volatile as well (2026-07-28 decision): they land
+# on tmpfs and rotate (camera_stage_dump.prune_dumps) so a night of automatic
+# corpus collection cannot fill /dev/shm. Lost on power-off; download what
+# matters via /api/camera/stages, or re-test -- SD writes are reserved for
+# deliberate debugging.
+runtime_capture_dir = runtime_dir / "captures"
 
 
 def create_dir(adir: str):
