@@ -2294,7 +2294,12 @@ class Server:
                 target_dir = utils.saved_log_dir / f"saved_{timestamp}"
                 utils.create_path(target_dir)
                 copied = 0
-                for path in sorted(utils.log_dir.glob("pifinder*.log*")):
+                # App logs plus the SEP shadow CSV -- everything that lives
+                # on tmpfs to spare the SD and needs an explicit snapshot.
+                snapshot = sorted(utils.log_dir.glob("pifinder*.log*")) + sorted(
+                    utils.log_dir.glob("solver_shadow_log*.csv")
+                )
+                for path in snapshot:
                     shutil.copy2(path, target_dir / path.name)
                     copied += 1
                 if not copied:

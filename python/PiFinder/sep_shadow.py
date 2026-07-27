@@ -22,7 +22,12 @@ so the experiment can never take down the production solver.
 
 Config keys (restart to apply): ``solver_shadow_detect``,
 ``solver_sep_fallback``, ``solver_sep_sigma``.
-CSV: ``PiFinder_data/solver_shadow_log.csv``.
+
+CSV: ``solver_shadow_log.csv`` in the tmpfs log dir (one row per solve
+attempt -- steady small appends belong in RAM, not on the SD card, per
+the same policy as the app logs). The web Logs page's "Save to SD"
+snapshot includes it; like the logs, it is lost on power-off unless
+saved.
 """
 
 import csv
@@ -90,7 +95,7 @@ class SepShadowRunner:
         self.crop_width_px = crop_width_px
         self.min_fallback_stars = min_fallback_stars
         self.saturation_level = saturation_level
-        self.csv_path = csv_path or (utils.data_dir / "solver_shadow_log.csv")
+        self.csv_path = csv_path or (utils.log_dir / "solver_shadow_log.csv")
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
             "rotation=%.0f° crop_width=%dpx log=%s",
