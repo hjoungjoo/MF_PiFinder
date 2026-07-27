@@ -80,6 +80,7 @@ class SepShadowRunner:
         rotation_deg: float,
         crop_width_px: int,
         min_fallback_stars: int = 8,
+        saturation_level: Optional[float] = None,
         csv_path=None,
     ):
         self.shadow_enabled = shadow_enabled
@@ -88,6 +89,7 @@ class SepShadowRunner:
         self.rotation_deg = rotation_deg
         self.crop_width_px = crop_width_px
         self.min_fallback_stars = min_fallback_stars
+        self.saturation_level = saturation_level
         self.csv_path = csv_path or (utils.data_dir / "solver_shadow_log.csv")
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
@@ -126,6 +128,7 @@ class SepShadowRunner:
                 sigma=sigma,
                 rotation_deg=rotation,
                 crop_width_px=crop_width,
+                saturation_level=float(2**profile.bit_depth - 1),
             )
         except Exception:
             logger.exception("SEP shadow runner init failed; disabled")
@@ -140,7 +143,9 @@ class SepShadowRunner:
             if time.time() - float(entry.get("timestamp") or 0) > MAX_FRAME_AGE_S:
                 return None
             frame = np.asarray(entry["frame"])
-            detection = sep_detect.detect_stars(frame, sigma=self.sigma)
+            detection = sep_detect.detect_stars(
+                frame, sigma=self.sigma, saturation_level=self.saturation_level
+            )
             if detection is None:
                 return None
             return SepRun(

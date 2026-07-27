@@ -84,15 +84,30 @@ def detect_stars(
     sigma: float = 3.5,
     minarea: int = 3,
     max_stars: int = 48,
+    edge_margin_px: int = 48,
+    saturation_level: Optional[float] = None,
 ) -> Optional[SepDetection]:
     """
     Detect stars on a raw sensor frame (uint16 mosaic, any shape).
+
+    Field lesson (Seoul, 2026-07-28 night): the uncropped frame's
+    vignetted borders under cloud glow produce dozens of spurious
+    extractions -- on a saturated-interior frame ALL "detections" sat at
+    the frame edge with junk fluxes (huge blob, zeros, negatives). Hence
+    the three quality filters here: an edge margin, a positive-flux
+    requirement, and a saturation guard that reports an honest zero when
+    the sky has burned the interior flat.
 
     Args:
         raw_frame: 2D raw sensor array (Bayer mosaic or mono).
         sigma: Extraction threshold in units of the local background RMS.
         minarea: Minimum connected pixels above threshold.
         max_stars: Keep at most this many, brightest (by flux) first.
+        edge_margin_px: Drop detections within this many full-res pixels
+            of the frame border (vignette / background-mesh edge zone).
+        saturation_level: Sensor full scale (e.g. 4095 for 12-bit). When
+            given and the binned interior median is at it, return zero
+            detections instead of edge noise.
 
     Returns:
         SepDetection with centroids in full-frame (y, x) pixels, or None
@@ -110,6 +125,22 @@ def detect_stars(
     # sep requires C-contiguous native-endian float32
     data = np.ascontiguousarray(binned, dtype=np.float32)
     bkg = sep.Background(data, bw=32, bh=32)
+
+    def _empty() -> SepDetection:
+        return SepDetection(
+            centroids=np.empty((0, 2)),
+            fluxes=np.empty(0),
+            background_median=float(bkg.globalback),
+            background_rms=float(bkg.globalrms),
+            elapsed_ms=(time.perf_counter() - t0) * 1000.0,
+        )
+
+    if saturation_level is not None:
+        h2, w2 = data.shape
+        interior = data[h2 // 4 : -h2 // 4 or None, w2 // 4 : -w2 // 4 or None]
+        if np.median(interior) >= 0.98 * saturation_level:
+            return _empty()
+
     data_sub = data - bkg.back()
     objects = sep.extract(
         data_sub,
@@ -118,17 +149,28 @@ def detect_stars(
         filter_kernel=MATCHED_FILTER,
         minarea=minarea,
     )
-    elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-    order = np.argsort(objects["flux"])[::-1][:max_stars]
-    top = objects[order]
     # A binned pixel (i, j) covers full-res pixels (2i, 2i+1) x (2j, 2j+1),
     # so its centre sits at 2*coord + 0.5 in full-frame coordinates.
-    centroids = np.column_stack((top["y"] * 2.0 + 0.5, top["x"] * 2.0 + 0.5))
+    full_y = np.asarray(objects["y"]) * 2.0 + 0.5
+    full_x = np.asarray(objects["x"]) * 2.0 + 0.5
+    fluxes = np.asarray(objects["flux"], dtype=np.float64)
 
+    h, w = arr.shape
+    keep = (
+        (fluxes > 0)
+        & (full_y >= edge_margin_px)
+        & (full_y < h - edge_margin_px)
+        & (full_x >= edge_margin_px)
+        & (full_x < w - edge_margin_px)
+    )
+    full_y, full_x, fluxes = full_y[keep], full_x[keep], fluxes[keep]
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+    order = np.argsort(fluxes)[::-1][:max_stars]
     return SepDetection(
-        centroids=centroids,
-        fluxes=np.asarray(top["flux"], dtype=np.float64),
+        centroids=np.column_stack((full_y[order], full_x[order])),
+        fluxes=fluxes[order],
         background_median=float(bkg.globalback),
         background_rms=float(bkg.globalrms),
         elapsed_ms=elapsed_ms,

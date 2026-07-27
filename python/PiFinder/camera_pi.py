@@ -142,6 +142,11 @@ class CameraPI(CameraInterface):
         stage_dump_dir = getattr(self, "_stage_dump_dir", None)
         stages = []
         if stage_dump_dir:
+            # The uncropped frame first when the SEP path is publishing it:
+            # the offline detector bench needs the same input the full-frame
+            # path sees, vignetted edges included.
+            if solver_full is not None:
+                stages.append(("raw_full", solver_full.copy()))
             stages.append(("raw_cropped", raw_capture.copy()))
         # LiveCam "Input Frame" pipeline stage view: keep only the stage the
         # viewer selected (solver_input is published by the camera loop after

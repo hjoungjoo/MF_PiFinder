@@ -66,6 +66,29 @@ class TestSepDetect:
         assert binned.shape == (2, 2)
         assert binned[0, 0] == pytest.approx((0 + 1 + 4 + 5) / 4)
 
+    def test_edge_margin_drops_border_detections(self):
+        """Vignetted-border artifacts are excluded (field lesson: on a
+        saturated-interior frame every 'detection' hugged the frame edge)."""
+        stars = [(20, 300), (300, 20), (270, 480)]  # two in the border zone
+        frame = _synthetic_frame(stars)
+        result = sep_detect.detect_stars(frame, sigma=4.0, edge_margin_px=48)
+        assert result is not None
+        for y, x in result.centroids:
+            assert 48 <= y < 540 - 48
+            assert 48 <= x < 960 - 48
+        # the interior star survives
+        d = np.hypot(result.centroids[:, 0] - 270, result.centroids[:, 1] - 480)
+        assert d.min() < 2.0
+
+    def test_saturated_interior_returns_zero_detections(self):
+        frame = np.full((540, 960), 4095, dtype=np.uint16)
+        # borders darker (vignette) so naive extraction would find edges
+        frame[:40, :] = 2000
+        frame[-40:, :] = 2000
+        result = sep_detect.detect_stars(frame, sigma=3.5, saturation_level=4095)
+        assert result is not None
+        assert len(result.centroids) == 0
+
 
 @pytest.mark.unit
 class TestRotationConvention:
