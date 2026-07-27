@@ -24,9 +24,11 @@ import threading
 from multiprocessing import shared_memory
 import grpc
 
+from PiFinder import config as config_mod
 from PiFinder import state_utils
 from PiFinder import utils
 from PiFinder import timez
+from PiFinder.sep_shadow import SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
 from PiFinder.state import SQM as SQMState
 from PiFinder.types.positioning import (
@@ -457,6 +459,16 @@ def solver(
     # Create SQM calculator - can be reloaded via command queue
     sqm_calculator = create_sqm_calculator(shared_state)
 
+    # SEP shadow/fallback runner (full-frame detection experiment). Needs
+    # the camera type for crop geometry, which the camera process publishes
+    # after startup -- so creation is retried in the loop until it works.
+    _sep_cfg = config_mod.Config()
+    sep_shadow = None
+    sep_shadow_wanted = bool(
+        _sep_cfg.get_option("solver_shadow_detect")
+        or _sep_cfg.get_option("solver_sep_fallback")
+    )
+
     while True:
         logger.info("Starting Solver Loop")
         # Try to start cedar detect server, fall back to tetra3 centroider if unavailable
@@ -571,6 +583,47 @@ def solver(
                             **_solver_args,
                         )
 
+                    # SEP full-frame experiment: shadow-detect on every
+                    # attempt; optionally rescue a failed production solve
+                    # from the SEP centroids (sep_shadow module docstring).
+                    if sep_shadow is None and sep_shadow_wanted:
+                        sep_shadow = SepShadowRunner.create_if_enabled(
+                            _sep_cfg, shared_state.camera_type()
+                        )
+                    sep_run = None
+                    sep_fallback_used = False
+                    if sep_shadow is not None:
+                        sep_run = sep_shadow.detect(shared_state)
+                        if (
+                            sep_run is not None
+                            and sep_shadow.fallback_enabled
+                            and (not solution or solution.get("RA") is None)
+                            # An in-progress alignment must run through the
+                            # production frame only: this path's y/x_target
+                            # would be in full-frame space.
+                            and align_ra == 0
+                            and align_dec == 0
+                            and len(sep_run.detection.centroids)
+                            >= sep_shadow.min_fallback_stars
+                        ):
+                            fb_solution = sep_shadow.solve(t3, sep_run, shared_state)
+                            if fb_solution and fb_solution.get("RA") is not None:
+                                # Per-centroid outputs are in full-frame
+                                # coordinates; strip them so SQM photometry
+                                # (which reads the 512 frame) never mixes
+                                # coordinate spaces.
+                                fb_solution.pop("matched_centroids", None)
+                                fb_solution.pop("matched_stars", None)
+                                solution = fb_solution
+                                sep_fallback_used = True
+                                logger.info(
+                                    "SEP fallback solve SUCCESS - %d SEP "
+                                    "centroids (cedar saw %d), RMSE %.1f",
+                                    len(sep_run.detection.centroids),
+                                    len(centroids),
+                                    solution.get("RMSE") or -1.0,
+                                )
+
                     if "matched_centroids" in solution:
                         # Update SQM (auto-exposure consumes the noise floor)
                         exposure_sec = (
@@ -603,7 +656,14 @@ def solver(
                             last_image_metadata=last_image_metadata,
                             last_solve_attempt=last_solve_attempt,
                             last_solve_success=last_solve_success,
-                            centroid_count=len(centroids),
+                            # A fallback solve's real star count is SEP's --
+                            # publishing it keeps auto-exposure's solve-hold
+                            # engaged on the exposure that actually solved.
+                            centroid_count=(
+                                len(sep_run.detection.centroids)
+                                if sep_fallback_used and sep_run is not None
+                                else len(centroids)
+                            ),
                         )
 
                         total_tetra_time = t_extract + (solution.get("T_solve") or 0)
@@ -651,6 +711,22 @@ def solver(
                                 t_extract_ms=t_extract,
                                 centroid_count=len(centroids),
                             )
+                        )
+
+                    if sep_shadow is not None:
+                        sep_shadow.log_attempt(
+                            exposure_us=last_image_metadata.get("exposure_time"),
+                            gain=last_image_metadata.get("gain"),
+                            cedar_count=len(centroids),
+                            matches=solution.get("Matches") if solution else None,
+                            solved=bool(solution and solution.get("RA") is not None),
+                            run=sep_run,
+                            fallback_used=sep_fallback_used,
+                            fallback_rmse=(
+                                solution.get("RMSE")
+                                if sep_fallback_used and solution
+                                else None
+                            ),
                         )
                 except Exception as e:
                     logger.error(

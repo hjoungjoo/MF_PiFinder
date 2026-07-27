@@ -304,6 +304,10 @@ class SharedStateObj:
         self.__camera_align = False
         self.__camera_type = "imx296"  # Default, will be set by camera process
         self.__cam_raw = None
+        # Uncropped raw sensor frame for the SEP full-frame detection path
+        # (dict: {"frame": uint16 ndarray, "exposure_end": float}). Only
+        # published while solver_shadow_detect / solver_sep_fallback is on.
+        self.__solver_raw = None
         self.__raw_live_frame = None
         self.__livecam_settings: dict[str, Any] = {}
         # Are we prepared to do alt/az math
@@ -546,6 +550,12 @@ class SharedStateObj:
 
     def set_cam_raw(self, v):
         self.__cam_raw = v
+
+    def solver_raw(self):
+        return self.__solver_raw
+
+    def set_solver_raw(self, v):
+        self.__solver_raw = v
 
     def raw_live_frame(self):
         return self.__raw_live_frame

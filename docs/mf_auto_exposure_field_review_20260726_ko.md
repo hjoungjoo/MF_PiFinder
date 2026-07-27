@@ -168,6 +168,20 @@ DAOFIND — 가우시안 매치드 필터 + sharpness/roundness로 점원만 선
 
 전처리(B)가 최대 지렛대이고, 나머지는 그 위에서 판단한다.
 
+> **구현 현황 (2026-07-27)**: 아래 Phase 0~1을 관측 한 번으로 수행할 수 있는
+> 도구가 구현·배포됐다 — B+C 결합(비닝+배경제거+SEP, 12-bit **비크롭** 풀프레임,
+> 시야 2.16배) 검출 경로가 **섀도 모드**(모든 솔브 시도에서 cedar와 병행 실행,
+> `PiFinder_data/solver_shadow_log.csv`에 A/B 기록)와 **폴백 솔브**(cedar 실패
+> +SEP≥8개면 SEP 센트로이드로 실제 솔브 — 추적 체인에 그대로 공급)로 배선됐다.
+> 좌표 정합(target_pixel·회전·FOV)은 합성 별밭 이중 솔브 테스트로 증명:
+> Roll 편차 0.000°, 정렬점 편차 20″, 매치 수 46 vs 27
+> (`tests/test_sep_fullframe_solve.py`). 솔브 실패 10연속+쿨다운 3분마다
+> 16-bit 스테이지 덤프 자동 수집(`camera_auto_dump`)도 켜져 있어 관측 자체가
+> Phase 1 코퍼스를 만든다. config: `solver_shadow_detect` /
+> `solver_sep_fallback` / `solver_sep_sigma`(3.5) / `camera_auto_dump`
+> (기본 off, 재시작 필요; 테스트 기기엔 모두 on). 모듈: `sep_detect.py`,
+> `solver_frame_map.py`, `sep_shadow.py`.
+
 - **Phase 0 — 증거 수집 (다음 맑은 밤, 코드 변경 없음)**: 스테이지 덤프로
   노출 스윕(25 ms~1 s × 게인 15/30)의 **16-bit RAW를 저장**. 광해 하늘
   프레임 코퍼스를 만든다. 도구는 이미 있다(§1.3).

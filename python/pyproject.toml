@@ -138,6 +138,7 @@ module = [
     'ceder_detect_pb2',
     'RPi.*',
     'picamera2',
+    'sep',
     'bottle',
     'libinput',
 ]

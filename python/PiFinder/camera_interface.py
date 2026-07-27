@@ -72,6 +72,15 @@ class CameraInterface:
     _stage_dump_dir: Optional[str] = None
     _stage_dump_pending: Optional[str] = None
     _stage_dump_stats: Optional[list] = None
+    # Automatic corpus collection: when solve attempts keep failing, arm a
+    # stage dump on a cooldown so a night of failures leaves 16-bit frames
+    # to bench detectors against offline (config: camera_auto_dump).
+    _auto_dump_enabled = False
+    _auto_dump_last_attempt: Optional[float] = None
+    _auto_dump_fail_streak = 0
+    _auto_dump_last_time = 0.0
+    AUTO_DUMP_FAIL_STREAK = 10
+    AUTO_DUMP_COOLDOWN_S = 180.0
 
     def set_native_ae(self, enabled: bool) -> bool:
         """Enable/disable the camera's native (driver) auto-exposure.
@@ -155,6 +164,49 @@ class CameraInterface:
             raise exc[0]
         return result[0]
 
+    def _arm_stage_dump(self, shared_state) -> str:
+        """Arm a one-shot pipeline stage dump of the next frame; returns the
+        target directory. GPS time for the name when available, Pi time
+        otherwise (same fallback as the exposure sweep)."""
+        gps_time = shared_state.datetime()
+        timestamp = (
+            gps_time.strftime("%Y%m%d_%H%M%S")
+            if gps_time
+            else timez.local_now().strftime("%Y%m%d_%H%M%S")
+        )
+        self._stage_dump_dir = str(
+            Path(utils.data_dir) / "captures" / f"stages_{timestamp}"
+        )
+        return self._stage_dump_dir
+
+    def _auto_dump_check(self, shared_state, console_queue) -> None:
+        """Track per-attempt solve outcomes; arm a stage dump after a failure
+        streak, on a cooldown. Config-gated (camera_auto_dump)."""
+        solution = shared_state.solution()
+        if solution is None or not solution.last_solve_attempt:
+            return
+        attempt = solution.last_solve_attempt
+        if attempt == self._auto_dump_last_attempt:
+            return
+        self._auto_dump_last_attempt = attempt
+        if solution.last_solve_success == attempt:
+            self._auto_dump_fail_streak = 0
+            return
+        self._auto_dump_fail_streak += 1
+        if (
+            self._auto_dump_fail_streak >= self.AUTO_DUMP_FAIL_STREAK
+            and time.time() - self._auto_dump_last_time > self.AUTO_DUMP_COOLDOWN_S
+            and self._stage_dump_dir is None
+            and self._stage_dump_pending is None
+        ):
+            self._auto_dump_last_time = time.time()
+            self._auto_dump_fail_streak = 0
+            dump_dir = self._arm_stage_dump(shared_state)
+            console_queue.put("CAM: Auto stage dump")
+            logger.info(
+                "Auto stage dump armed after solve-failure streak: %s", dump_dir
+            )
+
     def capture_bias(self):
         """
         Capture a bias frame for pedestal calculation.
@@ -186,6 +238,19 @@ class CameraInterface:
             self.shared_state = shared_state
             if hasattr(shared_state, "set_livecam_settings"):
                 shared_state.set_livecam_settings(settings_from_config(cfg))
+
+            # SEP full-frame detection path (shadow logging / fallback solve)
+            # needs the uncropped raw published per frame. Read once at start;
+            # changing these keys requires an app restart.
+            self._publish_solver_raw = bool(
+                cfg.get_option("solver_shadow_detect")
+                or cfg.get_option("solver_sep_fallback")
+            )
+            if self._publish_solver_raw:
+                logger.info("Publishing full-frame solver_raw (SEP path enabled)")
+            self._auto_dump_enabled = bool(cfg.get_option("camera_auto_dump"))
+            if self._auto_dump_enabled:
+                logger.info("Automatic stage dumps on solve-failure streaks")
 
             # Store camera type in shared state for SQM calibration
             camera_type_str = self.get_cam_type()  # e.g., "PI imx296", "PI hq"
@@ -350,6 +415,14 @@ class CameraInterface:
                                 )
                             except Exception:
                                 logger.exception("LiveCam solver_input publish failed")
+
+                    # Automatic corpus collection: arm a stage dump after a
+                    # solve-failure streak (config: camera_auto_dump).
+                    if self._auto_dump_enabled:
+                        try:
+                            self._auto_dump_check(shared_state, console_queue)
+                        except Exception:
+                            logger.exception("Auto stage dump check failed")
 
                     # Final stage of a pending pipeline dump: base_image after
                     # rotation is exactly what the solver reads.
@@ -649,22 +722,10 @@ class CameraInterface:
 
                         if command == "save_stages":
                             # Arm a one-shot dump of every pipeline stage of
-                            # the next frame (camera_stage_dump). GPS time for
-                            # the name when available, Pi time otherwise --
-                            # same fallback as the exposure sweep below.
-                            gps_time = shared_state.datetime()
-                            timestamp = (
-                                gps_time.strftime("%Y%m%d_%H%M%S")
-                                if gps_time
-                                else timez.local_now().strftime("%Y%m%d_%H%M%S")
-                            )
-                            self._stage_dump_dir = str(
-                                Path(utils.data_dir)
-                                / "captures"
-                                / f"stages_{timestamp}"
-                            )
+                            # the next frame (camera_stage_dump).
+                            dump_dir = self._arm_stage_dump(shared_state)
                             console_queue.put("CAM: Stage dump armed")
-                            logger.info("Stage dump armed: %s", self._stage_dump_dir)
+                            logger.info("Stage dump armed: %s", dump_dir)
 
                         if command.startswith("save_image:"):
                             # Save current camera frame to specified path

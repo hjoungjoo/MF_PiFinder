@@ -96,8 +96,24 @@
 
         /////////////////////////////////////////////////////////////////
         ////// Solver
+        // Field-diagnosis loggers for the auto-exposure / SEP detection
+        // experiment (mf_auto_exposure_field_review_20260726_ko.md): INFO so
+        // solve outcomes, AE steps and the SEP shadow runner are analysable
+        // after a session without a config change.
         "Solver": {
-            "level": "ERROR"
+            "level": "INFO"
+        },
+        "Camera.Interface": {
+            "level": "INFO"
+        },
+        "Camera.Pi": {
+            "level": "INFO"
+        },
+        "AutoExposure": {
+            "level": "INFO"
+        },
+        "AutoExposure.StarCount": {
+            "level": "INFO"
         },
 
         /////////////////////////////////////////////////////////////////
