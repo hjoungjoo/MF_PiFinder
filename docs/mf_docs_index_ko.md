@@ -62,7 +62,8 @@
 | [solve_motion_gate_review](mf_solve_motion_gate_review_ko.md) | 둘 다 | **plan(미구현)** | 노출 중 이동 프레임 솔브 게이트 미배선 검토(협의 대기). |
 | [auto_exposure_methods](mf_auto_exposure_methods_ko.md) | 둘 다 | **조사(완료)** | 자동 노출·게인 제어 방법 조사 — 현행 매치 수 기반의 문제(P1~P7)와 대안(검출 별 수 서보 등) 비교, 권고 초안. |
 | [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **구현 완료(접근법 재검토 중)** | 검출 별 수 컨트롤러 설계+구현 — 기존 기능 유지, Camera Exp 메뉴 "Star"(`camera_exp=auto_star`)로 선택. ADR 0020/0022. |
-| [auto_exposure_field_review_20260726](mf_auto_exposure_field_review_20260726_ko.md) | ko | **검토 중(방향 결정 대기)** | 서울 광해 현장 검증 결과 — 병목은 노출 제어가 아닌 검출 감도. 배경 제거 전처리·SEP/DAOStarFinder 대안과 오프라인 벤치 로드맵. |
+| [auto_exposure_field_review_20260726](mf_auto_exposure_field_review_20260726_ko.md) | ko | **방향 확정(최종 방안 코퍼스 대기)** | 서울 광해 현장 검증 — 병목은 검출 감도. B+C(비크롭 12-bit+SEP) 채택, 야간 검증 요약(§7). |
+| [sep_fullframe_impl](mf_sep_fullframe_impl_ko.md) | ko | **구현 완료(현장 평가 중)** | SEP 풀프레임 검출 경로 구현 — 섀도 A/B·폴백 솔브·좌표 정합 증명·품질 필터·앵커 트러스트·tmpfs 저장 정책·야간 검증 기록. |
 | [gps_aiding_plan](mf_gps_aiding_plan_ko.md) | 둘 다 | **plan(구현 전)** | u-blox GPS aiding(MGA-INI/DBD) 설계 초안. |
 
 ## 메타 · 이력 · 프로세스

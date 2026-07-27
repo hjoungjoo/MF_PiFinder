@@ -122,6 +122,13 @@ Control law and defaults follow cedar-server's exposure servo
   target — under heavy light pollution the reachable count tops out
   below 20 and the only exposures that solve sit in a narrow sweet
   spot. Excess above the deadband still steps down.
+- **Anchor trust window**: each solve opens (and refreshes) a 90 s
+  trust window during which failed attempts hold the solved anchor
+  instead of hunting — zero-detection streaks up to 8 wait out a
+  passing cloud before the recovery ladder engages, low-star frames
+  skip the escape, shortfalls do not raise. Bright frames still step
+  down and excess stars still trim. Cures the exposure jitter of
+  broken-cloud skies where solving worked but never sat still.
 - **Brightness headroom cap**: the pipeline is linear up to the 8-bit
   clip, so a raise of R multiplies the background mean by ~R. Raises
   are capped so the predicted mean stays ≤ the bright threshold —

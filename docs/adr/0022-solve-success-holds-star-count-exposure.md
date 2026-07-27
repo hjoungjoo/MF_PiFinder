@@ -67,11 +67,24 @@ cloud, each fixed the same night:
    down instead of returning to a bright anchor, and anchor returns
    respect an active bright ceiling.
 
-**Outcome**: the controller no longer freezes, saturates, or parks — but
-the night also showed the deeper limit: with only 1–3 detectable stars,
-no exposure policy can produce a solve (tetra3 needs ≥4). The binding
-constraint moved from control to detection sensitivity; see
-[mf_auto_exposure_field_review_20260726_ko.md](../mf_auto_exposure_field_review_20260726_ko.md).
+4. **The exposure never sat still under broken cloud** (dd010295,
+   2026-07-28). Solving worked — 34 solves in 2 minutes — but every
+   passing cloud sent the controller hunting away from the exposure
+   that had solved seconds earlier. A solve now opens a 90 s **anchor
+   trust window** (refreshed by each solve): inside it, failed attempts
+   hold the solved anchor — up to 8 consecutive zero-detection attempts
+   wait out the cloud before the ladder engages, low-star frames skip
+   the escape, shortfalls do not raise. The saturation defence and the
+   excess-star trim still override the hold.
+
+**Outcome**: the controller no longer freezes, saturates, parks, or
+jitters — but the first night also showed the deeper limit: with only
+1–3 detectable stars, no exposure policy can produce a solve (tetra3
+needs ≥4). The binding constraint moved from control to detection
+sensitivity; see
+[mf_auto_exposure_field_review_20260726_ko.md](../mf_auto_exposure_field_review_20260726_ko.md)
+and the SEP full-frame detection path built in response
+([mf_sep_fullframe_impl_ko.md](../mf_sep_fullframe_impl_ko.md)).
 
 ## Alternatives considered
 
