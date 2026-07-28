@@ -925,6 +925,23 @@ def register_api_routes(app, server_instance, require_auth=False):
                 download_image_format,
             )
 
+            if request.args.get("format") == "tiff":
+                # Lossless 16-bit data export (no stretch, no 8-bit clip)
+                rendered = _raw_stack_processor().render_raw_tiff(
+                    server_instance.shared_state, settings
+                )
+                if rendered is None:
+                    return Response(status=204)
+                image_bytes, mimetype = rendered
+                filename = f"pifinder_livecam_{time.strftime('%Y%m%d_%H%M%S')}.tiff"
+                return Response(
+                    image_bytes,
+                    content_type=mimetype,
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{filename}"'
+                    },
+                )
+
             image_format = download_image_format(settings)
             rendered = _raw_stack_processor().render_image(
                 server_instance.shared_state,

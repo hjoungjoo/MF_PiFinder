@@ -317,8 +317,33 @@ class RawLiveStackProcessor:
 
         frame = np.asarray(entry["frame"])
         info = entry.get("info") or {}
-        frame_id = info.get("frame_id")
+        display_source = self._resolve_display_source(
+            normalized, frame, info, accept_new_frame
+        )
 
+        builder = DisplayFrameBuilder(
+            low_percentile=normalized["low_percentile"],
+            high_percentile=normalized["high_percentile"],
+            display_size=normalized["display_size"],
+            preview_mode=normalized["preview_mode"],
+            color_mode=normalized["color_mode"],
+            web_theme=web_theme,
+            raw_format=info.get("raw_format"),
+        )
+        image = builder.build(display_source)
+        self._last_display_shape = (int(image.size[1]), int(image.size[0]))
+        return encode_image(image, image_format or normalized["web_image_format"])
+
+    def _resolve_display_source(
+        self,
+        normalized: dict[str, Any],
+        frame: np.ndarray,
+        info: dict[str, Any],
+        accept_new_frame: bool,
+    ) -> np.ndarray:
+        """Pick the frame the viewer/downloader should see (latest vs stack),
+        optionally feeding the new frame into the stack first."""
+        frame_id = info.get("frame_id")
         if normalized["stack_enabled"] and accept_new_frame:
             self._accept_frame(frame, info, normalized)
             display_source = self._stack_display_frame(normalized)
@@ -337,19 +362,40 @@ class RawLiveStackProcessor:
             or not normalized["stack_enabled"]
         ):
             display_source = frame
+        return display_source
 
-        builder = DisplayFrameBuilder(
-            low_percentile=normalized["low_percentile"],
-            high_percentile=normalized["high_percentile"],
-            display_size=normalized["display_size"],
-            preview_mode=normalized["preview_mode"],
-            color_mode=normalized["color_mode"],
-            web_theme=web_theme,
-            raw_format=info.get("raw_format"),
+    def render_raw_tiff(
+        self, shared_state, settings: dict[str, Any]
+    ) -> tuple[bytes, str] | None:
+        """Lossless 16-bit grayscale TIFF of the current display source.
+
+        Unlike ``render_image`` this skips the display pipeline entirely:
+        no percentile stretch, no 8-bit conversion, no debayer -- the raw
+        ADU values (or the stack: mean/max stay in sensor range, ``sum``
+        clips at 65535) go straight into the file for offline processing.
+        Never feeds the stack (download semantics, like accept_new_frame
+        False).
+        """
+        normalized = normalize_settings(settings)
+        if not normalized["processing_enabled"]:
+            return None
+        entry = _shared_entry(shared_state)
+        if not entry:
+            self._last_reject_reason = "no-frame"
+            return None
+        frame = np.asarray(entry["frame"])
+        info = entry.get("info") or {}
+        source = self._resolve_display_source(
+            normalized, frame, info, accept_new_frame=False
         )
-        image = builder.build(display_source)
-        self._last_display_shape = (int(image.size[1]), int(image.size[0]))
-        return encode_image(image, image_format or normalized["web_image_format"])
+        arr = np.asarray(source, dtype=np.float32)
+        if arr.ndim != 2:
+            return None
+        arr16 = np.clip(np.rint(arr), 0, 65535).astype(np.uint16)
+        image = Image.fromarray(arr16, mode="I;16")
+        buf = io.BytesIO()
+        image.save(buf, format="TIFF")
+        return buf.getvalue(), "image/tiff"
 
     def _accept_frame(
         self, frame: np.ndarray, info: dict[str, Any], settings: dict[str, Any]

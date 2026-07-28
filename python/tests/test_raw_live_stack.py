@@ -458,3 +458,59 @@ def test_mono_color_mode_builds_grayscale_from_bayer_labelled_frame():
     builder = DisplayFrameBuilder(color_mode="mono", raw_format="SRGGB12")
     image = builder.build(np.arange(64, dtype=np.uint16).reshape(8, 8))
     assert image.mode == "L"
+
+
+def test_tiff_download_is_lossless_16bit_raw_data():
+    """format=tiff exports the raw ADU values: 16-bit, no stretch, no
+    debayer -- byte-identical to the sensor data for offline processing."""
+    shared = DummySharedState()
+    frame = (np.arange(100, dtype=np.uint16) * 40).reshape(10, 10)  # up to 3960
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True},
+        _bayer_profile(),
+        "test",
+        frame,
+        frame,
+        metadata={"timestamp": 1.0, "frame_id": 1},
+    )
+    processor = RawLiveStackProcessor()
+    settings = normalize_settings({"processing_enabled": True})
+
+    rendered = processor.render_raw_tiff(shared, settings)
+    assert rendered is not None
+    tiff_bytes, mimetype = rendered
+    assert mimetype == "image/tiff"
+    image = Image.open(io.BytesIO(tiff_bytes))
+    assert image.mode in {"I;16", "I"}
+    np.testing.assert_array_equal(np.asarray(image, dtype=np.uint16), frame)
+
+
+def test_tiff_download_of_mean_stack_stays_in_sensor_range():
+    shared = DummySharedState()
+    processor = RawLiveStackProcessor()
+    settings = normalize_settings(
+        {
+            "processing_enabled": True,
+            "stack_enabled": True,
+            "output_source": "stack",
+            "stack_mode": "mean",
+            "stack_frame_limit": 2,
+        }
+    )
+    for frame_id, value in enumerate([100, 300], start=1):
+        frame = np.full((4, 4), value, dtype=np.uint16)
+        publish_selected_frame(
+            shared,
+            {"processing_enabled": True},
+            _bayer_profile(),
+            "test",
+            frame,
+            frame,
+            metadata={"timestamp": float(frame_id), "frame_id": frame_id},
+        )
+        assert processor.render_image(shared, settings) is not None
+
+    tiff_bytes, _ = processor.render_raw_tiff(shared, settings)
+    image = np.asarray(Image.open(io.BytesIO(tiff_bytes)), dtype=np.uint16)
+    np.testing.assert_array_equal(image, np.full((4, 4), 200, dtype=np.uint16))

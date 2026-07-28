@@ -300,6 +300,10 @@
         <button type="button" class="btn" id="downloadImage">
           <i class="material-icons">download</i>{{ _('Download') }}
         </button>
+        <button type="button" class="btn" id="downloadTiff"
+                title="{{ _('Lossless 16-bit data, no display stretch') }}">
+          <i class="material-icons">download</i>{{ _('TIFF 16-bit') }}
+        </button>
       </div>
     </div>
     <div class="livecam-preview-shell">
@@ -897,6 +901,9 @@ window.__livecamResize = function() {
 };
 window.addEventListener('resize', window.__livecamResize);
 
+document.getElementById('downloadTiff').addEventListener('click', () => {
+  window.location.href = '/api/camera/raw-stack/download?format=tiff';
+});
 document.getElementById('downloadImage').addEventListener('click', () => {
   window.location.href = `/api/camera/raw-stack/download?theme=${encodeURIComponent(currentTheme())}`;
 });

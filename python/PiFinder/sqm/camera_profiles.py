@@ -53,6 +53,13 @@ class CameraProfile:
     # Number of 90-degree counter-clockwise rotations (for np.rot90)
     rotation_90: int = 0
 
+    # True when the sensor delivers plain luminance (no CFA), regardless of
+    # what the driver's raw format label claims. The imx462 module ships a
+    # SRGGB12 label but measures as true mono: Bayer phase means are
+    # identical under every sky (docs/mf_sep_fullframe_impl_ko.md §6.4).
+    # Debayering such data only fabricates chroma noise.
+    mono: bool = False
+
     # Noise characteristics for SQM calculations
     # Read noise in ADU (from 0-second exposures at 20°C)
     # Represents the fundamental noise floor of the sensor electronics
@@ -134,6 +141,7 @@ CAMERA_PROFILES: Dict[str, CameraProfile] = {
         crop_y=(0, 0),  # No vertical crop
         crop_x=(184, 184),  # Crop to square from horizontal rectangle
         rotation_90=2,  # 180-degree rotation (sensor orientation differs)
+        mono=True,  # R10: genuinely mono, no CFA
         # Noise characteristics
         read_noise_adu=2.5,  # Datasheet: 2.2e⁻ typical → ~2.5 ADU @ 10-bit
         dark_current_rate=8.0,  # Datasheet: 3.2 e⁻/p/s @ 25°C → ~8 ADU/s @ 10-bit
@@ -152,6 +160,7 @@ CAMERA_PROFILES: Dict[str, CameraProfile] = {
         crop_y=(50, 50),  # Crop vertical edges
         crop_x=(470, 470),  # Crop horizontal edges to square
         rotation_90=0,  # No rotation needed
+        mono=True,  # Measured true mono despite the SRGGB12 label (§6.4)
         # Noise characteristics
         read_noise_adu=3.2,  # Estimated (STARVIS, similar to IMX290)
         dark_current_rate=0.05,  # Estimated - needs measurement
@@ -170,6 +179,7 @@ CAMERA_PROFILES: Dict[str, CameraProfile] = {
         crop_y=(50, 50),  # Crop vertical edges
         crop_x=(470, 470),  # Crop horizontal edges to square
         rotation_90=0,  # No rotation needed
+        mono=True,  # Same module family as imx462 (measured mono, §6.4)
         # Noise characteristics
         read_noise_adu=3.0,  # Measured: 3.3-3.5e⁻ @ 0dB → ~3 ADU @ 12-bit
         dark_current_rate=0.04,  # Estimated - needs measurement

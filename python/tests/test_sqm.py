@@ -920,6 +920,15 @@ class TestGetCameraProfile:
         assert profile.bit_depth == 10
         assert profile.analog_gain == 15.0
 
+    def test_mono_flags_ignore_driver_bayer_label(self):
+        """imx296 is natively mono; imx462/imx290 measure mono despite the
+        driver's SRGGB12 label (impl doc §6.4). Only the HQ has a real CFA.
+        The flag gates the _RGGB debayer suffix in capture_raw_file."""
+        assert get_camera_profile("imx296").mono is True
+        assert get_camera_profile("imx462").mono is True
+        assert get_camera_profile("imx290").mono is True
+        assert get_camera_profile("hq").mono is False
+
     def test_get_processed_camera_profile(self):
         """Test getting processed (8-bit) camera profiles."""
         profile = get_camera_profile("imx296_processed")

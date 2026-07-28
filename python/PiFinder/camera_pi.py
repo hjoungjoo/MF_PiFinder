@@ -282,10 +282,13 @@ class CameraPI(CameraInterface):
         """
         Captures raw sensor data and saves as 16-bit TIFF.
 
-        For Bayer sensors:
+        For Bayer sensors (profile.mono False):
         - Saves raw Bayer mosaic (RGGB pattern)
         - Adds "_RGGB" suffix to filename (indicates Bayer pattern for post-processing)
         - Post-processing can debayer using scikit-image, opencv, etc.
+
+        For mono sensors (profile.mono True): no suffix -- the data is
+        luminance even when the driver labels the stream SRGGB12.
 
         For RGB sensors:
         - Converts to grayscale
@@ -325,11 +328,15 @@ class CameraPI(CameraInterface):
             ).astype(np.uint16)
             needs_debayer = False
         elif raw_capture.ndim == 2:
-            # Bayer mosaic - save as-is and flag for post-processing
+            # 2D raw: only a real CFA needs the debayer flag. Mono sensors
+            # (imx296, and imx462/imx290 which measure mono despite their
+            # SRGGB12 label -- see CameraProfile.mono) deliver luminance;
+            # tagging them _RGGB makes post-processing fabricate chroma noise.
+            needs_debayer = not self.profile.mono
             logger.debug(
-                f"Saving raw Bayer mosaic (RGGB pattern, shape: {raw_capture.shape})"
+                f"Saving raw frame (shape: {raw_capture.shape}, "
+                f"debayer={'yes' if needs_debayer else 'no, mono sensor'})"
             )
-            needs_debayer = True
         else:
             raise ValueError(f"Unexpected raw image dimensions: {raw_capture.ndim}")
 

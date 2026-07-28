@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-26 22:14+0900\n"
+"POT-Creation-Date: 2026-07-28 15:24+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: xxxxxx <xxxxx@xxxxx.com>\n"
 "Language: fr_FR\n"
@@ -470,17 +470,17 @@ msgstr "Journaux"
 msgid "Error creating log archive"
 msgstr "Erreur dans la création des logs "
 
-#: PiFinder/server.py:2301
+#: PiFinder/server.py:2306
 msgid "No log files to save"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2362 views/restart_pifinder.html:6
+#: PiFinder/server.py:2367 views/restart_pifinder.html:6
 msgid "Restarting PiFinder"
 msgstr "Redémarrage PiFinder"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2424
+#: PiFinder/server.py:2429
 msgid "Restart PiFinder"
 msgstr "Redémarrer PiFinder"
 
@@ -2340,8 +2340,8 @@ msgstr "Expo. Caméra"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/menu_structure.py:982 PiFinder/ui/menu_structure.py:1388
-#: views/indi_mount.html:319 views/indi_mount.html:442 views/livecam.html:548
-#: views/livecam.html:648 views/network.html:32
+#: views/indi_mount.html:319 views/indi_mount.html:442 views/livecam.html:552
+#: views/livecam.html:652 views/network.html:32
 msgid "Auto"
 msgstr "Auto"
 
@@ -2378,8 +2378,8 @@ msgstr "1s"
 msgid "Camera Gain"
 msgstr "Expo. Caméra"
 
-#: PiFinder/ui/menu_structure.py:1030 views/livecam.html:563
-#: views/livecam.html:564
+#: PiFinder/ui/menu_structure.py:1030 views/livecam.html:567
+#: views/livecam.html:568
 #, fuzzy
 msgid "Profile"
 msgstr "Filtre"
@@ -2711,7 +2711,7 @@ msgid "Clear"
 msgstr "Cartes"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/menu_structure.py:1607 views/livecam.html:314
+#: PiFinder/ui/menu_structure.py:1607 views/livecam.html:318
 #: views/network.html:116
 msgid "Status"
 msgstr "État"
@@ -4552,8 +4552,8 @@ msgstr ""
 msgid "Current Align Star"
 msgstr "Mot de passe actuel"
 
-#: views/indi_mount.html:318 views/livecam.html:553 views/livecam.html:569
-#: views/livecam.html:650
+#: views/indi_mount.html:318 views/livecam.html:557 views/livecam.html:573
+#: views/livecam.html:654
 msgid "Manual"
 msgstr ""
 
@@ -5007,29 +5007,28 @@ msgstr ""
 msgid "Cropped RAW"
 msgstr ""
 
-#: views/livecam.html:154
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:154
 msgid "Bias Subtracted"
 msgstr "Biais soustrait"
 
-#: views/livecam.html:155
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:155
 msgid "Digital Gain"
 msgstr "Gain numérique"
 
-#: views/livecam.html:156
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:156
 msgid "Stretched 8-bit"
 msgstr "Étiré en 8 bits"
 
-#: views/livecam.html:157
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:157
 msgid "Resized 512"
 msgstr "Redimensionné à 512"
 
 # AI-TRANSLATED (claude): needs human review
 #: views/livecam.html:158
-# AI-TRANSLATED (claude): needs human review
 msgid "Solver Input"
 msgstr "Entrée du solveur"
 
@@ -5215,79 +5214,89 @@ msgstr "Taille objet"
 msgid "Download"
 msgstr "Téléchargement..."
 
-#: views/livecam.html:306
+#: views/livecam.html:304
+# AI-TRANSLATED (claude): needs human review
+msgid "Lossless 16-bit data, no display stretch"
+msgstr "Données 16 bits sans perte, sans étirement d'affichage"
+
+#: views/livecam.html:305
+# AI-TRANSLATED (claude): needs human review
+msgid "TIFF 16-bit"
+msgstr "TIFF 16 bits"
+
+#: views/livecam.html:310
 msgid "LiveCam preview"
 msgstr ""
 
-#: views/livecam.html:307
+#: views/livecam.html:311
 msgid "Processing is off or no RAW frame is available."
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:317
+#: views/livecam.html:321
 #, fuzzy
 msgid "Frame Source"
 msgstr "Source"
 
-#: views/livecam.html:321
+#: views/livecam.html:325
 msgid "RAW Shape"
 msgstr ""
 
-#: views/livecam.html:325
+#: views/livecam.html:329
 msgid "Display Shape"
 msgstr ""
 
-#: views/livecam.html:329
+#: views/livecam.html:333
 #, fuzzy
 msgid "RAW Type"
 msgstr "Type Caméra"
 
-#: views/livecam.html:333
+#: views/livecam.html:337
 msgid "Frame Count"
 msgstr ""
 
-#: views/livecam.html:337
+#: views/livecam.html:341
 msgid "Accepted / Rejected"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:341
+#: views/livecam.html:345
 #, fuzzy
 msgid "Sensor (applied)"
 msgstr "Aligné!"
 
-#: views/livecam.html:345
+#: views/livecam.html:349
 msgid "RAW Levels (p1/p50/p99.5)"
 msgstr ""
 
-#: views/livecam.html:349
+#: views/livecam.html:353
 #, fuzzy
 msgid "Last Error"
 msgstr "Erreur"
 
-#: views/livecam.html:502
+#: views/livecam.html:506
 msgid "Processing is on. Waiting for the camera to publish the next RAW frame"
 msgstr ""
 
-#: views/livecam.html:506
+#: views/livecam.html:510
 msgid "Processing is off."
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:549 views/livecam.html:649
+#: views/livecam.html:553 views/livecam.html:653
 #, fuzzy
 msgid "Auto (Star)"
 msgstr "Étoile Double"
 
-#: views/livecam.html:660
+#: views/livecam.html:664
 msgid "Camera process is not available."
 msgstr ""
 
-#: views/livecam.html:674
+#: views/livecam.html:678
 msgid "Enter an exposure in microseconds."
 msgstr ""
 
-#: views/livecam.html:687
+#: views/livecam.html:691
 msgid "Enter a gain multiplier."
 msgstr ""
 
