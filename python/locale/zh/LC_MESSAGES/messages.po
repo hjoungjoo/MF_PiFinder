@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-28 15:24+0900\n"
+"POT-Creation-Date: 2026-07-28 20:48+0900\n"
 "PO-Revision-Date: 2025-02-05 15:00+0800\n"
 "Last-Translator: ClawdPulse\n"
 "Language: zh_CN\n"
@@ -301,7 +301,7 @@ msgid "Session Log"
 msgstr "观测日志"
 
 #: PiFinder/server.py:1064 views/base.html:69 views/base.html:83
-#: views/livecam.html:135
+#: views/livecam.html:144
 msgid "LiveCam"
 msgstr ""
 
@@ -2345,8 +2345,8 @@ msgid "Camera Exp"
 msgstr "相机曝光"
 
 #: PiFinder/ui/menu_structure.py:982 PiFinder/ui/menu_structure.py:1388
-#: views/indi_mount.html:319 views/indi_mount.html:442 views/livecam.html:552
-#: views/livecam.html:652 views/network.html:32
+#: views/indi_mount.html:319 views/indi_mount.html:442 views/livecam.html:574
+#: views/livecam.html:674 views/network.html:32
 msgid "Auto"
 msgstr "自动"
 
@@ -2390,8 +2390,8 @@ msgstr "1s"
 msgid "Camera Gain"
 msgstr "相机曝光"
 
-#: PiFinder/ui/menu_structure.py:1030 views/livecam.html:567
-#: views/livecam.html:568
+#: PiFinder/ui/menu_structure.py:1030 views/livecam.html:589
+#: views/livecam.html:590
 #, fuzzy
 msgid "Profile"
 msgstr "筛选"
@@ -2709,7 +2709,7 @@ msgstr "SQM校准"
 msgid "Clear"
 msgstr "星图"
 
-#: PiFinder/ui/menu_structure.py:1607 views/livecam.html:318
+#: PiFinder/ui/menu_structure.py:1607 views/livecam.html:332
 #: views/network.html:116
 msgid "Status"
 msgstr "状态"
@@ -3281,12 +3281,12 @@ msgid "Dropped point"
 msgstr "已删除点"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/preview.py:80 views/livecam.html:253
+#: PiFinder/ui/preview.py:80 views/livecam.html:262
 msgid "Exposure"
 msgstr "曝光"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/preview.py:85 views/livecam.html:261
+#: PiFinder/ui/preview.py:85 views/livecam.html:270
 #, fuzzy
 msgid "Gain"
 msgstr "登录"
@@ -3912,7 +3912,7 @@ msgid "Network Setup"
 msgstr "网络设置"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/base.html:91 views/livecam.html:197
+#: views/base.html:91 views/livecam.html:206
 #, fuzzy
 msgid "Theme"
 msgstr "时间"
@@ -4599,8 +4599,8 @@ msgstr ""
 msgid "Current Align Star"
 msgstr "当前密码"
 
-#: views/indi_mount.html:318 views/livecam.html:557 views/livecam.html:573
-#: views/livecam.html:654
+#: views/indi_mount.html:318 views/livecam.html:579 views/livecam.html:595
+#: views/livecam.html:676
 msgid "Manual"
 msgstr ""
 
@@ -5040,307 +5040,318 @@ msgstr "望远镜类型"
 msgid "Reboot requested"
 msgstr "从末尾重新开始"
 
-#: views/livecam.html:146
+#: views/livecam.html:155
 msgid "Processing On"
 msgstr ""
 
-#: views/livecam.html:152
+#: views/livecam.html:161
 msgid "Original RAW"
 msgstr ""
 
-#: views/livecam.html:153
+#: views/livecam.html:162
 msgid "Cropped RAW"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:154
+#: views/livecam.html:163
 msgid "Bias Subtracted"
 msgstr "已减偏置"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:155
+#: views/livecam.html:164
 msgid "Digital Gain"
 msgstr "数字增益"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:156
+#: views/livecam.html:165
 msgid "Stretched 8-bit"
 msgstr "8位拉伸"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:157
+#: views/livecam.html:166
 msgid "Resized 512"
 msgstr "缩放至512"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:158
+#: views/livecam.html:167
 msgid "Solver Input"
 msgstr "求解器输入"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:160
+#: views/livecam.html:169
 #, fuzzy
 msgid "Input Frame"
 msgstr "输入"
 
-#: views/livecam.html:164
+#: views/livecam.html:173
 msgid "Latest RAW Preview"
 msgstr ""
 
-#: views/livecam.html:165
+#: views/livecam.html:174
 msgid "Live Stack"
 msgstr ""
 
-#: views/livecam.html:167
+#: views/livecam.html:176
 msgid "Output"
 msgstr ""
 
-#: views/livecam.html:175
+#: views/livecam.html:184
 msgid "Stack On"
 msgstr ""
 
-#: views/livecam.html:181
+#: views/livecam.html:190
 #, fuzzy
 msgid "Mean"
 msgstr "菜单动画"
 
-#: views/livecam.html:182
+#: views/livecam.html:191
 #, fuzzy
 msgid "Sum"
 msgstr "SQM"
 
-#: views/livecam.html:183
+#: views/livecam.html:192
 msgid "Max"
 msgstr ""
 
-#: views/livecam.html:185
+#: views/livecam.html:194
 #, fuzzy
 msgid "Stack Mode"
 msgstr "测试模式"
 
-#: views/livecam.html:189
+#: views/livecam.html:198
 #, fuzzy
 msgid "Raw Display"
 msgstr "深空天体显示"
 
-#: views/livecam.html:190
+#: views/livecam.html:199
 #, fuzzy
 msgid "Stretched"
 msgstr "十字丝"
 
-#: views/livecam.html:191
+#: views/livecam.html:200
 msgid "Bayer 2x2 Avg"
 msgstr ""
 
-#: views/livecam.html:193
+#: views/livecam.html:202
 #, fuzzy
 msgid "Preview Mode"
 msgstr "AP模式"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:198
+#: views/livecam.html:207
 #, fuzzy
 msgid "Color"
 msgstr "差"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:200
+#: views/livecam.html:209
 #, fuzzy
 msgid "Color Mode"
 msgstr "客户端模式"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:208
+#: views/livecam.html:217
 #, fuzzy
 msgid "Image Format"
 msgstr "使用度分秒格式"
 
-#: views/livecam.html:213
+#: views/livecam.html:222
 msgid "Stack Frames (Max 500)"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:217
+#: views/livecam.html:226
 #, fuzzy
 msgid "Low Percentile"
 msgstr "无最近解析"
 
-#: views/livecam.html:221
+#: views/livecam.html:230
 msgid "High Percentile"
 msgstr ""
 
-#: views/livecam.html:225
+#: views/livecam.html:234
 msgid "Display Size (0 = Original)"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:231
+#: views/livecam.html:240
 #, fuzzy
 msgid "Apply"
 msgstr "美观度"
 
-#: views/livecam.html:234
+#: views/livecam.html:243
 #, fuzzy
 msgid "Reset Stack"
 msgstr "全部重置"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:237
+#: views/livecam.html:246
 #, fuzzy
 msgid "Reset Defaults"
 msgstr "设为默认"
 
-#: views/livecam.html:246
+#: views/livecam.html:255
 #, fuzzy
 msgid "Camera Exposure / Gain"
 msgstr "相机曝光"
 
-#: views/livecam.html:248
+#: views/livecam.html:257
 msgid ""
 "Global camera settings, shared with plate solving and the on-device "
 "Camera Exp / Camera Gain menus."
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:256
+#: views/livecam.html:265
 #, fuzzy
 msgid "Exposure (us)"
 msgstr "曝光"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:264
+#: views/livecam.html:273
 #, fuzzy
 msgid "Gain (x)"
 msgstr "登录"
 
-#: views/livecam.html:270
+#: views/livecam.html:279
 msgid "Apply Camera"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:275
+#: views/livecam.html:284
 #, fuzzy
 msgid "Last frame"
 msgstr "重置位置"
 
-#: views/livecam.html:283
+#: views/livecam.html:292
 #, fuzzy
 msgid "Preview"
 msgstr "精准"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:285
+#: views/livecam.html:294
 #, fuzzy
 msgid "Image zoom"
 msgstr "图像"
 
-#: views/livecam.html:286
+#: views/livecam.html:295
 msgid "Zoom out"
 msgstr ""
 
-#: views/livecam.html:290
+#: views/livecam.html:299
 msgid "Zoom in"
 msgstr ""
 
-#: views/livecam.html:293
-#, fuzzy
-msgid "Fit to width"
-msgstr "WiFi转客户端"
+#: views/livecam.html:302
+# AI-TRANSLATED (claude): needs human review
+msgid "Fit to window"
+msgstr "适应窗口"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:296
+#: views/livecam.html:305
 #, fuzzy
 msgid "Actual size"
 msgstr "目标尺寸"
 
+#: views/livecam.html:310
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:301
+msgid "Mark SEP detections (after warm-pixel mask) on the preview"
+msgstr "在预览中标记SEP检测（暖像素掩膜后）"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:312
+# AI-TRANSLATED (claude): needs human review
+msgid "SEP overlay"
+msgstr "SEP叠加层"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:315
 #, fuzzy
 msgid "Download"
 msgstr "下载中..."
 
-#: views/livecam.html:304
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:318
 msgid "Lossless 16-bit data, no display stretch"
 msgstr "无损16位数据，无显示拉伸"
 
-#: views/livecam.html:305
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:319
 msgid "TIFF 16-bit"
 msgstr "TIFF 16位"
 
-#: views/livecam.html:310
+#: views/livecam.html:324
 msgid "LiveCam preview"
 msgstr ""
 
-#: views/livecam.html:311
+#: views/livecam.html:325
 msgid "Processing is off or no RAW frame is available."
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:321
+#: views/livecam.html:335
 #, fuzzy
 msgid "Frame Source"
 msgstr "来源"
 
-#: views/livecam.html:325
+#: views/livecam.html:339
 msgid "RAW Shape"
 msgstr ""
 
-#: views/livecam.html:329
+#: views/livecam.html:343
 msgid "Display Shape"
 msgstr ""
 
-#: views/livecam.html:333
+#: views/livecam.html:347
 #, fuzzy
 msgid "RAW Type"
 msgstr "相机类型"
 
-#: views/livecam.html:337
+#: views/livecam.html:351
 msgid "Frame Count"
 msgstr ""
 
-#: views/livecam.html:341
+#: views/livecam.html:355
 msgid "Accepted / Rejected"
 msgstr ""
 
-#: views/livecam.html:345
+#: views/livecam.html:359
 #, fuzzy
 msgid "Sensor (applied)"
 msgstr "已对齐！"
 
-#: views/livecam.html:349
+#: views/livecam.html:363
 msgid "RAW Levels (p1/p50/p99.5)"
 msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:353
+#: views/livecam.html:367
 #, fuzzy
 msgid "Last Error"
 msgstr "错误"
 
-#: views/livecam.html:506
+#: views/livecam.html:528
 msgid "Processing is on. Waiting for the camera to publish the next RAW frame"
 msgstr ""
 
-#: views/livecam.html:510
+#: views/livecam.html:532
 msgid "Processing is off."
 msgstr ""
 
-#: views/livecam.html:553 views/livecam.html:653
+#: views/livecam.html:575 views/livecam.html:675
 #, fuzzy
 msgid "Auto (Star)"
 msgstr "双星"
 
-#: views/livecam.html:664
+#: views/livecam.html:686
 msgid "Camera process is not available."
 msgstr ""
 
-#: views/livecam.html:678
+#: views/livecam.html:700
 msgid "Enter an exposure in microseconds."
 msgstr ""
 
-#: views/livecam.html:691
+#: views/livecam.html:713
 msgid "Enter a gain multiplier."
 msgstr ""
 

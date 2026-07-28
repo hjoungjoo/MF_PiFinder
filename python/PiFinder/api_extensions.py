@@ -922,6 +922,7 @@ def register_api_routes(app, server_instance, require_auth=False):
                 server_instance.shared_state,
                 settings,
                 web_theme=request.args.get("theme", "grey"),
+                overlay_sep=request.args.get("overlay") == "sep",
             )
             if rendered is None:
                 return Response(status=204)

@@ -16,12 +16,21 @@
   .livecam-preview-shell {
     background: #000;
     border: 1px solid var(--pf-border);
+    /* Definite height: fit mode uses max-width/height 100% (contain), which
+       needs the shell to resolve percentage heights. */
+    height: 82vh;
     min-height: 320px;
-    max-height: 82vh;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: auto;
+  }
+  .livecam-overlay-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--pf-muted, #bbb);
+    cursor: pointer;
   }
   .livecam-preview-shell img {
     display: block;
@@ -290,13 +299,18 @@
           <button type="button" class="btn" id="zoomIn" title="{{ _('Zoom in') }}" aria-label="{{ _('Zoom in') }}">
             <i class="material-icons">add</i>
           </button>
-          <button type="button" class="btn" id="zoomFit" title="{{ _('Fit to width') }}" aria-label="{{ _('Fit to width') }}">
+          <button type="button" class="btn" id="zoomFit" title="{{ _('Fit to window') }}" aria-label="{{ _('Fit to window') }}">
             <i class="material-icons">aspect_ratio</i>
           </button>
           <button type="button" class="btn" id="zoomReset" title="{{ _('Actual size') }}" aria-label="{{ _('Actual size') }}">
             <i class="material-icons">center_focus_strong</i>
           </button>
         </div>
+        <label class="livecam-overlay-toggle" for="sepOverlay"
+               title="{{ _('Mark SEP detections (after warm-pixel mask) on the preview') }}">
+          <input type="checkbox" id="sepOverlay" class="filled-in" />
+          <span>{{ _('SEP overlay') }}</span>
+        </label>
         <button type="button" class="btn" id="downloadImage">
           <i class="material-icons">download</i>{{ _('Download') }}
         </button>
@@ -496,7 +510,7 @@ function renderStatus(data, syncControls = false) {
     const frameId = data.frame && data.frame.frame_id;
     if (frameId !== lastFrameId || !image.src) {
       lastFrameId = frameId;
-      image.src = `/api/camera/raw-stack/image?t=${Date.now()}&theme=${encodeURIComponent(currentTheme())}`;
+      image.src = imageUrl();
     }
   } else {
     image.hidden = true;
@@ -718,14 +732,25 @@ async function fetchCameraControls(hydrate) {
   }
 }
 
+const sepOverlayToggle = document.getElementById('sepOverlay');
+
+function imageUrl() {
+  const overlay = sepOverlayToggle && sepOverlayToggle.checked ? '&overlay=sep' : '';
+  return `/api/camera/raw-stack/image?t=${Date.now()}&theme=${encodeURIComponent(currentTheme())}${overlay}`;
+}
+
 function fitScale() {
-  // Width the image may occupy inside the shell, borders excluded.
-  const available = shell.clientWidth;
+  // The whole image must fit inside the shell: scale by the tighter of the
+  // two dimensions (contain), not just the width -- width-only fit left
+  // tall (rotated) frames scrolling vertically.
+  const availableW = shell.clientWidth;
+  const availableH = shell.clientHeight;
   const naturalWidth = image.naturalWidth || 0;
-  if (!available || !naturalWidth) {
+  const naturalHeight = image.naturalHeight || 0;
+  if (!availableW || !availableH || !naturalWidth || !naturalHeight) {
     return null;
   }
-  return available / naturalWidth;
+  return Math.min(availableW / naturalWidth, availableH / naturalHeight);
 }
 
 function applyImageZoom() {
@@ -735,19 +760,18 @@ function applyImageZoom() {
     zoomValue.textContent = '-';
     return;
   }
-  // RAW frames are far wider than the shell, so fitting the width is the
-  // useful default; zooming switches to an explicit scale.
+  // Fit mode contains the whole frame in the shell (no scrollbars in
+  // either direction); zooming switches to an explicit scale with scroll.
   if (fitMode) {
-    // Percentage width rather than a pixel calculation: a tall frame that
-    // raises a vertical scrollbar would otherwise shrink the usable width and
-    // leave the image a few pixels too wide, adding a horizontal scrollbar.
-    image.style.width = '100%';
+    image.style.width = 'auto';
     image.style.height = 'auto';
     image.style.maxWidth = '100%';
+    image.style.maxHeight = '100%';
   } else {
     image.style.width = `${Math.round(naturalWidth * imageZoom)}px`;
     image.style.height = `${Math.round(naturalHeight * imageZoom)}px`;
     image.style.maxWidth = 'none';
+    image.style.maxHeight = 'none';
   }
   zoomValue.textContent = `${Math.round(currentScale() * 100)}%`;
 }
@@ -914,6 +938,13 @@ window.addEventListener('resize', window.__livecamResize);
 
 document.getElementById('downloadTiff').addEventListener('click', () => {
   window.location.href = '/api/camera/raw-stack/download?format=tiff';
+});
+sepOverlayToggle.addEventListener('change', () => {
+  // Refresh right away so the toggle feels immediate; the frame_id gate
+  // would otherwise delay it until the next new frame.
+  if (!image.hidden) {
+    image.src = imageUrl();
+  }
 });
 document.getElementById('downloadImage').addEventListener('click', () => {
   window.location.href = `/api/camera/raw-stack/download?theme=${encodeURIComponent(currentTheme())}`;

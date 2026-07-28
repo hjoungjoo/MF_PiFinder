@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from PiFinder.livecam_config import (
     COLOR_MODE_MONO,
@@ -311,6 +311,7 @@ class RawLiveStackProcessor:
         web_theme: str = "grey",
         color_mode: str | None = None,
         accept_new_frame: bool = True,
+        overlay_sep: bool = False,
     ) -> tuple[bytes, str] | None:
         normalized = normalize_settings(settings)
         if not normalized["processing_enabled"]:
@@ -340,6 +341,22 @@ class RawLiveStackProcessor:
             mono=bool(info.get("mono")),
         )
         image = builder.build(display_source)
+        if overlay_sep and info.get("source") == SOURCE_ORIGINAL:
+            overlay = None
+            if hasattr(shared_state, "sep_overlay"):
+                try:
+                    overlay = shared_state.sep_overlay()
+                except Exception:
+                    overlay = None
+            # Stale markers (SEP off, solver stalled) are worse than none.
+            if overlay and (
+                abs(
+                    float(info.get("timestamp") or 0)
+                    - float(overlay.get("timestamp") or 0)
+                )
+                < 10.0
+            ):
+                image = _draw_sep_overlay(image, overlay, info)
         self._last_display_shape = (int(image.size[1]), int(image.size[0]))
         return encode_image(image, image_format or normalized["web_image_format"])
 
@@ -464,6 +481,47 @@ class RawLiveStackProcessor:
         if settings["stack_mode"] == "sum":
             return self._accumulator
         return self._accumulator / max(1, len(self._frames))
+
+
+def _draw_sep_overlay(
+    image: Image.Image, overlay: dict[str, Any], info: dict[str, Any]
+) -> Image.Image:
+    """Mark SEP detections (post warm-pixel mask) on the preview image.
+
+    Detection centroids are in solver_raw full-frame (y, x); the published
+    frame additionally has the display rotation applied, so the centroids
+    get the same rotation (solver_frame_map's pinned convention) and are
+    then scaled to the rendered image. A mismatch between the rotated
+    canvas and the displayed frame shape (source switched mid-flight,
+    stack of another geometry) skips the overlay rather than mislabel.
+    """
+    from PiFinder import solver_frame_map as sfm
+
+    try:
+        cents = np.asarray(overlay.get("centroids") or [], dtype=np.float64)
+        frame_hw = tuple(overlay.get("frame_hw") or ())
+        if cents.ndim != 2 or len(cents) == 0 or len(frame_hw) != 2:
+            return image
+        rotation = float(info.get("display_rotation_degrees") or 0)
+        rotated, canvas = sfm.rotate_centroids(cents, frame_hw, rotation)
+        if tuple(info.get("shape") or ()) != tuple(canvas):
+            return image
+        sx = image.size[0] / canvas[1]
+        sy = image.size[1] / canvas[0]
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        draw = ImageDraw.Draw(image)
+        radius = max(3.0, 90.0 * sx / 16.0)
+        for y, x in rotated:
+            cx, cy = float(x) * sx, float(y) * sy
+            draw.ellipse(
+                [cx - radius, cy - radius, cx + radius, cy + radius],
+                outline=(0, 255, 128),
+                width=1,
+            )
+        return image
+    except Exception:
+        return image
 
 
 def encode_image(image: Image.Image, image_format: str) -> tuple[bytes, str]:

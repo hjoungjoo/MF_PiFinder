@@ -224,6 +224,21 @@ class SepShadowRunner:
             )
             if detection is None:
                 return None
+            # LiveCam overlay: kilobytes per attempt, drawn on the preview
+            # by the web renderer. Best-effort -- never blocks the solver.
+            if hasattr(shared_state, "set_sep_overlay"):
+                try:
+                    shared_state.set_sep_overlay(
+                        {
+                            "centroids": detection.centroids.tolist(),
+                            "frame_hw": [int(frame.shape[0]), int(frame.shape[1])],
+                            "masked": detection.masked_count,
+                            "sigma": self.sigma,
+                            "timestamp": time.time(),
+                        }
+                    )
+                except Exception:
+                    logger.exception("SEP overlay publish failed")
             return SepRun(
                 detection=detection,
                 frame_hw=(frame.shape[0], frame.shape[1]),

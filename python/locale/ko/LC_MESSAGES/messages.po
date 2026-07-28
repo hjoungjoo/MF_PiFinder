@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-28 15:24+0900\n"
+"POT-Creation-Date: 2026-07-28 20:48+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -276,7 +276,7 @@ msgstr "세션 로그"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/server.py:1064 views/base.html:69 views/base.html:83
-#: views/livecam.html:135
+#: views/livecam.html:144
 msgid "LiveCam"
 msgstr "LiveCam"
 
@@ -2171,8 +2171,8 @@ msgid "Camera Exp"
 msgstr "노출"
 
 #: PiFinder/ui/menu_structure.py:982 PiFinder/ui/menu_structure.py:1388
-#: views/indi_mount.html:319 views/indi_mount.html:442 views/livecam.html:552
-#: views/livecam.html:652 views/network.html:32
+#: views/indi_mount.html:319 views/indi_mount.html:442 views/livecam.html:574
+#: views/livecam.html:674 views/network.html:32
 msgid "Auto"
 msgstr "자동"
 
@@ -2208,8 +2208,8 @@ msgstr "1s"
 msgid "Camera Gain"
 msgstr "Gain"
 
-#: PiFinder/ui/menu_structure.py:1030 views/livecam.html:567
-#: views/livecam.html:568
+#: PiFinder/ui/menu_structure.py:1030 views/livecam.html:589
+#: views/livecam.html:590
 msgid "Profile"
 msgstr "Profile"
 
@@ -2505,7 +2505,7 @@ msgstr "캘리브레이션"
 msgid "Clear"
 msgstr "지우기"
 
-#: PiFinder/ui/menu_structure.py:1607 views/livecam.html:318
+#: PiFinder/ui/menu_structure.py:1607 views/livecam.html:332
 #: views/network.html:116
 msgid "Status"
 msgstr "상태"
@@ -2979,11 +2979,11 @@ msgstr "점 없음"
 msgid "Dropped point"
 msgstr "점 삭제됨"
 
-#: PiFinder/ui/preview.py:80 views/livecam.html:253
+#: PiFinder/ui/preview.py:80 views/livecam.html:262
 msgid "Exposure"
 msgstr "노출"
 
-#: PiFinder/ui/preview.py:85 views/livecam.html:261
+#: PiFinder/ui/preview.py:85 views/livecam.html:270
 msgid "Gain"
 msgstr "Gain"
 
@@ -3503,7 +3503,7 @@ msgid "Network Setup"
 msgstr "Network Setup"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/base.html:91 views/livecam.html:197
+#: views/base.html:91 views/livecam.html:206
 msgid "Theme"
 msgstr "테마"
 
@@ -4136,8 +4136,8 @@ msgid "Current Align Star"
 msgstr "현재 정렬 별"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:318 views/livecam.html:557 views/livecam.html:573
-#: views/livecam.html:654
+#: views/indi_mount.html:318 views/livecam.html:579 views/livecam.html:595
+#: views/livecam.html:676
 msgid "Manual"
 msgstr "수동"
 
@@ -4589,316 +4589,327 @@ msgid "Reboot requested"
 msgstr "재시작을 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:146
+#: views/livecam.html:155
 msgid "Processing On"
 msgstr "처리 켜짐"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:152
+#: views/livecam.html:161
 msgid "Original RAW"
 msgstr "원본 RAW"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:153
+#: views/livecam.html:162
 msgid "Cropped RAW"
 msgstr "잘라낸 RAW"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:154
+#: views/livecam.html:163
 msgid "Bias Subtracted"
 msgstr "바이어스 차감"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:155
+#: views/livecam.html:164
 msgid "Digital Gain"
 msgstr "디지털 게인"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:156
+#: views/livecam.html:165
 msgid "Stretched 8-bit"
 msgstr "8비트 스트레치"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:157
+#: views/livecam.html:166
 msgid "Resized 512"
 msgstr "512 리사이즈"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:158
+#: views/livecam.html:167
 msgid "Solver Input"
 msgstr "솔버 입력"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:160
+#: views/livecam.html:169
 msgid "Input Frame"
 msgstr "입력 프레임"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:164
+#: views/livecam.html:173
 msgid "Latest RAW Preview"
 msgstr "최신 RAW 미리보기"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:165
+#: views/livecam.html:174
 msgid "Live Stack"
 msgstr "라이브 스택"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:167
+#: views/livecam.html:176
 msgid "Output"
 msgstr "출력"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:175
+#: views/livecam.html:184
 msgid "Stack On"
 msgstr "스택 켬"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:181
+#: views/livecam.html:190
 msgid "Mean"
 msgstr "평균"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:182
+#: views/livecam.html:191
 msgid "Sum"
 msgstr "합산"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:183
+#: views/livecam.html:192
 msgid "Max"
 msgstr "최대"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:185
+#: views/livecam.html:194
 msgid "Stack Mode"
 msgstr "스택 모드"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:189
+#: views/livecam.html:198
 msgid "Raw Display"
 msgstr "RAW 표시"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:190
+#: views/livecam.html:199
 msgid "Stretched"
 msgstr "스트레치"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:191
+#: views/livecam.html:200
 msgid "Bayer 2x2 Avg"
 msgstr "Bayer 2x2 평균"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:193
+#: views/livecam.html:202
 msgid "Preview Mode"
 msgstr "미리보기 모드"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:198
+#: views/livecam.html:207
 msgid "Color"
 msgstr "컬러"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:200
+#: views/livecam.html:209
 msgid "Color Mode"
 msgstr "컬러 모드"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:208
+#: views/livecam.html:217
 msgid "Image Format"
 msgstr "이미지 형식"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:213
+#: views/livecam.html:222
 msgid "Stack Frames (Max 500)"
 msgstr "스택 프레임 (최대 500)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:217
+#: views/livecam.html:226
 msgid "Low Percentile"
 msgstr "하위 백분위"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:221
+#: views/livecam.html:230
 msgid "High Percentile"
 msgstr "상위 백분위"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:225
+#: views/livecam.html:234
 msgid "Display Size (0 = Original)"
 msgstr "표시 크기 (0 = 원본)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:231
+#: views/livecam.html:240
 msgid "Apply"
 msgstr "적용"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:234
+#: views/livecam.html:243
 msgid "Reset Stack"
 msgstr "스택 초기화"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:237
+#: views/livecam.html:246
 msgid "Reset Defaults"
 msgstr "기본값으로 초기화"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:246
+#: views/livecam.html:255
 msgid "Camera Exposure / Gain"
 msgstr "카메라 노출 / 게인"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:248
+#: views/livecam.html:257
 msgid ""
 "Global camera settings, shared with plate solving and the on-device "
 "Camera Exp / Camera Gain menus."
 msgstr "전역 카메라 설정입니다. 플레이트 솔빙과 기기의 Camera Exp / Camera Gain 메뉴가 같은 값을 사용합니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:256
+#: views/livecam.html:265
 msgid "Exposure (us)"
 msgstr "노출 (µs)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:264
+#: views/livecam.html:273
 msgid "Gain (x)"
 msgstr "게인 (배)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:270
+#: views/livecam.html:279
 msgid "Apply Camera"
 msgstr "카메라 적용"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:275
+#: views/livecam.html:284
 msgid "Last frame"
 msgstr "마지막 프레임"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:283
+#: views/livecam.html:292
 msgid "Preview"
 msgstr "미리보기"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:285
+#: views/livecam.html:294
 msgid "Image zoom"
 msgstr "이미지 확대"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:286
+#: views/livecam.html:295
 msgid "Zoom out"
 msgstr "축소"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:290
+#: views/livecam.html:299
 msgid "Zoom in"
 msgstr "확대"
 
-#: views/livecam.html:293
-msgid "Fit to width"
-msgstr "폭 맞춤"
+#: views/livecam.html:302
+# AI-TRANSLATED (claude): needs human review
+msgid "Fit to window"
+msgstr "창에 맞춤"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:296
+#: views/livecam.html:305
 msgid "Actual size"
 msgstr "실제 크기"
 
+#: views/livecam.html:310
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:301
+msgid "Mark SEP detections (after warm-pixel mask) on the preview"
+msgstr "SEP 검출(웜픽셀 마스크 적용 후)을 프리뷰에 표시"
+
+#: views/livecam.html:312
+# AI-TRANSLATED (claude): needs human review
+msgid "SEP overlay"
+msgstr "SEP 오버레이"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:315
 msgid "Download"
 msgstr "다운로드"
 
-#: views/livecam.html:304
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:318
 msgid "Lossless 16-bit data, no display stretch"
 msgstr "무손실 16-bit 데이터, 표시용 스트레치 없음"
 
-#: views/livecam.html:305
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:319
 msgid "TIFF 16-bit"
 msgstr "TIFF 16-bit"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:310
+#: views/livecam.html:324
 msgid "LiveCam preview"
 msgstr "LiveCam 미리보기"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:311
+#: views/livecam.html:325
 msgid "Processing is off or no RAW frame is available."
 msgstr "처리가 꺼져 있거나 사용 가능한 RAW 프레임이 없습니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:321
+#: views/livecam.html:335
 msgid "Frame Source"
 msgstr "프레임 소스"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:325
+#: views/livecam.html:339
 msgid "RAW Shape"
 msgstr "RAW 형상"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:329
+#: views/livecam.html:343
 msgid "Display Shape"
 msgstr "표시 형상"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:333
+#: views/livecam.html:347
 msgid "RAW Type"
 msgstr "RAW 타입"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:337
+#: views/livecam.html:351
 msgid "Frame Count"
 msgstr "프레임 수"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:341
+#: views/livecam.html:355
 msgid "Accepted / Rejected"
 msgstr "채택 / 거부"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:345
+#: views/livecam.html:359
 msgid "Sensor (applied)"
 msgstr "센서 (적용값)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:349
+#: views/livecam.html:363
 msgid "RAW Levels (p1/p50/p99.5)"
 msgstr "RAW 레벨 (p1/p50/p99.5)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:353
+#: views/livecam.html:367
 msgid "Last Error"
 msgstr "마지막 오류"
 
-#: views/livecam.html:506
+#: views/livecam.html:528
 msgid "Processing is on. Waiting for the camera to publish the next RAW frame"
 msgstr "처리가 켜져 있습니다. 카메라가 다음 RAW 프레임을 발행하기를 기다리는 중"
 
-#: views/livecam.html:510
+#: views/livecam.html:532
 msgid "Processing is off."
 msgstr "처리가 꺼져 있습니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:553 views/livecam.html:653
+#: views/livecam.html:575 views/livecam.html:675
 msgid "Auto (Star)"
 msgstr "자동 (별)"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:664
+#: views/livecam.html:686
 msgid "Camera process is not available."
 msgstr "카메라 프로세스를 사용할 수 없습니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:678
+#: views/livecam.html:700
 msgid "Enter an exposure in microseconds."
 msgstr "노출 시간을 마이크로초 단위로 입력하세요."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/livecam.html:691
+#: views/livecam.html:713
 msgid "Enter a gain multiplier."
 msgstr "게인 배율을 입력하세요."
 

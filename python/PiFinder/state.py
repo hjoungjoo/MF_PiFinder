@@ -309,6 +309,8 @@ class SharedStateObj:
         # published while solver_shadow_detect / solver_sep_fallback is on.
         self.__solver_raw = None
         self.__raw_live_frame = None
+        # Latest SEP detection (small dict) for the LiveCam overlay
+        self.__sep_overlay = None
         self.__livecam_settings: dict[str, Any] = {}
         # Are we prepared to do alt/az math
         # We need gps lock and datetime
@@ -556,6 +558,15 @@ class SharedStateObj:
 
     def set_solver_raw(self, v):
         self.__solver_raw = v
+
+    def sep_overlay(self):
+        return self.__sep_overlay
+
+    def set_sep_overlay(self, v):
+        """Latest SEP detection for the LiveCam overlay: a small dict of
+        centroids (full-frame y,x), frame shape and timestamp -- kilobytes,
+        published by the solver each shadow detect."""
+        self.__sep_overlay = v
 
     def raw_live_frame(self):
         return self.__raw_live_frame

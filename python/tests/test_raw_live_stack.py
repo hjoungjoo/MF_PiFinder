@@ -27,6 +27,7 @@ from PiFinder.sqm.camera_profiles import CameraProfile
 class DummySharedState:
     def __init__(self):
         self._frame = None
+        self._sep_overlay = None
         self.set_calls = 0
 
     def raw_live_frame(self):
@@ -35,6 +36,12 @@ class DummySharedState:
     def set_raw_live_frame(self, value):
         self.set_calls += 1
         self._frame = value
+
+    def sep_overlay(self):
+        return self._sep_overlay
+
+    def set_sep_overlay(self, value):
+        self._sep_overlay = value
 
 
 class DummyConfig:
@@ -529,6 +536,118 @@ def test_mono_sensor_bayer_2x2_average_preview_is_reachable():
     image = builder.build(np.arange(100, dtype=np.uint16).reshape(10, 10))
     assert image.mode == "L"
     assert image.size == (5, 5)
+
+
+OVERLAY_GREEN = (0, 255, 128)
+
+
+def _green_pixels(png_bytes):
+    arr = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
+    ys, xs = np.where(
+        (arr[..., 0] == OVERLAY_GREEN[0])
+        & (arr[..., 1] == OVERLAY_GREEN[1])
+        & (arr[..., 2] == OVERLAY_GREEN[2])
+    )
+    return np.column_stack((ys, xs))
+
+
+def test_sep_overlay_marks_centroid_on_preview():
+    shared = DummySharedState()
+    frame = np.full((64, 48), 500, dtype=np.uint16)
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True},
+        _mono_bayer_profile(),
+        "test",
+        frame,
+        frame,
+        metadata={"timestamp": 1.0, "frame_id": 1},
+    )
+    shared.set_sep_overlay(
+        {
+            "centroids": [[20.0, 30.0]],
+            "frame_hw": [64, 48],
+            "masked": 0,
+            "sigma": 3.5,
+            "timestamp": 1.0,
+        }
+    )
+    settings = normalize_settings(
+        {"processing_enabled": True, "web_image_format": "png"}
+    )
+    png, _ = RawLiveStackProcessor().render_image(shared, settings, overlay_sep=True)
+    marks = _green_pixels(png)
+    assert len(marks) > 0
+    d = np.hypot(marks[:, 0] - 20.0, marks[:, 1] - 30.0)
+    # every marker pixel sits on the circle around the centroid
+    assert d.max() <= 8.0 and d.min() >= 1.0
+
+
+def test_sep_overlay_follows_display_rotation():
+    """Detection coords are pre-display-rotation; the drawn marker must
+    land where np.rot90 moved the pixel (the publish-path rotation)."""
+    shared = DummySharedState()
+    frame = np.full((64, 48), 500, dtype=np.uint16)
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True, "display_rotation_degrees": 90},
+        _mono_bayer_profile(),
+        "test",
+        frame,
+        frame,
+        metadata={"timestamp": 1.0, "frame_id": 1},
+    )
+    shared.set_sep_overlay(
+        {
+            "centroids": [[20.0, 30.0]],
+            "frame_hw": [64, 48],
+            "masked": 0,
+            "sigma": 3.5,
+            "timestamp": 1.0,
+        }
+    )
+    settings = normalize_settings(
+        {
+            "processing_enabled": True,
+            "web_image_format": "png",
+            "display_rotation_degrees": 90,
+        }
+    )
+    png, _ = RawLiveStackProcessor().render_image(shared, settings, overlay_sep=True)
+    marks = _green_pixels(png)
+    assert len(marks) > 0
+    # np.rot90 CCW: (y, x) -> (W-1-x, y) on the 48x64 canvas
+    ey, ex = 48 - 1 - 30.0, 20.0
+    d = np.hypot(marks[:, 0] - ey, marks[:, 1] - ex)
+    assert d.max() <= 8.0
+
+
+def test_sep_overlay_skips_stale_detection():
+    shared = DummySharedState()
+    frame = np.full((64, 48), 500, dtype=np.uint16)
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True},
+        _mono_bayer_profile(),
+        "test",
+        frame,
+        frame,
+        metadata={"timestamp": 100.0, "frame_id": 1},
+    )
+    shared.set_sep_overlay(
+        {
+            "centroids": [[20.0, 30.0]],
+            "frame_hw": [64, 48],
+            "masked": 0,
+            "sigma": 3.5,
+            "timestamp": 1.0,  # 99 s older than the frame
+        }
+    )
+    settings = normalize_settings(
+        {"processing_enabled": True, "web_image_format": "png"}
+    )
+    png, _ = RawLiveStackProcessor().render_image(shared, settings, overlay_sep=True)
+    assert len(_green_pixels(png)) == 0
 
 
 def test_tiff_download_is_lossless_16bit_raw_data():
