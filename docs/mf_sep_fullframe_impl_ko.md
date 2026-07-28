@@ -4,7 +4,9 @@
 > 배경/근거: [mf_auto_exposure_field_review_20260726_ko.md](mf_auto_exposure_field_review_20260726_ko.md)
 > (병목 = 광해 하늘에서의 검출 감도, §4 대안 B+C 채택)
 > 관련: [docs/ax/camera.md](ax/camera.md) §3b/§6b,
-> [ADR 0022](adr/0022-solve-success-holds-star-count-exposure.md)
+> [ADR 0022](adr/0022-solve-success-holds-star-count-exposure.md),
+> 세션 요약: [mf_field_session_20260728_ko.md](mf_field_session_20260728_ko.md)
+> (2026-07-28 하루 전체 — 발견·실측·확정 구성 총정리)
 >
 > 목적: 검출 별 수가 부족해 솔브가 불가능하던 서울 광해 하늘에서, **12-bit
 > 비크롭 풀프레임 + 배경 제거(SEP)** 검출 경로를 프로덕션(cedar-detect)과
