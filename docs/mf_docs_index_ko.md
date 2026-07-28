@@ -64,7 +64,7 @@
 | [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **구현 완료(접근법 재검토 중)** | 검출 별 수 컨트롤러 설계+구현 — 기존 기능 유지, Camera Exp 메뉴 "Star"(`camera_exp=auto_star`)로 선택. ADR 0020/0022. |
 | [auto_exposure_field_review_20260726](mf_auto_exposure_field_review_20260726_ko.md) | ko | **방향 확정(최종 방안 코퍼스 대기)** | 서울 광해 현장 검증 — 병목은 검출 감도. B+C(비크롭 12-bit+SEP) 채택, 야간 검증 요약(§7). |
 | [sep_fullframe_impl](mf_sep_fullframe_impl_ko.md) | ko | **통합 관리 지점(1차 튜닝 확정)** | 광해 솔빙 보강 통합 문서(자동 노출+SEP) — 검출·폴백·하이브리드 정렬·웜픽셀 마스크·형태/클러스터 게이트·σ 튜닝·야간 실측(정확도 11–16″)·판정 현황. |
-| [community_update_20260728](mf_community_update_20260728_ko.md) | ko | **공지** | 커뮤니티 공유용 개발 소식 — 광해 하늘 솔빙 실증 요약(비기술 독자용). |
+| [cedar_sep_hybrid_solve_20260728](mf_cedar_sep_hybrid_solve_20260728_ko.md) | 둘 다 | **공지** | 커뮤니티 공유용 — cedar+SEP 하이브리드 솔빙 구조 설명과 광해 하늘 실증 요약 ([영문판](mf_cedar_sep_hybrid_solve_20260728_en.md) 포함). |
 | [gps_aiding_plan](mf_gps_aiding_plan_ko.md) | 둘 다 | **plan(구현 전)** | u-blox GPS aiding(MGA-INI/DBD) 설계 초안. |
 
 ## 메타 · 이력 · 프로세스

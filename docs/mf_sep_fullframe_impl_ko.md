@@ -12,7 +12,8 @@
 > 관련: [docs/ax/camera.md](ax/camera.md) §3b/§6b (노출 제어 아키텍처의 정규
 > 소유자), [ADR 0020](adr/0020-star-count-controller-opt-in.md),
 > [ADR 0022](adr/0022-solve-success-holds-star-count-exposure.md)
-> 커뮤니티 공지: [mf_community_update_20260728_ko.md](mf_community_update_20260728_ko.md)
+> 커뮤니티 공지: [mf_cedar_sep_hybrid_solve_20260728_ko.md](mf_cedar_sep_hybrid_solve_20260728_ko.md)
+> ([영문판](mf_cedar_sep_hybrid_solve_20260728_en.md))
 >
 > 목적: 검출 별 수가 부족해 솔브가 불가능하던 서울 광해 하늘에서, **12-bit
 > 비크롭 풀프레임 + 배경 제거(SEP)** 검출 경로를 프로덕션(cedar-detect)과
