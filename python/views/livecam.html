@@ -397,6 +397,7 @@ const zoomValue = document.getElementById('zoomValue');
 const shell = document.querySelector('.livecam-preview-shell');
 let pollTimer = null;
 let waitingSince = null;
+let lastFrameId = null;
 let controlsHydrated = false;
 let imageZoom = 1.0;
 let fitMode = true;
@@ -489,7 +490,14 @@ function renderStatus(data, syncControls = false) {
     waitingSince = null;
     image.hidden = false;
     placeholder.hidden = true;
-    image.src = `/api/camera/raw-stack/image?t=${Date.now()}&theme=${encodeURIComponent(currentTheme())}`;
+    // Re-render only when the camera actually produced a new frame: each
+    // image fetch costs a full-frame read + stretch server-side, so
+    // re-fetching an unchanged frame just burns Pi CPU.
+    const frameId = data.frame && data.frame.frame_id;
+    if (frameId !== lastFrameId || !image.src) {
+      lastFrameId = frameId;
+      image.src = `/api/camera/raw-stack/image?t=${Date.now()}&theme=${encodeURIComponent(currentTheme())}`;
+    }
   } else {
     image.hidden = true;
     placeholder.hidden = false;
@@ -769,15 +777,18 @@ async function fetchStatus() {
     message.textContent = error.toString();
   }
   try {
-    // Half the status rate: this reads config from disk server-side and the
-    // camera only publishes a new exposure once per capture anyway.
+    // A quarter of the status rate: this reads config from disk server-side
+    // and the camera only publishes a new exposure once per capture anyway.
     statusPollCount += 1;
-    if (!cameraHydrated || statusPollCount % 2 === 0) {
+    if (!cameraHydrated || statusPollCount % 4 === 0) {
       await fetchCameraControls(false);
     }
   } finally {
     if (!PAGE_ALIVE || PAGE_ALIVE()) {
-      pollTimer = setTimeout(fetchStatus, 1500);
+      // 750 ms keeps the preview close to the camera's real frame rate.
+      // Affordable because the status poll is metadata-only (no frame
+      // transfer) and the image is only re-fetched on a new frame_id.
+      pollTimer = setTimeout(fetchStatus, 750);
     }
   }
 }

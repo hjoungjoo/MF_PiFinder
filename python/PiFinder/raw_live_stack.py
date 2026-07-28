@@ -276,10 +276,7 @@ class RawLiveStackProcessor:
 
     def status(self, shared_state, settings: dict[str, Any]) -> dict[str, Any]:
         normalized = normalize_settings(settings)
-        entry = (
-            _shared_entry(shared_state) if normalized["processing_enabled"] else None
-        )
-        info = entry.get("info") if entry else None
+        info = _shared_info(shared_state) if normalized["processing_enabled"] else None
         return {
             "settings": normalized,
             "frame": info,
@@ -302,7 +299,7 @@ class RawLiveStackProcessor:
                 )
             ),
             "enabled": normalized["processing_enabled"],
-            "has_frame": bool(entry),
+            "has_frame": bool(info),
         }
 
     def render_image(
@@ -595,6 +592,22 @@ def _shared_entry(shared_state) -> dict[str, Any] | None:
     if not entry or not isinstance(entry, dict) or "frame" not in entry:
         return None
     return entry
+
+
+def _shared_info(shared_state) -> dict[str, Any] | None:
+    """Frame metadata only -- the cheap path for status polls.
+
+    The dedicated accessor keeps the multi-MB frame out of the manager
+    pickle; fall back to the full entry for shared-state doubles that
+    don't implement it."""
+    if hasattr(shared_state, "raw_live_frame_info"):
+        try:
+            info = shared_state.raw_live_frame_info()
+            return info if isinstance(info, dict) else None
+        except Exception:
+            return None
+    entry = _shared_entry(shared_state)
+    return entry.get("info") if entry else None
 
 
 def _bit_depth_from_raw_format(raw_format: str | None) -> int | None:

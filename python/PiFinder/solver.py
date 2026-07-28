@@ -605,8 +605,20 @@ def solver(
                             and align_dec == 0
                             and len(sep_run.detection.centroids)
                             >= sep_shadow.min_fallback_stars
+                            # Backoff: persistently unsolvable scenes
+                            # (indoors, thick cloud) otherwise burn up to
+                            # solve_timeout per attempt, starving the whole
+                            # solver loop. Re-arms instantly on a SEP count
+                            # jump (cloud gap opening on stars).
+                            and sep_shadow.fallback_should_attempt(
+                                len(sep_run.detection.centroids)
+                            )
                         ):
                             fb_solution = sep_shadow.solve(t3, sep_run, shared_state)
+                            sep_shadow.record_fallback_result(
+                                bool(fb_solution and fb_solution.get("RA") is not None),
+                                len(sep_run.detection.centroids),
+                            )
                             if fb_solution and fb_solution.get("RA") is not None:
                                 # Per-centroid outputs are in full-frame
                                 # coordinates; strip them so SQM photometry
@@ -651,6 +663,11 @@ def solver(
 
                     if solution and solution.get("RA") is not None:
                         last_solve_success = last_solve_attempt
+                        if sep_shadow is not None and not sep_fallback_used:
+                            # Production solve: sky is workable, clear the
+                            # fallback backoff so the next cedar failure gets
+                            # an immediate rescue try.
+                            sep_shadow.note_solved()
                         solve_result = _build_successful_solve(
                             solution=solution,
                             last_image_metadata=last_image_metadata,

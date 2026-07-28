@@ -105,6 +105,13 @@ class SepShadowRunner:
         self.saturation_level = saturation_level
         self.csv_path = csv_path or (utils.log_dir / "solver_shadow_log.csv")
         self.warm_pixel_map = warm_pixel_map
+        # Fallback backoff state (see fallback_should_attempt): a fallback
+        # solve on unsolvable input burns up to solve_timeout (1 s) of solver
+        # CPU per attempt -- indoors/under cloud that is every attempt.
+        self._attempt_counter = 0
+        self._fallback_fail_streak = 0
+        self._fallback_skip_until = 0
+        self._last_failed_sep_count: Optional[int] = None
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
             "rotation=%.0f° crop_width=%dpx warm_pixels=%d log=%s",
@@ -160,8 +167,48 @@ class SepShadowRunner:
             logger.exception("SEP shadow runner init failed; disabled")
             return None
 
+    def fallback_should_attempt(self, sep_count: int) -> bool:
+        """Backoff gate for the fallback solve.
+
+        A failed fallback solve costs up to solve_timeout (1 s) of solver
+        CPU. When the scene is persistently unsolvable (indoors, thick
+        cloud) the SEP count passes the star gate every attempt and that
+        cost recurs forever. After each consecutive failure we skip the
+        next ``min(2**streak, 8)`` attempts -- but re-arm IMMEDIATELY when
+        the SEP count rises to 1.5x the last failed attempt, which is what
+        a cloud gap opening on real stars looks like. Rescue solves in a
+        star window are therefore not delayed (2026-07-27 field: counts
+        jumped from <=5 masked to ~30 when stars appeared).
+        """
+        if self._fallback_fail_streak == 0:
+            return True
+        if (
+            self._last_failed_sep_count is not None
+            and sep_count >= 1.5 * self._last_failed_sep_count
+        ):
+            return True
+        return self._attempt_counter >= self._fallback_skip_until
+
+    def record_fallback_result(self, solved: bool, sep_count: int) -> None:
+        if solved:
+            self._fallback_fail_streak = 0
+            self._last_failed_sep_count = None
+            return
+        self._fallback_fail_streak += 1
+        self._last_failed_sep_count = sep_count
+        self._fallback_skip_until = self._attempt_counter + min(
+            2**self._fallback_fail_streak, 8
+        )
+
+    def note_solved(self) -> None:
+        """A production solve succeeded: the sky is workable, so the next
+        cedar failure deserves an immediate fallback try again."""
+        self._fallback_fail_streak = 0
+        self._last_failed_sep_count = None
+
     def detect(self, shared_state) -> Optional[SepRun]:
         """Run SEP on the freshest published full-frame raw, or None."""
+        self._attempt_counter += 1
         try:
             entry = shared_state.solver_raw()
             if not entry or "frame" not in entry:

@@ -560,6 +560,18 @@ class SharedStateObj:
     def raw_live_frame(self):
         return self.__raw_live_frame
 
+    def raw_live_frame_info(self):
+        """Metadata of the published LiveCam frame WITHOUT the frame.
+
+        Status polls only need the info dict; returning the full entry
+        would pickle the multi-MB frame through the state manager on
+        every poll (raw_live_stack._shared_info).
+        """
+        entry = self.__raw_live_frame
+        if not entry or not isinstance(entry, dict):
+            return None
+        return entry.get("info")
+
     def set_raw_live_frame(self, v):
         self.__raw_live_frame = v
 

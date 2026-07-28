@@ -582,7 +582,11 @@ class CameraInterface:
                 command = True
                 while command:
                     try:
-                        command = command_queue.get(block=True, timeout=0.1)
+                        # Short block: this get() sits in the per-frame loop, so
+                        # its timeout is a fixed tax on the frame period (0.1
+                        # cost ~8% of the achievable rate at short exposures).
+                        # Commands queued mid-frame are picked up next pass.
+                        command = command_queue.get(block=True, timeout=0.01)
                     except queue.Empty:
                         command = ""
                         continue
