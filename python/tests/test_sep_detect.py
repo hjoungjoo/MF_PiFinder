@@ -21,7 +21,13 @@ from PiFinder import sep_detect  # noqa: E402
 
 
 def _synthetic_frame(stars, shape=(540, 960), bg=1200.0, peak=400.0):
-    """Raw-like uint16 mosaic with a gradient background and gaussian stars."""
+    """Raw-like uint16 mosaic with a gradient background and gaussian stars.
+
+    The checkerboard gain below is a worst-case robustness input: the real
+    sensor measures as true mono (no phase response,
+    docs/mf_sep_fullframe_impl_ko.md §6.4), so field frames are easier
+    than this fixture.
+    """
     h, w = shape
     yy, xx = np.mgrid[0:h, 0:w]
     frame = bg + 300.0 * (xx / w) + np.random.default_rng(3).normal(0, 8, (h, w))

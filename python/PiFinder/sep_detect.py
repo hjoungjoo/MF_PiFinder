@@ -9,9 +9,12 @@ faint stars into a couple of levels (see
 docs/mf_auto_exposure_field_review_20260726_ko.md). This module detects
 in the 12-bit domain instead, on the *uncropped* sensor frame:
 
-1. 2x2 bin the Bayer mosaic (mean of each RGGB quad). Mandatory: the
-   per-channel sky response otherwise shows up as checkerboard pattern
-   noise that buries faint stars; binning also doubles SNR.
+1. 2x2 mean binning, for SNR (x2) and PSF energy concentration. (The
+   original checkerboard rationale was refuted 2026-07-28: the sensor
+   measures as true mono despite the driver's SRGGB12 label -- Bayer
+   phase means are identical under every sky, see
+   docs/mf_sep_fullframe_impl_ko.md §6.4. Unbinned detection is an open
+   experiment: better centroid precision vs lower per-pixel SNR.)
 2. Estimate and subtract a mesh background (``sep.Background``) -- this
    removes light-pollution gradients and cloud glow, which is exactly
    the failure mode of a global threshold under a Seoul sky.
@@ -73,11 +76,12 @@ class SepDetection:
 
 
 def warm_pixel_excess(frame: np.ndarray) -> np.ndarray:
-    """Per-pixel excess over the median of the 4 nearest SAME-Bayer-channel
-    neighbours (distance 2 along each axis).
+    """Per-pixel excess over the median of the 4 distance-2 neighbours
+    (the same-Bayer-channel positions on a colour sensor; on this unit's
+    mono sensor simply a sparse neighbourhood -- valid either way).
 
-    A warm/hot pixel is a single-pixel, single-channel spike, so its excess
-    is its full amplitude; extended structure (sky gradient, cloud, defocused
+    A warm/hot pixel is a single-pixel spike, so its excess is its full
+    amplitude; extended structure (sky gradient, cloud, defocused
     star) raises the neighbours too and mostly cancels. A tightly focused
     star also shows excess -- which is why map *building* additionally
     requires recurrence at a fixed position across frames (stars move with
@@ -131,7 +135,7 @@ def build_warm_pixel_map(
 
 
 def bin2x2(frame: np.ndarray) -> np.ndarray:
-    """Mean-bin each 2x2 (Bayer quad) block; trims odd edges."""
+    """Mean-bin each 2x2 block; trims odd edges."""
     arr = np.asarray(frame)
     h, w = arr.shape[0] // 2 * 2, arr.shape[1] // 2 * 2
     arr = arr[:h, :w].astype(np.float32)
