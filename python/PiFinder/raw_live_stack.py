@@ -51,6 +51,11 @@ class RawFrameInfo:
     gain: float | None = None
     timestamp: float | None = None
     frame_id: int | None = None
+    # Sensor delivers plain luminance (CameraProfile.mono): the raw_format
+    # label keeps its bit-depth meaning for Raw Display scaling, but its
+    # Bayer pattern must NOT trigger a debayer -- that would halve the
+    # display resolution and fabricate chroma from noise.
+    mono: bool = False
 
     @classmethod
     def from_array(
@@ -66,6 +71,7 @@ class RawFrameInfo:
         gain: float | None = None,
         timestamp: float | None = None,
         frame_id: int | None = None,
+        mono: bool = False,
     ) -> "RawFrameInfo":
         arr = np.asarray(frame)
         if arr.size == 0:
@@ -91,6 +97,7 @@ class RawFrameInfo:
             gain=gain,
             timestamp=timestamp,
             frame_id=frame_id,
+            mono=mono,
         )
 
 
@@ -144,6 +151,7 @@ def publish_selected_frame(
     rotation_90 = int(getattr(profile, "rotation_90", 0) or 0)
     display_rotation = int(normalized.get("display_rotation_degrees", 0) or 0) % 360
     raw_format = getattr(profile, "format", None)
+    mono = bool(getattr(profile, "mono", False))
 
     if source == SOURCE_CROPPED:
         selected = cropped_raw
@@ -175,6 +183,7 @@ def publish_selected_frame(
         gain=_optional_float(metadata.get("AnalogueGain")),
         timestamp=timestamp,
         frame_id=frame_id,
+        mono=mono,
     )
     shared_state.set_raw_live_frame({"frame": selected, "info": asdict(info)})
 
@@ -189,6 +198,7 @@ class DisplayFrameBuilder:
         color_mode: str = COLOR_MODE_THEME,
         web_theme: str = "grey",
         raw_format: str | None = None,
+        mono: bool = False,
     ) -> None:
         self.low_percentile = low_percentile
         self.high_percentile = high_percentile
@@ -197,10 +207,11 @@ class DisplayFrameBuilder:
         self.color_mode = color_mode
         self.web_theme = web_theme
         self.raw_format = raw_format
+        self.mono = mono
 
     def build(self, frame: np.ndarray) -> Image.Image:
         arr = _prepare_display_frame(
-            np.asarray(frame), self.preview_mode, self.raw_format
+            np.asarray(frame), self.preview_mode, self.raw_format, self.mono
         )
 
         if self.preview_mode == PREVIEW_MODE_RAW:
@@ -329,6 +340,7 @@ class RawLiveStackProcessor:
             color_mode=normalized["color_mode"],
             web_theme=web_theme,
             raw_format=info.get("raw_format"),
+            mono=bool(info.get("mono")),
         )
         image = builder.build(display_source)
         self._last_display_shape = (int(image.size[1]), int(image.size[0]))
@@ -498,12 +510,16 @@ def _theme_tint(luminance: np.ndarray, web_theme: str) -> np.ndarray:
 
 
 def _prepare_display_frame(
-    frame: np.ndarray, preview_mode: str, raw_format: str | None
+    frame: np.ndarray, preview_mode: str, raw_format: str | None, mono: bool = False
 ) -> np.ndarray:
     arr = np.asarray(frame)
     if arr.ndim == 3:
         return arr
-    if _is_bayer_format(raw_format):
+    # A mono sensor's Bayer label is a driver artifact (CameraProfile.mono):
+    # debayering luminance halves the resolution and fabricates chroma from
+    # noise, so keep the full-resolution 2D frame. The explicit
+    # bayer_2x2_average preview (plain 2x2 binning on mono) stays available.
+    if _is_bayer_format(raw_format) and not mono:
         return _bayer_2x2_rgb(arr, raw_format)
     if preview_mode == "bayer_2x2_average":
         return _bayer_2x2_average(arr)

@@ -67,6 +67,20 @@ def _bayer_profile():
     )
 
 
+def _mono_bayer_profile():
+    """The imx462 case: SRGGB12 driver label on a sensor that measures as
+    true mono (impl doc §6.4)."""
+    return CameraProfile(
+        format="SRGGB12",
+        raw_size=(4, 4),
+        analog_gain=1.0,
+        crop_y=(0, 0),
+        crop_x=(0, 0),
+        rotation_90=0,
+        mono=True,
+    )
+
+
 def test_publish_disabled_does_not_touch_shared_frame():
     shared = DummySharedState()
     shared.set_raw_live_frame({"frame": np.ones((2, 2), dtype=np.uint16)})
@@ -458,6 +472,63 @@ def test_mono_color_mode_builds_grayscale_from_bayer_labelled_frame():
     builder = DisplayFrameBuilder(color_mode="mono", raw_format="SRGGB12")
     image = builder.build(np.arange(64, dtype=np.uint16).reshape(8, 8))
     assert image.mode == "L"
+
+
+def test_mono_sensor_preview_keeps_full_resolution():
+    """A mono sensor's Bayer label must not trigger the debayer: it halves
+    the resolution and fabricates chroma from noise. The full 2D frame goes
+    through the display pipeline untouched."""
+    shared = DummySharedState()
+    frame = np.arange(100, dtype=np.uint16).reshape(10, 10)
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True},
+        _mono_bayer_profile(),
+        "test",
+        frame,
+        frame,
+        metadata={"timestamp": 1.0, "frame_id": 1},
+    )
+    assert shared.raw_live_frame()["info"]["mono"] is True
+
+    processor = RawLiveStackProcessor()
+    settings = normalize_settings(
+        {"processing_enabled": True, "web_image_format": "png"}
+    )
+    themed_bytes, _ = processor.render_image(shared, settings, web_theme="red")
+    assert Image.open(io.BytesIO(themed_bytes)).size == (10, 10)  # not (5, 5)
+
+    download_bytes, _ = processor.render_image(
+        shared,
+        settings,
+        image_format="png",
+        color_mode=download_color_mode(),
+        accept_new_frame=False,
+    )
+    image = Image.open(io.BytesIO(download_bytes))
+    assert image.mode == "L"
+    assert image.size == (10, 10)
+
+
+def test_real_bayer_sensor_still_debayers_to_half_res():
+    builder = DisplayFrameBuilder(color_mode="color", raw_format="SRGGB12")
+    image = builder.build(np.arange(100, dtype=np.uint16).reshape(10, 10))
+    assert image.mode == "RGB"
+    assert image.size == (5, 5)
+
+
+def test_mono_sensor_bayer_2x2_average_preview_is_reachable():
+    """On a Bayer-labelled mono frame the explicit binned preview used to be
+    dead code (the forced debayer won first)."""
+    builder = DisplayFrameBuilder(
+        preview_mode="bayer_2x2_average",
+        color_mode="mono",
+        raw_format="SRGGB12",
+        mono=True,
+    )
+    image = builder.build(np.arange(100, dtype=np.uint16).reshape(10, 10))
+    assert image.mode == "L"
+    assert image.size == (5, 5)
 
 
 def test_tiff_download_is_lossless_16bit_raw_data():
