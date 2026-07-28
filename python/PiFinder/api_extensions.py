@@ -171,8 +171,25 @@ def register_api_routes(app, server_instance, require_auth=False):
             server_instance.raw_live_stack_processor = processor
         return processor
 
+    # settings_from_config re-reads config.json from disk; the LiveCam status
+    # poll calls it every 750 ms and the load showed up in the web process CPU
+    # profile (2026-07-28). Cache on the file's mtime -- any set_option write
+    # (e.g. the LiveCam control POST) touches the file and invalidates.
+    _raw_stack_cfg_cache: dict = {"mtime": None, "settings": None}
+
     def _raw_stack_settings() -> dict:
-        settings = settings_from_config(config.Config())
+        cfg_path = Path(utils.data_dir, "config.json")
+        try:
+            mtime = cfg_path.stat().st_mtime
+        except OSError:
+            mtime = None
+        if (
+            _raw_stack_cfg_cache["settings"] is None
+            or _raw_stack_cfg_cache["mtime"] != mtime
+        ):
+            _raw_stack_cfg_cache["settings"] = settings_from_config(config.Config())
+            _raw_stack_cfg_cache["mtime"] = mtime
+        settings = dict(_raw_stack_cfg_cache["settings"])
         # processing_enabled is session-only (never persisted). settings_from_config
         # always returns it off, so carry forward the live value the user toggled
         # for this session; otherwise a status poll would immediately disable it.
