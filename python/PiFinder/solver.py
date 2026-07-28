@@ -741,6 +741,10 @@ def solver(
                         )
 
                     if sep_shadow is not None:
+                        # Overlay ships once per attempt, after the solve
+                        # outcome, so the confirmed/candidate split is never
+                        # overwritten by the next detect (race fixed).
+                        sep_shadow.publish_overlay(shared_state)
                         sep_shadow.log_attempt(
                             exposure_us=last_image_metadata.get("exposure_time"),
                             gain=last_image_metadata.get("gain"),

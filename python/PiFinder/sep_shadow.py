@@ -116,6 +116,8 @@ class SepShadowRunner:
         self._fallback_fail_streak = 0
         self._fallback_skip_until = 0
         self._last_failed_sep_count: Optional[int] = None
+        # Overlay entry for the in-flight attempt (see publish_overlay)
+        self._last_overlay: Optional[dict] = None
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
             "rotation=%.0f° crop_width=%dpx warm_pixels=%d log=%s",
@@ -228,10 +230,13 @@ class SepShadowRunner:
             )
             if detection is None:
                 return None
-            # LiveCam overlay: kilobytes per attempt, drawn on the preview
-            # by the web renderer. Best-effort -- never blocks the solver.
-            # solve() re-publishes this entry with the tetra3-matched subset
-            # so the overlay can mark CONFIRMED stars apart from candidates.
+            # LiveCam overlay entry: NOT published here -- solve() attaches
+            # the tetra3-matched subset and publish_overlay() (called once
+            # per attempt from the solver, after the outcome is known)
+            # publishes the final entry. Publishing candidates-only from
+            # here raced the matched republish: the next attempt's detect
+            # overwrote it, so the confirmed/candidate split almost never
+            # reached the screen.
             self._last_overlay = {
                 "centroids": detection.centroids.tolist(),
                 "frame_hw": [int(frame.shape[0]), int(frame.shape[1])],
@@ -239,11 +244,6 @@ class SepShadowRunner:
                 "sigma": self.sigma,
                 "timestamp": time.time(),
             }
-            if hasattr(shared_state, "set_sep_overlay"):
-                try:
-                    shared_state.set_sep_overlay(dict(self._last_overlay))
-                except Exception:
-                    logger.exception("SEP overlay publish failed")
             return SepRun(
                 detection=detection,
                 frame_hw=(frame.shape[0], frame.shape[1]),
@@ -302,7 +302,7 @@ class SepShadowRunner:
                     self.crop_width_px,
                 )
                 solution["y_target"], solution["x_target"] = ty, tx
-            self._publish_matched_overlay(shared_state, solution)
+            self._attach_matched_overlay(solution)
             return solution
         except Exception:
             logger.exception("SEP fallback solve failed")
@@ -326,20 +326,19 @@ class SepShadowRunner:
             self.csv_path.replace(old)
             logger.info("Shadow CSV schema changed; previous file moved to %s", old)
 
-    def _publish_matched_overlay(self, shared_state, solution) -> None:
-        """Add the tetra3-matched subset to the published overlay entry.
+    def _attach_matched_overlay(self, solution) -> None:
+        """Attach the tetra3-matched subset to the pending overlay entry.
 
         Matched centroids come back in the ROTATED canvas; un-rotating
         them (rotate by the complementary angle on the rotated canvas)
         puts them in the same frame space as the overlay's candidate
-        list, so the renderer can mark confirmed stars apart from
-        unconfirmed candidates. Best-effort like every overlay path.
+        list. publish_overlay() ships the combined entry once per
+        attempt. Best-effort like every overlay path.
         """
         try:
             overlay = getattr(self, "_last_overlay", None)
             if (
                 overlay is None
-                or not hasattr(shared_state, "set_sep_overlay")
                 or not solution
                 or solution.get("RA") is None
                 or solution.get("matched_centroids") is None
@@ -354,11 +353,21 @@ class SepShadowRunner:
             unrot, _ = sfm.rotate_centroids(
                 matched, canvas, (360.0 - self.rotation_deg) % 360.0
             )
-            entry = dict(overlay)
-            entry["matched"] = unrot.tolist()
-            shared_state.set_sep_overlay(entry)
+            overlay["matched"] = unrot.tolist()
         except Exception:
-            logger.exception("SEP matched-overlay publish failed")
+            logger.exception("SEP matched-overlay attach failed")
+
+    def publish_overlay(self, shared_state) -> None:
+        """Publish this attempt's overlay entry (candidates + any matched
+        subset) exactly once, after the solve outcome is known."""
+        overlay = getattr(self, "_last_overlay", None)
+        if overlay is None or not hasattr(shared_state, "set_sep_overlay"):
+            return
+        try:
+            shared_state.set_sep_overlay(dict(overlay))
+        except Exception:
+            logger.exception("SEP overlay publish failed")
+        self._last_overlay = None
 
     def log_attempt(
         self,

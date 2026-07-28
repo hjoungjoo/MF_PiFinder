@@ -11,9 +11,22 @@ jumps -- a cloud gap opening on real stars must not wait out a backoff
 window.
 """
 
+import numpy as np
 import pytest
 
+from PiFinder import solver_frame_map as sfm
 from PiFinder.sep_shadow import SepShadowRunner
+
+
+class DummyShared:
+    def __init__(self):
+        self._overlay = None
+
+    def sep_overlay(self):
+        return self._overlay
+
+    def set_sep_overlay(self, v):
+        self._overlay = v
 
 
 def _runner(tmp_path):
@@ -30,6 +43,53 @@ def _runner(tmp_path):
 def _tick(runner, n=1):
     """Advance the per-attempt counter the way detect() does."""
     runner._attempt_counter += n
+
+
+@pytest.mark.unit
+class TestOverlayPublish:
+    """The overlay ships once per attempt AFTER the solve outcome, so the
+    confirmed/candidate split is never clobbered by the next detect."""
+
+    def test_publish_carries_matched_in_frame_space(self, tmp_path):
+        runner = _runner(tmp_path)  # rotation 90
+        frame_hw = (64, 48)
+        star = np.array([[20.0, 30.0]])
+        runner._last_overlay = {
+            "centroids": star.tolist(),
+            "frame_hw": list(frame_hw),
+            "masked": 0,
+            "sigma": 4.0,
+            "timestamp": 1.0,
+        }
+        rotated, _ = sfm.rotate_centroids(star, frame_hw, 90.0)
+        runner._attach_matched_overlay(
+            {"RA": 1.0, "matched_centroids": rotated.tolist()}
+        )
+        shared = DummyShared()
+        runner.publish_overlay(shared)
+        entry = shared.sep_overlay()
+        assert entry is not None
+        my, mx = entry["matched"][0]
+        assert abs(my - 20.0) < 1e-6 and abs(mx - 30.0) < 1e-6
+
+        # entry is consumed: a second publish must not re-ship stale data
+        shared.set_sep_overlay(None)
+        runner.publish_overlay(shared)
+        assert shared.sep_overlay() is None
+
+    def test_failed_solve_publishes_candidates_only(self, tmp_path):
+        runner = _runner(tmp_path)
+        runner._last_overlay = {
+            "centroids": [[20.0, 30.0]],
+            "frame_hw": [64, 48],
+            "masked": 0,
+            "sigma": 4.0,
+            "timestamp": 1.0,
+        }
+        runner._attach_matched_overlay({"RA": None})
+        shared = DummyShared()
+        runner.publish_overlay(shared)
+        assert "matched" not in shared.sep_overlay()
 
 
 @pytest.mark.unit
