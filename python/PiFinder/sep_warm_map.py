@@ -27,6 +27,12 @@ orientation (profile rot90 applied):
 The two corpora complement each other: cropped dumps exist on every
 solve-failure streak, full-frame dumps cover the vignette border region
 outside the crop window.
+
+Feed DARK corpora (night / lens-cap / dim indoor). Warm pixels are only
+detectable against a low background; bright twilight frames dilute the
+per-group recurrence fraction and drop legitimate positions (observed
+2026-07-28: adding a bright evening's dumps shrank the map 57 -> 40 and
+lost census-validated defects).
 """
 
 import argparse
