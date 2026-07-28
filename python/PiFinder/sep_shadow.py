@@ -91,7 +91,11 @@ class SepShadowRunner:
         sigma: float,
         rotation_deg: float,
         crop_width_px: int,
-        min_fallback_stars: int = 8,
+        # 5, paired with sigma 4.5: the 2026-07-28 live-sky sweep showed
+        # half the genuine rescues carry only 5-7 detections at that
+        # threshold (the old gate of 8 was calibrated for sigma 3.5's
+        # junk-inflated counts). No observed solve had fewer than 5.
+        min_fallback_stars: int = 5,
         saturation_level: Optional[float] = None,
         csv_path=None,
         warm_pixel_map: Optional[np.ndarray] = None,
