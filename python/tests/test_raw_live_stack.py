@@ -622,6 +622,51 @@ def test_sep_overlay_follows_display_rotation():
     assert d.max() <= 8.0
 
 
+def test_sep_overlay_two_tier_marks_matched_and_candidates():
+    """With a matched list, confirmed stars draw green and the remaining
+    candidates draw orange -- the user can trust green unconditionally."""
+    shared = DummySharedState()
+    frame = np.full((64, 48), 500, dtype=np.uint16)
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True},
+        _mono_bayer_profile(),
+        "test",
+        frame,
+        frame,
+        metadata={"timestamp": 1.0, "frame_id": 1},
+    )
+    shared.set_sep_overlay(
+        {
+            "centroids": [[20.0, 30.0], [45.0, 12.0]],
+            "matched": [[20.0, 30.0]],
+            "frame_hw": [64, 48],
+            "masked": 0,
+            "sigma": 4.0,
+            "timestamp": 1.0,
+        }
+    )
+    settings = normalize_settings(
+        {"processing_enabled": True, "web_image_format": "png"}
+    )
+    png, _ = RawLiveStackProcessor().render_image(shared, settings, overlay_sep=True)
+    arr = np.asarray(Image.open(io.BytesIO(png)).convert("RGB"))
+
+    def near(color, ey, ex, r=9):
+        ys, xs = np.where(
+            (arr[..., 0] == color[0])
+            & (arr[..., 1] == color[1])
+            & (arr[..., 2] == color[2])
+        )
+        if len(ys) == 0:
+            return False
+        return bool((np.hypot(ys - ey, xs - ex) <= r).any())
+
+    assert near((0, 255, 128), 20, 30)  # matched -> green at its position
+    assert near((255, 150, 0), 45, 12)  # candidate -> orange
+    assert not near((255, 150, 0), 20, 30)  # matched is not double-marked
+
+
 def test_sep_overlay_skips_stale_detection():
     shared = DummySharedState()
     frame = np.full((64, 48), 500, dtype=np.uint16)

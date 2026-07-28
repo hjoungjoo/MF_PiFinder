@@ -483,10 +483,19 @@ class RawLiveStackProcessor:
         return self._accumulator / max(1, len(self._frames))
 
 
+MATCHED_MARK_RGB = (0, 255, 128)  # tetra3-confirmed star
+CANDIDATE_MARK_RGB = (255, 150, 0)  # unconfirmed detection
+
+
 def _draw_sep_overlay(
     image: Image.Image, overlay: dict[str, Any], info: dict[str, Any]
 ) -> Image.Image:
     """Mark SEP detections (post warm-pixel mask) on the preview image.
+
+    Two tiers: centroids the last solve actually MATCHED are drawn green
+    (confirmed stars -- zero false positives by construction); remaining
+    candidates are dimmer orange. Without a matched list (no solve yet)
+    every detection is drawn green as before.
 
     Detection centroids are in solver_raw full-frame (y, x); the published
     frame additionally has the display rotation applied, so the centroids
@@ -499,6 +508,7 @@ def _draw_sep_overlay(
 
     try:
         cents = np.asarray(overlay.get("centroids") or [], dtype=np.float64)
+        matched = np.asarray(overlay.get("matched") or [], dtype=np.float64)
         frame_hw = tuple(overlay.get("frame_hw") or ())
         if cents.ndim != 2 or len(cents) == 0 or len(frame_hw) != 2:
             return image
@@ -506,19 +516,34 @@ def _draw_sep_overlay(
         rotated, canvas = sfm.rotate_centroids(cents, frame_hw, rotation)
         if tuple(info.get("shape") or ()) != tuple(canvas):
             return image
+        rmatched = np.empty((0, 2))
+        if matched.ndim == 2 and len(matched):
+            rmatched, _ = sfm.rotate_centroids(matched, frame_hw, rotation)
         sx = image.size[0] / canvas[1]
         sy = image.size[1] / canvas[0]
         if image.mode != "RGB":
             image = image.convert("RGB")
         draw = ImageDraw.Draw(image)
         radius = max(3.0, 90.0 * sx / 16.0)
-        for y, x in rotated:
+
+        def _circle(y, x, color):
             cx, cy = float(x) * sx, float(y) * sy
             draw.ellipse(
                 [cx - radius, cy - radius, cx + radius, cy + radius],
-                outline=(0, 255, 128),
+                outline=color,
                 width=1,
             )
+
+        if len(rmatched):
+            for y, x in rotated:
+                near = np.hypot(rmatched[:, 0] - y, rmatched[:, 1] - x).min()
+                if near > 4.0:  # candidate not among the matched
+                    _circle(y, x, CANDIDATE_MARK_RGB)
+            for y, x in rmatched:
+                _circle(y, x, MATCHED_MARK_RGB)
+        else:
+            for y, x in rotated:
+                _circle(y, x, MATCHED_MARK_RGB)
         return image
     except Exception:
         return image

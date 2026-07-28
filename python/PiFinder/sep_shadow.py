@@ -230,17 +230,18 @@ class SepShadowRunner:
                 return None
             # LiveCam overlay: kilobytes per attempt, drawn on the preview
             # by the web renderer. Best-effort -- never blocks the solver.
+            # solve() re-publishes this entry with the tetra3-matched subset
+            # so the overlay can mark CONFIRMED stars apart from candidates.
+            self._last_overlay = {
+                "centroids": detection.centroids.tolist(),
+                "frame_hw": [int(frame.shape[0]), int(frame.shape[1])],
+                "masked": detection.masked_count,
+                "sigma": self.sigma,
+                "timestamp": time.time(),
+            }
             if hasattr(shared_state, "set_sep_overlay"):
                 try:
-                    shared_state.set_sep_overlay(
-                        {
-                            "centroids": detection.centroids.tolist(),
-                            "frame_hw": [int(frame.shape[0]), int(frame.shape[1])],
-                            "masked": detection.masked_count,
-                            "sigma": self.sigma,
-                            "timestamp": time.time(),
-                        }
-                    )
+                    shared_state.set_sep_overlay(dict(self._last_overlay))
                 except Exception:
                     logger.exception("SEP overlay publish failed")
             return SepRun(
@@ -301,6 +302,7 @@ class SepShadowRunner:
                     self.crop_width_px,
                 )
                 solution["y_target"], solution["x_target"] = ty, tx
+            self._publish_matched_overlay(shared_state, solution)
             return solution
         except Exception:
             logger.exception("SEP fallback solve failed")
@@ -323,6 +325,40 @@ class SepShadowRunner:
             old = self.csv_path.with_suffix(self.csv_path.suffix + ".old")
             self.csv_path.replace(old)
             logger.info("Shadow CSV schema changed; previous file moved to %s", old)
+
+    def _publish_matched_overlay(self, shared_state, solution) -> None:
+        """Add the tetra3-matched subset to the published overlay entry.
+
+        Matched centroids come back in the ROTATED canvas; un-rotating
+        them (rotate by the complementary angle on the rotated canvas)
+        puts them in the same frame space as the overlay's candidate
+        list, so the renderer can mark confirmed stars apart from
+        unconfirmed candidates. Best-effort like every overlay path.
+        """
+        try:
+            overlay = getattr(self, "_last_overlay", None)
+            if (
+                overlay is None
+                or not hasattr(shared_state, "set_sep_overlay")
+                or not solution
+                or solution.get("RA") is None
+                or solution.get("matched_centroids") is None
+            ):
+                return
+            matched = np.asarray(solution["matched_centroids"], dtype=np.float64)
+            if matched.ndim != 2 or len(matched) == 0:
+                return
+            _, canvas = sfm.rotate_centroids(
+                np.empty((0, 2)), tuple(overlay["frame_hw"]), self.rotation_deg
+            )
+            unrot, _ = sfm.rotate_centroids(
+                matched, canvas, (360.0 - self.rotation_deg) % 360.0
+            )
+            entry = dict(overlay)
+            entry["matched"] = unrot.tolist()
+            shared_state.set_sep_overlay(entry)
+        except Exception:
+            logger.exception("SEP matched-overlay publish failed")
 
     def log_attempt(
         self,
