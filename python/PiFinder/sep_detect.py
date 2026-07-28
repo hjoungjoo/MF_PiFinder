@@ -153,6 +153,10 @@ def detect_stars(
     saturation_level: Optional[float] = None,
     warm_pixel_map: Optional[np.ndarray] = None,
     warm_pixel_radius_px: float = 4.0,
+    max_semimajor_px: float = 2.0,
+    max_npix: int = 40,
+    cluster_radius_px: float = 50.0,
+    cluster_max_neighbors: int = 1,
 ) -> Optional[SepDetection]:
     """
     Detect stars on a raw sensor frame (uint16 mosaic, any shape).
@@ -181,6 +185,18 @@ def detect_stars(
             are dropped and counted in ``masked_count``.
         warm_pixel_radius_px: Match radius in full-res pixels (binning
             quantises centroids to a 2 px grid, so keep this >= 4).
+        max_semimajor_px: Reject sources with a larger fitted semi-major
+            axis (binned px). Cloud-edge texture is extended; real stars
+            measured a <= 0.86 (p95), junk past 1.5 and NaN (degenerate
+            fits, also rejected). Default 2.0 leaves defocus headroom.
+            2026-07-28 night corpus.
+        max_npix: Reject sources covering more binned pixels (stars p95
+            10, cloud blobs to 188 -- same corpus; 40 = defocus headroom).
+        cluster_radius_px / cluster_max_neighbors: Drop detections with
+            more than ``cluster_max_neighbors`` others within the radius
+            (full-res px). SEP deblends a bright cloud edge into tight
+            clumps; measured real (tetra3-matched) stars had ZERO
+            neighbours within 50 px in every case, junk up to 4.
 
     Returns:
         SepDetection with centroids in full-frame (y, x) pixels, or None
@@ -228,6 +244,8 @@ def detect_stars(
     full_y = np.asarray(objects["y"]) * 2.0 + 0.5
     full_x = np.asarray(objects["x"]) * 2.0 + 0.5
     fluxes = np.asarray(objects["flux"], dtype=np.float64)
+    semimajor = np.asarray(objects["a"], dtype=np.float64)
+    npix = np.asarray(objects["npix"], dtype=np.int64)
 
     h, w = arr.shape
     keep = (
@@ -236,6 +254,11 @@ def detect_stars(
         & (full_y < h - edge_margin_px)
         & (full_x >= edge_margin_px)
         & (full_x < w - edge_margin_px)
+        # Point-source shape gate: extended or degenerate (NaN) fits are
+        # cloud texture, not stars (thresholds measured -- see docstring).
+        & np.isfinite(semimajor)
+        & (semimajor <= max_semimajor_px)
+        & (npix <= max_npix)
     )
 
     # Warm-pixel map: drop otherwise-keepable detections sitting on a known
@@ -252,6 +275,18 @@ def detect_stars(
         keep &= ~warm
 
     full_y, full_x, fluxes = full_y[keep], full_x[keep], fluxes[keep]
+
+    # Cluster gate: SEP deblends bright cloud edges into tight clumps of
+    # "sources"; real stars at this plate scale are isolated (measured 0
+    # neighbours within 50 px on every tetra3-matched star).
+    if len(full_y) > 1:
+        d2 = (full_y[:, None] - full_y[None, :]) ** 2 + (
+            full_x[:, None] - full_x[None, :]
+        ) ** 2
+        neighbours = (d2 <= cluster_radius_px**2).sum(axis=1) - 1
+        isolated = neighbours <= cluster_max_neighbors
+        full_y, full_x, fluxes = full_y[isolated], full_x[isolated], fluxes[isolated]
+
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
     order = np.argsort(fluxes)[::-1][:max_stars]
