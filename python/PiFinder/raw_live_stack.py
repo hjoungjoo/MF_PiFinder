@@ -493,9 +493,10 @@ def _draw_sep_overlay(
     """Mark SEP detections (post warm-pixel mask) on the preview image.
 
     Two tiers: centroids the last solve actually MATCHED are drawn green
-    (confirmed stars -- zero false positives by construction); remaining
-    candidates are dimmer orange. Without a matched list (no solve yet)
-    every detection is drawn green as before.
+    (confirmed stars -- zero false positives by construction); everything
+    else is orange, INCLUDING all detections on frames with no solve.
+    Green strictly means "tetra3 confirmed this" -- an unsolvable cloudy
+    frame must never wear the trusted colour (field lesson 2026-07-28).
 
     Detection centroids are in solver_raw full-frame (y, x); the published
     frame additionally has the display rotation applied, so the centroids
@@ -534,16 +535,16 @@ def _draw_sep_overlay(
                 width=1,
             )
 
-        if len(rmatched):
-            for y, x in rotated:
-                near = np.hypot(rmatched[:, 0] - y, rmatched[:, 1] - x).min()
-                if near > 4.0:  # candidate not among the matched
-                    _circle(y, x, CANDIDATE_MARK_RGB)
-            for y, x in rmatched:
-                _circle(y, x, MATCHED_MARK_RGB)
-        else:
-            for y, x in rotated:
-                _circle(y, x, MATCHED_MARK_RGB)
+        for y, x in rotated:
+            near = (
+                np.hypot(rmatched[:, 0] - y, rmatched[:, 1] - x).min()
+                if len(rmatched)
+                else np.inf
+            )
+            if near > 4.0:  # not among the matched (or nothing matched)
+                _circle(y, x, CANDIDATE_MARK_RGB)
+        for y, x in rmatched:
+            _circle(y, x, MATCHED_MARK_RGB)
         return image
     except Exception:
         return image

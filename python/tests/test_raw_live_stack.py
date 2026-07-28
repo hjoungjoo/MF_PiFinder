@@ -539,16 +539,21 @@ def test_mono_sensor_bayer_2x2_average_preview_is_reachable():
 
 
 OVERLAY_GREEN = (0, 255, 128)
+OVERLAY_ORANGE = (255, 150, 0)
+
+
+def _color_pixels(png_bytes, color):
+    arr = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
+    ys, xs = np.where(
+        (arr[..., 0] == color[0])
+        & (arr[..., 1] == color[1])
+        & (arr[..., 2] == color[2])
+    )
+    return np.column_stack((ys, xs))
 
 
 def _green_pixels(png_bytes):
-    arr = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
-    ys, xs = np.where(
-        (arr[..., 0] == OVERLAY_GREEN[0])
-        & (arr[..., 1] == OVERLAY_GREEN[1])
-        & (arr[..., 2] == OVERLAY_GREEN[2])
-    )
-    return np.column_stack((ys, xs))
+    return _color_pixels(png_bytes, OVERLAY_GREEN)
 
 
 def test_sep_overlay_marks_centroid_on_preview():
@@ -576,7 +581,9 @@ def test_sep_overlay_marks_centroid_on_preview():
         {"processing_enabled": True, "web_image_format": "png"}
     )
     png, _ = RawLiveStackProcessor().render_image(shared, settings, overlay_sep=True)
-    marks = _green_pixels(png)
+    # no matched info -> candidates only: orange, never the trusted green
+    assert len(_green_pixels(png)) == 0
+    marks = _color_pixels(png, OVERLAY_ORANGE)
     assert len(marks) > 0
     d = np.hypot(marks[:, 0] - 20.0, marks[:, 1] - 30.0)
     # every marker pixel sits on the circle around the centroid
@@ -614,7 +621,7 @@ def test_sep_overlay_follows_display_rotation():
         }
     )
     png, _ = RawLiveStackProcessor().render_image(shared, settings, overlay_sep=True)
-    marks = _green_pixels(png)
+    marks = _color_pixels(png, OVERLAY_ORANGE)
     assert len(marks) > 0
     # np.rot90 CCW: (y, x) -> (W-1-x, y) on the 48x64 canvas
     ey, ex = 48 - 1 - 30.0, 20.0
@@ -693,6 +700,7 @@ def test_sep_overlay_skips_stale_detection():
     )
     png, _ = RawLiveStackProcessor().render_image(shared, settings, overlay_sep=True)
     assert len(_green_pixels(png)) == 0
+    assert len(_color_pixels(png, OVERLAY_ORANGE)) == 0
 
 
 def test_tiff_download_is_lossless_16bit_raw_data():
