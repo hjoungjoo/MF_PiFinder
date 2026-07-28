@@ -19,7 +19,7 @@ import numpy as np
 from PIL import Image
 
 from PiFinder.livecam_config import (
-    COLOR_MODE_COLOR,
+    COLOR_MODE_MONO,
     COLOR_MODE_THEME,
     OUTPUT_LATEST,
     PREVIEW_MODE_RAW,
@@ -220,6 +220,8 @@ class DisplayFrameBuilder:
             image = Image.fromarray(
                 _theme_tint(_luminance(scaled), self.web_theme), mode="RGB"
             )
+        elif self.color_mode == COLOR_MODE_MONO:
+            image = Image.fromarray(_luminance(scaled), mode="L")
         elif scaled.ndim == 3:
             image = Image.fromarray(scaled, mode="RGB")
         else:
@@ -430,7 +432,11 @@ def download_image_format(settings: dict[str, Any]) -> str:
 
 
 def download_color_mode() -> str:
-    return COLOR_MODE_COLOR
+    """Downloads are grayscale: the sensor measures as true mono, so the
+    RGB a Bayer-labelled frame debayers into is pure chroma noise
+    (docs/mf_sep_fullframe_impl_ko.md §6.4). Luminance keeps the data,
+    drops the artifact."""
+    return COLOR_MODE_MONO
 
 
 def _theme_tint(luminance: np.ndarray, web_theme: str) -> np.ndarray:

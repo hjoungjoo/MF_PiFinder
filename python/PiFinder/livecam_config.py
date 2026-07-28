@@ -51,7 +51,9 @@ VALID_PREVIEW_MODES = {PREVIEW_MODE_RAW, "stretched", "bayer_2x2_average"}
 VALID_IMAGE_FORMATS = {"png", "jpeg", "webp"}
 COLOR_MODE_THEME = "theme"
 COLOR_MODE_COLOR = "color"
-VALID_COLOR_MODES = {COLOR_MODE_THEME, COLOR_MODE_COLOR}
+# Plain grayscale (mode "L"), no theme tint and no fabricated chroma.
+COLOR_MODE_MONO = "mono"
+VALID_COLOR_MODES = {COLOR_MODE_THEME, COLOR_MODE_COLOR, COLOR_MODE_MONO}
 
 
 DEFAULT_SETTINGS: dict[str, Any] = {

@@ -415,7 +415,10 @@ def test_download_uses_png_when_preview_format_is_webp():
     assert download_image_format({"web_image_format": "jpeg"}) == "jpeg"
 
 
-def test_download_color_mode_overrides_theme_tint():
+def test_download_is_grayscale_not_theme_tinted():
+    """Downloads drop both the theme tint and the fabricated chroma: the
+    sensor measures as true mono, so a debayered RGB download is colour
+    noise (impl doc §6.4). The preview keeps its theme tint."""
     shared = DummySharedState()
     frame = np.arange(100, dtype=np.uint16).reshape(10, 10)
     publish_selected_frame(
@@ -438,7 +441,7 @@ def test_download_color_mode_overrides_theme_tint():
     processor = RawLiveStackProcessor()
 
     themed_bytes, _ = processor.render_image(shared, settings, web_theme="red")
-    color_bytes, _ = processor.render_image(
+    download_bytes, _ = processor.render_image(
         shared,
         settings,
         image_format="png",
@@ -448,4 +451,10 @@ def test_download_color_mode_overrides_theme_tint():
     )
 
     assert Image.open(io.BytesIO(themed_bytes)).mode == "RGB"
-    assert Image.open(io.BytesIO(color_bytes)).mode == "RGB"
+    assert Image.open(io.BytesIO(download_bytes)).mode == "L"
+
+
+def test_mono_color_mode_builds_grayscale_from_bayer_labelled_frame():
+    builder = DisplayFrameBuilder(color_mode="mono", raw_format="SRGGB12")
+    image = builder.build(np.arange(64, dtype=np.uint16).reshape(8, 8))
+    assert image.mode == "L"
