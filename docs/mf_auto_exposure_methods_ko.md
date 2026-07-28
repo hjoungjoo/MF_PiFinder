@@ -1,5 +1,7 @@
 # 카메라 자동 노출·게인 제어 방법 조사
 
+> **통합 관리 지점**: 자동 노출+SEP 솔빙 보강의 현행 상태는 [mf_sep_fullframe_impl_ko.md](mf_sep_fullframe_impl_ko.md)에서 관리한다 (이 문서는 이력).
+
 > 상태: **조사 완료 — 설계 승격됨** (2026-07-25):
 > §6 권고안은 [mf_auto_exposure_plan_ko.md](mf_auto_exposure_plan_ko.md)
 > (기존 기능 유지 + 옵션 추가 설계)로 구체화되었다.
