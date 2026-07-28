@@ -91,6 +91,57 @@ class TestSepDetect:
 
 
 @pytest.mark.unit
+class TestWarmPixelMap:
+    """Static single-pixel defects dominated SEP counts on empty sky
+    (2026-07-28 bench); the map removes them without touching stars."""
+
+    def test_excess_isolates_single_pixel_spike(self):
+        frame = np.full((64, 64), 1000.0, dtype=np.float32)
+        frame[20, 30] += 80.0  # warm pixel
+        excess = sep_detect.warm_pixel_excess(frame)
+        assert excess[20, 30] == pytest.approx(80.0)
+        # neighbours of the spike are not implicated
+        assert abs(excess[22, 30]) < 1.0
+        assert abs(excess[20, 32]) < 1.0
+
+    def test_build_map_keeps_static_defects_drops_moving_star(self):
+        rng = np.random.default_rng(7)
+        warm = [(20, 30), (100, 200)]
+        frames = []
+        for i in range(6):
+            f = 1000.0 + rng.normal(0, 5, (128, 256))
+            for wy, wx in warm:
+                f[wy, wx] += 60.0
+            f[50, 40 + 20 * i] += 300.0  # bright star drifting with the sky
+            frames.append(f.astype(np.uint16))
+        pts = sep_detect.build_warm_pixel_map(frames, min_excess_adu=25.0)
+        assert {tuple(p) for p in pts} == set(warm)
+
+    def test_build_map_empty_input(self):
+        assert len(sep_detect.build_warm_pixel_map([])) == 0
+
+    def test_detect_stars_masks_mapped_position_and_counts(self):
+        stars = [(100, 200), (300, 700), (450, 120), (250, 480)]
+        frame = _synthetic_frame(stars)
+        warm_map = np.array([[300, 700]])  # mask one planted "star"
+        result = sep_detect.detect_stars(frame, sigma=4.0, warm_pixel_map=warm_map)
+        assert result is not None
+        assert result.masked_count >= 1
+        d = np.hypot(result.centroids[:, 0] - 300, result.centroids[:, 1] - 700)
+        assert len(d) == 0 or d.min() > 4.0
+        # the unmasked stars all survive
+        for sy, sx in [(100, 200), (450, 120), (250, 480)]:
+            d = np.hypot(result.centroids[:, 0] - sy, result.centroids[:, 1] - sx)
+            assert d.min() < 2.0
+
+    def test_detect_stars_no_map_reports_zero_masked(self):
+        frame = _synthetic_frame([(100, 200)])
+        result = sep_detect.detect_stars(frame, sigma=4.0)
+        assert result is not None
+        assert result.masked_count == 0
+
+
+@pytest.mark.unit
 class TestRotationConvention:
     """rotate_centroids must match what PIL does to the image."""
 

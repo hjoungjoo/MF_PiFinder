@@ -67,6 +67,67 @@ class SepDetection:
     background_median: float  # binned-domain ADU
     background_rms: float  # binned-domain ADU
     elapsed_ms: float
+    # Otherwise-keepable detections removed by the warm-pixel map. High
+    # values on an empty sky are expected (the map is doing its job).
+    masked_count: int = 0
+
+
+def warm_pixel_excess(frame: np.ndarray) -> np.ndarray:
+    """Per-pixel excess over the median of the 4 nearest SAME-Bayer-channel
+    neighbours (distance 2 along each axis).
+
+    A warm/hot pixel is a single-pixel, single-channel spike, so its excess
+    is its full amplitude; extended structure (sky gradient, cloud, defocused
+    star) raises the neighbours too and mostly cancels. A tightly focused
+    star also shows excess -- which is why map *building* additionally
+    requires recurrence at a fixed position across frames (stars move with
+    the sky, warm pixels don't; see 2026-07-28 bench,
+    docs/mf_sep_fullframe_impl_ko.md §6.3).
+    """
+    arr = np.asarray(frame, dtype=np.float32)
+    h, w = arr.shape
+    p = np.pad(arr, 2, mode="edge")
+    neighbours = np.stack(
+        [
+            p[0:h, 2 : w + 2],  # same channel, y-2
+            p[4 : h + 4, 2 : w + 2],  # y+2
+            p[2 : h + 2, 0:w],  # x-2
+            p[2 : h + 2, 4 : w + 4],  # x+2
+        ]
+    )
+    return arr - np.median(neighbours, axis=0)
+
+
+def build_warm_pixel_map(
+    frames,
+    min_excess_adu: float = 45.0,
+    min_recurrence: float = 0.7,
+) -> np.ndarray:
+    """Warm-pixel positions recurring across frames, as (N, 2) int (y, x).
+
+    Args:
+        frames: Iterable of 2D raw arrays, all the same shape and in the
+            same orientation the map will be applied in (solver_raw
+            orientation: profile rot90 applied, no crop -- stage dumps are
+            already in this orientation).
+        min_excess_adu: Same-channel neighbour excess for a candidate.
+        min_recurrence: Fraction of frames a position must be a candidate
+            in. Static defects recur near 1.0; stars drift out within one
+            frame interval, single-frame noise almost never repeats.
+    """
+    counts: Optional[np.ndarray] = None
+    n_frames = 0
+    for frame in frames:
+        candidate = warm_pixel_excess(frame) > min_excess_adu
+        if counts is None:
+            counts = np.zeros(candidate.shape, dtype=np.uint16)
+        counts += candidate
+        n_frames += 1
+    if counts is None or n_frames == 0:
+        return np.empty((0, 2), dtype=np.int32)
+    needed = max(1, int(np.ceil(min_recurrence * n_frames)))
+    ys, xs = np.nonzero(counts >= needed)
+    return np.column_stack((ys, xs)).astype(np.int32)
 
 
 def bin2x2(frame: np.ndarray) -> np.ndarray:
@@ -86,6 +147,8 @@ def detect_stars(
     max_stars: int = 48,
     edge_margin_px: int = 48,
     saturation_level: Optional[float] = None,
+    warm_pixel_map: Optional[np.ndarray] = None,
+    warm_pixel_radius_px: float = 4.0,
 ) -> Optional[SepDetection]:
     """
     Detect stars on a raw sensor frame (uint16 mosaic, any shape).
@@ -108,6 +171,12 @@ def detect_stars(
         saturation_level: Sensor full scale (e.g. 4095 for 12-bit). When
             given and the binned interior median is at it, return zero
             detections instead of edge noise.
+        warm_pixel_map: (N, 2) int (y, x) static-defect positions from
+            ``build_warm_pixel_map``, same orientation as ``raw_frame``.
+            Detections within ``warm_pixel_radius_px`` of a mapped position
+            are dropped and counted in ``masked_count``.
+        warm_pixel_radius_px: Match radius in full-res pixels (binning
+            quantises centroids to a 2 px grid, so keep this >= 4).
 
     Returns:
         SepDetection with centroids in full-frame (y, x) pixels, or None
@@ -164,6 +233,20 @@ def detect_stars(
         & (full_x >= edge_margin_px)
         & (full_x < w - edge_margin_px)
     )
+
+    # Warm-pixel map: drop otherwise-keepable detections sitting on a known
+    # static defect (before the top-N cap, so defects can't crowd out stars).
+    masked_count = 0
+    if warm_pixel_map is not None and len(warm_pixel_map) and keep.any():
+        wp = np.asarray(warm_pixel_map, dtype=np.float64)
+        d2 = (
+            (full_y[:, None] - wp[None, :, 0]) ** 2
+            + (full_x[:, None] - wp[None, :, 1]) ** 2
+        ).min(axis=1)
+        warm = d2 <= warm_pixel_radius_px**2
+        masked_count = int((keep & warm).sum())
+        keep &= ~warm
+
     full_y, full_x, fluxes = full_y[keep], full_x[keep], fluxes[keep]
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -174,4 +257,5 @@ def detect_stars(
         background_median=float(bkg.globalback),
         background_rms=float(bkg.globalrms),
         elapsed_ms=elapsed_ms,
+        masked_count=masked_count,
     )

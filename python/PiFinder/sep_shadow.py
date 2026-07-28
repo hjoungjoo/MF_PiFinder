@@ -59,11 +59,18 @@ CSV_FIELDS = [
     "sep_ms",
     "fallback_used",
     "fallback_rmse",
+    "sep_masked",
 ]
 
 # A solver_raw older than this no longer matches the attempt being logged
 # (camera wedged, SEP path disabled mid-run); skip rather than mislabel.
 MAX_FRAME_AGE_S = 15.0
+
+# Warm-pixel map: (N, 2) int (y, x) in solver_raw orientation, built by
+# ``python -m PiFinder.sep_warm_map`` from stage-dump corpora. Optional --
+# missing file just means no masking. Regenerate when the sensor ages or
+# after long temperature shifts (warm pixels grow over both).
+WARM_MAP_PATH = utils.data_dir / "sep_warm_pixels.npy"
 
 
 @dataclass
@@ -87,6 +94,7 @@ class SepShadowRunner:
         min_fallback_stars: int = 8,
         saturation_level: Optional[float] = None,
         csv_path=None,
+        warm_pixel_map: Optional[np.ndarray] = None,
     ):
         self.shadow_enabled = shadow_enabled
         self.fallback_enabled = fallback_enabled
@@ -96,14 +104,16 @@ class SepShadowRunner:
         self.min_fallback_stars = min_fallback_stars
         self.saturation_level = saturation_level
         self.csv_path = csv_path or (utils.log_dir / "solver_shadow_log.csv")
+        self.warm_pixel_map = warm_pixel_map
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
-            "rotation=%.0f° crop_width=%dpx log=%s",
+            "rotation=%.0f° crop_width=%dpx warm_pixels=%d log=%s",
             shadow_enabled,
             fallback_enabled,
             sigma,
             rotation_deg,
             crop_width_px,
+            0 if warm_pixel_map is None else len(warm_pixel_map),
             self.csv_path,
         )
 
@@ -127,6 +137,16 @@ class SepShadowRunner:
                 cfg.get_option("camera_rotation"),
             )
             sigma = float(cfg.get_option("solver_sep_sigma") or 3.5)
+            warm_map = None
+            try:
+                if WARM_MAP_PATH.exists():
+                    warm_map = np.asarray(np.load(WARM_MAP_PATH), dtype=np.int32)
+                    logger.info(
+                        "Loaded %d warm pixels from %s", len(warm_map), WARM_MAP_PATH
+                    )
+            except Exception:
+                logger.exception("Warm-pixel map load failed; continuing unmasked")
+                warm_map = None
             return cls(
                 shadow_enabled=shadow,
                 fallback_enabled=fallback,
@@ -134,6 +154,7 @@ class SepShadowRunner:
                 rotation_deg=rotation,
                 crop_width_px=crop_width,
                 saturation_level=float(2**profile.bit_depth - 1),
+                warm_pixel_map=warm_map,
             )
         except Exception:
             logger.exception("SEP shadow runner init failed; disabled")
@@ -149,7 +170,10 @@ class SepShadowRunner:
                 return None
             frame = np.asarray(entry["frame"])
             detection = sep_detect.detect_stars(
-                frame, sigma=self.sigma, saturation_level=self.saturation_level
+                frame,
+                sigma=self.sigma,
+                saturation_level=self.saturation_level,
+                warm_pixel_map=self.warm_pixel_map,
             )
             if detection is None:
                 return None
@@ -194,6 +218,24 @@ class SepShadowRunner:
             logger.exception("SEP fallback solve failed")
             return None
 
+    def _rotate_csv_on_schema_change(self) -> None:
+        """Sideline a CSV written with an older field list, once.
+
+        Mixed-width rows break offline analysis; the sidelined file keeps
+        its data under ``<name>.old``.
+        """
+        if getattr(self, "_csv_schema_checked", False):
+            return
+        self._csv_schema_checked = True
+        if not self.csv_path.exists():
+            return
+        with open(self.csv_path, newline="") as f:
+            header = f.readline().strip()
+        if header != ",".join(CSV_FIELDS):
+            old = self.csv_path.with_suffix(self.csv_path.suffix + ".old")
+            self.csv_path.replace(old)
+            logger.info("Shadow CSV schema changed; previous file moved to %s", old)
+
     def log_attempt(
         self,
         exposure_us,
@@ -229,7 +271,9 @@ class SepShadowRunner:
                 "fallback_rmse": (
                     f"{fallback_rmse:.2f}" if fallback_rmse is not None else ""
                 ),
+                "sep_masked": run.detection.masked_count if run else "",
             }
+            self._rotate_csv_on_schema_change()
             write_header = not self.csv_path.exists()
             with open(self.csv_path, "a", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
