@@ -598,11 +598,6 @@ def solver(
                             sep_run is not None
                             and sep_shadow.fallback_enabled
                             and (not solution or solution.get("RA") is None)
-                            # An in-progress alignment must run through the
-                            # production frame only: this path's y/x_target
-                            # would be in full-frame space.
-                            and align_ra == 0
-                            and align_dec == 0
                             and len(sep_run.detection.centroids)
                             >= sep_shadow.min_fallback_stars
                             # Backoff: persistently unsolvable scenes
@@ -614,7 +609,22 @@ def solver(
                                 len(sep_run.detection.centroids)
                             )
                         ):
-                            fb_solution = sep_shadow.solve(t3, sep_run, shared_state)
+                            # Hybrid alignment: cedar keeps priority (this
+                            # branch only runs when it failed); under the
+                            # target sky the SEP solve resolves the alignment
+                            # coordinate and hands y/x_target back in 512
+                            # space (sep_shadow.solve), so the normal
+                            # alignment chain below consumes it unchanged.
+                            fb_solution = sep_shadow.solve(
+                                t3,
+                                sep_run,
+                                shared_state,
+                                target_sky_coord=(
+                                    [[align_ra, align_dec]]
+                                    if align_ra != 0 and align_dec != 0
+                                    else None
+                                ),
+                            )
                             sep_shadow.record_fallback_result(
                                 bool(fb_solution and fb_solution.get("RA") is not None),
                                 len(sep_run.detection.centroids),

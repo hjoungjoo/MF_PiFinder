@@ -99,6 +99,25 @@ def map_target_pixel_to_frame(
     return (cy + (ty - c512) * scale, cx + (tx - c512) * scale)
 
 
+def map_frame_pixel_to_target(
+    pixel_yx, frame_hw: Tuple[int, int], crop_width_px: int
+) -> Tuple[float, float]:
+    """Inverse of :func:`map_target_pixel_to_frame`: a pixel in the rotated
+    full-frame canvas back into rotated-512 ``target_pixel`` space.
+
+    Used by the SEP-path alignment: tetra3 returns the alignment target's
+    y/x in the full-frame canvas, but the production chain stores and
+    consumes target pixels in 512 space, so the result must come back
+    through the same centre-scale relation (same proof as the forward
+    mapping -- centre-symmetric crop, isotropic resize).
+    """
+    scale = SOLVER_FRAME_PX / float(crop_width_px)
+    c512 = (SOLVER_FRAME_PX - 1) / 2.0
+    cy, cx = (frame_hw[0] - 1) / 2.0, (frame_hw[1] - 1) / 2.0
+    py, px = float(pixel_yx[0]), float(pixel_yx[1])
+    return (c512 + (py - cy) * scale, c512 + (px - cx) * scale)
+
+
 def fov_estimate_deg(frame_width_px: int, crop_width_px: int) -> float:
     """FOV across ``frame_width_px`` sensor pixels, from the production
     calibration of SOLVER_FOV_DEG across the cropped square."""
