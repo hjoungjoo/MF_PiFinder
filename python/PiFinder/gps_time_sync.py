@@ -966,11 +966,25 @@ class GpsTimeSyncMonitor:
             changed = self._write_sync_request(sync_dt, {"rtc": rtc_action}) or changed
         return changed
 
+    # poll() is called from the UI main loop, which runs at the display
+    # frame rate (~30 Hz). Everything here works on ~1 Hz signals (GPS
+    # samples, chrony state), so re-evaluating per frame only burns CPU
+    # in the busiest process -- profiling put this among the UI loop's
+    # top spots (2026-07-29). Event-driven entry points (observe_time,
+    # note_reset, update_config) are NOT throttled.
+    POLL_MIN_INTERVAL_S = 1.0
+
     def poll(self) -> None:
         if not self._active():
             return
 
         now_monotonic = self.monotonic_fn()
+        last_poll = getattr(self, "_last_poll_monotonic", None)
+        if last_poll is not None and now_monotonic - last_poll < (
+            self.POLL_MIN_INTERVAL_S
+        ):
+            return
+        self._last_poll_monotonic = now_monotonic
         chrony_changed = self._poll_chrony(now_monotonic)
         changed = False
 
