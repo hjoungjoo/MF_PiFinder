@@ -162,7 +162,7 @@ class SQM:
     """
 
     value: float = 20.15  # mag/arcsec² - default typical dark sky value
-    source: str = "None"  # "None", "Calculated", "Manual", etc.
+    source: str = "None"  # "None", "Radiometer", "Manual", legacy "Calculated"
     last_update: Optional[str] = None  # ISO timestamp of last update
 
     def __str__(self):
@@ -291,10 +291,14 @@ class SharedStateObj:
         self.__imu = None
         self.__location: Location = Location()
         self.__sqm: SQM = SQM()
-        self.__noise_floor: float = (
-            10.0  # Adaptive noise floor in ADU (default fallback)
-        )
+        # Processed 8-bit background floor used by the camera controller.
+        # Raw SQM thresholds use different units and must not be stored here.
+        self.__noise_floor: float = 10.0
         self.__sqm_details: dict = {}  # Full SQM calculation details for calibration
+        # Degrees the camera process rotates the solve/display image relative
+        # to the stored raw frame (PIL CCW). None until the camera reports.
+        self.__solve_image_rotation = None
+        self.__sqm_radiometer_sample = None
         self.__datetime = None
         self.__datetime_time = None
         self.__datetime_manual = False  # True when manually set, blocks GPS overrides
@@ -418,12 +422,24 @@ class SharedStateObj:
         self.__sqm = sqm
 
     def noise_floor(self) -> float:
-        """Return the adaptive noise floor in ADU"""
+        """Return the processed-image background floor in 8-bit ADU."""
         return self.__noise_floor
 
     def set_noise_floor(self, v: float):
-        """Update the adaptive noise floor (from SQM calculator)"""
+        """Update the processed-image background floor in 8-bit ADU."""
         self.__noise_floor = v
+
+    def solve_image_rotation(self):
+        return self.__solve_image_rotation
+
+    def set_solve_image_rotation(self, v):
+        self.__solve_image_rotation = v
+
+    def sqm_radiometer_sample(self):
+        return self.__sqm_radiometer_sample
+
+    def set_sqm_radiometer_sample(self, v):
+        self.__sqm_radiometer_sample = v
 
     def sqm_details(self) -> dict:
         """Return the full SQM calculation details"""
