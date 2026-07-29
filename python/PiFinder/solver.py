@@ -254,7 +254,9 @@ def update_radiometric_sqm(
             last_update=timez.local_now().isoformat(),
         )
     )
-    logger.info("Radiometric SQM updated: %.2f mag/arcsec²", sqm_value)
+    # Publishes at 1 Hz in steady state; DEBUG per the MF logging policy
+    # (c0ca4dcc) so a night's log isn't 30k identical lines.
+    logger.debug("Radiometric SQM updated: %.2f mag/arcsec²", sqm_value)
     return True
 
 

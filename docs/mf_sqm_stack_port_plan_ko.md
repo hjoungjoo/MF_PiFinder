@@ -1,7 +1,13 @@
 # upstream SQM 스택(#532/#542/#543/#544) 이식 분석과 계획
 
 작성일: 2026-07-30
-상태: **분석 완료 — 이식 착수 전**
+상태: **소프트웨어 이식 완료 (2026-07-30, Phase 0~4)** — 남은 완료 조건은
+§4.1 야간 재검증(웜맵 재생성 + σ/게이트 확인)과 SQM 위저드 1회 실행.
+커밋: Phase 1 `e22559cf`, Phase 2 `c9180555`, Phase 3a `78f6cd78`,
+3b `d004e27b`, 3c `b1a5d8f5`, 3d `c23b1cf4`, 3e `4e584f8f`.
+계획 대비 실적 차이: rev4 rename hunk 제외(#539 보류 유지), radiometric
+1 Hz 발행 로그는 MF 정책에 따라 DEBUG로 강등, upstream 테스트 8개 파일
+전량 수용(test_solver_cedar_client 제외 — 기존 MF 이식본 유지).
 
 대상 upstream 커밋 (적용 순서 기준):
 

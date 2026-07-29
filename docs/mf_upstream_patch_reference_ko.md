@@ -80,10 +80,17 @@
     `display_spi()` 헬퍼) 유지. upstream ADR `0023-ssd1333-brightness`는 새
     번호 규칙(숫자=upstream)에 따라 그대로 수용. 밝기 매핑 단조성/레지스터
     범위는 fake device 시뮬레이션으로 확인, 실제 SSD1333 패널 실측은 미실시
-- 충돌로 보류 (수동 병합 필요, 다음 라운드 대상):
   - SQM 스택 (#532 `b5b16883`, #544 `69fe28c2`, #542 `b36cb8c6`,
-    #543 `5ef6a1b2`) — solver/camera/sqm 대규모 개편이 MF cedar+SEP hybrid,
-    auto exposure 작업과 광범위 충돌. 기능 단위 검토 필요
+    #543 `5ef6a1b2`) — **수동 이식으로 적용 완료 (2026-07-30, 5단계)**.
+    radiometer 우선 SQM(솔브 독립 1 Hz 발행), raw-green 측광, Gaia-G/B−V
+    색보정, wing/cloud/black-level 추정기, raw 전용 보정 위저드,
+    full-sensor 스윕. 상세 계획·리스크·커밋은
+    [mf_sqm_stack_port_plan_ko.md](mf_sqm_stack_port_plan_ko.md).
+    #542가 revert한 cedar hunk는 적용하지 않았고(우리 hybrid+RemoveIPC
+    유지), #543은 post-#544 최종 상태 기준 이식으로 자동 포함. rev4
+    rename hunk는 #539와 함께 보류 유지. **잔여 완료 조건: bias 238 기준
+    야간 재검증(웜맵/σ) + SQM 위저드 1회 실행**
+- 충돌로 보류 (수동 병합 필요, 다음 라운드 대상):
   - Focus raw multi-star 뷰 (#531, `70e243b9`) — MF가 수정한 `ui/preview.py`와 충돌
   - quick start focus 문서 (#546, `e9cbfe52`) — #531의 새 focus 화면을 전제로 한
     문구라 #531과 함께 판단
