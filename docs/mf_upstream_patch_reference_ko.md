@@ -57,12 +57,18 @@
   - Polar Alignment 가이드 field feedback 반영 (#518, `56d428f6`)
   - filtered list 갱신 유지 + 천체별 observed status 파생 (#528, `d2c566b6`) —
     catalogs/object_list clean 적용, 관련 테스트(cache/cursor/identity) 통과
+  - cedar shmem RemoveIPC 복구 (#548, `1afbd3c2`) — **수동 이식으로 적용 완료
+    (2026-07-29)**. SSH 로그아웃 시 logind `RemoveIPC=yes`가
+    `/cedar_detect_image` shmem을 삭제해 이후 solve가 전부 실패하던 문제.
+    이식 내용: `PFCedarDetectClient._del_shmem` 오버라이드(사라진 세그먼트를
+    정상 해제로 처리), INTERNAL 폴백 시 1회 경고 로그, 인라인 폴백에
+    `detect_hot_pixels` 유지, `pifinder_setup.sh`의 `RemoveIPC=no` drop-in.
+    마이그레이션은 upstream `v2.6.1.sh` 대신 MF 규칙의 `mf_removeipc.sh`로
+    이식(멱등이라 이후 upstream v2.6.1이 와도 무해). 테스트
+    `test_solver_cedar_client.py`는 라이브 solver의 실제 세그먼트를 건드리지
+    않도록 테스트 전용 shmem 이름을 쓰게 수정해서 가져옴. 개발 기기에는
+    drop-in을 즉시 적용하고 마이그레이션 마커를 남김
 - 충돌로 보류 (수동 병합 필요, 다음 라운드 대상):
-  - **cedar shmem RemoveIPC 복구 (#548, `1afbd3c2`) — 우선순위 높음.**
-    SSH 로그아웃 시 logind가 `/cedar_detect_image` shmem을 삭제해 이후 solve가
-    전부 실패하는 문제. `solver.py`가 MF cedar+SEP hybrid와 충돌하므로 수동 이식
-    필요. `logind.conf.d`의 `RemoveIPC=no` drop-in과 `PFCedarDetectClient`
-    inline fallback 두 부분으로 구성됨
   - SQM 스택 (#532 `b5b16883`, #544 `69fe28c2`, #542 `b36cb8c6`,
     #543 `5ef6a1b2`) — solver/camera/sqm 대규모 개편이 MF cedar+SEP hybrid,
     auto exposure 작업과 광범위 충돌. 기능 단위 검토 필요

@@ -74,5 +74,13 @@ then
     touch "${PIFINDER_DATA_DIR}/migrations/mf_wifi_settings"
 fi
 
+# mf_removeipc
+# RemoveIPC=no so SSH logouts can't reap the solver's shared memory
+if ! [ -f "${PIFINDER_DATA_DIR}/migrations/mf_removeipc" ]
+then
+    source "${PIFINDER_REPO_DIR}/migration_source/mf_removeipc.sh"
+    touch "${PIFINDER_DATA_DIR}/migrations/mf_removeipc"
+fi
+
 # DONE
 echo "Post Update Complete"
