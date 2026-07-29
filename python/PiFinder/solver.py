@@ -30,6 +30,7 @@ from PiFinder import utils
 from PiFinder import timez
 from PiFinder.sep_shadow import SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
+from PiFinder.sqm.radiometer import extract_photometry_image
 from PiFinder.state import SQM as SQMState
 from PiFinder.types.positioning import (
     AlignCancel,
@@ -54,13 +55,92 @@ SQM_CALCULATION_INTERVAL_SECONDS = 5.0
 
 
 def create_sqm_calculator(shared_state):
-    """Create a new SQM calculator instance with current calibration."""
+    """Create a new SQM calculator instance with current calibration.
+
+    Photometry always runs on the raw linear frame (green channel for Bayer
+    sensors); the 8-bit processed image is for solving/display only.
+    """
     camera_type = shared_state.camera_type()
-    camera_type_processed = f"{camera_type}_processed"
+    logger.info(f"Creating raw-green SQM calculator for camera: {camera_type}")
+    return SQMCalculator(camera_type=camera_type)
 
-    logger.info(f"Creating SQM calculator for camera: {camera_type_processed}")
 
-    return SQMCalculator(camera_type=camera_type_processed)
+def _extract_raw_photometry_image(raw, profile):
+    """Build the linear photometry image from the stored raw frame.
+
+    For Bayer sensors (SRGGB*) returns the averaged green channel (half-res);
+    for mono sensors returns the raw frame as-is. Returns None on any shape/
+    dtype problem so the caller can skip the SQM cycle.
+    """
+    return extract_photometry_image(raw, profile)
+
+
+def _scaled_photometry_radii(
+    scale, aperture_radius=5, inner_radius=10, outer_radius=18
+):
+    """Convert photometry radii from solve-image (512px) pixels to the
+    photometry image's own pitch.
+
+    The radii were tuned on the ~1.0-scale Bayer-green images (imx462: 490px).
+    On the full-res mono imx296 (scale 2.125) the unscaled r=5 aperture holds
+    only ~85% of a star's flux and the annuli land on the PSF itself, biasing
+    every local sky estimate. The floors keep the geometry ordered
+    (aperture < inner < outer) at any scale.
+    """
+    aperture = max(1, round(aperture_radius * scale))
+    inner = max(aperture + 1, round(inner_radius * scale))
+    outer = max(inner + 2, round(outer_radius * scale))
+    return aperture, inner, outer
+
+
+def _scale_solution_centroids(solution, scale):
+    """Return a shallow copy of solution with matched_centroids scaled.
+
+    The solve runs on the 512x512 processed image; the raw photometry image has a
+    different pixel pitch, so the matched star positions must be rescaled to it.
+    """
+    scaled = dict(solution)
+    mc = np.asarray(solution["matched_centroids"], dtype=np.float64) * scale
+    scaled["matched_centroids"] = mc
+    return scaled
+
+
+def _derotate_centroids(points, rotation_deg, size):
+    """Map (y, x) centroids from the display-rotated solve image back onto
+    the unrotated raw frame's pixel grid.
+
+    The camera process rotates the solve/display image by ``rotation_deg``
+    (PIL CCW) relative to the raw it stores in shared state; photometry runs
+    on the raw, so star positions must be counter-rotated or every aperture
+    lands on the wrong sky (SQM then reads magnitudes too bright).
+
+    Args:
+        points: (N, 2) array of (y, x) positions in the rotated image.
+        rotation_deg: degrees the solve image was rotated (PIL CCW).
+        size: side length of the (square) pixel grid the points live on.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    k = int(rotation_deg) % 360
+    y, x = pts[:, 0], pts[:, 1]
+    m = size - 1
+    if k == 0:
+        return pts
+    if k == 90:
+        # solve = raw rotated 90 CCW: raw_y = x, raw_x = m - y
+        return np.stack([x, m - y], axis=1)
+    if k == 180:
+        return np.stack([m - y, m - x], axis=1)
+    if k == 270:
+        # solve = raw rotated 270 CCW: raw_y = m - x, raw_x = y
+        return np.stack([m - x, y], axis=1)
+    # Arbitrary angle: rotate about the image centre. PIL's rotate(a) fills
+    # dest(x2, y2) from src at c + R(a)·(p2 − c) in (x, y) with y down.
+    c = m / 2.0
+    a = np.radians(k)
+    dx, dy = x - c, y - c
+    rx = c + np.cos(a) * dx - np.sin(a) * dy
+    ry = c + np.sin(a) * dx + np.cos(a) * dy
+    return np.stack([ry, rx], axis=1)
 
 
 def update_sqm(
