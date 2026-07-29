@@ -149,7 +149,7 @@ class SepShadowRunner:
                 cfg.get_option("screen_direction"),
                 cfg.get_option("camera_rotation"),
             )
-            sigma = float(cfg.get_option("solver_sep_sigma") or 3.5)
+            sigma = float(cfg.get_option("solver_sep_sigma") or 4.0)
             warm_map = None
             try:
                 if WARM_MAP_PATH.exists():
