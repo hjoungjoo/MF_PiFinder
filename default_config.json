@@ -47,7 +47,7 @@
     "onstep_network_host": "",
     "onstep_network_port": 9999,
     "solver_debug": 0,
-    "solver_shadow_detect": true,
+    "solver_shadow_detect": false,
     "solver_sep_fallback": true,
     "solver_sep_sigma": 4.0,
     "camera_auto_dump": false,

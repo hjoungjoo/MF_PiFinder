@@ -160,7 +160,7 @@ def update_sqm(
                 last_update=timez.local_now().isoformat(),
             )
             shared_state.set_sqm(new_sqm_state)
-            logger.info(f"SQM updated: {sqm_value:.2f} mag/arcsec²")
+            logger.debug(f"SQM updated: {sqm_value:.2f} mag/arcsec²")
             return True
 
     except Exception as e:
@@ -638,7 +638,7 @@ def solver(
                                 fb_solution.pop("matched_stars", None)
                                 solution = fb_solution
                                 sep_fallback_used = True
-                                logger.info(
+                                logger.debug(
                                     "SEP fallback solve SUCCESS - %d SEP "
                                     "centroids (cedar saw %d), RMSE %.1f",
                                     len(sep_run.detection.centroids),
@@ -698,7 +698,7 @@ def solver(
                             console_queue.put(f"SLV: Long: {total_tetra_time}")
                             logger.warning("Long solver time: %i", total_tetra_time)
 
-                        logger.info(
+                        logger.debug(
                             f"Solve SUCCESS - {len(centroids)} centroids → "
                             f"{solve_result.diagnostics.Matches} matches, "
                             f"RMSE: {solve_result.diagnostics.RMSE:.1f}px"

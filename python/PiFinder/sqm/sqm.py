@@ -498,7 +498,7 @@ class SQM:
         )
 
         if n_saturated > 0:
-            logger.info(
+            logger.debug(
                 f"Excluded {n_saturated}/{len(matched_centroids_arr)} saturated stars "
                 f"(threshold={saturation_threshold})"
             )

@@ -213,8 +213,8 @@ IMU 소스 AE 동결 해제, 밝기 헤드룸 캡, 저검출 앵커 탈출) → 
 
 | 키 | 기본 | 의미 |
 | --- | --- | --- |
-| `solver_shadow_detect` | **true** (ADR 0023) | 섀도 A/B 로깅 (+solver_raw 발행) |
-| `solver_sep_fallback` | **true** (ADR 0023) | SEP 폴백 솔브 |
+| `solver_shadow_detect` | **false** (튜닝 완료 후 opt-in — ADR 0023 개정 2026-07-29) | 섀도 A/B CSV 로깅. 튜닝 세션에만 켤 것 |
+| `solver_sep_fallback` | **true** (ADR 0023) | SEP 폴백 솔브 (+solver_raw 발행) |
 | `solver_sep_sigma` | **4.0** (§6.5 재판정) | SEP 추출 임계(σ) |
 | `camera_auto_dump` | false | 실패 스트릭 시 자동 스테이지 덤프 |
 

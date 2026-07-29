@@ -29,10 +29,12 @@ the final defence).
    solves from the same frame and feeds the normal chain through the
    proven coordinate mappings (`solver_frame_map`). Alignment uses the
    same priority order.
-2. **Enabled by default.** `solver_shadow_detect` and
-   `solver_sep_fallback` ship `true`; `solver_sep_sigma` ships 4.0.
-   The A/B shadow CSV stays on because it is the tuning corpus and its
-   cost is one SEP pass (~100 ms) per attempt on tmpfs.
+2. **Fallback solving enabled by default; shadow logging opt-in.**
+   `solver_sep_fallback` ships `true` with `solver_sep_sigma` 4.0.
+   `solver_shadow_detect` (the per-attempt A/B CSV) ships `false` —
+   amended 2026-07-29 after tuning completed: the CSV was the tuning
+   corpus, and steady-state operation should not generate per-attempt
+   logs (maintainer decision). Re-enable it for tuning sessions.
 3. **Detection quality is owned by gates, not the threshold.** σ4.0
    with the warm-pixel map, point-source shape gate and cluster gate
    (all thresholds measured against tetra3-matched ground truth) keeps

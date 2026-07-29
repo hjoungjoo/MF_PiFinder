@@ -248,7 +248,7 @@ def _log_pointing_state(state) -> None:
         "time": now,
         "signature": signature,
     }
-    logger.info(
+    logger.debug(
         "SkySafari pointing source=%s coord=%s solved=%s/%s/%s imu=%s/%s "
         "imu_altaz=%s,%s mount=%s/aligned=%s/%s mount_coord=%s warnings=%s",
         current.source,
