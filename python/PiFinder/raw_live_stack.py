@@ -541,7 +541,10 @@ def _draw_sep_overlay(
                 if len(rmatched)
                 else np.inf
             )
-            if near > 4.0:  # not among the matched (or nothing matched)
+            # 8 px: cedar-solved frames map matched stars from 512 space
+            # (scale ~1.9x), so the SEP detection of the same star can sit
+            # a few px off the mapped position.
+            if near > 8.0:  # not among the matched (or nothing matched)
                 _circle(y, x, CANDIDATE_MARK_RGB)
         for y, x in rmatched:
             _circle(y, x, MATCHED_MARK_RGB)

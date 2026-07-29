@@ -357,6 +357,45 @@ class SepShadowRunner:
         except Exception:
             logger.exception("SEP matched-overlay attach failed")
 
+    def attach_production_matched(self, solution) -> None:
+        """Cedar solved this frame: mark its matched stars on the overlay.
+
+        Without this, cedar-solved attempts carried no matched info and
+        the overlay showed all-orange exactly when the sky is GOOD (cedar
+        priority working as designed -- field report 2026-07-28 night).
+        Cedar's matched centroids are in rotated-512 space; each maps to
+        the rotated full-frame canvas (map_target_pixel_to_frame, the
+        proven centre-scale relation) and is then un-rotated to frame
+        space, the same space as the SEP matched path.
+        """
+        try:
+            overlay = self._last_overlay
+            if (
+                overlay is None
+                or not solution
+                or solution.get("RA") is None
+                or solution.get("matched_centroids") is None
+            ):
+                return
+            m512 = np.asarray(solution["matched_centroids"], dtype=np.float64)
+            if m512.ndim != 2 or len(m512) == 0:
+                return
+            _, canvas = sfm.rotate_centroids(
+                np.empty((0, 2)), tuple(overlay["frame_hw"]), self.rotation_deg
+            )
+            mapped = np.array(
+                [
+                    sfm.map_target_pixel_to_frame((y, x), canvas, self.crop_width_px)
+                    for y, x in m512
+                ]
+            )
+            unrot, _ = sfm.rotate_centroids(
+                mapped, canvas, (360.0 - self.rotation_deg) % 360.0
+            )
+            overlay["matched"] = unrot.tolist()
+        except Exception:
+            logger.exception("production matched overlay attach failed")
+
     def publish_overlay(self, shared_state) -> None:
         """Publish this attempt's overlay entry (candidates + any matched
         subset) exactly once, after the solve outcome is known."""

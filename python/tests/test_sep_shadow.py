@@ -77,6 +77,26 @@ class TestOverlayPublish:
         runner.publish_overlay(shared)
         assert shared.sep_overlay() is None
 
+    def test_production_matched_maps_512_space_to_frame_space(self, tmp_path):
+        """Cedar matched centroids (rotated-512) land on the overlay in
+        frame space: the 512 centre must map to the frame centre."""
+        runner = _runner(tmp_path)  # rotation 90, crop 980
+        frame_hw = (1080, 1920)
+        runner._last_overlay = {
+            "centroids": [[0.0, 0.0]],
+            "frame_hw": list(frame_hw),
+            "masked": 0,
+            "sigma": 4.0,
+            "timestamp": 1.0,
+        }
+        c512 = (512 - 1) / 2.0
+        runner.attach_production_matched(
+            {"RA": 1.0, "matched_centroids": [[c512, c512]]}
+        )
+        my, mx = runner._last_overlay["matched"][0]
+        assert abs(my - (1080 - 1) / 2.0) < 1e-6
+        assert abs(mx - (1920 - 1) / 2.0) < 1e-6
+
     def test_failed_solve_publishes_candidates_only(self, tmp_path):
         runner = _runner(tmp_path)
         runner._last_overlay = {

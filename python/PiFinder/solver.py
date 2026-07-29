@@ -744,6 +744,15 @@ def solver(
                         # Overlay ships once per attempt, after the solve
                         # outcome, so the confirmed/candidate split is never
                         # overwritten by the next detect (race fixed).
+                        # A production (cedar) solve contributes its matched
+                        # stars too -- green means "confirmed by whichever
+                        # solver succeeded".
+                        if (
+                            solution
+                            and solution.get("RA") is not None
+                            and not sep_fallback_used
+                        ):
+                            sep_shadow.attach_production_matched(solution)
                         sep_shadow.publish_overlay(shared_state)
                         sep_shadow.log_attempt(
                             exposure_us=last_image_metadata.get("exposure_time"),
