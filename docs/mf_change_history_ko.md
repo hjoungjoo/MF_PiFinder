@@ -1437,7 +1437,7 @@ sudo systemctl start pifinder
 대응으로, cedar-server 방식의 검출 별 수 서보를 **옵트인 옵션**으로 추가했다.
 기존 컨트롤러/복구/기본값은 무수정 유지. 설계:
 [mf_auto_exposure_plan_ko.md](mf_auto_exposure_plan_ko.md), 결정:
-[ADR 0020](adr/0020-star-count-controller-opt-in.md).
+[ADR m0020](adr/m0020-star-count-controller-opt-in.md).
 
 - 신규 `python/PiFinder/auto_exposure_starcount.py`:
   `ExposureStarCountController` (목표 검출 20, EMA α=0.5, 데드밴드 0.8~1.6,
@@ -1593,7 +1593,7 @@ digital gain → 255/4095)이라 변화가 보이고, 배경 앵커 EMA stretch�
 
 현장 관측(서울, imx462): 수동 25ms에서는 solve가 반복 성공하는데, `auto_star`로
 바꾸면 그 셔터속도로 돌아가지 못했다. 노출을 위쪽에 묶어 두는 경계가 둘이었고
-둘 다 완화했다. 결정: [ADR 0021](adr/0021-auto-exposure-reaches-fast-shutter.md)
+둘 다 완화했다. 결정: [ADR m0021](adr/m0021-auto-exposure-reaches-fast-shutter.md)
 (ADR 0010의 200ms 하한을 "첫 순회 한정"으로 축소).
 
 - `auto_exposure.py` — 복구 사다리가 하한 아래를 탐색하지 않았다.

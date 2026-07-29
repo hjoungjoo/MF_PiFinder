@@ -12,7 +12,7 @@ We keep Sweep's ordering but **floor the ladder at 200 ms**, giving `[400, 800, 
 
 Explicitly out of recovery's scope, by decision rather than omission: defocus, transient blockage (clouds, capped scope, pointed at the ground), and solver-side failures where centroids are plentiful but tetra3 matches none. No exposure change fixes those, and recovery should not thrash trying.
 
-**Amended by [ADR 0021](0021-auto-exposure-reaches-fast-shutter.md) (2026-07-26):** the
+**Amended by [ADR m0021](m0021-auto-exposure-reaches-fast-shutter.md) (2026-07-26):** the
 200 ms floor now governs only the *first* pass of the ladder. Field evidence
 from a light-polluted site that solves at 25 ms — and detects nothing at
 400 ms–1 s — contradicts the reasoning below that going shorter cannot beat

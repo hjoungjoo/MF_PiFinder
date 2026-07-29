@@ -25,7 +25,7 @@ that a full failure escalates the search instead of looping on it.
 
 **The star-count controller's anchor bound was unreachable-by-construction.**
 Adjustments are clamped to anchor/8..anchor×8 around a learned known-good
-anchor (ADR 0020), but the anchor starts as a shipped guess (400 ms) and is
+anchor (ADR m0020), but the anchor starts as a shipped guess (400 ms) and is
 only relearned when a reading lands inside the deadband. Where the working
 exposure is shorter than anchor/8 — 25 ms is well under 400 ms/8 = 50 ms — the
 servo asks to go shorter on every frame, is pinned at 50 ms, and returns "no
@@ -80,4 +80,4 @@ controller has no view of the frame and keeps the night-time ladder unchanged.
   `[min_exposure, max_exposure]`. It is still not persisted across restarts, so
   every session re-learns from the 400 ms guess.
 - Both changes are search-behaviour only: no new config key, no menu, and the
-  deadband/target/guard values from ADR 0020 are untouched.
+  deadband/target/guard values from ADR m0020 are untouched.

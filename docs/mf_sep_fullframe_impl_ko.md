@@ -8,12 +8,12 @@
 > [mf_auto_exposure_field_review_20260726_ko.md](mf_auto_exposure_field_review_20260726_ko.md)
 > (07-26 현장 리뷰, SEP 방향 채택).
 >
-> 상태: **아키텍처 확정 — [ADR 0023](adr/0023-cedar-sep-hybrid-solving.md)으로
+> 상태: **아키텍처 확정 — [ADR m0023](adr/m0023-cedar-sep-hybrid-solving.md)으로
 > 승격, 본 문서는 구현 기록으로 유지** (2026-07-29). 잔여 검증은 운영
 > 항목(실망원경 정렬 정밀도, 웜픽셀 맵 재생성 주기)만.
 > 관련: [docs/ax/camera.md](ax/camera.md) §3b/§6b (노출 제어 아키텍처의 정규
-> 소유자), [ADR 0020](adr/0020-star-count-controller-opt-in.md),
-> [ADR 0022](adr/0022-solve-success-holds-star-count-exposure.md)
+> 소유자), [ADR m0020](adr/m0020-star-count-controller-opt-in.md),
+> [ADR m0022](adr/m0022-solve-success-holds-star-count-exposure.md)
 > 커뮤니티 공지: [mf_cedar_sep_hybrid_solve_20260728_ko.md](mf_cedar_sep_hybrid_solve_20260728_ko.md)
 > ([영문판](mf_cedar_sep_hybrid_solve_20260728_en.md))
 >
@@ -166,7 +166,7 @@ saturation_level=None)`:
   조건이다.
 - 성공 시: `matched_centroids`/`matched_stars` 제거(풀프레임 좌표가 SQM
   측광(512 프레임)에 섞이는 것 차단) 후 솔루션을 정규 체인에 공급.
-  `Centroids`는 SEP 검출 수로 게시 — 자동 노출의 솔브 홀드(ADR 0022)가
+  `Centroids`는 SEP 검출 수로 게시 — 자동 노출의 솔브 홀드(ADR m0022)가
   "실제로 솔브된 노출"에 앵커되도록.
 
 ### 3.4 카메라 배선 (`camera_interface.py`, `camera_pi.py`)
@@ -183,8 +183,8 @@ saturation_level=None)`:
 노출 제어의 정규 아키텍처 문서는 [ax/camera.md](ax/camera.md)이고, 이 절은
 **광해 솔빙 관점의 통합 현황**을 관리한다.
 
-**경위 요약**: 별 수 컨트롤러(`auto_star`, ADR 0020) → 07-26 현장에서
-동결·포화·주차 제거 보강 5건(앵커 절대 클램프, 솔브 성공 홀드 ADR 0022,
+**경위 요약**: 별 수 컨트롤러(`auto_star`, ADR m0020) → 07-26 현장에서
+동결·포화·주차 제거 보강 5건(앵커 절대 클램프, 솔브 성공 홀드 ADR m0022,
 IMU 소스 AE 동결 해제, 밝기 헤드룸 캡, 저검출 앵커 탈출) → 결론:
 **검출 1~3개 하늘에서는 어떤 노출 정책도 솔브를 만들 수 없음**(tetra3
 최소 4개) — 병목이 노출이 아니라 검출 감도로 확정되어 본 문서의 SEP
@@ -199,7 +199,7 @@ IMU 소스 AE 동결 해제, 밝기 헤드룸 캡, 저검출 앵커 탈출) → 
 - 예외 우선순위 유지: 밝은 프레임은 즉시 하향(포화 방어), 별 과잉은 하향
 
 **SEP와의 결합** (현행): 폴백 솔브 성공 시 `Centroids`를 SEP 검출 수로
-게시 → 솔브 홀드(ADR 0022)가 "실제로 솔브된 노출"에 앵커. 실측(07-28
+게시 → 솔브 홀드(ADR m0022)가 "실제로 솔브된 노출"에 앵커. 실측(07-28
 밤): 별이 보이는 구간에서 앵커가 노출을 고정(예: 200 ms)하고 구름 통과를
 추적. **장시간(90 s+) 무솔브 구간의 사다리 탐색은 설계 동작**이며, 별
 복귀 시 SEP 검출 점프 → 폴백 즉시 재무장 → 솔브 → 재앵커로 수렴한다.
@@ -213,8 +213,8 @@ IMU 소스 AE 동결 해제, 밝기 헤드룸 캡, 저검출 앵커 탈출) → 
 
 | 키 | 기본 | 의미 |
 | --- | --- | --- |
-| `solver_shadow_detect` | **false** (튜닝 완료 후 opt-in — ADR 0023 개정 2026-07-29) | 섀도 A/B CSV 로깅. 튜닝 세션에만 켤 것 |
-| `solver_sep_fallback` | **true** (ADR 0023) | SEP 폴백 솔브 (+solver_raw 발행) |
+| `solver_shadow_detect` | **false** (튜닝 완료 후 opt-in — ADR m0023 개정 2026-07-29) | 섀도 A/B CSV 로깅. 튜닝 세션에만 켤 것 |
+| `solver_sep_fallback` | **true** (ADR m0023) | SEP 폴백 솔브 (+solver_raw 발행) |
 | `solver_sep_sigma` | **4.0** (§6.5 재판정) | SEP 추출 임계(σ) |
 | `camera_auto_dump` | false | 실패 스트릭 시 자동 스테이지 덤프 |
 
@@ -449,7 +449,7 @@ R/G=B/G=1.000±0.001)이므로 CFA 없는 **진짜 모노 센서**다. 컬러였
   게이트**, 오버레이 의미론(초록=솔버 확정, 양 경로), **cedar 풀해상도
   이득 실증**(§6.7 — 512 대비 매치 3배·순도 95%), 저장 정책.
 - **아키텍처 결정 완료**: cedar/SEP 역할 분담·기본값 상시화·σ4.0·게이트
-  소유·cedar 풀프레임 보류가 **[ADR 0023](adr/0023-cedar-sep-hybrid-solving.md)**
+  소유·cedar 풀프레임 보류가 **[ADR m0023](adr/m0023-cedar-sep-hybrid-solving.md)**
   으로 확정 (2026-07-29, 40분 장시간 95% 검증 포함).
 - **미확정(운영 잔여)**: ① 실망원경 정렬~푸시투 정밀 검증, ② 계절/온도
   변화에 따른 웜픽셀 맵 재생성 주기.
@@ -464,7 +464,7 @@ R/G=B/G=1.000±0.001)이므로 CFA 없는 **진짜 모노 센서**다. 컬러였
    역매핑해 공급. 현장 정렬 검증은 다음 정렬 시도에서.
 3. ~~맑은 밤 세션·마스크 재검증~~ **완료 (2026-07-29, §6.7)**
 4. ~~cedar 풀해상도 판정~~ **완료 (2026-07-29, §6.7 3자 비교)**
-5. ~~최종 방안 결정~~ **완료 — [ADR 0023](adr/0023-cedar-sep-hybrid-solving.md)**
+5. ~~최종 방안 결정~~ **완료 — [ADR m0023](adr/m0023-cedar-sep-hybrid-solving.md)**
    (하이브리드 상시화, 기본값 on, σ4.0, cedar 풀프레임 보류). 본 문서는
    구현 기록으로 전환.
 6. **(보류, 2026-07-28 결정) 프레임 전달 shared_memory 전환**: 매니저

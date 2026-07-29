@@ -170,7 +170,7 @@ class ExposureStarCountController:
                 (8-bit), or None to skip the bright-sky guard.
             solve_success: Whether this solve attempt produced a plate
                 solve. A solving exposure is held even when the star
-                count falls short of target (ADR 0022).
+                count falls short of target (ADR m0022).
 
         Returns:
             New exposure time in microseconds, or None if no change needed.
@@ -219,7 +219,7 @@ class ExposureStarCountController:
         # swung away from a streetlight). Deliberately hysteretic -- the
         # ceiling is set above bright_sky_mean and only released well below it,
         # so a frame that merely dipped under the guard threshold cannot start
-        # the climb-and-guard oscillation again (ADR 0021).
+        # the climb-and-guard oscillation again (ADR m0021).
         if (
             self._bright_ceiling is not None
             and center_mean is not None
@@ -302,7 +302,7 @@ class ExposureStarCountController:
         # 100-200 ms solved 16/18 attempts at 9-14 stars; 400 ms+ solved
         # almost never. Hold the solving exposure and learn it as the anchor.
         # Excess stars (f above the deadband) still step down: shortening a
-        # solving exposure keeps the solve and reduces motion blur (ADR 0022).
+        # solving exposure keeps the solve and reduces motion blur (ADR m0022).
         if solve_success and star_fraction <= self.deadband_high:
             self._anchor = self._clamp_absolute(current_exposure)
             self._bright_ceiling = None
@@ -318,7 +318,7 @@ class ExposureStarCountController:
         # 400ms -> nothing detected -> recovery climbs to 800ms -> too few
         # stars -> raise to 1s -> guard. Observed in the field; the exposure
         # that actually solves at that site is 25ms, and nothing in the cycle
-        # ever walked down to it (ADR 0021).
+        # ever walked down to it (ADR m0021).
         if star_fraction < 1.0 and self._is_bright(center_mean):
             self._bright_ceiling = max(self.min_exposure, current_exposure // 2)
             logger.debug(
@@ -421,7 +421,7 @@ class ExposureStarCountController:
         so the deadband is never reached and the anchor never updates. After
         ``reanchor_after`` consecutive clamps in the same direction the ask is
         no longer noise: move the anchor to the boundary so the search
-        continues from there (ADR 0021).
+        continues from there (ADR m0021).
 
         The anchor itself must stay inside the absolute range: an anchor
         boundary can lie outside it (400ms * 8 = 3.2s > the 1s ceiling), and

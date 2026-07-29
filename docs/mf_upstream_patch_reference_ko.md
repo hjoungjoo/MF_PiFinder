@@ -72,7 +72,7 @@
   - 위치 입력 comma/period decimal (#536, `447aec8b`) — `server.py`,
     `locations.html`, `location_form.html`이 MF location catalog와 충돌
   - SSD1333 3축 밝기 (`a132bc36`) — `displays.py` 충돌 + upstream ADR 번호가
-    MF ADR 0023과 충돌 (아래 ADR 번호 분기 참조)
+    MF ADR m0023과 충돌 (아래 ADR 번호 분기 참조)
   - keypad matrix 분리 (#551, `a90311e7`) — `keyboard_pi.py` 충돌, rev4 power
     button GPIO 처리가 딸려옴
 - 정책상 제외 (rev4 battery/hardware 제외 정책 유지):
@@ -85,13 +85,19 @@
   - rev4 rename (#539 `0edff3bb`) — rev4 enablement 미적용 상태에서 rename만
     가져오면 diff만 커짐
 
-ADR 번호 분기 주의:
+ADR 번호 규칙 (2026-07-29 확정):
 
-- upstream과 MF가 각자 ADR을 추가하면서 번호가 갈라졌다 (upstream 0020=SOC
-  runtime fraction, 0021=blind-floor shutdown, 0023=SSD1333 brightness vs
-  MF 0020=star-count controller, 0021=auto-exposure, 0023=cedar+SEP hybrid).
-- upstream ADR을 가져올 때는 그대로 체리픽하지 말고 MF 번호 체계에 맞춰
-  번호를 다시 붙여야 한다.
+- upstream과 MF가 각자 ADR을 추가하면서 0020부터 번호가 갈라졌다 (upstream
+  0020=SOC runtime fraction, 0021=blind-floor shutdown, 0023=SSD1333
+  brightness vs MF의 star-count/auto-exposure/solve-hold/cedar+SEP hybrid).
+- 그래서 번호 공간을 분리했다: **MF가 자체 작성하는 ADR은 `m` 접두사**를
+  쓴다 (`docs/adr/mNNNN-*.md`). 기존 MF ADR 4건은 번호를 유지한 채
+  `m0020`~`m0023`으로 개명했고, 새 MF ADR은 `m0024`부터 이어간다.
+- **upstream ADR은 체리픽 시 번호를 그대로 유지**한다 — upstream 커밋
+  메시지/문서가 인용하는 번호가 우리 트리에서도 유효해야 하기 때문.
+  숫자만 있는 ADR = upstream 것, `m` 접두사 = MF 것으로 출처가 구분된다.
+- 2026-07-29 이전의 커밋 메시지가 말하는 "ADR 0020~0023"은 문맥에 따라
+  MF 것(현재 m0020~m0023)일 수 있다.
 
 주의:
 

@@ -6,9 +6,9 @@
 > 원 상태: 검토 중 — 방향 결정 대기 (2026-07-26 심야 작성)
 > 선행 문서: [mf_auto_exposure_methods_ko.md](mf_auto_exposure_methods_ko.md) (방법 조사),
 > [mf_auto_exposure_plan_ko.md](mf_auto_exposure_plan_ko.md) (검출 별 수 컨트롤러 설계),
-> [ADR 0020](adr/0020-star-count-controller-opt-in.md) ·
-> [ADR 0021](adr/0021-auto-exposure-reaches-fast-shutter.md) ·
-> [ADR 0022](adr/0022-solve-success-holds-star-count-exposure.md)
+> [ADR m0020](adr/m0020-star-count-controller-opt-in.md) ·
+> [ADR m0021](adr/m0021-auto-exposure-reaches-fast-shutter.md) ·
+> [ADR m0022](adr/m0022-solve-success-holds-star-count-exposure.md)
 >
 > 결론 요약: 당일 보강 5건으로 컨트롤러의 동결·포화·주차 결함은 제거됐지만,
 > **검출기가 별을 1~3개밖에 못 찾는 하늘에서는 어떤 노출 정책도 솔브를 만들 수
@@ -57,7 +57,7 @@
 | 커밋 | 내용 |
 | --- | --- |
 | bcde58a1 | 앵커가 절대 노출 범위 [25 ms, 1 s]를 탈출하던 결함(3.2 s 폭주) 수정 |
-| 2b068db2 | 솔브 성공 시 현재 노출 앵커 학습·홀드 (ADR 0022) |
+| 2b068db2 | 솔브 성공 시 현재 노출 앵커 학습·홀드 (ADR m0022) |
 | 80443cc6 | IMU 솔브 소스에서 AE 동결 해제 + 시도별 성공 판정, 포화 프레임 하향 스텝 |
 | 0b314906 | 밝기 헤드룸 상향 캡 — 상향 스텝이 예측 배경 mean ≤ 240을 넘지 못함 |
 | 24292966 | 저검출(1–3개) 앵커 주차 탈출 + 앵커 복귀의 bright ceiling 준수 |
@@ -235,6 +235,6 @@ DAOFIND — 가우시안 매치드 필터 + sharpness/roundness로 점원만 선
   오검출이 지배해 **품질 필터 3종(가장자리 마진·양성 플럭스·포화 가드)**이
   필수였고, tetra3가 오검출을 전량 기각해 방어선이 됨을 확인.
 - 제어층도 한 단계 더: 솔브 성공이 여는 **앵커 트러스트 창**(90 s)으로
-  "구름 통과 시 노출 출렁임"(현장 체감 불만) 해소 — ADR 0022 계열의 완결.
+  "구름 통과 시 노출 출렁임"(현장 체감 불만) 해소 — ADR m0022 계열의 완결.
 - 남은 결정은 §6 Q1(벤치)·σ 기본값·cedar와의 역할 분담뿐이며, 자동
   수집되는 코퍼스·섀도 CSV로 실내에서 판정한다.

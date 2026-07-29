@@ -66,7 +66,7 @@ RECOVERY_LADDER = [400000, 800000, 1000000, 200000]
 # sit below the 200 ms floor -- a Seoul site solves at 25 ms -- and there the
 # floored ladder cycles its four long rungs forever, never trying the shutter
 # speed that would recover. Escalating instead of widening the first pass keeps
-# ADR 0010's fast common case (8 attempts) intact. See ADR 0021.
+# ADR 0010's fast common case (8 attempts) intact. See ADR m0021.
 SHORT_RECOVERY_RUNGS = [100000, 50000, 25000]
 
 # Ladder for a caller that can see the frame is already sky-glow limited
@@ -181,7 +181,7 @@ class ZeroMatchRecovery:
                     # this ladder encodes was wrong. Continue into the rungs it
                     # does not cover rather than replaying the same failures --
                     # the working exposure can be on the other side of the
-                    # ladder's floor entirely (ADR 0021).
+                    # ladder's floor entirely (ADR m0021).
                     self._extended = True
                     remaining = [
                         rung

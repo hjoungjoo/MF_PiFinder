@@ -1610,7 +1610,7 @@ Addressing the structural problems of match-count-driven auto-exposure
 cedar-server-style detected-star-count servo was added as an **opt-in
 option**. Existing controllers, recovery, and the default are untouched.
 Design: [mf_auto_exposure_plan_ko.md](mf_auto_exposure_plan_ko.md) (ko),
-decision: [ADR 0020](adr/0020-star-count-controller-opt-in.md).
+decision: [ADR m0020](adr/m0020-star-count-controller-opt-in.md).
 
 - New `python/PiFinder/auto_exposure_starcount.py`:
   `ExposureStarCountController` (target 20 detected, EMA α=0.5, deadband
@@ -1771,7 +1771,7 @@ lingers — a large part of the perceived oddness.
 Field-observed (Seoul, imx462): manual 25 ms solves repeatedly, but
 switching to `auto_star` never gets back there. Two bounds kept the
 exposure above the shutter speed that works; both are relaxed. Decision:
-[ADR 0021](adr/0021-auto-exposure-reaches-fast-shutter.md), which narrows
+[ADR m0021](adr/m0021-auto-exposure-reaches-fast-shutter.md), which narrows
 ADR 0010's 200 ms floor to the ladder's first pass.
 
 - `auto_exposure.py` — recovery never searched below its floor. ADR 0010

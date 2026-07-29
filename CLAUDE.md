@@ -95,6 +95,7 @@ Before working in an area of the codebase, check whether it has reference docs:
 - **`docs/ax/<area>/CONTEXT.md`** — canonical glossary for each context (Catalog, Positioning, SQM…). These define the project's vocabulary: what each domain term means, which words to avoid, and how related concepts compose. **Use these terms when reading, writing, and discussing code.**
 - **`docs/ax/<area>.md`** — architecture deep-dives (data flow, lifecycle, gotchas) alongside each CONTEXT.md.
 - **`docs/adr/NNNN-*.md`** — short architecture-decision records capturing the *why* behind non-obvious or hard-to-reverse choices.
+  - **Numbering rule:** plain numbers (`0020-…`) are reserved for ADRs inherited from upstream (brickbots/PiFinder) — keep their original number when cherry-picking. ADRs authored in this fork use an `m` prefix (`m0020-…`); the next new MF ADR continues from the highest existing `m` number (currently `m0024`). Never allocate a plain-numbered ADR here — upstream will eventually collide with it.
 
 When a `CONTEXT.md` defines a term, prefer that term over synonyms in code comments, commit messages, and PR descriptions. If you encounter language in code or chat that conflicts with a CONTEXT.md, flag it.
 

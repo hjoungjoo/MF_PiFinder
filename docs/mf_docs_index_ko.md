@@ -61,7 +61,7 @@
 | [indi_onstep_driver_test_checklist](mf_indi_onstep_driver_test_checklist_ko.md) | ko | **1회성**(2026-07-01) | INDI 드라이버 vs 직접 LX200 사전 검증 기록. |
 | [solve_motion_gate_review](mf_solve_motion_gate_review_ko.md) | 둘 다 | **plan(미구현)** | 노출 중 이동 프레임 솔브 게이트 미배선 검토(협의 대기). |
 | [auto_exposure_methods](mf_auto_exposure_methods_ko.md) | 둘 다 | **조사(완료)** | 자동 노출·게인 제어 방법 조사 — 현행 매치 수 기반의 문제(P1~P7)와 대안(검출 별 수 서보 등) 비교, 권고 초안. |
-| [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **구현 완료(접근법 재검토 중)** | 검출 별 수 컨트롤러 설계+구현 — 기존 기능 유지, Camera Exp 메뉴 "Star"(`camera_exp=auto_star`)로 선택. ADR 0020/0022. |
+| [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **구현 완료(접근법 재검토 중)** | 검출 별 수 컨트롤러 설계+구현 — 기존 기능 유지, Camera Exp 메뉴 "Star"(`camera_exp=auto_star`)로 선택. ADR m0020/m0022. |
 | [auto_exposure_field_review_20260726](mf_auto_exposure_field_review_20260726_ko.md) | ko | **방향 확정(최종 방안 코퍼스 대기)** | 서울 광해 현장 검증 — 병목은 검출 감도. B+C(비크롭 12-bit+SEP) 채택, 야간 검증 요약(§7). |
 | [sep_fullframe_impl](mf_sep_fullframe_impl_ko.md) | ko | **통합 관리 지점(1차 튜닝 확정)** | 광해 솔빙 보강 통합 문서(자동 노출+SEP) — 검출·폴백·하이브리드 정렬·웜픽셀 마스크·형태/클러스터 게이트·σ 튜닝·야간 실측(정확도 11–16″)·판정 현황. |
 | [cedar_sep_hybrid_solve_20260728](mf_cedar_sep_hybrid_solve_20260728_ko.md) | 둘 다 | **공지** | 커뮤니티 공유용 — cedar+SEP 하이브리드 솔빙 구조 설명과 광해 하늘 실증 요약 ([영문판](mf_cedar_sep_hybrid_solve_20260728_en.md) 포함). |

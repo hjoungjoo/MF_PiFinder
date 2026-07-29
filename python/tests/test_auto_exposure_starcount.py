@@ -106,7 +106,7 @@ class TestExposureStarCountController:
         Under heavy light pollution the servo asks for a shorter exposure than
         anchor/8 on every frame. Pinning it at the boundary forever means the
         deadband is never reached, so the anchor never updates and the
-        controller is stuck (ADR 0021).
+        controller is stuck (ADR m0021).
         """
         controller = ExposureStarCountController(reanchor_after=3)
         # 160/20 = 8 -> raw 30000/8 = 3750, floored by anchor/8 = 50000.
@@ -127,7 +127,7 @@ class TestExposureStarCountController:
         Seoul field data (2026-07-26): the only exposures that solve at all
         yield 9-14 detections -- under target 20 -- and raising exposure from
         there loses stars to sky glow. Without this hold the shortfall walks
-        the servo out of the solving regime every time (ADR 0022).
+        the servo out of the solving regime every time (ADR m0022).
         """
         controller = ExposureStarCountController()
         # 12/20 = 0.6 < deadband_low: would normally raise, but it solved.
@@ -339,7 +339,7 @@ class TestExposureStarCountController:
 
         Returning to the anchor here used to loop forever in the field: guard
         at 1s -> anchor 400ms -> nothing detected -> recovery climbs -> too few
-        stars -> raise to 1s -> guard (ADR 0021).
+        stars -> raise to 1s -> guard (ADR m0021).
         """
         controller = ExposureStarCountController()
         controller.update(20, 300000)  # anchor = 300000

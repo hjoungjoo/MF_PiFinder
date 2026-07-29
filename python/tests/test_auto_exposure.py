@@ -31,7 +31,7 @@ class TestZeroMatchRecovery:
         """The first pass never descends below 200 ms (ADR 0010).
 
         Shorter rungs exist but are only reached after that pass fails
-        (ADR 0021), so a dark-sky recovery still spends no attempts down there.
+        (ADR m0021), so a dark-sky recovery still spends no attempts down there.
         """
         assert RECOVERY_LADDER == [400000, 800000, 1000000, 200000]
         assert min(RECOVERY_LADDER) == 200000
@@ -79,7 +79,7 @@ class TestZeroMatchRecovery:
 
         Under heavy light pollution the working exposure can be below the
         ladder's 200ms floor, where replaying the long rungs never recovers
-        (ADR 0021).
+        (ADR m0021).
         """
         recovery = ZeroMatchRecovery(trigger_count=1)
 
@@ -117,7 +117,7 @@ class TestZeroMatchRecovery:
         assert recovery._ladder == RECOVERY_LADDER
 
     def test_bright_caller_walks_down_instead_of_climbing(self):
-        """A sky-glow-limited frame inverts the night-time prior (ADR 0021).
+        """A sky-glow-limited frame inverts the night-time prior (ADR m0021).
 
         Only a caller that can see the frame passes this; the match-count
         controller has no brightness signal and keeps climbing.

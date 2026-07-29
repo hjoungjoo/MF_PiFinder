@@ -117,7 +117,7 @@ Control law and defaults follow cedar-server's exposure servo
 - **Division step**: `new = current / (ema/target)` — star count is
   roughly proportional to exposure, so one step converges in a few
   solves. No PID state.
-- **Solve-success hold** (ADR 0022): an attempt that actually solved
+- **Solve-success hold** (ADR m0022): an attempt that actually solved
   learns the current exposure as the anchor and holds, even short of
   target — under heavy light pollution the reachable count tops out
   below 20 and the only exposures that solve sit in a narrow sweet
@@ -141,7 +141,7 @@ Control law and defaults follow cedar-server's exposure servo
   ceiling. Resets to 400 ms (the shipped default) on restart.
 - **Bright-sky guard**: short of stars but center-ROI mean > 240
   (8-bit) → step down (ratcheting a bright ceiling), released with
-  hysteresis when the mean falls under 120 (ADR 0021).
+  hysteresis when the mean falls under 120 (ADR m0021).
 - **Low-star fallback with escape**: 1–3 detected stars → return to
   anchor (transient slew/blockage hypothesis) — but a bright frame
   steps down instead (noise "detections" on a white field are

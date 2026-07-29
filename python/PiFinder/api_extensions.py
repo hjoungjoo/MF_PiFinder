@@ -114,7 +114,7 @@ def _solution_to_dict(sol) -> dict:
         # The star-count controller's feedback signal. Exposed because
         # "Matches 0" alone cannot tell a too-dark frame from a sky full of
         # detections tetra3 could not match -- which is exactly the difference
-        # that decides what auto-exposure does next (ADR 0020/0021).
+        # that decides what auto-exposure does next (ADR m0020/m0021).
         "Centroids": diag.Centroids,
         "RMSE": diag.RMSE,
         "Prob": diag.Prob,
