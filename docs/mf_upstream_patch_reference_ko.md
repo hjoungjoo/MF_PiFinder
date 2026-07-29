@@ -68,6 +68,18 @@
     `test_solver_cedar_client.py`는 라이브 solver의 실제 세그먼트를 건드리지
     않도록 테스트 전용 shmem 이름을 쓰게 수정해서 가져옴. 개발 기기에는
     drop-in을 즉시 적용하고 마이그레이션 마커를 남김
+  - 위치 입력 comma/period decimal (#536, `447aec8b`) — **수동 이식으로 적용
+    완료 (2026-07-29)**. `parse_coordinate()` 서버 헬퍼, location 입력
+    type=text inputmode=decimal 전환, JS `normalizeDecimal()` 정규화.
+    MF location catalog 마크업과의 충돌만 수동 해소, 변경 내용 자체는 동일.
+    두 스타일시트 모두 `input[type=text]`를 스타일링하므로 Red Night 테마
+    영향 없음. `test_server_coordinates.py` 동봉
+  - SSD1333 3축 밝기 (`a132bc36`) — **적용 완료 (2026-07-29)**. gray scale
+    ceiling을 3번째 밝기 축으로 추가, dim floor 13400:1 범위. `displays.py`
+    충돌 해소: import 병합 + MF의 `__init__(bus_speed_hz)` 시그니처(Pi5 SPI
+    `display_spi()` 헬퍼) 유지. upstream ADR `0023-ssd1333-brightness`는 새
+    번호 규칙(숫자=upstream)에 따라 그대로 수용. 밝기 매핑 단조성/레지스터
+    범위는 fake device 시뮬레이션으로 확인, 실제 SSD1333 패널 실측은 미실시
 - 충돌로 보류 (수동 병합 필요, 다음 라운드 대상):
   - SQM 스택 (#532 `b5b16883`, #544 `69fe28c2`, #542 `b36cb8c6`,
     #543 `5ef6a1b2`) — solver/camera/sqm 대규모 개편이 MF cedar+SEP hybrid,
@@ -75,10 +87,6 @@
   - Focus raw multi-star 뷰 (#531, `70e243b9`) — MF가 수정한 `ui/preview.py`와 충돌
   - quick start focus 문서 (#546, `e9cbfe52`) — #531의 새 focus 화면을 전제로 한
     문구라 #531과 함께 판단
-  - 위치 입력 comma/period decimal (#536, `447aec8b`) — `server.py`,
-    `locations.html`, `location_form.html`이 MF location catalog와 충돌
-  - SSD1333 3축 밝기 (`a132bc36`) — `displays.py` 충돌 + upstream ADR 번호가
-    MF ADR m0023과 충돌 (아래 ADR 번호 분기 참조)
   - keypad matrix 분리 (#551, `a90311e7`) — `keyboard_pi.py` 충돌, rev4 power
     button GPIO 처리가 딸려옴
 - 정책상 제외 (rev4 battery/hardware 제외 정책 유지):
