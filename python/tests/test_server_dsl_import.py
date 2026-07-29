@@ -39,6 +39,9 @@ class FakeConfig:
     def save_equipment(self):
         self.saved = True
 
+    def get_option(self, key, default=None):
+        return default
+
 
 @pytest.fixture
 def import_client(monkeypatch):
