@@ -33,6 +33,10 @@ Raspberry Pi OS Legacy Bullseye를 기준으로 작성되어 있습니다. CM5 B
 - systemd 서비스: `pifinder`, `cedar_detect`, `pifinder_splash` enable 완료
 - CM5 부트 설정: `/boot/firmware/config.txt`에 PiFinder용 SPI/I2C/PWM/UART 설정 추가
 - 원격 SSH 보호를 위해 `dhcpcd`, `dnsmasq`, `hostapd` 자동 시작은 비활성화
+- 부팅은 콘솔 자동로그인(`raspi-config nonint do_boot_behaviour B2`)으로 전환 —
+  헤드리스 상태에서 데스크톱 패널 `wf-panel-pi`가 CPU 한 코어를 상시 점유하는
+  문제 회피. `mf_pifinder_setup.sh`가 자동 적용하며, 데스크톱이 필요하면
+  `do_boot_behaviour B4`로 되돌린다.
 - Bookworm 호환 패치: PiFinder가 `/boot/firmware/config.txt`를 우선 사용하도록
   `PiFinder.boot_config`를 추가하고 카메라 전환/표시 코드를 수정
 - CM5/Pi 5 SPI 호환 패치: `/dev/spidev0.0`가 없고 `/dev/spidev10.0`만 있는

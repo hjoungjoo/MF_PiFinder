@@ -1676,6 +1676,23 @@ LiveCam 페이지에서 설정을 바꾸고 다른 페이지를 보고 돌아오
   `low_percentile` 유지, 장수명 `Config` 리더가 웹 변경 반영, Apply 직후
   카메라가 큐를 비우기 전에도 페이지·config가 새 노출을 보고함.
 
+## 헤드리스 콘솔 부팅 — wf-panel-pi CPU 점유 제거 (2026-07-30)
+
+모니터 없이 운용하는 장비에서 데스크톱 세션의 Wayland 패널(`wf-panel-pi`)이
+디스플레이 미부착 상태에서 렌더링 busy-loop에 빠져 코어 1개를 상시 점유했다
+(실측 CPU 95%+, 부팅 5시간 동안 누적 290분). PiFinder는 데스크톱과 무관한
+systemd 서비스로 동작하므로 데스크톱 부팅 자체를 끈다.
+
+- `mf_pifinder_setup.sh`: "Disable unwanted services" 섹션에 콘솔 자동로그인
+  전환 추가 — `raspi-config nonint do_boot_behaviour B2`(콘솔 자동로그인),
+  `raspi-config`가 없으면 `sudo systemctl set-default multi-user.target` 폴백.
+  재부팅 시점부터 적용된다.
+- 실장비 적용(2026-07-30): 부팅 타겟 `multi-user.target` 전환 후
+  `systemctl isolate multi-user.target`으로 데스크톱 세션 즉시 종료.
+  load average 3.6 → 1.9, `pifinder`/`cedar_detect` 서비스 정상 유지 확인.
+- 데스크톱이 다시 필요하면 `sudo raspi-config nonint do_boot_behaviour B4`
+  (데스크톱 자동로그인)로 되돌린다. VNC 데스크톱을 쓰려는 경우에도 마찬가지.
+
 ## 문서 파일
 
 ### `docs/mf_bookworm_install_ko.md`

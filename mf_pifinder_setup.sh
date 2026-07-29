@@ -263,6 +263,14 @@ sudo systemctl disable dhcpcd dnsmasq hostapd 2>/dev/null || true
 # CUPS printing stack ships enabled on desktop Raspberry Pi OS but is unused by
 # PiFinder; its background daemons compete for CPU and SD-card I/O on the Pi.
 sudo systemctl disable cups cups.socket cups-browsed 2>/dev/null || true
+# Boot to console (with autologin) instead of the desktop: PiFinder runs
+# headless, and the Wayland taskbar (wf-panel-pi) busy-loops near 100% CPU
+# when no monitor is attached. B2 = console autologin (takes effect on reboot).
+if command -v raspi-config >/dev/null 2>&1; then
+    sudo raspi-config nonint do_boot_behaviour B2
+else
+    sudo systemctl set-default multi-user.target
+fi
 
 # Enable service
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/pifinder.service" /lib/systemd/system/pifinder.service
