@@ -48,6 +48,51 @@
     제외한 Rev-4 state.py 변경이 딸려오므로 하지 않음
   - Rev-4 hardware enablement (#498, `e82b809`) — 정책상 제외 유지
 
+2026-07-29 추가 반영 (upstream `534fc809..a132bc36`, 20 commits 검토):
+
+- upstream selected commits applied (clean cherry-pick):
+  - DeepskyLog eyepiece import AttributeError 수정 (#529, `f68de732`) —
+    `server.py` 한 줄 수정 clean 적용. 동봉된 테스트의 FakeConfig에 MF server가
+    읽는 `get_option()`을 보강 (`be252f29`)
+  - Polar Alignment 가이드 field feedback 반영 (#518, `56d428f6`)
+  - filtered list 갱신 유지 + 천체별 observed status 파생 (#528, `d2c566b6`) —
+    catalogs/object_list clean 적용, 관련 테스트(cache/cursor/identity) 통과
+- 충돌로 보류 (수동 병합 필요, 다음 라운드 대상):
+  - **cedar shmem RemoveIPC 복구 (#548, `1afbd3c2`) — 우선순위 높음.**
+    SSH 로그아웃 시 logind가 `/cedar_detect_image` shmem을 삭제해 이후 solve가
+    전부 실패하는 문제. `solver.py`가 MF cedar+SEP hybrid와 충돌하므로 수동 이식
+    필요. `logind.conf.d`의 `RemoveIPC=no` drop-in과 `PFCedarDetectClient`
+    inline fallback 두 부분으로 구성됨
+  - SQM 스택 (#532 `b5b16883`, #544 `69fe28c2`, #542 `b36cb8c6`,
+    #543 `5ef6a1b2`) — solver/camera/sqm 대규모 개편이 MF cedar+SEP hybrid,
+    auto exposure 작업과 광범위 충돌. 기능 단위 검토 필요
+  - Focus raw multi-star 뷰 (#531, `70e243b9`) — MF가 수정한 `ui/preview.py`와 충돌
+  - quick start focus 문서 (#546, `e9cbfe52`) — #531의 새 focus 화면을 전제로 한
+    문구라 #531과 함께 판단
+  - 위치 입력 comma/period decimal (#536, `447aec8b`) — `server.py`,
+    `locations.html`, `location_form.html`이 MF location catalog와 충돌
+  - SSD1333 3축 밝기 (`a132bc36`) — `displays.py` 충돌 + upstream ADR 번호가
+    MF ADR 0023과 충돌 (아래 ADR 번호 분기 참조)
+  - keypad matrix 분리 (#551, `a90311e7`) — `keyboard_pi.py` 충돌, rev4 power
+    button GPIO 처리가 딸려옴
+- 정책상 제외 (rev4 battery/hardware 제외 정책 유지):
+  - battery ADR/CONTEXT 문서 (`cb79a5bd`, `08da007d`) — `docs/ax/battery/` 자체가
+    MF에 없음
+  - low-battery UX (#541 `46e658b4`), warning latch (#549 `afcb80ad`) —
+    `battery_bq25895.py` 미포함
+  - bringup 벤치 검증 (#552 `81a522fe`, 문서 #550 `28f52a5a`) — `keypad`,
+    `battery_bq25895`, `sound` 모듈 의존
+  - rev4 rename (#539 `0edff3bb`) — rev4 enablement 미적용 상태에서 rename만
+    가져오면 diff만 커짐
+
+ADR 번호 분기 주의:
+
+- upstream과 MF가 각자 ADR을 추가하면서 번호가 갈라졌다 (upstream 0020=SOC
+  runtime fraction, 0021=blind-floor shutdown, 0023=SSD1333 brightness vs
+  MF 0020=star-count controller, 0021=auto-exposure, 0023=cedar+SEP hybrid).
+- upstream ADR을 가져올 때는 그대로 체리픽하지 말고 MF 번호 체계에 맞춰
+  번호를 다시 붙여야 한다.
+
 주의:
 
 - 이 문서는 전체 변경 히스토리 문서가 아니다.
