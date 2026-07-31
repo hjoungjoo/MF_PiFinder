@@ -163,7 +163,8 @@ upstream 경로 그대로 사용**한다. mono full-res 경로 전환은 보정�
   확인 완료**, 마이그레이션 불요. 이식 후 위저드 1회 실행 필요.
 - upstream `ui/sqm_calibration.py`/신규 모듈의 `datetime.now()` 잔재 → ADR
   0018 위반이므로 이식 시 `timez` 치환 일괄 확인.
-- ADR `0020-sqm-raw-green-photometry-redesign`, `0022-sqm-radiometer-first`는
+- ADR `0024-sqm-raw-green-photometry-redesign`(업스트림 0020 충돌 정리로 개명,
+  2026-08-04), `0022-sqm-radiometer-first`는
   숫자 그대로 수용(숫자=upstream 규칙). `docs/ax/sqm*`, `docs/ax/camera*`
   변경은 우리 문서와 병합.
 - 스테디스테이트 로깅 DEBUG 정책(`c0ca4dcc`) — upstream 신규 info 로그 중
