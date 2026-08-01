@@ -64,6 +64,7 @@ Last updated: 2026-07-25. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | [solve_motion_gate_review](mf_solve_motion_gate_review_en.md) | both | **plan (unbuilt)** | Unwired solve gate for frames exposed during motion (pending decision). |
 | [auto_exposure_methods](mf_auto_exposure_methods_en.md) | both | **survey (done)** | Survey of auto exposure/gain control methods — problems of the current match-count approach (P1–P7), alternatives (detected-star-count servo etc.), draft recommendation. |
 | [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **implemented (field validation pending)** | Detected-star-count controller design+implementation — existing behavior kept, selected via the Camera Exp menu's "Star" item (`camera_exp=auto_star`). ADR m0020. |
+| [solver_3path_bench_20260801](mf_solver_3path_bench_20260801_en.md) | both | **one-time measurement** (2026-08-01) | Bright-sky (87% background) same-frame bench of three solver paths — cedar crop 0% / cedar full-frame σ8 18% / hybrid 88% (live 89.5%), accuracy 1σ ~1′ (reconfirms ADR m0023). |
 | [gps_aiding_plan](mf_gps_aiding_plan_en.md) | both | **plan (pre-impl)** | u-blox GPS aiding (MGA-INI/DBD) design draft. |
 
 ## Meta · history · process
