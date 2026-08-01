@@ -13,9 +13,11 @@ production cedar-detect path in a single field session:
 * **Fallback** (opt-in on top of shadow data): when the production
   solve fails and SEP found enough stars, attempt a real solve from the
   SEP centroids in the rotated full frame -- the solution feeds the
-  normal pointing chain, so tracking works from it. Guarded so an
-  in-progress alignment never runs through this path (its y/x_target
-  would be in full-frame space).
+  normal pointing chain, so tracking works from it. Hybrid alignment:
+  an in-progress alignment also runs through this path when cedar
+  fails; the returned y/x_target is mapped back into rotated-512 space
+  (solver_frame_map.map_frame_pixel_to_target), so the normal alignment
+  chain consumes it unchanged.
 
 All entry points are defensive: any exception is logged and swallowed,
 so the experiment can never take down the production solver.
