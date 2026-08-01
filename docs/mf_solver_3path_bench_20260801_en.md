@@ -106,6 +106,40 @@ cedar 1920 34 ms). Relative comparison between paths remains valid.
   drowns warm pixels below σ4 (same as the twilight observation in
   §6.5; working as designed).
 
+### 3.4 Follow-up — path-B preprocessing variant: raw fed directly (added 2026-08-01)
+
+Answers "what if the RAW image goes straight into full-frame cedar?"
+First, the premise: **no variant involves debayering** — the imx462 is
+mono in practice (§6.4) and the solve chain is luminance-only
+throughout, so the original path B already fed the raw mosaic without
+debayering. The comparison is therefore about preprocessing. cedar's
+gRPC `Image` is 8-bit only, so "direct" is defined as truncation to the
+upper 8 bits (>>4):
+
+- **B1** (the report's path B): production stretch, (raw − 238) × 255/3857
+- **B2** (raw direct): raw >> 4 — no bias subtraction, no stretch
+
+Re-run on the same 50 frames (same exposure per row):
+
+| Metric | B1 stretch | B2 raw direct |
+| --- | --- | --- |
+| Solve rate | 18% (9/50) | **18% (9/50)** |
+| Detections med (in-crop) | 5 (1) | 5 (1) — **per-frame detection delta med/p10/p90 all 0** |
+| Matches med / purity | 8 / 89% | 8 / 89% |
+| RMSE med | 90″ | 92″ |
+| Detection time med | 72 ms | 66 ms (within contention noise) |
+| Same-frame solve overlap | 8 common, 1 B1-only, 1 B2-only (quantisation jitter on marginal frames) | |
+| Centre disagreement on common solves | med **0.7″** (p90 17″) | |
+
+**Verdict: cedar detection is effectively invariant to affine intensity
+transforms** — its σ threshold is relative to its own noise estimate, so
+bias subtraction/stretch neither helps nor hurts detection or solving.
+The full-frame cedar bottleneck is **physical SNR** (bright background),
+not preprocessing; the practical takeaway is only that the full-frame
+path could skip preprocessing CPU (the stretch runs in the camera
+process for the crop path regardless). Scripts: `bench_b_variants.py` /
+`aggregate_b.py`, results `bench_b_variants.jsonl`.
+
 ## 4. Verdict
 
 1. **ADR m0023 (hybrid always-on) reconfirmed**: under the target
