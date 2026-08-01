@@ -27,7 +27,7 @@
 
 | 문서 | ko/en | 상태 | 요약 |
 |---|---|---|---|
-| [cedar_sep_hybrid_design](mf_cedar_sep_hybrid_design_ko.md) | ko | living ★ | cedar+SEP 하이브리드 솔빙 **설계 정본** — 프레임 공간/좌표 정합, 검출 게이트 6종, 웜픽셀 맵, 폴백·백오프 정책, 하이브리드 정렬, AE 연동, 방어선. 결정 근거는 ADR m0023, 실측 이력은 sep_fullframe_impl. |
+| [cedar_sep_hybrid_design](mf_cedar_sep_hybrid_design_ko.md) | 둘 다 | living ★ | cedar+SEP 하이브리드 솔빙 **설계 정본** — 프레임 공간/좌표 정합, 검출 게이트 6종, 웜픽셀 맵, 폴백·백오프 정책, 하이브리드 정렬, AE 연동, 방어선. 결정 근거는 ADR m0023, 실측 이력은 sep_fullframe_impl. |
 
 ## 카탈로그 · 웹 UI
 

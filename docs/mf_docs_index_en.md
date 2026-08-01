@@ -10,7 +10,7 @@ Status labels: **living** = kept in sync with source / **install** = install &
 ops guide / **plan** = pre- or partial implementation / **one-time** = completed
 analysis/verification record (not maintained).
 
-Last updated: 2026-07-25. The KO version (`mf_docs_index_ko.md`) is authoritative.
+Last updated: 2026-08-02. The KO version (`mf_docs_index_ko.md`) is authoritative.
 
 ## INDI mount — coordinates & pointing (core)
 
@@ -24,6 +24,12 @@ Last updated: 2026-07-25. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | [backlash_measurement_flow](mf_backlash_measurement_flow_en.md) | both | living | Auto-backlash `compass_goto_loop` (**canonical owner**; others summarize + cite). |
 | [mount_mode_compatibility](mf_mount_mode_compatibility_en.md) | both | plan (mostly built) | Alt/Az vs EQ SkySafari compatibility audit/checklist. |
 | [indi_mount_install](mf_indi_mount_install_en.md) | both | install | INDI mount install/usage guide. |
+
+## Solving (core)
+
+| Doc | ko/en | Status | Summary |
+|---|---|---|---|
+| [cedar_sep_hybrid_design](mf_cedar_sep_hybrid_design_en.md) | both | living ★ | **Design authority** for cedar+SEP hybrid solving — frame spaces / coordinate mapping, the six detection gates, warm-pixel map, fallback & backoff policy, hybrid alignment, AE coupling, defence layers. Decision rationale: ADR m0023; measurement history: sep_fullframe_impl (ko). |
 
 ## Catalog · web UI
 
@@ -90,3 +96,4 @@ first when editing).
 | Multi-Point Align detail | multipoint_align_flow | mountcontrol_indi_flow, indi_mount_install |
 | Backlash measurement detail | backlash_measurement_flow | mountcontrol_indi_flow, indi_mount_install |
 | Location/Time sync convention (`:SG` sign, PyIndi full-vector) | goto_mount_source_structure | indi_mount_install, mountcontrol_indi_flow, coordinate_helper_plan (auto-resync only is unique) |
+| cedar+SEP hybrid solving design | cedar_sep_hybrid_design | sep_fullframe_impl (history/measurements, ko), cedar_sep_hybrid_solve_20260728 (post), solver_3path_bench_20260801 (one-time bench) |

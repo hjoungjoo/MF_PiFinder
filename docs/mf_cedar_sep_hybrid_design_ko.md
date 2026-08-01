@@ -3,6 +3,7 @@
 > 상태: **living(설계 정본)** — 코드가 바뀌면 이 문서를 함께 갱신한다.
 > 코드 기준일: 2026-08-02 (`solver.py` / `sep_detect.py` / `sep_shadow.py` /
 > `solver_frame_map.py` / `sep_warm_map.py`).
+> English version: [mf_cedar_sep_hybrid_design_en.md](mf_cedar_sep_hybrid_design_en.md)
 >
 > **문서 지형** — 이 주제는 문서 4종이 역할을 나눈다:
 > - **이 문서**: 현재 설계의 정규 기술(무엇이 어떻게 동작하는가). 유일한
@@ -40,6 +41,51 @@
 
 2계층 폴백 하이브리드. cedar가 우선하고, 실패한 그 시도에서 SEP이 같은
 노출의 12-bit 비크롭 원본으로 이어받는다.
+
+**블록 다이어그램** — 컴포넌트·데이터 채널 관점:
+
+```mermaid
+flowchart TB
+    subgraph camproc["카메라 프로세스 (camera_interface / camera_pi)"]
+        raw["RAW 캡처<br/>uint16 · 12-bit · 비크롭"]
+        prod["프로덕션 파이프라인 (무변경)<br/>크롭 980² → 8-bit 스트레치 → 512² → 회전"]
+    end
+    subgraph shared["SharedState (프로세스 공유)"]
+        ci["camera_image<br/>(512², 8-bit)"]
+        sr["solver_raw<br/>{frame, ts, exposure, gain}"]
+        tp["target_pixel<br/>(정렬점, 512 공간 영속)"]
+        ov["sep_overlay"]
+    end
+    subgraph solver["솔버 프로세스 (solver.py)"]
+        cedar["1차: PFCedarDetectClient<br/>cedar-detect σ8 (gRPC/shmem)"]
+        subgraph runner["SepShadowRunner (sep_shadow.py)"]
+            det["sep_detect (σ4.0)<br/>bin2x2 → 메시 배경 → 게이트 6종"]
+            gate["폴백 게이트<br/>SEP ≥ 5 ∧ 백오프 통과"]
+            sfm["solver_frame_map<br/>stage-5 회전 + 중심-스케일 매핑"]
+        end
+        t3["tetra3<br/>solve_from_centroids"]
+    end
+    wpm[("sep_warm_pixels.npy<br/>웜픽셀 맵 (영속)")]
+    cfg[("config<br/>solver_sep_fallback / σ / shadow")]
+    raw --> prod --> ci --> cedar -->|"센트로이드 (512 공간)"| t3
+    raw -->|"경로 스위치 on일 때만 발행"| sr --> det
+    wpm --> det
+    cfg --> runner
+    det --> gate
+    gate -->|"cedar 솔브 실패 시"| sfm -->|"센트로이드·정렬점·FOV<br/>(회전된 풀프레임 공간)"| t3
+    tp --> sfm
+    t3 --> res["SolveResult<br/>(경로 불투명 — 하류 무변경)"]
+    res --> integ["integrator<br/>→ 추적·푸시투 체인"]
+    res --> align["AlignedResult<br/>→ 정렬 체인 (target_pixel 갱신)"]
+    runner --> ov --> web["웹 LiveCam 오버레이<br/>초록=확정 / 주황=후보"]
+    runner --> csv["섀도 CSV<br/>(tmpfs, opt-in)"]
+```
+
+`target_pixel`은 프로덕션 솔브에는 그대로, SEP 솔브에는 `solver_frame_map`
+매핑을 거쳐 들어가고, 정렬 갱신은 두 경로 모두 `AlignedResult`를 통해서만
+이뤄진다(§8).
+
+**시도별 데이터 흐름**:
 
 ```
 카메라 프로세스 (camera_interface / camera_pi)
