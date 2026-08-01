@@ -11,6 +11,10 @@
 > 상태: **아키텍처 확정 — [ADR m0023](adr/m0023-cedar-sep-hybrid-solving.md)으로
 > 승격, 본 문서는 구현 기록으로 유지** (2026-07-29). 잔여 검증은 운영
 > 항목(실망원경 정렬 정밀도, 웜픽셀 맵 재생성 주기)만.
+> **설계 정본은 [mf_cedar_sep_hybrid_design_ko.md](mf_cedar_sep_hybrid_design_ko.md)**
+> (2026-08-02 신설) — 현재 동작의 권위 서술은 그쪽, 이 문서는 튜닝 경위·실측
+> 원자료의 출처로 참조한다. 본문 §2·§3의 스냅숏 수치(폴백 게이트 8 등)는
+> 작성 시점 값이며 이후 판정으로 갱신된 최종값은 설계 문서를 따른다.
 > 관련: [docs/ax/camera.md](ax/camera.md) §3b/§6b (노출 제어 아키텍처의 정규
 > 소유자), [ADR m0020](adr/m0020-star-count-controller-opt-in.md),
 > [ADR m0022](adr/m0022-solve-success-holds-star-count-exposure.md)

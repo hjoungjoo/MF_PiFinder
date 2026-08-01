@@ -8,7 +8,7 @@
 상태 라벨: **living** = 소스에 맞춰 계속 갱신 / **install** = 설치·운영 가이드 /
 **plan** = 구현 전/부분 구현 계획 / **1회성** = 완료된 분석·검증 기록(유지 대상 아님).
 
-최종 갱신: 2026-07-25.
+최종 갱신: 2026-08-02.
 
 ## INDI 마운트 — 좌표·포인팅 (핵심)
 
@@ -22,6 +22,12 @@
 | [backlash_measurement_flow](mf_backlash_measurement_flow_ko.md) | 둘 다 | living | 자동 백래시 측정 `compass_goto_loop`(**정규 소유자**; 타 문서는 요약+참조). |
 | [mount_mode_compatibility](mf_mount_mode_compatibility_ko.md) | 둘 다 | plan(대부분 구현) | Alt/Az vs EQ SkySafari 호환성 감사·체크리스트. |
 | [indi_mount_install](mf_indi_mount_install_ko.md) | 둘 다 | install | INDI 마운트 설치·사용 가이드. |
+
+## 솔빙 (핵심)
+
+| 문서 | ko/en | 상태 | 요약 |
+|---|---|---|---|
+| [cedar_sep_hybrid_design](mf_cedar_sep_hybrid_design_ko.md) | ko | living ★ | cedar+SEP 하이브리드 솔빙 **설계 정본** — 프레임 공간/좌표 정합, 검출 게이트 6종, 웜픽셀 맵, 폴백·백오프 정책, 하이브리드 정렬, AE 연동, 방어선. 결정 근거는 ADR m0023, 실측 이력은 sep_fullframe_impl. |
 
 ## 카탈로그 · 웹 UI
 
@@ -63,7 +69,7 @@
 | [auto_exposure_methods](mf_auto_exposure_methods_ko.md) | 둘 다 | **조사(완료)** | 자동 노출·게인 제어 방법 조사 — 현행 매치 수 기반의 문제(P1~P7)와 대안(검출 별 수 서보 등) 비교, 권고 초안. |
 | [auto_exposure_plan](mf_auto_exposure_plan_ko.md) | ko | **구현 완료(접근법 재검토 중)** | 검출 별 수 컨트롤러 설계+구현 — 기존 기능 유지, Camera Exp 메뉴 "Star"(`camera_exp=auto_star`)로 선택. ADR m0020/m0022. |
 | [auto_exposure_field_review_20260726](mf_auto_exposure_field_review_20260726_ko.md) | ko | **방향 확정(최종 방안 코퍼스 대기)** | 서울 광해 현장 검증 — 병목은 검출 감도. B+C(비크롭 12-bit+SEP) 채택, 야간 검증 요약(§7). |
-| [sep_fullframe_impl](mf_sep_fullframe_impl_ko.md) | ko | **통합 관리 지점(1차 튜닝 확정)** | 광해 솔빙 보강 통합 문서(자동 노출+SEP) — 검출·폴백·하이브리드 정렬·웜픽셀 마스크·형태/클러스터 게이트·σ 튜닝·야간 실측(정확도 11–16″)·판정 현황. |
+| [sep_fullframe_impl](mf_sep_fullframe_impl_ko.md) | ko | **구현 기록(이력)** | 광해 솔빙 보강의 구현·튜닝·야간 실측 원자료(자동 노출+SEP). 설계 정본은 [cedar_sep_hybrid_design](mf_cedar_sep_hybrid_design_ko.md)으로 이관(2026-08-02). |
 | [cedar_sep_hybrid_solve_20260728](mf_cedar_sep_hybrid_solve_20260728_ko.md) | 둘 다 | **공지** | 커뮤니티 공유용 — cedar+SEP 하이브리드 솔빙 구조 설명과 광해 하늘 실증 요약 ([영문판](mf_cedar_sep_hybrid_solve_20260728_en.md) 포함). |
 | [solver_3path_bench_20260801](mf_solver_3path_bench_20260801_ko.md) | 둘 다 | **1회성 실측**(2026-08-01) | 밝은 하늘(배경 87%) 동일 프레임 3경로 벤치 — cedar 크롭 0% / cedar 풀프레임 σ8 18% / 하이브리드 88%(라이브 89.5%), 정확도 1σ ~1′ (ADR m0023 재확인). |
 | [gps_aiding_plan](mf_gps_aiding_plan_ko.md) | 둘 다 | **plan(구현 전)** | u-blox GPS aiding(MGA-INI/DBD) 설계 초안. |
@@ -90,3 +96,4 @@
 | Multi-Point Align 상세 | multipoint_align_flow | mountcontrol_indi_flow, indi_mount_install |
 | Backlash 측정 상세 | backlash_measurement_flow | mountcontrol_indi_flow, indi_mount_install |
 | Location/Time sync 규약(`:SG` 부호, PyIndi full-vector) | goto_mount_source_structure | indi_mount_install, mountcontrol_indi_flow, coordinate_helper_plan(자동 재sync만 고유) |
+| cedar+SEP 하이브리드 솔빙 설계 | cedar_sep_hybrid_design | sep_fullframe_impl(이력·실측), cedar_sep_hybrid_solve_20260728(공지), solver_3path_bench_20260801(1회성 실측) |
