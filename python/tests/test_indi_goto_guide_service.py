@@ -39,7 +39,9 @@ def _make_service(monkeypatch, clock):
     )
     service._pointing = {
         "usable_for_goto": True,
-        "current": {"ra": 100.0, "dec": 22.0},
+        # A fresh plate solve: the recovery goto's sync anchor requires
+        # source=solve / quality=high (solve-anchor gate, 2026-08-03).
+        "current": {"ra": 100.0, "dec": 22.0, "source": "solve", "quality": "high"},
         "imu": {"metadata": {"moving": False}},
     }
     monkeypatch.setattr(service, "_refresh_pointing_status", lambda: service._pointing)
@@ -274,4 +276,48 @@ def test_suspend_lifts_after_manual_move_settles(monkeypatch):
     assert service.tracking_guide_suspended is False
     # Manual re-target is disabled in this config, so after the suspension
     # lifts the 2 deg error goes straight to GoTo recovery.
+    assert service.tracking_guide_state == "recovering_goto"
+
+
+def test_recovery_waits_for_solve_anchor_then_falls_back(monkeypatch):
+    # An IMU-estimate anchor must not start the recovery goto immediately:
+    # the gate holds until a solve arrives or the bounded wait expires,
+    # then falls back so solve-less targets (e.g. the Moon) still recover.
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service._pointing["current"]["source"] = "pifinder_imu_estimate"
+    service._pointing["current"]["quality"] = "medium"
+
+    service._tick_tracking_guide()
+    for _ in range(4):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+
+    assert service.tracking_guide_state == "settling"
+    assert service.tracking_guide_last_action == "recovery waiting for solve anchor"
+    commands = [c["type"] for c in service.mountcontrol_queue.commands]
+    assert "goto_target" not in commands
+
+    # A solve arriving during the wait starts the recovery right away.
+    service._pointing["current"]["source"] = "solve"
+    service._pointing["current"]["quality"] = "high"
+    clock[0] += 1.0
+    service._tick_tracking_guide()
+    assert service.tracking_guide_state == "recovering_goto"
+
+
+def test_recovery_solve_anchor_wait_times_out_to_current(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service._pointing["current"]["source"] = "pifinder_imu_estimate"
+    service._pointing["current"]["quality"] = "medium"
+
+    service._tick_tracking_guide()
+    for _ in range(4):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+    assert service.tracking_guide_state == "settling"
+
+    clock[0] += iggs.PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS + 1.0
+    service._tick_tracking_guide()
     assert service.tracking_guide_state == "recovering_goto"

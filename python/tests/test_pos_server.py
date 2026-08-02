@@ -599,6 +599,33 @@ def test_skysafari_ms_command_triggers_indi_goto(monkeypatch):
 
 
 @pytest.mark.unit
+def test_skysafari_negative_zero_degree_dec_keeps_sign(monkeypatch):
+    # Regression: int("-00") == 0 dropped the sign, flipping every
+    # -1..0 deg Dec target (e.g. M2 at -00*49:24) to the northern hemisphere.
+    guide_commands = queue.Queue()
+    ui_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", queue.Queue())
+    monkeypatch.setattr(pos_server, "ui_queue", ui_commands, raising=False)
+    monkeypatch.setattr(pos_server, "is_stellarium", True)
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True}),
+    )
+
+    assert pos_server.parse_sr_command(None, ":Sr21:33:27#") == "1"
+    assert pos_server.parse_sd_command(DummyState(None), ":Sd-00*49:24#") == "1"
+    assert pos_server.handle_slew_command(DummyState(None), ":MS#") == "0"
+    command = guide_commands.get_nowait()
+    assert command["type"] == "goto_target"
+    assert command["ra"] == pytest.approx(323.3625)
+    assert command["dec"] == pytest.approx(-0.82333333)
+
+
+@pytest.mark.unit
 def test_skysafari_ms_command_does_not_push_ui_during_multipoint_align(monkeypatch):
     commands = queue.Queue()
     ui_commands = queue.Queue()
