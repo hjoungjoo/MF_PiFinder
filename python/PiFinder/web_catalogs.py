@@ -843,6 +843,26 @@ def register_catalog_routes(app, server_instance):
             }
         )
 
+    @app.route("/catalogs/api/stop", methods=["POST"])
+    def catalogs_api_stop():
+        """Stop an in-flight GoTo/slew. Mirrors the SkySafari :Q# routing:
+        the GoTo/Guide service cancels its slew + refinement loop and clears
+        the tracking target; mount control aborts the motion itself."""
+        if not _auth_ok():
+            return _json_response({"error": "Unauthorized"}, 401)
+
+        goto_guide_queue = getattr(server_instance, "goto_guide_queue", None)
+        mountcontrol_queue = getattr(server_instance, "mountcontrol_queue", None)
+        if goto_guide_queue is None and mountcontrol_queue is None:
+            return _json_response({"error": "Mount control unavailable"}, 503)
+
+        if goto_guide_queue is not None:
+            goto_guide_queue.put({"type": "stop_movement"})
+        if mountcontrol_queue is not None:
+            mountcontrol_queue.put({"type": "stop_movement"})
+        logger.info("Web catalog stop requested")
+        return _json_response({"success": True})
+
     # ──────────────────────────────────────────────────────────────
     # Live planet catalog (PL)
     # ──────────────────────────────────────────────────────────────

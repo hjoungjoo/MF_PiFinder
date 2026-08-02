@@ -319,4 +319,32 @@ function pfcatInitObject() {
         result.textContent = "Push failed";
       });
   });
+
+  const stopBtn = document.getElementById("pfcat-stop");
+  if (stopBtn) {
+    stopBtn.addEventListener("click", () => {
+      stopBtn.disabled = true;
+      result.textContent = "…";
+      fetch("/catalogs/api/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      })
+        .then((r) => r.json().then((data) => ({ ok: r.ok, status: r.status, data: data })))
+        .then(({ ok, status, data }) => {
+          stopBtn.disabled = false;
+          if (ok && data.success) {
+            result.textContent = "GoTo stopped";
+          } else if (status === 401) {
+            result.innerHTML = 'Login required — <a href="/login">log in</a>';
+          } else {
+            result.textContent = data.error || "Stop failed";
+          }
+        })
+        .catch(() => {
+          stopBtn.disabled = false;
+          result.textContent = "Stop failed";
+        });
+    });
+  }
 }

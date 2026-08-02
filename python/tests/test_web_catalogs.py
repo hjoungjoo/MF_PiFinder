@@ -259,6 +259,27 @@ def test_planet_catalog_listing(web_app):
 
 
 @pytest.mark.unit
+def test_stop_requires_auth(web_app):
+    app, _server = web_app
+    client = app.test_client()
+    response = client.post("/catalogs/api/stop", json={})
+    assert response.status_code == 401
+
+
+@pytest.mark.unit
+def test_stop_queues_stop_movement(web_app):
+    app, server = web_app
+    client = _login(app.test_client())
+    response = client.post("/catalogs/api/stop", json={})
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    # Mirrors the SkySafari :Q# routing: the GoTo/Guide service cancels its
+    # slew + refinement loop, mount control aborts the motion itself.
+    assert server.goto_guide_queue.get_nowait() == {"type": "stop_movement"}
+    assert server.mountcontrol_queue.get_nowait() == {"type": "stop_movement"}
+
+
+@pytest.mark.unit
 def test_planet_detail_and_push(web_app):
     app, server = web_app
     client = _login(app.test_client())
