@@ -1271,7 +1271,12 @@ def parse_sd_command(shared_state, input_str: str):
     logger.debug("Parsing sd command, match: %s, sr_result: %s", match, sr_result)
     if match and sr_result:
         sign = -1 if match.group(1) == "-" else 1
-        sd_result = (sign, int(match.group(2)), int(match.group(3)), int(match.group(4)))
+        sd_result = (
+            sign,
+            int(match.group(2)),
+            int(match.group(3)),
+            int(match.group(4)),
+        )
         return "1"
     else:
         return "0"

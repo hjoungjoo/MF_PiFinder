@@ -720,15 +720,10 @@ class IndiGotoGuideService:
             return
 
         current = pointing.get("current") or {}
-        if not (
-            current.get("source") == "solve" and current.get("quality") == "high"
-        ):
+        if not (current.get("source") == "solve" and current.get("quality") == "high"):
             if self.solve_anchor_wait_since == 0.0:
                 self.solve_anchor_wait_since = now
-            if (
-                now - self.solve_anchor_wait_since
-                < PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS
-            ):
+            if now - self.solve_anchor_wait_since < PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS:
                 self.last_action = "waiting for solve anchor"
                 return
             logger.warning(
