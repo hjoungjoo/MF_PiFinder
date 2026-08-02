@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-03 02:11+0900\n"
+"POT-Creation-Date: 2026-08-03 02:21+0900\n"
 "PO-Revision-Date: 2025-02-05 15:00+0800\n"
 "Last-Translator: ClawdPulse\n"
 "Language: zh_CN\n"
@@ -173,7 +173,6 @@ msgstr "高级"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/server.py:374
-#
 msgid "Wi-Fi scan failed"
 msgstr "Wi-Fi 扫描失败"
 
@@ -349,13 +348,11 @@ msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/server.py:1152
-#
 msgid "unknown driver"
 msgstr "未知驱动"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/server.py:1450
-#
 msgid "Backlash must be a number"
 msgstr "回差必须是数字"
 
@@ -6100,11 +6097,24 @@ msgid "Push to PiFinder"
 msgstr "重启PiFinder"
 
 #: views/catalogs/object.html:75
-#
 msgid "Stop GoTo"
 msgstr "停止 GoTo"
 
+# AI-TRANSLATED (claude): needs human review
+#: views/catalogs/object.html:80
+msgid "GoTo"
+msgstr "GoTo"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/catalogs/object.html:82
+msgid "To target"
+msgstr "距目标"
+
 #: views/catalogs/object.html:84
+msgid "Offset"
+msgstr "偏差"
+
+#: views/catalogs/object.html:93
 msgid "Also"
 msgstr ""
 

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-03 02:11+0900\n"
+"POT-Creation-Date: 2026-08-03 02:21+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -5590,11 +5590,22 @@ msgid "Push to PiFinder"
 msgstr "PiFinder 재시작"
 
 #: views/catalogs/object.html:75
-#
 msgid "Stop GoTo"
 msgstr "GoTo 정지"
 
+#: views/catalogs/object.html:80
+msgid "GoTo"
+msgstr "GoTo"
+
+#: views/catalogs/object.html:82
+msgid "To target"
+msgstr "목표까지"
+
 #: views/catalogs/object.html:84
+msgid "Offset"
+msgstr "오차"
+
+#: views/catalogs/object.html:93
 msgid "Also"
 msgstr ""
 

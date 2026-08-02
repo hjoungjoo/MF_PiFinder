@@ -249,6 +249,36 @@ def _mount_status() -> Dict[str, Any]:
         return {}
 
 
+def _goto_guide_status() -> Dict[str, Any]:
+    try:
+        with open(
+            utils.runtime_dir / "indi_goto_guide_status.json", "r", encoding="utf-8"
+        ) as status_in:
+            return json.load(status_in)
+    except (OSError, ValueError):
+        return {}
+
+
+def _pointing_status() -> Dict[str, Any]:
+    try:
+        with open(
+            utils.runtime_dir / "pointing_coordinate_status.json",
+            "r",
+            encoding="utf-8",
+        ) as status_in:
+            return json.load(status_in)
+    except (OSError, ValueError):
+        return {}
+
+
+def _finite(*values) -> Optional[float]:
+    """First value that is a finite number, as float; None otherwise."""
+    for value in values:
+        if isinstance(value, (int, float)) and math.isfinite(value):
+            return float(value)
+    return None
+
+
 def _planet_observation_time(shared_state):
     try:
         dt = shared_state.datetime()
@@ -862,6 +892,67 @@ def register_catalog_routes(app, server_instance):
             mountcontrol_queue.put({"type": "stop_movement"})
         logger.info("Web catalog stop requested")
         return _json_response({"success": True})
+
+    @app.route("/catalogs/api/goto_status")
+    def catalogs_api_goto_status():
+        """Live GoTo progress for the detail-page panel: per-axis angles
+        remaining to the target (RA/Dec and Alt/Az) plus the GoTo/Guide
+        service's phase, attempt counter and measured error."""
+        if not _auth_ok():
+            return _json_response({"error": "Unauthorized"}, 401)
+
+        guide = _goto_guide_status()
+        plan = guide.get("goto_plan") or {}
+        pointing = _pointing_status().get("current") or {}
+
+        target_ra = _finite(guide.get("active_target_ra"), plan.get("target_ra"))
+        target_dec = _finite(guide.get("active_target_dec"), plan.get("target_dec"))
+        current_ra = _finite(pointing.get("ra"))
+        current_dec = _finite(pointing.get("dec"))
+
+        service_state = str(guide.get("service_state") or "")
+        phase = str(guide.get("phase") or "")
+        payload: Dict[str, Any] = {
+            "active": service_state == "running",
+            "state": service_state,
+            "phase": phase,
+            "last_action": guide.get("last_action"),
+            "wait_reason": guide.get("wait_reason"),
+            "attempt": plan.get("goto_attempt"),
+            "max_gotos": plan.get("max_gotos"),
+            "error_arcmin": _finite(plan.get("error_arcmin")),
+            "mount_state": _mount_status().get("state"),
+            "available": None not in (target_ra, target_dec, current_ra, current_dec),
+        }
+        if not payload["available"]:
+            return _json_response(payload)
+
+        def _wrap(delta_deg: float) -> float:
+            return (delta_deg + 180.0) % 360.0 - 180.0
+
+        payload["target"] = {"ra": target_ra, "dec": target_dec}
+        payload["current"] = {
+            "ra": current_ra,
+            "dec": current_dec,
+            "source": pointing.get("source"),
+        }
+        payload["delta"] = {
+            "ra_deg": round(_wrap(target_ra - current_ra), 3),
+            "dec_deg": round(target_dec - current_dec, 3),
+        }
+
+        calculator = _altaz_calculator(server_instance.shared_state)
+        if calculator is not None:
+            try:
+                target_alt, target_az = calculator.radec_to_altaz(target_ra, target_dec)
+                current_alt, current_az = calculator.radec_to_altaz(
+                    current_ra, current_dec
+                )
+                payload["delta"]["az_deg"] = round(_wrap(target_az - current_az), 3)
+                payload["delta"]["alt_deg"] = round(target_alt - current_alt, 3)
+            except Exception:
+                logger.debug("GoTo status alt/az conversion failed", exc_info=True)
+        return _json_response(payload)
 
     # ──────────────────────────────────────────────────────────────
     # Live planet catalog (PL)

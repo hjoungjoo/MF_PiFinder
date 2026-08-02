@@ -286,6 +286,82 @@ function pfcatInitObject() {
 
   const pushBtn = document.getElementById("pfcat-push");
   const result = document.getElementById("pfcat-push-result");
+
+  // GoTo progress panel: per-axis angles remaining + service phase.
+  const gotoPanel = document.getElementById("pfcat-goto-status");
+  const gotoState = document.getElementById("pfcat-goto-state");
+  const gotoDelta = document.getElementById("pfcat-goto-delta");
+  const gotoError = document.getElementById("pfcat-goto-error");
+  let gotoTimer = null;
+
+  function fmtDelta(value, plusDir, minusDir) {
+    if (value === undefined || value === null) return null;
+    const dir = value >= 0 ? plusDir : minusDir;
+    return Math.abs(value).toFixed(2) + "°" + dir;
+  }
+
+  function renderGotoStatus(data) {
+    if (!gotoPanel) return;
+    gotoPanel.style.display = "";
+    let state = data.last_action || data.state || "—";
+    if (data.attempt && data.max_gotos) {
+      state += " (" + data.attempt + "/" + data.max_gotos + ")";
+    }
+    if (data.mount_state === "slewing") {
+      state += " · slewing";
+    }
+    gotoState.textContent = state;
+    if (data.available && data.delta) {
+      const parts = [];
+      const az = fmtDelta(data.delta.az_deg, "→", "←");
+      const alt = fmtDelta(data.delta.alt_deg, "↑", "↓");
+      if (az !== null && alt !== null) parts.push("Az " + az + " · Alt " + alt);
+      const ra = fmtDelta(data.delta.ra_deg, " E", " W");
+      const dec = fmtDelta(data.delta.dec_deg, " N", " S");
+      if (ra !== null && dec !== null) parts.push("RA " + ra + " · Dec " + dec);
+      gotoDelta.textContent = parts.length ? parts.join("  |  ") : "—";
+    } else {
+      gotoDelta.textContent = "—";
+    }
+    if (data.error_arcmin !== undefined && data.error_arcmin !== null) {
+      gotoError.textContent = Number(data.error_arcmin).toFixed(1) + "′";
+    } else {
+      gotoError.textContent = "—";
+    }
+  }
+
+  function pollGotoStatus() {
+    fetch("/catalogs/api/goto_status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return stopGotoPolling();
+        renderGotoStatus(data);
+        if (!data.active) stopGotoPolling();
+      })
+      .catch(() => stopGotoPolling());
+  }
+
+  function startGotoPolling() {
+    if (gotoTimer !== null || !gotoPanel) return;
+    pollGotoStatus();
+    gotoTimer = setInterval(pollGotoStatus, 2000);
+  }
+
+  function stopGotoPolling() {
+    if (gotoTimer !== null) {
+      clearInterval(gotoTimer);
+      gotoTimer = null;
+    }
+  }
+
+  // A GoTo may already be running when the page opens (or after a reload).
+  fetch("/catalogs/api/goto_status")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (data && data.active) startGotoPolling();
+    })
+    .catch(() => {});
+
   pushBtn.addEventListener("click", () => {
     pushBtn.disabled = true;
     result.textContent = "…";
@@ -301,6 +377,7 @@ function pfcatInitObject() {
           let msg = "Pushed " + data.pushed;
           if (data.goto && data.goto.action !== "none") {
             msg += " · GoTo started";
+            startGotoPolling();
           }
           if (data.track_freq && data.track_freq.action === "reset") {
             msg += " · tracking reset to sidereal";
@@ -335,6 +412,8 @@ function pfcatInitObject() {
           stopBtn.disabled = false;
           if (ok && data.success) {
             result.textContent = "GoTo stopped";
+            stopGotoPolling();
+            if (gotoState) gotoState.textContent = "stopped";
           } else if (status === 401) {
             result.innerHTML = 'Login required — <a href="/login">log in</a>';
           } else {

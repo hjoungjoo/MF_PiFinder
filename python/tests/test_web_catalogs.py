@@ -280,6 +280,67 @@ def test_stop_queues_stop_movement(web_app):
 
 
 @pytest.mark.unit
+def test_goto_status_requires_auth(web_app):
+    app, _server = web_app
+    response = app.test_client().get("/catalogs/api/goto_status")
+    assert response.status_code == 401
+
+
+@pytest.mark.unit
+def test_goto_status_reports_progress(web_app, monkeypatch):
+    from PiFinder import web_catalogs
+
+    monkeypatch.setattr(
+        web_catalogs,
+        "_goto_guide_status",
+        lambda: {
+            "service_state": "running",
+            "phase": "pifinder_goto",
+            "last_action": "waiting for INDI GoTo",
+            "active_target_ra": 100.0,
+            "active_target_dec": 20.0,
+            "goto_plan": {"goto_attempt": 2, "max_gotos": 10, "error_arcmin": 120.0},
+        },
+    )
+    monkeypatch.setattr(
+        web_catalogs,
+        "_pointing_status",
+        lambda: {"current": {"ra": 98.0, "dec": 21.0, "source": "solve"}},
+    )
+    monkeypatch.setattr(web_catalogs, "_mount_status", lambda: {"state": "slewing"})
+
+    app, _server = web_app
+    client = _login(app.test_client())
+    response = client.get("/catalogs/api/goto_status")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["active"] is True
+    assert data["available"] is True
+    assert data["attempt"] == 2 and data["max_gotos"] == 10
+    assert data["error_arcmin"] == pytest.approx(120.0)
+    assert data["mount_state"] == "slewing"
+    assert data["delta"]["ra_deg"] == pytest.approx(2.0)
+    assert data["delta"]["dec_deg"] == pytest.approx(-1.0)
+
+
+@pytest.mark.unit
+def test_goto_status_idle_without_target(web_app, monkeypatch):
+    from PiFinder import web_catalogs
+
+    monkeypatch.setattr(
+        web_catalogs, "_goto_guide_status", lambda: {"service_state": "idle"}
+    )
+    monkeypatch.setattr(web_catalogs, "_pointing_status", lambda: {})
+
+    app, _server = web_app
+    client = _login(app.test_client())
+    data = client.get("/catalogs/api/goto_status").get_json()
+    assert data["active"] is False
+    assert data["available"] is False
+    assert "delta" not in data
+
+
+@pytest.mark.unit
 def test_planet_detail_and_push(web_app):
     app, server = web_app
     client = _login(app.test_client())

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-03 02:11+0900\n"
+"POT-Creation-Date: 2026-08-03 02:21+0900\n"
 "PO-Revision-Date: 2025-01-12 18:13+0100\n"
 "Last-Translator: xxxxxx <xxxxx@xxxxx.com>\n"
 "Language: fr_FR\n"
@@ -181,7 +181,6 @@ msgstr "Avancé"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/server.py:374
-#
 msgid "Wi-Fi scan failed"
 msgstr "Échec du scan Wi-Fi"
 
@@ -340,13 +339,11 @@ msgstr ""
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/server.py:1152
-#
 msgid "unknown driver"
 msgstr "Pilote inconnu"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/server.py:1450
-#
 msgid "Backlash must be a number"
 msgstr "Le backlash doit être un nombre"
 
@@ -6070,11 +6067,22 @@ msgid "Push to PiFinder"
 msgstr "Redémarrer PiFinder"
 
 #: views/catalogs/object.html:75
-#
 msgid "Stop GoTo"
 msgstr "Arrêter le GoTo"
 
+#: views/catalogs/object.html:80
+msgid "GoTo"
+msgstr "GoTo"
+
+#: views/catalogs/object.html:82
+msgid "To target"
+msgstr "Vers la cible"
+
 #: views/catalogs/object.html:84
+msgid "Offset"
+msgstr "Écart"
+
+#: views/catalogs/object.html:93
 msgid "Also"
 msgstr ""
 

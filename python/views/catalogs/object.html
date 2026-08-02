@@ -76,6 +76,15 @@
         <span id="pfcat-push-result" class="pfcat-muted"></span>
       </div>
 
+      <div id="pfcat-goto-status" style="display:none">
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('GoTo') }}</div>
+          <div class="pfcat-v" id="pfcat-goto-state">—</div></div>
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('To target') }}</div>
+          <div class="pfcat-v mono" id="pfcat-goto-delta">—</div></div>
+        <div class="pfcat-fact"><div class="pfcat-k">{{ _('Offset') }}</div>
+          <div class="pfcat-v mono" id="pfcat-goto-error">—</div></div>
+      </div>
+
       {% if obj.description %}
       <p class="pfcat-desc">{{ obj.description }}</p>
       {% endif %}
