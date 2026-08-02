@@ -82,6 +82,12 @@ PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
 # Give the pulse-guide fine-alignment stage this long to reach the final accuracy
 # before giving up (mount-control pulses about every 10 s off a fresh solve).
 PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
+# After a GoTo settles, wait up to this long for a high-quality plate-solve
+# coordinate before measuring the arrival error. IMU estimates right after a
+# slew can be degrees off, which poisons both the error measurement and the
+# next sync anchor (observed 2026-08-02: attempt error 127' -> 400' off a
+# medium-quality estimate). On timeout the current coordinate is used as-is.
+PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS = 12.0
 TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 5
 # Once the tracking target sinks below this altitude the guide must never move
 # the mount toward it (overnight targets set below the horizon; a recovery slew
@@ -164,6 +170,9 @@ class IndiGotoGuideService:
         # (config checkboxes untouched); cleared by the next GoTo or once a
         # manual move ends and settles.
         self.tracking_guide_suspended = False
+        # Monotonic timestamp of the first post-settle tick that found no
+        # high-quality solve coordinate; bounds the solve-anchor wait.
+        self.solve_anchor_wait_since = 0.0
         self.last_action = "startup"
         self.pointing_status: dict[str, Any] = {"available": False}
 
@@ -519,6 +528,7 @@ class IndiGotoGuideService:
         self.previous_goto_error_arcmin = self.last_error_arcmin
         self.final_goto_sent_at = time.monotonic()
         self.final_goto_idle_since = 0.0
+        self.solve_anchor_wait_since = 0.0
         self.service_state = "running"
         self.phase = "pifinder_goto"
         self.wait_reason = ""
@@ -708,6 +718,24 @@ class IndiGotoGuideService:
             return
 
         current = pointing.get("current") or {}
+        if not (
+            current.get("source") == "solve" and current.get("quality") == "high"
+        ):
+            if self.solve_anchor_wait_since == 0.0:
+                self.solve_anchor_wait_since = now
+            if (
+                now - self.solve_anchor_wait_since
+                < PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS
+            ):
+                self.last_action = "waiting for solve anchor"
+                return
+            logger.warning(
+                "No solve anchor within %.0fs after GoTo; using %s/%s coordinate",
+                PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS,
+                current.get("source"),
+                current.get("quality"),
+            )
+        self.solve_anchor_wait_since = 0.0
         self.current_ra = self._finite_float(current.get("ra"))
         self.current_dec = self._finite_float(current.get("dec"))
         self.last_error_arcmin = self._angular_error_arcmin(

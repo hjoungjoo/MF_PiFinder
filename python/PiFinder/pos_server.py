@@ -21,7 +21,7 @@ import threading
 from multiprocessing import Queue
 from typing import Any, Optional, Tuple, Union
 from PiFinder import config, gps_time_sync, utils
-from PiFinder.calc_utils import FastAltAz, ra_to_deg, dec_to_deg, sf_utils
+from PiFinder.calc_utils import FastAltAz, ra_to_deg, sf_utils
 from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObject
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.pointing_coordinate_service import PointingCoordinateService
@@ -1087,12 +1087,17 @@ def _align_pifinder_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> b
     return True
 
 
+def _sd_to_deg(parsed) -> float:
+    sign, deg, minutes, seconds = parsed
+    return sign * (deg + minutes / 60 + seconds / 3600)
+
+
 def _target_from_parsed_coordinates() -> Optional[Tuple[float, float]]:
     if not sr_result or not sd_result:
         return None
 
     ra = ra_to_deg(*sr_result)
-    dec = dec_to_deg(*sd_result)
+    dec = _sd_to_deg(sd_result)
     return ra % 360.0, dec
 
 
@@ -1259,11 +1264,14 @@ def parse_sr_command(_, input_str: str):
 
 def parse_sd_command(shared_state, input_str: str):
     global sd_result
-    pattern = r":Sd([-+]?\d{2})\*(\d{2}):(\d{2})#"
-    match = _match_to_hms(pattern, input_str)
+    # Capture the sign separately: int("-00") loses it, which flipped every
+    # -1 deg < Dec < 0 deg target (e.g. M2) to the northern hemisphere.
+    pattern = r":Sd([-+]?)(\d{2})\*(\d{2}):(\d{2})#"
+    match = re.match(pattern, input_str)
     logger.debug("Parsing sd command, match: %s, sr_result: %s", match, sr_result)
     if match and sr_result:
-        sd_result = match
+        sign = -1 if match.group(1) == "-" else 1
+        sd_result = (sign, int(match.group(2)), int(match.group(3)), int(match.group(4)))
         return "1"
     else:
         return "0"
@@ -1328,7 +1336,7 @@ def handle_sync_command(shared_state, _input_str: str):
 def handle_goto_command(shared_state, ra_parsed, dec_parsed):
     global sequence, ui_queue, is_stellarium, last_target_coordinates
     ra = ra_to_deg(*ra_parsed)
-    dec = dec_to_deg(*dec_parsed)
+    dec = _sd_to_deg(dec_parsed)
     target_ra, target_dec = ra % 360.0, dec
     sequence += 1
     last_target_coordinates = (target_ra, target_dec)
