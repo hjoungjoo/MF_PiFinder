@@ -173,6 +173,8 @@ class IndiGotoGuideService:
         # Monotonic timestamp of the first post-settle tick that found no
         # high-quality solve coordinate; bounds the solve-anchor wait.
         self.solve_anchor_wait_since = 0.0
+        # Same bounded wait for the tracking-recovery goto's sync anchor.
+        self.recovery_anchor_wait_since = 0.0
         self.last_action = "startup"
         self.pointing_status: dict[str, Any] = {"available": False}
 
@@ -928,7 +930,9 @@ class IndiGotoGuideService:
             return
 
         # Coordinate and its usability are decided by PointingCoordinateService;
-        # Tracking Guide trusts usable_for_goto and makes no solve/IMU judgment.
+        # Tracking Guide trusts usable_for_goto and makes no solve/IMU judgment,
+        # with one exception: the recovery goto's SYNC anchor requires a fresh
+        # solve (see the goto_threshold branch below).
         pointing = self._refresh_pointing_status()
         current = pointing.get("current") or {}
         current_ra = self._finite_float(current.get("ra"))
@@ -1090,12 +1094,39 @@ class IndiGotoGuideService:
         )
 
         # Large error with recovery enabled: sync mount to current, GoTo target.
+        # The recovery starts with a mount SYNC, so the anchor must be a fresh
+        # plate solve: an IMU estimate here can be degrees off and sends the
+        # recovery slew far from the target (observed 2026-08-03: 13 deg misses
+        # burning all 5 attempts). Same bounded wait as the pifinder GoTo loop.
         if (
             self.tracking_guide_error_arcmin > goto_threshold_arcmin
             and goto_recovery_enabled
         ):
+            if not (
+                current.get("source") == "solve" and current.get("quality") == "high"
+            ):
+                if self.recovery_anchor_wait_since == 0.0:
+                    self.recovery_anchor_wait_since = now
+                if (
+                    now - self.recovery_anchor_wait_since
+                    < PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS
+                ):
+                    self.tracking_guide_state = "settling"
+                    self.tracking_guide_last_action = (
+                        "recovery waiting for solve anchor"
+                    )
+                    return
+                logger.warning(
+                    "No solve anchor within %.0fs before recovery goto; "
+                    "using %s/%s coordinate",
+                    PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS,
+                    current.get("source"),
+                    current.get("quality"),
+                )
+            self.recovery_anchor_wait_since = 0.0
             self._begin_tracking_recovery_goto(current_ra, current_dec)
             return
+        self.recovery_anchor_wait_since = 0.0
 
         # Otherwise pulse-guide fine correction. Within the envelope this closes
         # the error; with recovery Off it is the only tool and pulses slowly
@@ -1311,6 +1342,7 @@ class IndiGotoGuideService:
         self.tracking_guide_last_action = "recovery goto complete"
 
     def _reset_tracking_recovery(self) -> None:
+        self.recovery_anchor_wait_since = 0.0
         self.tracking_motion_ra = None
         self.tracking_motion_dec = None
         self.tracking_last_motion_at = 0.0

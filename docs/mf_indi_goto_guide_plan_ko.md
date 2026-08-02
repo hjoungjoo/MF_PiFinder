@@ -387,6 +387,18 @@ indi_tracking_guide_motion_arcmin = 15.0
 반영, median ~585'), 경통을 놓은 뒤 ~3–4초 후 recovery GoTo를 정확히 한 번만
 발동한 뒤 `enabled`로 복귀. 이전엔 조작 내내 recovery 슬루가 반복됐다.
 
+### 솔브 앵커 게이트 (2026-08-03)
+
+mount SYNC를 동반하는 두 경로(PiFinder GoTo 반복의 각 라운드, 추적 가이드
+recovery GoTo)는 앵커가 IMU 추정이면 수 도(°) 어긋난 sync로 다음 슬루를 크게
+빗나가게 한다(실측: goto 반복 127'→400' 역주행, recovery 13° 미스로 5회 소진).
+두 경로 모두 정착 후 `source=solve`·`quality=high` 좌표를
+`PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS`(12s)까지 기다린 뒤 오차 측정/sync하고,
+타임아웃 시 경고 로그와 함께 기존처럼 현재 좌표로 진행한다(달처럼 솔브가 아예
+안 뜨는 목표에서 IMU-only 수렴을 막지 않기 위한 폴백). pulse 보정은 sub-arcminute
+라 게이트 없이 기존대로 어떤 앵커든 사용한다.
+"Tracking Guide는 solve/IMU를 판단하지 않는다" 원칙(위)의 유일한 예외다.
+
 indi_tracking_guide_goto_recovery_enabled = false | true
   기본값: true (2026-07-19에 false에서 변경)
   외란 후 큰 오차에 대한 sync + GoTo 복구 동작 허용 여부.
