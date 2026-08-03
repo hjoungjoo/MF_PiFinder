@@ -1007,16 +1007,14 @@ def solver(
     cedar_ff_geometry = None  # context dict, resolved lazily
     # Ground-light rejection for the FF path (docs field test 2026-08-04):
     # detection quality gates (edge/saturation/warm/cluster -- the SEP
-    # fallback's filters applied to cedar centroids) and the IMU horizon
-    # mask. Both default on; independently switchable.
+    # fallback's filters applied to cedar centroids, default on) and the
+    # IMU horizon mask (default OFF: the altitude worth masking depends on
+    # the observing site's skyline, so it is an opt-in per location).
     cedar_ff_gates_wanted = _sep_cfg.get_option("solver_cedar_ff_gates")
     cedar_ff_gates_wanted = (
         True if cedar_ff_gates_wanted is None else bool(cedar_ff_gates_wanted)
     )
-    horizon_mask_wanted = _sep_cfg.get_option("solver_horizon_mask")
-    horizon_mask_wanted = (
-        True if horizon_mask_wanted is None else bool(horizon_mask_wanted)
-    )
+    horizon_mask_wanted = bool(_sep_cfg.get_option("solver_horizon_mask"))
     if cedar_fullframe_wanted:
         logger.info(
             "Cedar full-frame primary path enabled (gates=%s, horizon_mask=%s)",

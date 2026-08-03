@@ -24,8 +24,10 @@ with the boresight on +z -- i.e. x right, y up in canvas orientation.
 The small-angle pinhole model is used; at the frame corners (~12 deg
 off-axis) the altitude error stays well under the threshold margin.
 
-Config: ``solver_horizon_mask`` (default on). The mask silently passes
-everything through when the IMU sample is missing or uncalibrated.
+Config: ``solver_horizon_mask`` (default OFF -- the altitude worth
+masking depends on the observing site's skyline, so enable it per
+location). The mask silently passes everything through when the IMU
+sample is missing or uncalibrated.
 """
 
 import logging
