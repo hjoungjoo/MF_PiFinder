@@ -1,8 +1,9 @@
 # cedar + SEP Hybrid Solving — Design Document
 
 > Status: **living (design authority)** — update this document together with
-> the code. Code baseline: 2026-08-02 (`solver.py` / `sep_detect.py` /
-> `sep_shadow.py` / `solver_frame_map.py` / `sep_warm_map.py`).
+> the code. Code baseline: 2026-08-04 (`solver.py` / `sep_detect.py` /
+> `sep_shadow.py` / `solver_frame_map.py` / `sep_warm_map.py` /
+> `horizon_mask.py`).
 > 한국어판(정본): [mf_cedar_sep_hybrid_design_ko.md](mf_cedar_sep_hybrid_design_ko.md)
 > — when the two diverge, the Korean version is authoritative.
 >
@@ -18,6 +19,11 @@
 > - [mf_cedar_sep_hybrid_solve_20260728_en.md](mf_cedar_sep_hybrid_solve_20260728_en.md)
 >   (community post) / [mf_solver_3path_bench_20260801_en.md](mf_solver_3path_bench_20260801_en.md)
 >   (bright-sky bench): summary and one-time measurements.
+> - [mf_cedar_fullframe_primary_plan_ko.md](mf_cedar_fullframe_primary_plan_ko.md)
+>   (switch plan, consumer inventory, decisions) /
+>   [mf_solver_fullframe_field_test_20260803_ko.md](mf_solver_fullframe_field_test_20260803_ko.md)
+>   (field-test report): the cedar full-frame primary track (adopted
+>   2026-08-03; Korean only).
 >
 > The canonical owner of the auto-exposure architecture is
 > [ax/camera.md](ax/camera.md); the pointing chain is
@@ -44,47 +50,62 @@ entire solve load (measured: ADR m0023 table, 3-path bench).
 
 ## 2. Architecture overview
 
-A two-tier fallback hybrid. cedar has priority; when it fails, SEP takes
-over on the *same attempt*, from the 12-bit uncropped original of the same
-exposure.
+A fallback hybrid: cedar has priority; when it fails, SEP takes over on
+the *same attempt*, from the 12-bit uncropped original of the same
+exposure. With `solver_cedar_fullframe`=on (this fork's operating
+configuration, adopted 2026-08-03) the cedar primary also detects on the
+uncropped original (raw>>4) and solves at native FOV; with
+`solver_center_first`=on this becomes a coordinate-level four-tier
+cascade (cedar centre-square -> cedar full -> SEP centre -> SEP full)
+with the SEP detection running concurrently on a worker thread. With
+both flags off the behaviour is byte-identical to the original two-tier
+(cedar-512 -> SEP).
 
 **Block diagram** — components and data channels:
 
 ```mermaid
 flowchart TB
     subgraph camproc["Camera process (camera_interface / camera_pi)"]
-        raw["RAW capture<br/>uint16 · 12-bit · uncropped"]
-        prod["Production pipeline (unchanged)<br/>crop 980² → 8-bit stretch → 512² → rotate"]
+        raw["RAW capture<br/>uint16 - 12-bit - uncropped"]
+        prod["Production pipeline (unchanged)<br/>crop 980^2 -> 8-bit stretch -> 512^2 -> rotate"]
     end
     subgraph shared["SharedState (cross-process)"]
-        ci["camera_image<br/>(512², 8-bit)"]
+        ci["camera_image<br/>(512^2, 8-bit display/align UI)"]
         sr["solver_raw<br/>{frame, ts, exposure, gain}"]
-        tp["target_pixel<br/>(alignment point, persisted in 512 space)"]
+        tp["target_pixel<br/>(alignment point, 512 space)"]
         ov["sep_overlay"]
     end
-    subgraph solver["Solver process (solver.py)"]
-        cedar["Tier 1: PFCedarDetectClient<br/>cedar-detect σ8 (gRPC/shmem)"]
-        subgraph runner["SepShadowRunner (sep_shadow.py)"]
-            det["sep_detect (σ4.0)<br/>bin2x2 → mesh background → 6 gates"]
-            gate["Fallback gate<br/>SEP ≥ 5 ∧ backoff passed"]
-            sfm["solver_frame_map<br/>stage-5 rotation + centre-scale mapping"]
+    subgraph solver["Solver process (solver.py, FF config)"]
+        ced["cedar-detect full-frame<br/>raw>>4 - sigma 8 (shmem auto-grow)"]
+        gates["Detection gates (opt-out)<br/>edge - saturation - warm - cluster<br/>+ IMU horizon mask (opt-in)"]
+        c1["Tier 1: centre-square subset solve<br/>(center_first, 300ms cap)"]
+        c2["Tier 2: full-set solve (300ms cap)"]
+        subgraph runner["SepShadowRunner - detection on a worker thread"]
+            det["sep_detect (sigma 4.0)<br/>bin2x2 -> mesh background -> 6 gates"]
+            gate["Fallback gate<br/>SEP >= 5 and backoff passed"]
         end
-        t3["tetra3<br/>solve_from_centroids"]
+        s3["Tier 3: SEP centre-subset solve"]
+        s4["Tier 4: SEP full solve (1s cap)"]
+        map["solver_frame_map<br/>rotation, scale, target_pixel round-trip<br/>-> unified 512 semantics"]
     end
-    wpm[("sep_warm_pixels.npy<br/>warm-pixel map (persistent)")]
-    cfg[("config<br/>solver_sep_fallback / σ / shadow")]
-    raw --> prod --> ci --> cedar -->|"centroids (512 space)"| t3
-    raw -->|"published only when a path switch is on"| sr --> det
+    wpm[("sep_warm_pixels.npy")]
+    raw --> prod --> ci
+    raw --> sr
+    sr --> ced --> gates --> c1 -->|fail| c2
+    sr --> det
+    wpm --> gates
     wpm --> det
-    cfg --> runner
     det --> gate
-    gate -->|"when the cedar solve failed"| sfm -->|"centroids · alignment point · FOV<br/>(rotated full-frame space)"| t3
-    tp --> sfm
-    t3 --> res["SolveResult<br/>(path-opaque — downstream unchanged)"]
-    res --> integ["integrator<br/>→ tracking / push-to chain"]
-    res --> align["AlignedResult<br/>→ alignment chain (updates target_pixel)"]
-    runner --> ov --> web["Web LiveCam overlay<br/>green=confirmed / orange=candidate"]
-    runner --> csv["Shadow CSV<br/>(tmpfs, opt-in)"]
+    c2 -->|fail| gate --> s3 -->|fail| s4
+    c1 -->|success| map
+    c2 -->|success| map
+    s3 -->|success| map
+    s4 --> map
+    tp --> map
+    map --> res["SolveResult + solve_path<br/>(cedar_ff_center/cedar_ff/sep_center/sep)<br/>path-opaque downstream"]
+    res --> integ["integrator -> tracking / push-to"]
+    res --> align["AlignedResult -> alignment chain"]
+    runner --> ov --> web["Web LiveCam overlay"]
 ```
 
 `target_pixel` enters the production solve as-is and the SEP solve through
@@ -100,22 +121,30 @@ Camera process (camera_interface / camera_pi)
     │    (published only when solver_shadow_detect ∨ solver_sep_fallback; rot90 only)
     └─ crop(980²) → 8-bit stretch → 512² → rotate → camera_image  ← production unchanged
 
-Solver process (solver.py, per attempt)
-  [tier 1] cedar-detect(512², σ8, max_size 10, binned) → tetra3
-        (on cedar connection failure: tetra3.get_centroids_from_image fallback)
-  [always] sep_shadow.detect(solver_raw)          ← every attempt while the runner is active
-        (feeds the overlay candidates, shadow CSV and fallback-gate decision)
-  [tier 2] cedar solve failed ∧ SEP ≥ 5 ∧ backoff passed
-        → sep_shadow.solve() → on success the solution feeds the normal chain
-  [publish] SolveResult (success/failure) → integrator; overlay published once; one CSV row
+Solver process (solver.py, per attempt — FF + center_first configuration)
+  [detect] cedar-detect(solver_raw>>4, σ8, max_size 10, binned, hot)
+        → gates: edge / saturation sample / warm map / cluster (solver_cedar_ff_gates)
+        → IMU horizon mask: drop detections below 5° altitude (solver_horizon_mask, opt-in)
+        ∥ concurrently on a worker thread: sep_shadow.detect(solver_raw)
+        (no fresh solver_raw or cedar connection failure → that attempt uses the 512/tetra3 path)
+  [tier 1] centre-square (min(h,w)²) subset solve — skipped when <4 stars or identical to full set
+  [tier 2] on failure: full-set solve (both tiers native FOV, 300ms cap)
+  [tiers 3-4] on failure ∧ SEP ≥ 5 ∧ backoff passed → join thread,
+        SEP centre subset → SEP full set (sep_shadow.solve, 1s cap)
+  [publish] SolveResult (+ solve_path) → integrator; overlay published once; one CSV row
+        Centroids = post-gate in-crop count (preserves the AE's 512 semantics)
 ```
 
-**Why not three tiers (cedar full-frame)?** On starry frames, full-frame
-cedar matches 3× the 512 path at ~95% purity — but under the target
-condition (bright sky) it reaches 18% vs SEP's 88%, and the two-tier hybrid
-already achieves 95–100% solve rates. Deferred (ADR m0023 §4, reconfirmed by
-the 3-path bench §4). Revisit trigger: a condition where cedar-512 and SEP
-both fail but full-frame cedar would have solved.
+**How the full-frame cedar primary was adopted** (changing ADR m0023's
+"deferred", user-approved 2026-08-03): the deferral was based on running it
+*alone* (18% in bright sky); replacing only the primary while keeping the
+SEP fallback captures the dark-sky gains (3x matches, 95% purity) with no
+regression. Confirmed by the LP ascent-curve field test — cedar-FF solves
+95-99% directly at background <= 62% of full scale, and the solve cliff
+(>= 65-70%) is a physical limit independent of the path (see the field-test
+report). The centre-first cascade is a user design (2026-08-04): the centre
+subset improved RMSE 24 -> 13 arcsec on the dark-sky corpus (offline A/B).
+Default-on plus the ADR revision wait for the formal dark-night A/B.
 
 ## 3. Frame spaces and coordinate mapping (`solver_frame_map.py`)
 
@@ -284,6 +313,18 @@ Rules when feeding a fallback solution into the normal chain:
   and everything downstream cannot distinguish the path (deliberate
   opacity).
 - Any successful solve (either path) resets the backoff via `note_solved()`.
+- **FF cedar solutions follow the same rule**: the matched-* trio is in
+  full-frame coordinates, so it is stripped before SQM but kept aside for
+  the overlay (`attach_canvas_matched` — the same rotated canvas space as
+  SEP matches). `Centroids` publishes the **post-gate in-crop count** to
+  preserve the auto-exposure's 512 semantics.
+- **Timeout caps**: FF cedar tiers 300 ms (`CEDAR_FF_SOLVE_TIMEOUT_MS` —
+  successful solves measure 9-26 ms; failing fast preserves SEP rescue
+  opportunities), SEP fallback 1 s (`FALLBACK_SOLVE_TIMEOUT_MS`; a 500 ms
+  cap was shelved for lack of clean evidence).
+- **`SolveDiagnostics.solve_path`**: cedar_ff_center / cedar_ff /
+  cedar_512 / sep_center / sep / tetra3 — diagnostics only (no downstream
+  branching), exposed in `/api/solution`.
 
 **Availability defence of the cedar tier itself** (independent of the
 hybrid, same loop): on a cedar-detect-server connection failure
@@ -375,12 +416,17 @@ connect over inline gRPC.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `solver_sep_fallback` | **true** | SEP fallback solving (+ triggers `solver_raw` publication) |
+| `solver_cedar_fullframe` | false* | cedar primary on the uncropped raw at native FOV (off = byte-identical 512 path) |
+| `solver_cedar_ff_gates` | **true** | FF detection quality gates (edge / saturation / warm map / cluster) |
+| `solver_horizon_mask` | false | IMU horizon mask (drop detections below 5° altitude) — per-site opt-in |
+| `solver_center_first` | false* | centre-square-first 4-tier cascade + parallel SEP detection |
 | `solver_sep_sigma` | **4.0** | SEP extraction threshold (σ, units of local background RMS) |
 | `solver_shadow_detect` | **false** | Shadow A/B CSV — opt-in for tuning sessions |
 | `camera_auto_dump` | false | Auto stage dump on 10 consecutive solve failures, 3-min cooldown (automatic corpus collection) |
 
-All require a restart. With both solver_* switches off, the camera does not
-publish `solver_raw` at all — zero cost.
+All require a restart. Entries marked * switch to default-on once the
+formal dark-night validation passes (plan doc §5). `solver_raw`
+publication is needed whenever any of shadow / fallback / FF is in use.
 
 Storage policy (maintainer decision 2026-07-28): CSV, app logs and stage
 dumps all on **tmpfs**. Dumps rotate at the 30 most recent sets (~270 MB).
@@ -428,8 +474,9 @@ values only.
 2. **Failed attempts publish `Centroids`=cedar count** — the AE recovery
    ladder depends on cedar blindness (§9). Re-evaluate with long clear-sky
    data.
-3. **Third tier (cedar full-frame) deferred** — revisit trigger stated in
-   §2.
+3. ~~Full-frame cedar deferred~~ → **adopted as the primary** (2026-08-03,
+   §2). Remaining: the formal dark-night offline A/B, then default-on and
+   the ADR m0023 revision.
 4. **shared_memory frame transport deferred** — the bottleneck is detection
    sensitivity, not IPC. Start conditions: field exposures dropping to a
    few hundred ms, or more large-frame consumers (impl §7-6).

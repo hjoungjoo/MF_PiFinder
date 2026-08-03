@@ -1,8 +1,8 @@
 # cedar + SEP 하이브리드 솔빙 — 설계 문서
 
 > 상태: **living(설계 정본)** — 코드가 바뀌면 이 문서를 함께 갱신한다.
-> 코드 기준일: 2026-08-02 (`solver.py` / `sep_detect.py` / `sep_shadow.py` /
-> `solver_frame_map.py` / `sep_warm_map.py`).
+> 코드 기준일: 2026-08-04 (`solver.py` / `sep_detect.py` / `sep_shadow.py` /
+> `solver_frame_map.py` / `sep_warm_map.py` / `horizon_mask.py`).
 > English version: [mf_cedar_sep_hybrid_design_en.md](mf_cedar_sep_hybrid_design_en.md)
 >
 > **문서 지형** — 이 주제는 문서 4종이 역할을 나눈다:
@@ -15,8 +15,10 @@
 > - [mf_cedar_sep_hybrid_solve_20260728_ko.md](mf_cedar_sep_hybrid_solve_20260728_ko.md)
 >   (커뮤니티 공지) / [mf_solver_3path_bench_20260801_ko.md](mf_solver_3path_bench_20260801_ko.md)
 >   (밝은 하늘 벤치): 요약·1회성 실측.
-> - [mf_cedar_fullframe_primary_plan_ko.md](mf_cedar_fullframe_primary_plan_ko.md):
->   cedar 1차 경로 풀프레임 전환 **계획**(2026-08-03, 코드 변경 대기).
+> - [mf_cedar_fullframe_primary_plan_ko.md](mf_cedar_fullframe_primary_plan_ko.md)
+>   (전환 계획·소비처 인벤토리·결정 기록) /
+>   [mf_solver_fullframe_field_test_20260803_ko.md](mf_solver_fullframe_field_test_20260803_ko.md)
+>   (풀프레임 실측 리포트): cedar 풀프레임 1차 전환 트랙(2026-08-03 채택).
 >
 > 자동 노출 아키텍처의 정규 소유자는 [ax/camera.md](ax/camera.md),
 > 포인팅 체인은 [ax/positioning.md](ax/positioning.md). 이 문서는 그 사이의
@@ -41,8 +43,13 @@
 
 ## 2. 아키텍처 개요
 
-2계층 폴백 하이브리드. cedar가 우선하고, 실패한 그 시도에서 SEP이 같은
-노출의 12-bit 비크롭 원본으로 이어받는다.
+폴백 하이브리드: cedar가 우선하고, 실패한 그 시도에서 SEP이 같은 노출의
+12-bit 비크롭 원본으로 이어받는다. `solver_cedar_fullframe`=on(이 포크의
+운용 구성, 2026-08-03 채택)이면 cedar 1차도 비크롭 원본(raw≫4)을 네이티브
+FOV로 솔브하고, `solver_center_first`=on이면 좌표 레벨 4단 캐스케이드
+(cedar-중앙 정사각 → cedar-전체 → SEP-중앙 → SEP-전체)가 되며 SEP 검출은
+cedar 단들과 워커 스레드로 병렬 실행된다. 두 플래그 모두 off면 기존
+2계층(cedar-512 → SEP)과 바이트 동일하다.
 
 **블록 다이어그램** — 컴포넌트·데이터 채널 관점:
 
@@ -53,34 +60,42 @@ flowchart TB
         prod["프로덕션 파이프라인 (무변경)<br/>크롭 980² → 8-bit 스트레치 → 512² → 회전"]
     end
     subgraph shared["SharedState (프로세스 공유)"]
-        ci["camera_image<br/>(512², 8-bit)"]
+        ci["camera_image<br/>(512², 8-bit 표시·정렬 UI)"]
         sr["solver_raw<br/>{frame, ts, exposure, gain}"]
         tp["target_pixel<br/>(정렬점, 512 공간 영속)"]
         ov["sep_overlay"]
     end
-    subgraph solver["솔버 프로세스 (solver.py)"]
-        cedar["1차: PFCedarDetectClient<br/>cedar-detect σ8 (gRPC/shmem)"]
-        subgraph runner["SepShadowRunner (sep_shadow.py)"]
+    subgraph solver["솔버 프로세스 (solver.py, FF 구성)"]
+        ced["cedar-detect 풀프레임<br/>raw≫4 · σ8 (shmem 자동 확장)"]
+        gates["검출 게이트 (opt-out)<br/>엣지·포화·웜픽셀·클러스터<br/>+ IMU 지평선 마스크 (opt-in)"]
+        c1["1단: 중앙 정사각 서브셋 솔브<br/>(center_first, 300ms 캡)"]
+        c2["2단: 전체 좌표 솔브 (300ms 캡)"]
+        subgraph runner["SepShadowRunner — 검출은 병렬 스레드"]
             det["sep_detect (σ4.0)<br/>bin2x2 → 메시 배경 → 게이트 6종"]
             gate["폴백 게이트<br/>SEP ≥ 5 ∧ 백오프 통과"]
-            sfm["solver_frame_map<br/>stage-5 회전 + 중심-스케일 매핑"]
         end
-        t3["tetra3<br/>solve_from_centroids"]
+        s3["3단: SEP 중앙 서브셋 솔브"]
+        s4["4단: SEP 전체 솔브 (1s 캡)"]
+        map["solver_frame_map<br/>회전·스케일·target_pixel 왕복<br/>→ 512 의미 통일"]
     end
-    wpm[("sep_warm_pixels.npy<br/>웜픽셀 맵 (영속)")]
-    cfg[("config<br/>solver_sep_fallback / σ / shadow")]
-    raw --> prod --> ci --> cedar -->|"센트로이드 (512 공간)"| t3
-    raw -->|"경로 스위치 on일 때만 발행"| sr --> det
+    wpm[("sep_warm_pixels.npy")]
+    raw --> prod --> ci
+    raw --> sr
+    sr --> ced --> gates --> c1 -->|실패| c2
+    sr --> det
+    wpm --> gates
     wpm --> det
-    cfg --> runner
     det --> gate
-    gate -->|"cedar 솔브 실패 시"| sfm -->|"센트로이드·정렬점·FOV<br/>(회전된 풀프레임 공간)"| t3
-    tp --> sfm
-    t3 --> res["SolveResult<br/>(경로 불투명 — 하류 무변경)"]
-    res --> integ["integrator<br/>→ 추적·푸시투 체인"]
-    res --> align["AlignedResult<br/>→ 정렬 체인 (target_pixel 갱신)"]
-    runner --> ov --> web["웹 LiveCam 오버레이<br/>초록=확정 / 주황=후보"]
-    runner --> csv["섀도 CSV<br/>(tmpfs, opt-in)"]
+    c2 -->|실패| gate --> s3 -->|실패| s4
+    c1 -->|성공| map
+    c2 -->|성공| map
+    s3 -->|성공| map
+    s4 --> map
+    tp --> map
+    map --> res["SolveResult + solve_path<br/>(cedar_ff_center/cedar_ff/sep_center/sep)<br/>하류는 경로 불투명"]
+    res --> integ["integrator → 추적·푸시투"]
+    res --> align["AlignedResult → 정렬 체인"]
+    runner --> ov --> web["웹 LiveCam 오버레이"]
 ```
 
 `target_pixel`은 프로덕션 솔브에는 그대로, SEP 솔브에는 `solver_frame_map`
@@ -96,21 +111,28 @@ flowchart TB
     │    (solver_shadow_detect ∨ solver_sep_fallback일 때만 발행, rot90만 적용)
     └─ 크롭(980²) → 8-bit 스트레치 → 512² → 회전 → camera_image  ← 프로덕션 무변경
 
-솔버 프로세스 (solver.py, 시도마다)
-  [1차] cedar-detect(512², σ8, max_size 10, binned) → tetra3
-        (cedar 연결 실패 시 tetra3.get_centroids_from_image 폴백)
-  [항상] sep_shadow.detect(solver_raw)          ← 러너 활성 시 매 시도 실행
-        (오버레이 후보·섀도 CSV·폴백 게이트 판정에 사용)
-  [2차] cedar 솔브 실패 ∧ SEP ≥ 5 ∧ 백오프 통과
-        → sep_shadow.solve() → 성공 시 그 솔루션이 정규 체인에 공급
-  [발행] SolveResult(성공/실패) → integrator, 오버레이 1회 게시, CSV 1행
+솔버 프로세스 (solver.py, 시도마다 — FF+center_first 구성 기준)
+  [검출] cedar-detect(solver_raw≫4, σ8, max_size 10, binned, hot)
+         → 게이트: 엣지·포화 샘플·웜픽셀·클러스터 (solver_cedar_ff_gates)
+         → IMU 지평선 마스크: 고도 < 5° 검출 제거 (solver_horizon_mask, opt-in)
+         ∥ 동시에 워커 스레드: sep_shadow.detect(solver_raw)
+         (신선한 solver_raw 부재/cedar 연결 실패 시 그 시도만 512/tetra3 폴백)
+  [1단] 중앙 정사각(min(h,w)²) 서브셋 솔브 — 4개 미만 or 전체와 동일하면 스킵
+  [2단] 실패 시 전체 좌표 솔브 (두 단 모두 네이티브 FOV, 300ms 캡)
+  [3·4단] 실패 ∧ SEP ≥ 5 ∧ 백오프 통과 → 스레드 join 후
+         SEP 중앙 서브셋 → SEP 전체 (sep_shadow.solve, 1s 캡)
+  [발행] SolveResult(+ solve_path) → integrator, 오버레이 1회 게시, CSV 1행
+         Centroids = 게이트 후 크롭 창 내 검출 수 (AE 512 의미 보존)
 ```
 
-**왜 3계층(cedar 풀프레임)이 아닌가**: 별하늘에서 cedar 풀프레임은 512 대비
-매치 3배·순도 95%지만, 목표 조건(밝은 하늘)에선 18%로 SEP(88%)의 대안이
-못 되고, 2계층으로 이미 95–100% 솔브율에 도달한다 — 보류(ADR m0023 §4,
-재확인: 3경로 벤치 §4). 재검토 조건: cedar-512와 SEP이 둘 다 실패하는데
-cedar 풀프레임은 풀었을 조건이 관측될 때.
+**cedar 풀프레임 1차 채택 경위** (ADR m0023의 "보류"에서 변경, 2026-08-03
+사용자 승인): 보류 사유였던 "밝은 하늘 18%"는 1차 **단독** 운용 기준이었고,
+SEP 폴백을 유지한 채 1차만 교체하면 회귀 없이 어두운 하늘 이득(매치 3배·
+순도 95%)을 얻는다는 판단. 광해 상승 곡선 실측으로 확인 — 배경 ≤62%에서
+cedar-FF 직접 95–99%, 절벽(≥65–70%)은 물리 한계로 경로 무관
+(실측 리포트 참조). 중앙 우선 캐스케이드는 사용자 설계(2026-08-04):
+중앙 서브셋이 어두운 하늘에서 RMSE 24→13″(오프라인 A/B). 정식 어두운 밤
+A/B 통과 시 기본 on + ADR 개정 예정.
 
 ## 3. 프레임 공간과 좌표 정합 (`solver_frame_map.py`)
 
@@ -264,6 +286,15 @@ tetra3를 호출한다 — 파라미터 차이는 FOV 스케일뿐.
 - 성공/실패 메시지 형식·타이밍은 기존과 동일 — integrator 이하 하류는
   경로를 구분할 수 없다(의도된 불투명성).
 - 솔브 성공(어느 경로든) 시 `note_solved()`로 백오프 리셋.
+- **FF cedar 솔루션도 같은 규칙**: matched-* 3종은 풀프레임 좌표라 SQM 앞에서
+  제거하되 오버레이용으로만 따로 보관(`attach_canvas_matched` — SEP 매치와
+  같은 회전 캔버스 공간). `Centroids`는 **게이트 후 크롭 창 내 검출 수**로
+  발행해 AE의 512 의미를 보존한다.
+- **타임아웃 캡**: FF cedar 단 300ms(`CEDAR_FF_SOLVE_TIMEOUT_MS` — 성공
+  솔브 실측 9–26ms, 실패 시 빠른 포기로 SEP 기회 보존), SEP 폴백
+  1s(`FALLBACK_SOLVE_TIMEOUT_MS` — 500ms 캡은 실측 근거 미확보로 보류).
+- **`SolveDiagnostics.solve_path`**: cedar_ff_center / cedar_ff / cedar_512 /
+  sep_center / sep / tetra3 — 진단 전용(하류 분기 금지), `/api/solution` 노출.
 
 **cedar 1차 경로 자체의 가용성 방어** (하이브리드와 독립이지만 같은 루프):
 cedar-detect-server 연결 실패(`CedarConnectionError`) 시
@@ -343,12 +374,17 @@ gRPC 인라인으로 접속.
 | 키 | 기본 | 의미 |
 | --- | --- | --- |
 | `solver_sep_fallback` | **true** | SEP 폴백 솔브 (+`solver_raw` 발행 트리거) |
+| `solver_cedar_fullframe` | false* | cedar 1차를 비크롭 원본·네이티브 FOV로 (off=기존 512 바이트 동일) |
+| `solver_cedar_ff_gates` | **true** | FF 검출 품질 게이트 (엣지·포화·웜픽셀·클러스터) |
+| `solver_horizon_mask` | false | IMU 지평선 마스크 (고도<5° 검출 제거) — 관측지 스카이라인별 opt-in |
+| `solver_center_first` | false* | 중앙 정사각 우선 4단 캐스케이드 + SEP 병렬 검출 |
 | `solver_sep_sigma` | **4.0** | SEP 추출 임계(σ, 국소 배경 RMS 단위) |
 | `solver_shadow_detect` | **false** | 섀도 A/B CSV — 튜닝 세션 opt-in |
 | `camera_auto_dump` | false | 솔브 10연속 실패 시 3분 쿨다운 스테이지 덤프(자동 코퍼스 수집) |
 
-모두 재시작 필요. 두 solver_* 스위치가 전부 off면 카메라의 `solver_raw`
-발행 자체가 꺼져 비용 0.
+모두 재시작 필요. \* 표시는 정식 어두운 밤 검증 통과 시 기본 on 전환
+예정(계획 문서 §5). `solver_raw` 발행은 shadow/fallback/FF 어느 하나라도
+쓰면 필요하다.
 
 저장 정책(2026-07-28 사용자 결정): CSV·앱 로그·스테이지 덤프 전부
 **tmpfs**. 덤프는 최근 30세트(~270 MB) 로테이션. 전원 차단 시 소실 —
@@ -390,7 +426,8 @@ gRPC 인라인으로 접속.
    AE on 재측정 예정.
 2. **실패 시도의 `Centroids`=cedar 수** — AE 회복 사다리의 cedar 의존
    (§9). 맑은 하늘 장시간 데이터로 재평가.
-3. **cedar 풀프레임 3계층 보류** — 재검토 조건 명시(§2).
+3. ~~cedar 풀프레임 보류~~ → **1차 교체로 채택**(2026-08-03, §2 경위).
+   잔여: 정식 어두운 밤 오프라인 A/B 후 기본 on + ADR m0023 개정.
 4. **프레임 전달 shared_memory 전환 보류** — 병목이 IPC가 아니라 검출
    감도. 착수 조건: 실전 노출 수백 ms 이하로 하락, 또는 대형 프레임
    소비자 증가 (impl §7-6).
