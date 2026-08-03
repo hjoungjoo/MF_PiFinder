@@ -175,6 +175,10 @@ matched_centroids 변환)을 재사용한다. 하류·UI·정렬·SQM은 무변�
 solver.py `_solve_cedar_fullframe`/`_count_in_crop` + sep_shadow
 `attach_canvas_matched`, 테스트 tests/test_solver_cedar_fullframe.py.
 ADR 개정은 계획대로 검증 통과 후 기본 on 전환 시점에 수행.
+**후속 확장(2026-08-04)**: FF 검출 게이트(`solver_cedar_ff_gates`) ·
+IMU 지평선 마스크(`solver_horizon_mask`, opt-in) · 중앙 우선 4단
+캐스케이드+SEP 병렬 검출(`solver_center_first`) — 현행 구조의 정본 기술은
+[설계 문서 §2](mf_cedar_sep_hybrid_design_ko.md)로 이관.
 **라이브 1차 검증(2026-08-03 22:34, 플래그 on)**: cedar-FF 직접 솔브 10/10
 표본, 매치 25–27(512 경로 대비 ~3배), RMSE 20–29″, T_solve 9–10ms,
 Centroids=크롭 내 카운트(15–17) 정상 발행. §7의 정식 두 밤 검증은 잔여.
