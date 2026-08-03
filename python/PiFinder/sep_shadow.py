@@ -67,6 +67,11 @@ CSV_FIELDS = [
 # A solver_raw older than this no longer matches the attempt being logged
 # (camera wedged, SEP path disabled mid-run); skip rather than mislabel.
 MAX_FRAME_AGE_S = 15.0
+# Fallback solve timeout. A 500 ms cap was field-tried 2026-08-04 but the
+# A/B window was confounded by a scene change (SEP detections 17 -> 13,
+# thin cloud); no solve-rate evidence either way, so the conservative 1 s
+# stays until a same-frame offline A/B decides (field-test report).
+FALLBACK_SOLVE_TIMEOUT_MS = 1000
 
 # Warm-pixel map: (N, 2) int (y, x) in solver_raw orientation, built by
 # ``python -m PiFinder.sep_warm_map`` from stage-dump corpora. Optional --
@@ -290,7 +295,7 @@ class SepShadowRunner:
                 return_matches=True,
                 target_pixel=target_pixel,
                 target_sky_coord=target_sky_coord,
-                solve_timeout=1000,
+                solve_timeout=FALLBACK_SOLVE_TIMEOUT_MS,
             )
             if (
                 solution
