@@ -28,8 +28,10 @@ from PiFinder import config as config_mod
 from PiFinder import state_utils
 from PiFinder import utils
 from PiFinder import timez
-from PiFinder.sep_shadow import SepShadowRunner
+from PiFinder import solver_frame_map as sfm
+from PiFinder.sep_shadow import MAX_FRAME_AGE_S, SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
+from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.sqm.black_level import BlackLevelTracker
 from PiFinder.sqm.clouds import CloudEstimator
 from PiFinder.sqm.radiometer import RadiometerAccumulator, extract_photometry_image
@@ -827,6 +829,101 @@ def _build_failed_solve(
     )
 
 
+def _cedar_fullframe_geometry(cfg, camera_type):
+    """(rotation_deg, crop_width_px) for the full-frame cedar path, or None.
+
+    Same sources as SepShadowRunner.create_if_enabled: the camera profile
+    for the production crop width and the display config for the stage-5
+    rotation. Camera type is published after the camera process boots, so
+    resolution is retried from the loop until it succeeds."""
+    try:
+        if not camera_type:
+            return None
+        profile = get_camera_profile(camera_type)
+        crop_width = int(profile.raw_size[0] - profile.crop_x[0] - profile.crop_x[1])
+        rotation = sfm.stage5_rotation_deg(
+            cfg.get_option("screen_direction"),
+            cfg.get_option("camera_rotation"),
+        )
+        return rotation, crop_width
+    except Exception:
+        logger.exception("cedar full-frame geometry unavailable")
+        return None
+
+
+def _count_in_crop(centroids, frame_hw, crop_width_px: int) -> int:
+    """Detections inside the (centred) production crop window.
+
+    Published as SolveDiagnostics.Centroids on the full-frame path so
+    auto-exposure keeps its 512-crop star-count semantics unchanged."""
+    if centroids is None or len(centroids) == 0:
+        return 0
+    arr = np.asarray(centroids, dtype=np.float64)
+    height, width = float(frame_hw[0]), float(frame_hw[1])
+    y0 = max(0.0, (height - crop_width_px) / 2.0)
+    x0 = max(0.0, (width - crop_width_px) / 2.0)
+    inside = (
+        (arr[:, 0] >= y0)
+        & (arr[:, 0] < y0 + crop_width_px)
+        & (arr[:, 1] >= x0)
+        & (arr[:, 1] < x0 + crop_width_px)
+    )
+    return int(np.count_nonzero(inside))
+
+
+def _solve_cedar_fullframe(
+    t3,
+    centroids,
+    frame_hw,
+    rotation_deg: float,
+    crop_width_px: int,
+    shared_state,
+    target_sky_coord=None,
+) -> dict:
+    """Solve full-frame cedar centroids at native FOV, in 512 semantics.
+
+    Mirrors SepShadowRunner.solve: rotation, canvas, fov and target_pixel
+    are mapped through solver_frame_map so RA/Dec/Roll and the aligned
+    pointing at target_pixel carry the exact production-512 meaning, and
+    y/x_target is mapped back so the alignment chain persists 512-space
+    coordinates unchanged."""
+    try:
+        cents, canvas = sfm.rotate_centroids(
+            np.asarray(centroids, dtype=np.float64), frame_hw, rotation_deg
+        )
+        target_pixel = sfm.map_target_pixel_to_frame(
+            shared_state.target_pixel(), canvas, crop_width_px
+        )
+        fov = sfm.fov_estimate_deg(canvas[1], crop_width_px)
+        solution = t3.solve_from_centroids(
+            cents,
+            canvas,
+            fov_estimate=fov,
+            fov_max_error=fov / 3.0,
+            match_max_error=0.005,
+            return_matches=True,
+            target_pixel=target_pixel,
+            target_sky_coord=target_sky_coord,
+            solve_timeout=1000,
+        )
+        if (
+            solution
+            and solution.get("RA") is not None
+            and solution.get("y_target") is not None
+            and solution.get("x_target") is not None
+        ):
+            ty, tx = sfm.map_frame_pixel_to_target(
+                (float(solution["y_target"]), float(solution["x_target"])),
+                canvas,
+                crop_width_px,
+            )
+            solution["y_target"], solution["x_target"] = ty, tx
+        return solution or {}
+    except Exception:
+        logger.exception("cedar full-frame solve failed")
+        return {}
+
+
 def solver(
     shared_state,
     solver_queue,
@@ -877,6 +974,14 @@ def solver(
         _sep_cfg.get_option("solver_shadow_detect")
         or _sep_cfg.get_option("solver_sep_fallback")
     )
+    # Full-frame cedar primary path (mf_cedar_fullframe_primary_plan_ko.md):
+    # feed cedar the uncropped 12-bit raw (>>4, detection is invariant to the
+    # affine stretch) and solve at native FOV via solver_frame_map. The SEP
+    # fallback below is unchanged; flag off = byte-identical 512 path.
+    cedar_fullframe_wanted = bool(_sep_cfg.get_option("solver_cedar_fullframe"))
+    cedar_ff_geometry = None  # (rotation_deg, crop_width_px), resolved lazily
+    if cedar_fullframe_wanted:
+        logger.info("Cedar full-frame primary path enabled")
 
     while True:
         logger.info("Starting Solver Loop")
@@ -981,17 +1086,50 @@ def solver(
                     # actual image so the integrator can dedupe.
                     last_solve_attempt = last_image_metadata["exposure_end"]
 
+                    if cedar_fullframe_wanted and cedar_ff_geometry is None:
+                        cedar_ff_geometry = _cedar_fullframe_geometry(
+                            _sep_cfg, shared_state.camera_type()
+                        )
+
                     t0 = precision_timestamp()
+                    used_fullframe = False
+                    ff_frame_hw = None
                     if cedar_detect is not None:
-                        # Try Cedar first
+                        ff_entry = None
+                        if cedar_fullframe_wanted and cedar_ff_geometry is not None:
+                            ff_entry = shared_state.solver_raw()
+                            if (
+                                not ff_entry
+                                or "frame" not in ff_entry
+                                or time.time() - float(ff_entry.get("timestamp") or 0)
+                                > MAX_FRAME_AGE_S
+                            ):
+                                # No fresh raw: fall back to the 512 path for
+                                # this attempt rather than skipping it.
+                                ff_entry = None
                         try:
-                            centroids = cedar_detect.extract_centroids(
-                                np_image, sigma=8, max_size=10, use_binned=True
-                            )
+                            if ff_entry is not None:
+                                ff_frame = np.asarray(ff_entry["frame"])
+                                centroids = cedar_detect.extract_centroids(
+                                    (ff_frame >> 4).astype(np.uint8),
+                                    sigma=8,
+                                    max_size=10,
+                                    use_binned=True,
+                                )
+                                ff_frame_hw = (
+                                    int(ff_frame.shape[0]),
+                                    int(ff_frame.shape[1]),
+                                )
+                                used_fullframe = True
+                            else:
+                                centroids = cedar_detect.extract_centroids(
+                                    np_image, sigma=8, max_size=10, use_binned=True
+                                )
                         except CedarConnectionError as e:
                             logger.warning(
                                 f"Cedar connection failed: {e}, falling back to tetra3"
                             )
+                            used_fullframe = False
                             centroids = tetra3.get_centroids_from_image(np_image)
                     else:
                         # Cedar not available, use tetra3
@@ -1015,17 +1153,45 @@ def solver(
                         if align_ra != 0 and align_dec != 0:
                             _solver_args["target_sky_coord"] = [[align_ra, align_dec]]
 
-                        solution = t3.solve_from_centroids(
-                            centroids,
-                            (512, 512),
-                            fov_estimate=12.0,
-                            fov_max_error=4.0,
-                            match_max_error=0.005,
-                            return_matches=True,  # Required for SQM calculation
-                            target_pixel=shared_state.target_pixel(),
-                            solve_timeout=1000,
-                            **_solver_args,
+                        if used_fullframe:
+                            solution = _solve_cedar_fullframe(
+                                t3,
+                                centroids,
+                                ff_frame_hw,
+                                cedar_ff_geometry[0],
+                                cedar_ff_geometry[1],
+                                shared_state,
+                                target_sky_coord=_solver_args.get("target_sky_coord"),
+                            )
+                        else:
+                            solution = t3.solve_from_centroids(
+                                centroids,
+                                (512, 512),
+                                fov_estimate=12.0,
+                                fov_max_error=4.0,
+                                match_max_error=0.005,
+                                return_matches=True,  # Required for SQM calculation
+                                target_pixel=shared_state.target_pixel(),
+                                solve_timeout=1000,
+                                **_solver_args,
+                            )
+
+                    ff_matched_for_overlay = None
+                    ff_in_crop_count = 0
+                    if used_fullframe:
+                        ff_in_crop_count = _count_in_crop(
+                            centroids, ff_frame_hw, cedar_ff_geometry[1]
                         )
+                        if solution and solution.get("RA") is not None:
+                            # Same rule as the SEP fallback below: per-centroid
+                            # outputs are in full-frame coordinates, so strip
+                            # them before SQM photometry (which reads the 512
+                            # frame) -- but keep the matched set aside for the
+                            # overlay, which knows the canvas space.
+                            ff_matched_for_overlay = solution.get("matched_centroids")
+                            solution.pop("matched_centroids", None)
+                            solution.pop("matched_stars", None)
+                            solution.pop("matched_catID", None)
 
                     # SEP full-frame experiment: shadow-detect on every
                     # attempt; optionally rescue a failed production solve
@@ -1156,10 +1322,16 @@ def solver(
                             # A fallback solve's real star count is SEP's --
                             # publishing it keeps auto-exposure's solve-hold
                             # engaged on the exposure that actually solved.
+                            # Full-frame cedar publishes the in-crop count so
+                            # auto-exposure keeps its 512-crop semantics.
                             centroid_count=(
                                 len(sep_run.detection.centroids)
                                 if sep_fallback_used and sep_run is not None
-                                else len(centroids)
+                                else (
+                                    ff_in_crop_count
+                                    if used_fullframe
+                                    else len(centroids)
+                                )
                             ),
                         )
                         # Popped only now: _build_successful_solve above needs
@@ -1202,14 +1374,19 @@ def solver(
                         if solution:
                             logger.warning(
                                 f"Solve FAILED - {len(centroids)} centroids detected but "
-                                f"pattern match failed (FOV est: 12.0°, max err: 4.0°)"
+                                f"pattern match failed "
+                                f"({'full-frame native FOV' if used_fullframe else 'FOV est: 12.0°, max err: 4.0°'})"
                             )
                         solver_queue.put(
                             _build_failed_solve(
                                 last_solve_attempt=last_solve_attempt,
                                 last_solve_success=last_solve_success,
                                 t_extract_ms=t_extract,
-                                centroid_count=len(centroids),
+                                centroid_count=(
+                                    ff_in_crop_count
+                                    if used_fullframe
+                                    else len(centroids)
+                                ),
                             )
                         )
 
@@ -1225,7 +1402,16 @@ def solver(
                             and solution.get("RA") is not None
                             and not sep_fallback_used
                         ):
-                            sep_shadow.attach_production_matched(solution)
+                            if used_fullframe:
+                                # Full-frame cedar matched stars are already
+                                # in the rotated canvas (same space as a SEP
+                                # solve's); stashed before the SQM strip.
+                                if ff_matched_for_overlay is not None:
+                                    sep_shadow.attach_canvas_matched(
+                                        ff_matched_for_overlay
+                                    )
+                            else:
+                                sep_shadow.attach_production_matched(solution)
                         sep_shadow.publish_overlay(shared_state)
                         sep_shadow.log_attempt(
                             exposure_us=last_image_metadata.get("exposure_time"),

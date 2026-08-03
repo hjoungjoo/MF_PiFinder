@@ -359,6 +359,17 @@ class SepShadowRunner:
         except Exception:
             logger.exception("SEP matched-overlay attach failed")
 
+    def attach_canvas_matched(self, matched_centroids) -> None:
+        """Overlay hook for the full-frame cedar primary path.
+
+        Its matched centroids live in the same rotated canvas as a SEP
+        solve's, so the un-rotation is identical; the solver hands the
+        array separately because the solution message itself is stripped
+        of full-frame arrays before SQM sees it."""
+        self._attach_matched_overlay(
+            {"RA": 0.0, "matched_centroids": matched_centroids}
+        )
+
     def attach_production_matched(self, solution) -> None:
         """Cedar solved this frame: mark its matched stars on the overlay.
 
