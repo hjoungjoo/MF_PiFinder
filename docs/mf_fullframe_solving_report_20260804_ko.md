@@ -1,10 +1,5 @@
 # MF_PiFinder 테스트 리포트 — 풀프레임 솔빙 파이프라인 실측 (2026-08-04)
 
-> 커뮤니티 공유용 리포트입니다. **현재 소스 기준**(아래 구성) 결과만 담았고,
-> 기존 경로와의 비교는 동일 프레임 오프라인 재측정으로 수행했습니다.
-> 기술 상세: [하이브리드 설계 문서](mf_cedar_sep_hybrid_design_ko.md).
-> English version: [mf_fullframe_solving_report_20260804_en.md](mf_fullframe_solving_report_20260804_en.md)
-
 ## 배경과 테스트 구성
 
 PiFinder는 망원경이 "지금 어디를 보고 있는지"를 플레이트 솔빙으로 알아내는
