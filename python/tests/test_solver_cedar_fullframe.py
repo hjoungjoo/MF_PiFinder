@@ -110,3 +110,18 @@ def test_solve_cedar_fullframe_swallows_solver_errors():
         shared_state=_FakeSharedState(),
     )
     assert solution == {}
+
+
+@pytest.mark.unit
+def test_center_square_subset_selects_max_centered_square():
+    # 1920x1080 -> square side 1080, x in [420, 1500)
+    pts = [
+        (540.0, 960.0),  # centre -> in
+        (0.0, 420.0),  # on the left edge of the square -> in
+        (1079.0, 1499.0),  # bottom-right inside corner -> in
+        (540.0, 419.0),  # just left of the square -> out
+        (540.0, 1500.0),  # just right of the square -> out
+    ]
+    kept = solver._center_square_subset(pts, (1080, 1920))
+    assert len(kept) == 3
+    assert solver._center_square_subset([], (1080, 1920)).shape == (0, 2)

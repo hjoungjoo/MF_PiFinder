@@ -262,7 +262,12 @@ class SepShadowRunner:
             return None
 
     def solve(
-        self, t3, run: SepRun, shared_state, target_sky_coord=None
+        self,
+        t3,
+        run: SepRun,
+        shared_state,
+        target_sky_coord=None,
+        centroids_override=None,
     ) -> Optional[dict]:
         """Solve from SEP centroids in the rotated full frame.
 
@@ -277,10 +282,19 @@ class SepShadowRunner:
         alignment coordinate and its y/x_target is mapped BACK into
         rotated-512 space, so the normal alignment chain (AlignedResult,
         persisted target_pixel) consumes it unchanged.
+
+        ``centroids_override`` solves from a subset (still full-frame
+        (y, x) coordinates) instead of the run's full detection list --
+        the centre-first cascade passes the centre-square subset here.
         """
         try:
+            source = (
+                run.detection.centroids
+                if centroids_override is None
+                else np.asarray(centroids_override, dtype=np.float64)
+            )
             cents, canvas = sfm.rotate_centroids(
-                run.detection.centroids, run.frame_hw, self.rotation_deg
+                source, run.frame_hw, self.rotation_deg
             )
             target_pixel = sfm.map_target_pixel_to_frame(
                 shared_state.target_pixel(), canvas, self.crop_width_px

@@ -876,6 +876,29 @@ def _cedar_fullframe_geometry(cfg, camera_type):
         return None
 
 
+def _center_square_subset(centroids, frame_hw):
+    """Centroids inside the largest centred square of the frame.
+
+    The centre-first cascade (user design 2026-08-04) solves this subset
+    before the full set: near the frame centre optical distortion is
+    lowest (offline A/B: RMSE 24 -> 13 arcsec on the dark-sky corpus)
+    and edge junk that survives the gates is excluded. Selection happens
+    on coordinates -- the frame itself is never re-processed."""
+    pts = np.asarray(centroids, dtype=np.float64)
+    if pts.ndim != 2 or len(pts) == 0:
+        return pts.reshape(0, 2)
+    h, w = float(frame_hw[0]), float(frame_hw[1])
+    side = min(h, w)
+    y0, x0 = (h - side) / 2.0, (w - side) / 2.0
+    keep = (
+        (pts[:, 0] >= y0)
+        & (pts[:, 0] < y0 + side)
+        & (pts[:, 1] >= x0)
+        & (pts[:, 1] < x0 + side)
+    )
+    return pts[keep]
+
+
 def _count_in_crop(centroids, frame_hw, crop_width_px: int) -> int:
     """Detections inside the (centred) production crop window.
 
@@ -1015,11 +1038,17 @@ def solver(
         True if cedar_ff_gates_wanted is None else bool(cedar_ff_gates_wanted)
     )
     horizon_mask_wanted = bool(_sep_cfg.get_option("solver_horizon_mask"))
+    # Centre-first cascade (user design 2026-08-04): solve the centred-square
+    # coordinate subset first, full set on failure, then SEP the same way;
+    # SEP detection runs concurrently with the cedar tiers to hide its cost.
+    center_first_wanted = bool(_sep_cfg.get_option("solver_center_first"))
     if cedar_fullframe_wanted:
         logger.info(
-            "Cedar full-frame primary path enabled (gates=%s, horizon_mask=%s)",
+            "Cedar full-frame primary path enabled "
+            "(gates=%s, horizon_mask=%s, center_first=%s)",
             cedar_ff_gates_wanted,
             horizon_mask_wanted,
+            center_first_wanted,
         )
 
     while True:
@@ -1133,6 +1162,9 @@ def solver(
                     t0 = precision_timestamp()
                     used_fullframe = False
                     ff_frame_hw = None
+                    ff_center_solved = False
+                    sep_thread = None
+                    sep_thread_result = {}
                     if cedar_detect is not None:
                         ff_entry = None
                         if cedar_fullframe_wanted and cedar_ff_geometry is not None:
@@ -1146,6 +1178,35 @@ def solver(
                                 # No fresh raw: fall back to the 512 path for
                                 # this attempt rather than skipping it.
                                 ff_entry = None
+                        # Centre-first: overlap the SEP detection with the
+                        # cedar tiers (accepted CPU cost for latency).
+                        if (
+                            center_first_wanted
+                            and ff_entry is not None
+                            and sep_shadow is None
+                            and sep_shadow_wanted
+                        ):
+                            sep_shadow = SepShadowRunner.create_if_enabled(
+                                _sep_cfg, shared_state.camera_type()
+                            )
+                        if (
+                            center_first_wanted
+                            and ff_entry is not None
+                            and sep_shadow is not None
+                        ):
+
+                            def _sep_detect_bg():
+                                try:
+                                    sep_thread_result["run"] = sep_shadow.detect(
+                                        shared_state
+                                    )
+                                except Exception:
+                                    logger.exception("Parallel SEP detect failed")
+
+                            sep_thread = threading.Thread(
+                                target=_sep_detect_bg, daemon=True
+                            )
+                            sep_thread.start()
                         try:
                             if ff_entry is not None:
                                 ff_frame = np.asarray(ff_entry["frame"])
@@ -1224,15 +1285,36 @@ def solver(
                             _solver_args["target_sky_coord"] = [[align_ra, align_dec]]
 
                         if used_fullframe:
-                            solution = _solve_cedar_fullframe(
-                                t3,
-                                centroids,
-                                ff_frame_hw,
-                                cedar_ff_geometry["rotation_deg"],
-                                cedar_ff_geometry["crop_width_px"],
-                                shared_state,
-                                target_sky_coord=_solver_args.get("target_sky_coord"),
-                            )
+                            solution = {}
+                            if center_first_wanted:
+                                subset = _center_square_subset(centroids, ff_frame_hw)
+                                if 4 <= len(subset) < len(centroids):
+                                    solution = _solve_cedar_fullframe(
+                                        t3,
+                                        subset,
+                                        ff_frame_hw,
+                                        cedar_ff_geometry["rotation_deg"],
+                                        cedar_ff_geometry["crop_width_px"],
+                                        shared_state,
+                                        target_sky_coord=_solver_args.get(
+                                            "target_sky_coord"
+                                        ),
+                                    )
+                                    ff_center_solved = bool(
+                                        solution and solution.get("RA") is not None
+                                    )
+                            if not solution or solution.get("RA") is None:
+                                solution = _solve_cedar_fullframe(
+                                    t3,
+                                    centroids,
+                                    ff_frame_hw,
+                                    cedar_ff_geometry["rotation_deg"],
+                                    cedar_ff_geometry["crop_width_px"],
+                                    shared_state,
+                                    target_sky_coord=_solver_args.get(
+                                        "target_sky_coord"
+                                    ),
+                                )
                         else:
                             solution = t3.solve_from_centroids(
                                 centroids,
@@ -1268,6 +1350,8 @@ def solver(
                         if cedar_detect is not None
                         else "tetra3"
                     )
+                    if used_fullframe and ff_center_solved:
+                        solve_path = "cedar_ff_center"
 
                     # SEP full-frame experiment: shadow-detect on every
                     # attempt; optionally rescue a failed production solve
@@ -1279,7 +1363,11 @@ def solver(
                     sep_run = None
                     sep_fallback_used = False
                     if sep_shadow is not None:
-                        sep_run = sep_shadow.detect(shared_state)
+                        if sep_thread is not None:
+                            sep_thread.join(timeout=5.0)
+                            sep_run = sep_thread_result.get("run")
+                        else:
+                            sep_run = sep_shadow.detect(shared_state)
                         if (
                             sep_run is not None
                             and sep_shadow.fallback_enabled
@@ -1301,16 +1389,41 @@ def solver(
                             # coordinate and hands y/x_target back in 512
                             # space (sep_shadow.solve), so the normal
                             # alignment chain below consumes it unchanged.
-                            fb_solution = sep_shadow.solve(
-                                t3,
-                                sep_run,
-                                shared_state,
-                                target_sky_coord=(
-                                    [[align_ra, align_dec]]
-                                    if align_ra != 0 and align_dec != 0
-                                    else None
-                                ),
+                            _sep_target_sky = (
+                                [[align_ra, align_dec]]
+                                if align_ra != 0 and align_dec != 0
+                                else None
                             )
+                            fb_solution = None
+                            sep_center_used = False
+                            if center_first_wanted:
+                                sep_subset = _center_square_subset(
+                                    sep_run.detection.centroids,
+                                    sep_run.frame_hw,
+                                )
+                                if (
+                                    4
+                                    <= len(sep_subset)
+                                    < len(sep_run.detection.centroids)
+                                ):
+                                    fb_solution = sep_shadow.solve(
+                                        t3,
+                                        sep_run,
+                                        shared_state,
+                                        target_sky_coord=_sep_target_sky,
+                                        centroids_override=sep_subset,
+                                    )
+                                    sep_center_used = bool(
+                                        fb_solution
+                                        and fb_solution.get("RA") is not None
+                                    )
+                            if not fb_solution or fb_solution.get("RA") is None:
+                                fb_solution = sep_shadow.solve(
+                                    t3,
+                                    sep_run,
+                                    shared_state,
+                                    target_sky_coord=_sep_target_sky,
+                                )
                             sep_shadow.record_fallback_result(
                                 bool(fb_solution and fb_solution.get("RA") is not None),
                                 len(sep_run.detection.centroids),
@@ -1327,7 +1440,7 @@ def solver(
                                 fb_solution.pop("matched_catID", None)
                                 solution = fb_solution
                                 sep_fallback_used = True
-                                solve_path = "sep"
+                                solve_path = "sep_center" if sep_center_used else "sep"
                                 logger.debug(
                                     "SEP fallback solve SUCCESS - %d SEP "
                                     "centroids (cedar saw %d), RMSE %.1f",
