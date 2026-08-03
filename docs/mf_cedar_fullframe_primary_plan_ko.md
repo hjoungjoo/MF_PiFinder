@@ -87,6 +87,27 @@ A가 두 조건 모두에서 열등하지 않으므로 복잡도만 추가된다
 | SQM | matched_centroids 기반 mzero 계산의 좌표 공간 확인 | |
 | 폴백 조건 | SEP 폴백 트리거(solution 실패)는 무변경 | |
 
+## 6.5 512 크롭 소비처 인벤토리와 무영향 전략 (2026-08-03 전수 조사)
+
+전제: 변경되는 것은 **솔버 프로세스가 cedar에 넣는 입력**뿐이다. 카메라
+프로세스의 512² 생산 파이프라인(크롭→스트레치→512→회전)과
+`shared_state.camera_image` 발행은 그대로 유지한다.
+
+| 소비처 | 512 의존 내용 | 전략 |
+| --- | --- | --- |
+| UI 7곳: `preview` `align_daytime` `menu_manager`(×3) `base` `indi` `sqm` `sqm_sweep` | `camera_image`(512 8-bit)를 화면 표시/정렬 UI에 사용 | **무영향** — camera_image 생산 불변 |
+| integrator | solution의 RA/Dec/Roll/target | **무영향** — SEP 전례대로 솔루션을 512 의미로 발행 (`_build_successful_solve` 무변경) |
+| 정렬 체인 (target_pixel 512 공간 영속, 멀티포인트/SkySafari align) | solve의 `target_pixel` 입력과 `y/x_target` 출력 | `sep_shadow.solve`의 왕복 매핑 재사용: `map_target_pixel_to_frame`(512→FF) / `map_frame_pixel_to_target`(FF→512) — SEP이 실전 검증 완료 |
+| SQM mzero (`solver.py` L890대) + `ui/sqm_calibration` | `matched_centroids` 좌표(+FOV)로 별 광량 샘플링 | **어댑터 기존재**: `utils.py`의 matched_centroids 스케일 헬퍼 + `_derotate_centroids(solve_rotation, side)` — SEP 솔브가 이미 통과하는 변환 체인에 FF cedar 솔루션도 동일하게 태움 |
+| 오버레이 (`sep_overlay`) | matched_centroids를 풀프레임에 표시 | 오히려 **단순화** — §6.7(caec3e2f)의 "cedar 512→FF 매핑"이 불필요해지고 FF 네이티브 직결 |
+| AE 별카운트 (`auto_exposure_starcount`, target 20) | `SolveDiagnostics.Centroids` | 권고: Centroids를 **"크롭 창 내 검출 수"로 계속 발행**(FF 검출 중 512 영역 내만 카운트 — 프레임당 1회 필터) → AE 완전 무변경. 대안은 FF 총수 발행 + AE 목표 재튜닝. ※ Centroids 의미는 이미 혼합 상태(SEP 구제 시 SEP 검출 수 발행 — 벤치 §5) |
+| 웹 status / `api_extensions` | FOV·Centroids 표시 | 표시 전용 — FOV는 진단값 그대로(SEP도 ~11.46° 발행 전례), Centroids는 위 결정 따름 |
+| tetra3 폴백 (cedar 서버 다운 시) | 512 `get_centroids_from_image` | **불변** — 플래그와 무관한 비상 경로로 유지 |
+
+결론: 512 소비처 중 코드 수정이 필요한 곳은 **솔버 내부의 어댑터 층뿐**
+이며, 전부 SEP 폴백이 이미 실전 검증한 매핑(`solver_frame_map`,
+matched_centroids 변환)을 재사용한다. 하류·UI·정렬·SQM은 무변경.
+
 ## 7. 검증 계획 (판정 기준)
 
 §2 방법론으로 두 밤 측정 (플래그 on/off A/B):
