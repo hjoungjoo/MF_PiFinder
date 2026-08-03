@@ -28,8 +28,9 @@ from PiFinder import config as config_mod
 from PiFinder import state_utils
 from PiFinder import utils
 from PiFinder import timez
+from PiFinder import horizon_mask, sep_detect
 from PiFinder import solver_frame_map as sfm
-from PiFinder.sep_shadow import MAX_FRAME_AGE_S, SepShadowRunner
+from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.sqm.black_level import BlackLevelTracker
@@ -840,12 +841,14 @@ def _build_failed_solve(
 
 
 def _cedar_fullframe_geometry(cfg, camera_type):
-    """(rotation_deg, crop_width_px) for the full-frame cedar path, or None.
+    """Context for the full-frame cedar path, or None until resolvable.
 
     Same sources as SepShadowRunner.create_if_enabled: the camera profile
-    for the production crop width and the display config for the stage-5
-    rotation. Camera type is published after the camera process boots, so
-    resolution is retried from the loop until it succeeds."""
+    for the production crop width and saturation level, the display config
+    for the stage-5 rotation, plus the warm-pixel map and screen direction
+    for the detection gates / horizon mask. Camera type is published after
+    the camera process boots, so resolution is retried from the loop until
+    it succeeds."""
     try:
         if not camera_type:
             return None
@@ -855,7 +858,19 @@ def _cedar_fullframe_geometry(cfg, camera_type):
             cfg.get_option("screen_direction"),
             cfg.get_option("camera_rotation"),
         )
-        return rotation, crop_width
+        warm_map = None
+        try:
+            if WARM_MAP_PATH.exists():
+                warm_map = np.asarray(np.load(WARM_MAP_PATH), dtype=np.int32)
+        except Exception:
+            logger.exception("Warm-pixel map load failed; FF gates run unmasked")
+        return {
+            "rotation_deg": rotation,
+            "crop_width_px": crop_width,
+            "saturation_level": float(2**profile.bit_depth - 1),
+            "warm_map": warm_map,
+            "screen_direction": cfg.get_option("screen_direction"),
+        }
     except Exception:
         logger.exception("cedar full-frame geometry unavailable")
         return None
@@ -989,9 +1004,25 @@ def solver(
     # affine stretch) and solve at native FOV via solver_frame_map. The SEP
     # fallback below is unchanged; flag off = byte-identical 512 path.
     cedar_fullframe_wanted = bool(_sep_cfg.get_option("solver_cedar_fullframe"))
-    cedar_ff_geometry = None  # (rotation_deg, crop_width_px), resolved lazily
+    cedar_ff_geometry = None  # context dict, resolved lazily
+    # Ground-light rejection for the FF path (docs field test 2026-08-04):
+    # detection quality gates (edge/saturation/warm/cluster -- the SEP
+    # fallback's filters applied to cedar centroids) and the IMU horizon
+    # mask. Both default on; independently switchable.
+    cedar_ff_gates_wanted = _sep_cfg.get_option("solver_cedar_ff_gates")
+    cedar_ff_gates_wanted = (
+        True if cedar_ff_gates_wanted is None else bool(cedar_ff_gates_wanted)
+    )
+    horizon_mask_wanted = _sep_cfg.get_option("solver_horizon_mask")
+    horizon_mask_wanted = (
+        True if horizon_mask_wanted is None else bool(horizon_mask_wanted)
+    )
     if cedar_fullframe_wanted:
-        logger.info("Cedar full-frame primary path enabled")
+        logger.info(
+            "Cedar full-frame primary path enabled (gates=%s, horizon_mask=%s)",
+            cedar_ff_gates_wanted,
+            horizon_mask_wanted,
+        )
 
     while True:
         logger.info("Starting Solver Loop")
@@ -1131,6 +1162,37 @@ def solver(
                                     int(ff_frame.shape[1]),
                                 )
                                 used_fullframe = True
+                                ff_raw_count = len(centroids)
+                                if cedar_ff_gates_wanted and len(centroids):
+                                    centroids = sep_detect.filter_plain_centroids(
+                                        centroids,
+                                        ff_frame,
+                                        saturation_level=cedar_ff_geometry[
+                                            "saturation_level"
+                                        ],
+                                        warm_pixel_map=cedar_ff_geometry["warm_map"],
+                                    )
+                                if horizon_mask_wanted and len(centroids):
+                                    centroids, ground_dropped = (
+                                        horizon_mask.filter_ground_centroids(
+                                            centroids,
+                                            ff_frame_hw,
+                                            cedar_ff_geometry["rotation_deg"],
+                                            last_image_metadata.get("imu"),
+                                            cedar_ff_geometry["screen_direction"],
+                                            cedar_ff_geometry["crop_width_px"],
+                                        )
+                                    )
+                                else:
+                                    ground_dropped = 0
+                                if ff_raw_count != len(centroids):
+                                    logger.debug(
+                                        "FF gates: %d -> %d centroids "
+                                        "(%d below horizon)",
+                                        ff_raw_count,
+                                        len(centroids),
+                                        ground_dropped,
+                                    )
                             else:
                                 centroids = cedar_detect.extract_centroids(
                                     np_image, sigma=8, max_size=10, use_binned=True
@@ -1168,8 +1230,8 @@ def solver(
                                 t3,
                                 centroids,
                                 ff_frame_hw,
-                                cedar_ff_geometry[0],
-                                cedar_ff_geometry[1],
+                                cedar_ff_geometry["rotation_deg"],
+                                cedar_ff_geometry["crop_width_px"],
                                 shared_state,
                                 target_sky_coord=_solver_args.get("target_sky_coord"),
                             )
@@ -1190,7 +1252,7 @@ def solver(
                     ff_in_crop_count = 0
                     if used_fullframe:
                         ff_in_crop_count = _count_in_crop(
-                            centroids, ff_frame_hw, cedar_ff_geometry[1]
+                            centroids, ff_frame_hw, cedar_ff_geometry["crop_width_px"]
                         )
                         if solution and solution.get("RA") is not None:
                             # Same rule as the SEP fallback below: per-centroid

@@ -298,3 +298,67 @@ def detect_stars(
         elapsed_ms=elapsed_ms,
         masked_count=masked_count,
     )
+
+
+def filter_plain_centroids(
+    centroids_yx: np.ndarray,
+    raw_frame: np.ndarray,
+    edge_margin_px: int = 48,
+    saturation_level: Optional[float] = None,
+    warm_pixel_map: Optional[np.ndarray] = None,
+    warm_pixel_radius_px: float = 4.0,
+    cluster_radius_px: float = 50.0,
+    cluster_max_neighbors: int = 1,
+) -> np.ndarray:
+    """Quality-gate flux-less centroids (the cedar full-frame path).
+
+    Applies the subset of ``detect_stars``'s filters that need no SEP
+    photometry: the edge margin, the warm-pixel map, the cluster gate
+    (dense clumps -- apartment windows, deblended cloud edges -- are not
+    sky), and a per-centroid saturation check sampled from the raw frame
+    (blown-out ground lights). Shape gates need fitted source profiles
+    and do not apply here.
+
+    Returns the kept centroids as an (N, 2) float array; on any internal
+    error returns the input unchanged (gating must never cost a solve).
+    """
+    try:
+        pts = np.asarray(centroids_yx, dtype=np.float64)
+        if pts.ndim != 2 or len(pts) == 0:
+            return pts.reshape(0, 2) if pts.size == 0 else pts
+        arr = np.asarray(raw_frame)
+        h, w = arr.shape[:2]
+        ys, xs = pts[:, 0], pts[:, 1]
+
+        keep = (
+            (ys >= edge_margin_px)
+            & (ys < h - edge_margin_px)
+            & (xs >= edge_margin_px)
+            & (xs < w - edge_margin_px)
+        )
+
+        if saturation_level is not None and keep.any():
+            yi = np.clip(np.round(ys).astype(int), 1, h - 2)
+            xi = np.clip(np.round(xs).astype(int), 1, w - 2)
+            peak = np.empty(len(pts))
+            for i, (yy, xx) in enumerate(zip(yi, xi)):
+                peak[i] = arr[yy - 1 : yy + 2, xx - 1 : xx + 2].max()
+            keep &= peak < 0.98 * float(saturation_level)
+
+        if warm_pixel_map is not None and len(warm_pixel_map) and keep.any():
+            wp = np.asarray(warm_pixel_map, dtype=np.float64)
+            d2 = (
+                (ys[:, None] - wp[None, :, 0]) ** 2
+                + (xs[:, None] - wp[None, :, 1]) ** 2
+            ).min(axis=1)
+            keep &= d2 > warm_pixel_radius_px**2
+
+        pts = pts[keep]
+        if len(pts) > 1:
+            d2 = (pts[:, 0:1] - pts[:, 0:1].T) ** 2 + (pts[:, 1:2] - pts[:, 1:2].T) ** 2
+            neighbours = (d2 <= cluster_radius_px**2).sum(axis=1) - 1
+            pts = pts[neighbours <= cluster_max_neighbors]
+        return pts
+    except Exception:
+        logger.exception("Plain-centroid gate failed; passing through")
+        return np.asarray(centroids_yx, dtype=np.float64)

@@ -51,6 +51,8 @@
     "solver_sep_fallback": true,
     "solver_sep_sigma": 4.0,
     "solver_cedar_fullframe": false,
+    "solver_cedar_ff_gates": true,
+    "solver_horizon_mask": true,
     "camera_auto_dump": false,
     "sleep_timeout": "30s",
     "screen_off_timeout": "Off",
