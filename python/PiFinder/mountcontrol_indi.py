@@ -414,7 +414,10 @@ if PyIndi is not None:
                 clientlogger.exception("updateProperty coordinate handling failed")
 
         def newMessage(self, device, message):
-            clientlogger.info(
+            # Routine driver chatter (time/coordinate echoes) floods the log
+            # at INFO during every session; real state changes are logged by
+            # their handlers. Keep the raw stream at debug.
+            clientlogger.debug(
                 "INDI message from %s: %s",
                 device.getDeviceName(),
                 device.messageQueue(message),

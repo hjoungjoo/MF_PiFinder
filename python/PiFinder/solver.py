@@ -994,6 +994,10 @@ def solver(
 
     centroids = []
     log_no_stars_found = True
+    # Failed pattern matches log once per streak (same idiom as the
+    # no-stars message): under an unsolvable sky the per-attempt WARNING
+    # was 93% of the whole log (5,011 lines in one evening, 2026-08-04).
+    solve_fail_streak = 0
 
     # SQM calculator is created lazily on the first radiometer sample (or
     # solve), not here: at solver startup shared_state.camera_type() still
@@ -1498,6 +1502,12 @@ def solver(
                         solution.pop("cache_hit_fraction", None)
 
                     if solution and solution.get("RA") is not None:
+                        if solve_fail_streak > 1:
+                            logger.info(
+                                "Solving recovered after %d failed attempts",
+                                solve_fail_streak,
+                            )
+                        solve_fail_streak = 0
                         last_solve_success = last_solve_attempt
                         if sep_shadow is not None and not sep_fallback_used:
                             # Production solve: sky is workable, clear the
@@ -1563,11 +1573,14 @@ def solver(
                         solver_queue.put(solve_result)
                     else:
                         if solution:
-                            logger.warning(
-                                f"Solve FAILED - {len(centroids)} centroids detected but "
-                                f"pattern match failed "
-                                f"({'full-frame native FOV' if used_fullframe else 'FOV est: 12.0°, max err: 4.0°'})"
-                            )
+                            solve_fail_streak += 1
+                            if solve_fail_streak == 1:
+                                logger.warning(
+                                    f"Solve FAILED - {len(centroids)} centroids detected but "
+                                    f"pattern match failed "
+                                    f"({'full-frame native FOV' if used_fullframe else 'FOV est: 12.0°, max err: 4.0°'}) "
+                                    f"(logged once per failure streak)"
+                                )
                         solver_queue.put(
                             _build_failed_solve(
                                 last_solve_attempt=last_solve_attempt,
