@@ -1,11 +1,5 @@
 # MF_PiFinder Test Report — Full-Frame Solving Pipeline, Field Measurements (2026-08-04)
 
-> Community-facing report. Contains results for the **current source**
-> (configuration below) only; the comparison against the legacy path was
-> done offline on identical frames. Technical details:
-> [hybrid design document](mf_cedar_sep_hybrid_design_en.md).
-> 한국어판: [mf_fullframe_solving_report_20260804_ko.md](mf_fullframe_solving_report_20260804_ko.md)
-
 ## Background and test configuration
 
 PiFinder is a plate-solving device that tells you where your telescope is
