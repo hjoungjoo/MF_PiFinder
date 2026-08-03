@@ -15,6 +15,8 @@
 > - [mf_cedar_sep_hybrid_solve_20260728_ko.md](mf_cedar_sep_hybrid_solve_20260728_ko.md)
 >   (커뮤니티 공지) / [mf_solver_3path_bench_20260801_ko.md](mf_solver_3path_bench_20260801_ko.md)
 >   (밝은 하늘 벤치): 요약·1회성 실측.
+> - [mf_cedar_fullframe_primary_plan_ko.md](mf_cedar_fullframe_primary_plan_ko.md):
+>   cedar 1차 경로 풀프레임 전환 **계획**(2026-08-03, 코드 변경 대기).
 >
 > 자동 노출 아키텍처의 정규 소유자는 [ax/camera.md](ax/camera.md),
 > 포인팅 체인은 [ax/positioning.md](ax/positioning.md). 이 문서는 그 사이의
