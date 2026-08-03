@@ -63,6 +63,12 @@ SQM_CALCULATION_INTERVAL_SECONDS = 1.0
 # path; it is expensive, so it runs at most every N seconds on solves.
 SQM_STELLAR_DIAGNOSTIC_INTERVAL_SECONDS = 10.0
 
+# Full-frame cedar attempts fail fast: successful FF solves measure 9-26 ms,
+# but on unsolvable frames (bright-gradient junk detections) the default 1 s
+# timeout dropped the attempt rate to 0.4 Hz and starved the SEP rescue tier
+# (LP ascent test 2026-08-03, plan doc section 9-1).
+CEDAR_FF_SOLVE_TIMEOUT_MS = 300
+
 
 def create_sqm_calculator(shared_state):
     """Create a new SQM calculator instance with current calibration.
@@ -757,6 +763,7 @@ def _build_successful_solve(
     last_solve_attempt: float,
     last_solve_success: float,
     centroid_count: int = 0,
+    solve_path: str = "",
 ) -> SuccessfulSolve:
     """Fold a successful tetra3 ``solution`` dict into a
     :class:`SuccessfulSolve` message.
@@ -794,6 +801,7 @@ def _build_successful_solve(
             Prob=solution.get("Prob"),
             FOV=solution.get("FOV"),
             T_solve=solution.get("T_solve"),
+            solve_path=solve_path,
             T_extract=solution.get("T_extract"),
         ),
         alignment=AlignmentResult(
@@ -811,6 +819,7 @@ def _build_failed_solve(
     last_solve_success,
     t_extract_ms: float,
     centroid_count: int = 0,
+    solve_path: str = "",
 ) -> FailedSolve:
     """Build a :class:`FailedSolve` message for an attempt that produced
     no pointing. The integrator's long-lived estimate preserves the
@@ -825,6 +834,7 @@ def _build_failed_solve(
             Matches=0,
             Centroids=centroid_count,
             T_extract=t_extract_ms,
+            solve_path=solve_path,
         ),
     )
 
@@ -904,7 +914,7 @@ def _solve_cedar_fullframe(
             return_matches=True,
             target_pixel=target_pixel,
             target_sky_coord=target_sky_coord,
-            solve_timeout=1000,
+            solve_timeout=CEDAR_FF_SOLVE_TIMEOUT_MS,
         )
         if (
             solution
@@ -1193,6 +1203,12 @@ def solver(
                             solution.pop("matched_stars", None)
                             solution.pop("matched_catID", None)
 
+                    solve_path = (
+                        ("cedar_ff" if used_fullframe else "cedar_512")
+                        if cedar_detect is not None
+                        else "tetra3"
+                    )
+
                     # SEP full-frame experiment: shadow-detect on every
                     # attempt; optionally rescue a failed production solve
                     # from the SEP centroids (sep_shadow module docstring).
@@ -1251,6 +1267,7 @@ def solver(
                                 fb_solution.pop("matched_catID", None)
                                 solution = fb_solution
                                 sep_fallback_used = True
+                                solve_path = "sep"
                                 logger.debug(
                                     "SEP fallback solve SUCCESS - %d SEP "
                                     "centroids (cedar saw %d), RMSE %.1f",
@@ -1333,6 +1350,7 @@ def solver(
                                     else len(centroids)
                                 )
                             ),
+                            solve_path=solve_path,
                         )
                         # Popped only now: _build_successful_solve above needs
                         # it for the Gaia-G reference band.
@@ -1387,6 +1405,7 @@ def solver(
                                     if used_fullframe
                                     else len(centroids)
                                 ),
+                                solve_path=solve_path,
                             )
                         )
 

@@ -120,6 +120,9 @@ def _solution_to_dict(sol) -> dict:
         "Prob": diag.Prob,
         "T_solve": diag.T_solve,
         "T_extract": diag.T_extract,
+        # Which path produced the attempt: cedar_512 / cedar_ff / sep / tetra3
+        # (empty on messages that predate the field).
+        "solve_path": getattr(diag, "solve_path", ""),
     }
 
 

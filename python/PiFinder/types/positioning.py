@@ -259,6 +259,11 @@ class SolveDiagnostics:
     FOV: Optional[float] = None
     T_solve: Optional[float] = None
     T_extract: Optional[float] = None
+    # Which detection/solve path produced this attempt: "cedar_512",
+    # "cedar_ff" (full-frame primary), "sep" (fallback rescue) or
+    # "tetra3" (cedar server unavailable). Diagnostics only -- before
+    # this field the path had to be inferred from Matches > Centroids.
+    solve_path: str = ""
 
 
 @dataclass

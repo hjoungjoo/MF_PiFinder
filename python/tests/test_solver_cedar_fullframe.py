@@ -84,6 +84,10 @@ def test_solve_cedar_fullframe_maps_like_sep_path():
     expected_tp = sfm.map_target_pixel_to_frame(TARGET_512, canvas, CROP_W)
     assert tuple(call["target_pixel"]) == pytest.approx(tuple(expected_tp))
 
+    # Fast-fail: junk full-frame detections must not burn the 1 s default
+    # (LP ascent test 2026-08-03: 0.4 Hz attempt rate starved SEP rescue).
+    assert call["solve_timeout"] == solver.CEDAR_FF_SOLVE_TIMEOUT_MS
+
     # y/x_target comes back in 512 space for the alignment chain.
     expected_back = sfm.map_frame_pixel_to_target((100.0, 200.0), canvas, CROP_W)
     assert (solution["y_target"], solution["x_target"]) == pytest.approx(
