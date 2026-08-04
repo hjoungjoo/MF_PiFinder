@@ -591,3 +591,83 @@ def test_stats_hfd_uses_question_marks_when_measurement_is_unavailable(monkeypat
 
     assert "?.?" in drawn_text
     assert ">50" not in drawn_text
+
+
+# --- MF: daytime/saturated raw-frame path (re-implemented on the #531 screen)
+
+
+def _mf_preview(raw, *, rotation=0):
+    preview = object.__new__(UIPreview)
+    preview.display_class = SimpleNamespace(resolution=(128, 128), titlebar_height=17)
+    preview.colors = SimpleNamespace(
+        red_image=Image.new("RGB", (128, 128), (255, 0, 0))
+    )
+    preview.shared_state = SimpleNamespace(cam_raw=lambda: raw)
+    preview.config_object = SimpleNamespace(
+        get_option=lambda name: rotation if name == "camera_rotation" else None
+    )
+    return preview
+
+
+@pytest.mark.unit
+def test_raw_bright_frame_averages_the_bayer_checker():
+    """The mono sensor's RGGB label paints a checker onto flat scenes; the
+    Bayer-quad average must flatten it (mf_sep_fullframe_impl §6.4)."""
+    raw = np.zeros((256, 256), dtype=np.uint16)
+    raw[0::2, 0::2] = 300
+    raw[0::2, 1::2] = 100
+    raw[1::2, 0::2] = 100
+    raw[1::2, 1::2] = 300
+
+    rendered = _mf_preview(raw)._render_raw_bright_frame()
+
+    assert rendered is not None
+    assert rendered.size == (128, 128)
+    arr = np.asarray(rendered)
+    # red-channel only (display red mask), and flat after quad averaging
+    assert arr[..., 1].max() == 0 and arr[..., 2].max() == 0
+    assert float(arr[..., 0].std()) < 1.0
+
+
+@pytest.mark.unit
+def test_raw_bright_frame_keeps_flat_saturated_frame_bright():
+    """A flat saturated frame has no percentile span; it must render bright,
+    not stretch to black."""
+    raw = np.full((256, 256), 4000, dtype=np.uint16)
+
+    rendered = _mf_preview(raw)._render_raw_bright_frame()
+
+    assert rendered is not None
+    assert np.asarray(rendered)[..., 0].min() >= 250
+
+
+@pytest.mark.unit
+def test_raw_bright_frame_without_raw_returns_none():
+    assert _mf_preview(None)._render_raw_bright_frame() is None
+    assert _mf_preview(np.zeros(16, dtype=np.uint16))._render_raw_bright_frame() is None
+
+
+@pytest.mark.unit
+def test_orient_camera_image_honors_camera_rotation():
+    preview = _mf_preview(None, rotation=90)
+    src = Image.new("L", (4, 4), 0)
+    src.putpixel((0, 0), 255)  # top-left marker
+
+    oriented = preview._orient_camera_image(src)
+
+    # camera_rotation=90 -> rotate(-90): top-left moves to top-right
+    assert oriented.getpixel((3, 0)) == 255
+
+
+@pytest.mark.unit
+def test_image_mode_wires_the_bright_raw_branch():
+    """Regression pin: the Image view must keep the daytime raw path and the
+    Gain marking-menu entry the fork re-implemented on the #531 screen."""
+    import inspect
+
+    update_src = inspect.getsource(UIPreview.update)
+    assert "STRETCH_BRIGHT_BACKGROUND" in update_src
+    assert "_render_raw_bright_frame" in update_src
+
+    init_src = inspect.getsource(UIPreview.__init__)
+    assert "camera_gain" in init_src

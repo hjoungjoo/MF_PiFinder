@@ -760,3 +760,23 @@ def test_tiff_download_of_mean_stack_stays_in_sensor_range():
     tiff_bytes, _ = processor.render_raw_tiff(shared, settings)
     image = np.asarray(Image.open(io.BytesIO(tiff_bytes)), dtype=np.uint16)
     np.testing.assert_array_equal(image, np.full((4, 4), 200, dtype=np.uint16))
+
+
+def test_live_view_endpoint_always_streams_jpeg():
+    """MF pin: the live preview must not honor web_image_format.
+
+    The /api/camera/raw-stack/image route is a closure inside
+    register_api_routes, so pin it at the source level: the live endpoint
+    passes an explicit image_format="jpeg" (PNG encoding of the full-size
+    frame drops the refresh rate; the setting governs downloads only).
+    """
+    import inspect
+
+    from PiFinder import api_extensions
+
+    src = inspect.getsource(api_extensions.register_api_routes)
+    route_marker = 'raw-stack/image"'
+    start = src.index(route_marker)
+    end = src.index('@app.route("/api/camera/raw-stack/download")')
+    endpoint_src = src[start:end]
+    assert 'image_format="jpeg"' in endpoint_src

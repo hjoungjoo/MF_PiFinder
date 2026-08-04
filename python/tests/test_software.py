@@ -166,3 +166,76 @@ class TestFetchMigrationConfig:
     def test_returns_none_when_payload_is_not_object(self, mock_get):
         mock_get.return_value = _mock_json_response(["nixos_for_everyone"])
         assert _fetch_migration_config() is None
+
+
+@pytest.mark.unit
+class TestForkReleaseChannel:
+    """MF: the device must watch this fork's releases, never brickbots'.
+
+    A future upstream sync that re-points these URLs would silently turn the
+    Software screen back into a monitor of a foreign project's releases (and
+    hand upstream's migration gate remote-trigger power over a migration this
+    fork excludes) -- these pins make that a test failure instead.
+    """
+
+    def test_migration_gate_url_points_at_the_fork(self):
+        import PiFinder.ui.software as software
+
+        assert "hjoungjoo/MF_PiFinder" in software.MIGRATION_GATE_URL
+        assert "brickbots" not in software.MIGRATION_GATE_URL
+
+    def test_release_version_url_points_at_the_fork(self):
+        import inspect
+
+        from PiFinder.ui.software import UISoftware
+
+        src = inspect.getsource(UISoftware.get_release_version)
+        assert "hjoungjoo/MF_PiFinder" in src
+        assert "brickbots" not in src
+
+
+@pytest.mark.unit
+def test_unknown_release_offers_no_update(monkeypatch, tmp_path):
+    """MF: a failed release fetch (network down, or no release branch cut yet)
+    must not surface as "Update Now" -- update_needed()'s error bias would
+    otherwise offer a doomed update against a release that doesn't exist."""
+    from unittest.mock import MagicMock
+
+    import PiFinder.i18n  # noqa: F401  installs the _() gettext builtin
+    from PiFinder import utils
+    from PiFinder.displays import get_display
+    from PiFinder.ui.software import UISoftware
+
+    # The display loads fonts and Config() reads default_config.json via
+    # utils.pifinder_dir, so build the display before redirecting the dir and
+    # give the redirected dir a copy of the defaults.
+    display = get_display("headless")
+    (tmp_path / "version.txt").write_text("m2.6.0")
+    (tmp_path / "wifi_status.txt").write_text("Client")
+    (tmp_path / "default_config.json").write_text(
+        (utils.pifinder_dir / "default_config.json").read_text()
+    )
+    monkeypatch.setattr(utils, "pifinder_dir", tmp_path)
+
+    shared_state = MagicMock()
+    shared_state.ui_state.return_value.message_timeout.return_value = 0.0
+    shared_state.sqm.return_value = None  # title bar info rotator
+    shared_state.solve_state.return_value = False
+    shared_state.location.return_value = None
+
+    module = UISoftware(
+        display,
+        None,  # camera_image
+        shared_state,
+        {},  # command_queues
+        MagicMock(),  # config_object
+        MagicMock(),  # catalogs
+        item_definition={},
+        add_to_stack=MagicMock(),
+        remove_from_stack=MagicMock(),
+    )
+
+    module._release_version = "Unknown"
+    module.update(force=True)
+
+    assert module._go_for_update is False

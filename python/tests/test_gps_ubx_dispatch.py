@@ -132,3 +132,38 @@ def test_nav_sol_used_count_raises_the_seen_floor():
     published = run_messages([{"class": "NAV-SOL", "satellites": 6}])
 
     assert published == [(6, 6)]
+
+
+@pytest.mark.unit
+def test_nav_sat_publishes_in_view_and_top_cno():
+    """MF: the 4-element telemetry (in_view, top C/N0) must survive the #563
+    merge -- NAV-SAT carries all-listed count and per-sat signal levels."""
+    gps_ubx.sats[0] = 0
+    gps_ubx.sats[1] = 0
+    gps_ubx.sats[2] = 0
+    gps_ubx.sats[3] = ()
+    gps_queue = FakeQueue()
+
+    msg = {
+        "class": "NAV-SAT",
+        "nSat": 3,
+        "in_view": 12,
+        "satellites": [
+            {"used": True, "signal": 41},
+            {"used": True, "signal": 33},
+            {"used": False, "signal": 27},
+            {"used": False},  # listed, no signal -- excluded from top_cno
+        ],
+    }
+
+    async def iterator():
+        yield msg
+
+    asyncio.run(
+        gps_ubx.process_messages(
+            iterator, gps_queue, FakeQueue(), error_info={}, clock=FakeClock()
+        )
+    )
+
+    published = [c for name, c in gps_queue.items if name == "satellites"]
+    assert published == [(3, 2, 12, (41, 33, 27))]
