@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -1871,6 +1871,29 @@ intent is now commented at the `set_gain` handler so it does not get
   `low_percentile`, a long-lived `Config` reader picks up a web-side
   change, and right after Apply — before the camera drains its queue —
   the page and config already report the new exposure.
+
+## Release check now points at the fork (2026-08-05)
+
+The Software screen's release check read brickbots' `release/version.txt`,
+so upstream publishing 2.6.1 would show "Update Now" on fork devices
+against a foreign release (recorded as pending in the 2026-08-04 sync
+round). The NixOS migration gate (`migration_gate.json`) had the same
+problem — upstream flipping `nixos_for_everyone` could remotely trigger a
+migration this fork excludes.
+
+- `ui/software.py`: both URLs now point at `hjoungjoo/MF_PiFinder`'s
+  release branch. The fork has no release branch yet, so both 404
+  (verified live).
+- **New "Unknown" display branch**: `update_needed()` deliberately returns
+  True on unparseable input (pinned by upstream tests), so a failed fetch
+  (network down, or no release published) used to surface as "Update Now".
+  An "Unknown" release version now renders "Release info / unavailable"
+  and offers no update.
+- i18n: two new msgids (`Release info`, `unavailable`) translated into all
+  five languages (AI-TRANSLATED markers).
+- Cutting a release only requires `version.txt` on the release branch for
+  the check to work; `pifinder_update.sh` already pulls the fork's own
+  release branch, so it needed no change.
 
 ## Install script naming — `pifinder_setup.sh` is now the fork installer (2026-08-04)
 

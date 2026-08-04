@@ -1,7 +1,7 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
-최종 업데이트: 2026-08-04
+최종 업데이트: 2026-08-05
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
@@ -1692,6 +1692,27 @@ systemd 서비스로 동작하므로 데스크톱 부팅 자체를 끈다.
   load average 3.6 → 1.9, `pifinder`/`cedar_detect` 서비스 정상 유지 확인.
 - 데스크톱이 다시 필요하면 `sudo raspi-config nonint do_boot_behaviour B4`
   (데스크톱 자동로그인)로 되돌린다. VNC 데스크톱을 쓰려는 경우에도 마찬가지.
+
+## 릴리즈 체크를 포크 기준으로 전환 (2026-08-05)
+
+Software 화면의 릴리즈 확인이 brickbots의 `release/version.txt`를 보고 있어서,
+upstream이 2.6.1을 발행하면 포크 기기에 남의 릴리즈 기준 "Update Now"가 뜨는
+상태였다 (2026-08-04 동기화 조사에서 미결로 기록). NixOS 마이그레이션 게이트
+(`migration_gate.json`)도 같은 문제 — upstream이 `nixos_for_everyone`을 켜면
+이 포크가 제외한 NixOS 마이그레이션이 원격으로 트리거될 수 있었다.
+
+- `ui/software.py`: 두 URL 모두 `hjoungjoo/MF_PiFinder`의 release 브랜치로
+  전환. 포크는 아직 release 브랜치가 없으므로 둘 다 404 (실측 확인).
+- **"Unknown" 표시 분기 추가**: `update_needed()`는 파싱 불가 입력에
+  의도적으로 True를 반환하므로(업스트림 테스트 고정), fetch 실패(네트워크
+  다운 또는 release 미발행)가 곧장 "Update Now"로 이어졌다. 이제 릴리즈
+  버전이 "Unknown"이면 "Release info / unavailable"을 표시하고 업데이트를
+  권하지 않는다.
+- i18n: 신규 msgid 2건(`Release info`, `unavailable`) 5개 언어 번역
+  (AI-TRANSLATED 마커).
+- 릴리즈를 낼 때는 release 브랜치에 `version.txt`만 있으면 체크가 그대로
+  동작한다. `pifinder_update.sh`는 이미 origin(포크)의 release를 pull하므로
+  수정 불요.
 
 ## 설치 스크립트 이름 정리 — `pifinder_setup.sh`가 포크 설치본 (2026-08-04)
 

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-04 21:05+0900\n"
+"POT-Creation-Date: 2026-08-05 01:49+0900\n"
 "PO-Revision-Date: 2025-01-22 17:58+0100\n"
 "Last-Translator: Claude Code\n"
 "Language: es\n"
@@ -674,8 +674,8 @@ msgstr "Remoto"
 
 #: PiFinder/ui/bluetooth_keyboard.py:202 PiFinder/ui/menu_structure.py:361
 #: PiFinder/ui/menu_structure.py:1752 PiFinder/ui/menu_structure.py:1765
-#: PiFinder/ui/software.py:299 PiFinder/ui/software.py:354
-#: PiFinder/ui/software.py:448 views/edit_eyepiece.html:54
+#: PiFinder/ui/software.py:321 PiFinder/ui/software.py:376
+#: PiFinder/ui/software.py:470 views/edit_eyepiece.html:54
 #: views/edit_instrument.html:108 views/equipment.html:58
 #: views/location_form.html:106 views/locations.html:187
 #: views/locations.html:200 views/network.html:101 views/network.html:205
@@ -832,13 +832,13 @@ msgstr "Nombre de Ubicación"
 msgid "Loc {number}"
 msgstr "Ubi {number}"
 
-#: PiFinder/ui/callbacks.py:572
+#: PiFinder/ui/callbacks.py:575
 #, python-brace-format
 msgid "Time: {time}"
 msgstr "Hora: {time}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:590
+#: PiFinder/ui/callbacks.py:594
 #, python-brace-format
 msgid ""
 "{date}\n"
@@ -848,7 +848,7 @@ msgstr ""
 "{time}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:610
+#: PiFinder/ui/callbacks.py:614
 #, python-brace-format
 msgid ""
 "User object created\n"
@@ -858,7 +858,7 @@ msgstr ""
 "{name}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:743
+#: PiFinder/ui/callbacks.py:747
 msgid ""
 "Checking GPS\n"
 "config..."
@@ -867,7 +867,7 @@ msgstr ""
 "config. GPS..."
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:748
+#: PiFinder/ui/callbacks.py:752
 msgid ""
 "GPS config\n"
 "updated"
@@ -876,7 +876,7 @@ msgstr ""
 "actualizada"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:750
+#: PiFinder/ui/callbacks.py:754
 msgid ""
 "GPS config\n"
 "OK"
@@ -885,7 +885,7 @@ msgstr ""
 "OK"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/callbacks.py:753
+#: PiFinder/ui/callbacks.py:757
 msgid ""
 "GPS config\n"
 "failed"
@@ -2074,8 +2074,8 @@ msgid "Reset All"
 msgstr "Restablecer Todo"
 
 #: PiFinder/ui/menu_structure.py:358 PiFinder/ui/menu_structure.py:1751
-#: PiFinder/ui/menu_structure.py:1762 PiFinder/ui/software.py:354
-#: PiFinder/ui/software.py:450
+#: PiFinder/ui/menu_structure.py:1762 PiFinder/ui/software.py:376
+#: PiFinder/ui/software.py:472
 msgid "Confirm"
 msgstr "Confirmar"
 
@@ -2884,7 +2884,7 @@ msgstr "Estándar"
 msgid "Filter"
 msgstr "Filtro"
 
-#: PiFinder/ui/object_list.py:289 PiFinder/ui/software.py:491
+#: PiFinder/ui/object_list.py:289 PiFinder/ui/software.py:513
 msgid "Downloading..."
 msgstr "Descargando..."
 
@@ -2896,7 +2896,7 @@ msgstr "Sin GPS"
 msgid "Calculating..."
 msgstr "Calculando..."
 
-#: PiFinder/ui/object_list.py:312 PiFinder/ui/software.py:669
+#: PiFinder/ui/object_list.py:312 PiFinder/ui/software.py:691
 msgid "Loading..."
 msgstr "Cargando..."
 
@@ -3286,110 +3286,120 @@ msgstr "ÉPOCA:"
 msgid "RA/DEC"
 msgstr "RA/Dec"
 
-#: PiFinder/ui/software.py:178
+#: PiFinder/ui/software.py:181
 msgid "Updating..."
 msgstr "Actualizando..."
 
-#: PiFinder/ui/software.py:180
+#: PiFinder/ui/software.py:183
 msgid "Ok! Restarting"
 msgstr "¡Ok! Reiniciando"
 
-#: PiFinder/ui/software.py:183
+#: PiFinder/ui/software.py:186
 msgid "Error on Upd"
 msgstr "Error en Act."
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/software.py:190
+#: PiFinder/ui/software.py:193
 #, python-brace-format
 msgid "Wifi Mode: {mode}"
 msgstr "Modo WiFi: {mode}"
 
-#: PiFinder/ui/software.py:198
+#: PiFinder/ui/software.py:201
 msgid "Current Version"
 msgstr "Versión Actual"
 
-#: PiFinder/ui/software.py:214
+#: PiFinder/ui/software.py:217
 msgid "Release Version"
 msgstr "Versión de Lanzamiento"
 
-#: PiFinder/ui/software.py:236
+#: PiFinder/ui/software.py:239
 msgid "WiFi must be"
 msgstr "WiFi debe estar"
 
-#: PiFinder/ui/software.py:242
+#: PiFinder/ui/software.py:245
 msgid "client mode"
 msgstr "en modo cliente"
 
-#: PiFinder/ui/software.py:255
+#: PiFinder/ui/software.py:258
 msgid "Checking for"
 msgstr "Verificando"
 
-#: PiFinder/ui/software.py:261
+#: PiFinder/ui/software.py:264
 #, python-brace-format
 msgid "updates{elipsis}"
 msgstr "actualizaciones{elipsis}"
 
-#: PiFinder/ui/software.py:277
+#: PiFinder/ui/software.py:282
+# AI-TRANSLATED (claude): needs human review
+msgid "Release info"
+msgstr "Info de versión"
+
+#: PiFinder/ui/software.py:288
+# AI-TRANSLATED (claude): needs human review
+msgid "unavailable"
+msgstr "no disponible"
+
+#: PiFinder/ui/software.py:299
 msgid "No Update"
 msgstr "Sin Actualización"
 
-#: PiFinder/ui/software.py:283
+#: PiFinder/ui/software.py:305
 msgid "needed"
 msgstr "necesaria"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/software.py:293
+#: PiFinder/ui/software.py:315
 msgid "Update Now"
 msgstr "Actualizar Ahora"
 
-#: PiFinder/ui/software.py:363
+#: PiFinder/ui/software.py:385
 msgid "Major Upgrade"
 msgstr ""
 
-#: PiFinder/ui/software.py:383
+#: PiFinder/ui/software.py:405
 #, fuzzy
 msgid "IRREVERSIBLE"
 msgstr "Invertido"
 
-#: PiFinder/ui/software.py:392
+#: PiFinder/ui/software.py:414
 #, python-brace-format
 msgid "Download: {}MB"
 msgstr ""
 
-#: PiFinder/ui/software.py:400
+#: PiFinder/ui/software.py:422
 msgid "Power + WiFi req"
 msgstr ""
 
-#: PiFinder/ui/software.py:411
+#: PiFinder/ui/software.py:433
 msgid "No checksum avail."
 msgstr ""
 
-#: PiFinder/ui/software.py:471
+#: PiFinder/ui/software.py:493
 #, fuzzy
 msgid "Starting..."
 msgstr "Reiniciando..."
 
-#: PiFinder/ui/software.py:513 PiFinder/ui/software.py:518
+#: PiFinder/ui/software.py:535 PiFinder/ui/software.py:540
 #, fuzzy
 msgid "Not supported"
 msgstr "No Observado"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/software.py:523
+#: PiFinder/ui/software.py:545
 #, fuzzy
 msgid "Failed: "
 msgstr "Error al subir:"
 
-#: PiFinder/ui/software.py:551
+#: PiFinder/ui/software.py:573
 msgid "System Upgrade"
 msgstr ""
 
-#: PiFinder/ui/software.py:654
+#: PiFinder/ui/software.py:676
 #, fuzzy
 msgid "Could not load"
 msgstr "  No Registrado"
 
-#: PiFinder/ui/software.py:660
+#: PiFinder/ui/software.py:682
 #, fuzzy
 msgid "release notes"
 msgstr "Versión de Lanzamiento"
@@ -4967,8 +4977,8 @@ msgstr "Malo"
 msgid "Color Mode"
 msgstr "en modo cliente"
 
-#: views/livecam.html:217
 # AI-TRANSLATED (claude): needs human review
+#: views/livecam.html:217
 msgid "Download Format"
 msgstr "Formato de descarga"
 

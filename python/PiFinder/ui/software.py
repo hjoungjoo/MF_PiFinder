@@ -25,9 +25,12 @@ sys_utils = utils.get_sys_utils()
 logger = logging.getLogger("UISoftware")
 
 REQUEST_TIMEOUT = 10
-MIGRATION_GATE_URL = (
-    "https://raw.githubusercontent.com/brickbots/PiFinder/release/migration_gate.json"
-)
+# MF: both release checks point at this fork, not brickbots — otherwise the
+# device would offer "Update Now" against upstream's releases (and upstream's
+# migration gate could remotely trigger a NixOS migration this fork excludes).
+# Until a release branch is cut on the fork these URLs 404, which reads as
+# "no release published" below.
+MIGRATION_GATE_URL = "https://raw.githubusercontent.com/hjoungjoo/MF_PiFinder/release/migration_gate.json"
 
 # Secret unlock: 7x square button
 _UNLOCK_SEQUENCE = ["square"] * 7
@@ -161,7 +164,7 @@ class UISoftware(UIModule):
 
         try:
             res = requests.get(
-                "https://raw.githubusercontent.com/brickbots/PiFinder/release/version.txt",
+                "https://raw.githubusercontent.com/hjoungjoo/MF_PiFinder/release/version.txt",
                 timeout=REQUEST_TIMEOUT,
             )
         except requests.exceptions.RequestException:
@@ -267,6 +270,25 @@ class UISoftware(UIModule):
             self._elipsis_count += 1
             if self._elipsis_count > 39:
                 self._elipsis_count = 0
+            return self.screen_update()
+
+        if self._release_version.strip() == "Unknown":
+            # MF: update_needed() deliberately returns True on unparseable
+            # input, so a failed fetch (network down, or no release branch
+            # cut on the fork yet) would otherwise offer "Update Now"
+            # against a release that doesn't exist.
+            self.draw.text(
+                (10, msg_top),
+                _("Release info"),
+                font=self.fonts.large.font,
+                fill=self.colors.get(255),
+            )
+            self.draw.text(
+                (10, msg_bottom),
+                _("unavailable"),
+                font=self.fonts.large.font,
+                fill=self.colors.get(255),
+            )
             return self.screen_update()
 
         if not update_needed(

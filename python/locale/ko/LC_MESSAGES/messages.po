@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-04 21:05+0900\n"
+"POT-Creation-Date: 2026-08-05 01:49+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -671,8 +671,8 @@ msgstr "제거"
 
 #: PiFinder/ui/bluetooth_keyboard.py:202 PiFinder/ui/menu_structure.py:361
 #: PiFinder/ui/menu_structure.py:1752 PiFinder/ui/menu_structure.py:1765
-#: PiFinder/ui/software.py:299 PiFinder/ui/software.py:354
-#: PiFinder/ui/software.py:448 views/edit_eyepiece.html:54
+#: PiFinder/ui/software.py:321 PiFinder/ui/software.py:376
+#: PiFinder/ui/software.py:470 views/edit_eyepiece.html:54
 #: views/edit_instrument.html:108 views/equipment.html:58
 #: views/location_form.html:106 views/locations.html:187
 #: views/locations.html:200 views/network.html:101 views/network.html:205
@@ -830,12 +830,12 @@ msgstr "위치 이름"
 msgid "Loc {number}"
 msgstr "위치 {number}"
 
-#: PiFinder/ui/callbacks.py:572
+#: PiFinder/ui/callbacks.py:575
 #, python-brace-format
 msgid "Time: {time}"
 msgstr "시간: {time}"
 
-#: PiFinder/ui/callbacks.py:590
+#: PiFinder/ui/callbacks.py:594
 #, python-brace-format
 msgid ""
 "{date}\n"
@@ -844,7 +844,7 @@ msgstr ""
 "{date}\n"
 "{time}"
 
-#: PiFinder/ui/callbacks.py:610
+#: PiFinder/ui/callbacks.py:614
 #, python-brace-format
 msgid ""
 "User object created\n"
@@ -853,7 +853,7 @@ msgstr ""
 "User object created\n"
 "{name}"
 
-#: PiFinder/ui/callbacks.py:743
+#: PiFinder/ui/callbacks.py:747
 msgid ""
 "Checking GPS\n"
 "config..."
@@ -861,7 +861,7 @@ msgstr ""
 "Checking GPS\n"
 "config..."
 
-#: PiFinder/ui/callbacks.py:748
+#: PiFinder/ui/callbacks.py:752
 msgid ""
 "GPS config\n"
 "updated"
@@ -869,7 +869,7 @@ msgstr ""
 "GPS config\n"
 "updated"
 
-#: PiFinder/ui/callbacks.py:750
+#: PiFinder/ui/callbacks.py:754
 msgid ""
 "GPS config\n"
 "OK"
@@ -877,7 +877,7 @@ msgstr ""
 "GPS config\n"
 "OK"
 
-#: PiFinder/ui/callbacks.py:753
+#: PiFinder/ui/callbacks.py:757
 msgid ""
 "GPS config\n"
 "failed"
@@ -1978,8 +1978,8 @@ msgid "Reset All"
 msgstr "전체 초기화"
 
 #: PiFinder/ui/menu_structure.py:358 PiFinder/ui/menu_structure.py:1751
-#: PiFinder/ui/menu_structure.py:1762 PiFinder/ui/software.py:354
-#: PiFinder/ui/software.py:450
+#: PiFinder/ui/menu_structure.py:1762 PiFinder/ui/software.py:376
+#: PiFinder/ui/software.py:472
 msgid "Confirm"
 msgstr "확인"
 
@@ -2714,7 +2714,7 @@ msgstr "표준"
 msgid "Filter"
 msgstr "필터"
 
-#: PiFinder/ui/object_list.py:289 PiFinder/ui/software.py:491
+#: PiFinder/ui/object_list.py:289 PiFinder/ui/software.py:513
 msgid "Downloading..."
 msgstr "다운로드 중..."
 
@@ -2726,7 +2726,7 @@ msgstr "GPS 고정 없음"
 msgid "Calculating..."
 msgstr "계산 중..."
 
-#: PiFinder/ui/object_list.py:312 PiFinder/ui/software.py:669
+#: PiFinder/ui/object_list.py:312 PiFinder/ui/software.py:691
 msgid "Loading..."
 msgstr "로드 중..."
 
@@ -3056,102 +3056,116 @@ msgstr "EPOCH:"
 msgid "RA/DEC"
 msgstr "RA/DEC"
 
-#: PiFinder/ui/software.py:178
+#: PiFinder/ui/software.py:181
 msgid "Updating..."
 msgstr "업데이트 중..."
 
-#: PiFinder/ui/software.py:180
+#: PiFinder/ui/software.py:183
 msgid "Ok! Restarting"
 msgstr "OK! 재시작"
 
-#: PiFinder/ui/software.py:183
+#: PiFinder/ui/software.py:186
 msgid "Error on Upd"
 msgstr "업데이트 오류"
 
-#: PiFinder/ui/software.py:190
+#: PiFinder/ui/software.py:193
 #, python-brace-format
 msgid "Wifi Mode: {mode}"
 msgstr "WiFi 모드: {mode}"
 
-#: PiFinder/ui/software.py:198
+#: PiFinder/ui/software.py:201
 msgid "Current Version"
 msgstr "현재 버전"
 
-#: PiFinder/ui/software.py:214
+#: PiFinder/ui/software.py:217
 msgid "Release Version"
 msgstr "릴리스 버전"
 
-#: PiFinder/ui/software.py:236
+#: PiFinder/ui/software.py:239
 msgid "WiFi must be"
 msgstr "WiFi가"
 
-#: PiFinder/ui/software.py:242
+#: PiFinder/ui/software.py:245
 msgid "client mode"
 msgstr "Client 모드여야 함"
 
-#: PiFinder/ui/software.py:255
+#: PiFinder/ui/software.py:258
 msgid "Checking for"
 msgstr "업데이트"
 
-#: PiFinder/ui/software.py:261
+#: PiFinder/ui/software.py:264
 #, python-brace-format
 msgid "updates{elipsis}"
 msgstr "확인 중{elipsis}"
 
-#: PiFinder/ui/software.py:277
+#: PiFinder/ui/software.py:282
+# AI-TRANSLATED (claude): needs human review
+msgid "Release info"
+msgstr "릴리즈 정보"
+
+# AI-TRANSLATED (claude): needs human review
+#: PiFinder/ui/software.py:288
+#, fuzzy
+# AI-TRANSLATED (claude): needs human review
+msgid "unavailable"
+msgstr "확인 불가"
+"IMU 명령\n"
+"사용 불가"
+
+#: PiFinder/ui/software.py:299
 msgid "No Update"
 msgstr "업데이트"
 
-#: PiFinder/ui/software.py:283
+#: PiFinder/ui/software.py:305
 msgid "needed"
 msgstr "없음"
 
-#: PiFinder/ui/software.py:293
+#: PiFinder/ui/software.py:315
 msgid "Update Now"
 msgstr "지금 업데이트"
 
-#: PiFinder/ui/software.py:363
+#: PiFinder/ui/software.py:385
 msgid "Major Upgrade"
 msgstr "메이저 업그레이드"
 
-#: PiFinder/ui/software.py:383
+#: PiFinder/ui/software.py:405
 msgid "IRREVERSIBLE"
 msgstr "되돌릴 수 없음"
 
-#: PiFinder/ui/software.py:392
+#: PiFinder/ui/software.py:414
 #, python-brace-format
 msgid "Download: {}MB"
 msgstr "Download: {}MB"
 
-#: PiFinder/ui/software.py:400
+#: PiFinder/ui/software.py:422
 msgid "Power + WiFi req"
 msgstr "Power + WiFi req"
 
-#: PiFinder/ui/software.py:411
+#: PiFinder/ui/software.py:433
 msgid "No checksum avail."
 msgstr "No checksum avail."
 
-#: PiFinder/ui/software.py:471
+#: PiFinder/ui/software.py:493
 msgid "Starting..."
 msgstr "시작 중..."
 
-#: PiFinder/ui/software.py:513 PiFinder/ui/software.py:518
+#: PiFinder/ui/software.py:535 PiFinder/ui/software.py:540
 msgid "Not supported"
 msgstr "지원 안됨"
 
-#: PiFinder/ui/software.py:523
+#: PiFinder/ui/software.py:545
 msgid "Failed: "
 msgstr "실패: "
 
-#: PiFinder/ui/software.py:551
+#: PiFinder/ui/software.py:573
 msgid "System Upgrade"
 msgstr "시스템 업그레이드"
 
-#: PiFinder/ui/software.py:654
+#: PiFinder/ui/software.py:676
 msgid "Could not load"
 msgstr "로드 실패"
 
-#: PiFinder/ui/software.py:660
+#: PiFinder/ui/software.py:682
 msgid "release notes"
 msgstr "릴리스 노트"
 
@@ -4679,7 +4693,6 @@ msgstr "컬러 모드"
 
 # AI-TRANSLATED (claude): needs human review
 #: views/livecam.html:217
-# AI-TRANSLATED (claude): needs human review
 msgid "Download Format"
 msgstr "다운로드 포맷"
 

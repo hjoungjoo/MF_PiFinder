@@ -70,7 +70,9 @@ per-item rationale; KO is authoritative):
   candidates), SSD1333 four-axis brightness (#568+#570 — inert on this
   device's SSD1351), the 2.6.1 release commits (version stays 2.6.0; note
   `ui/software.py:164` will show a spurious "Update Now" once upstream
-  publishes 2.6.1 — fork-side fix pending), bring-up tool (fails at
+  publishes 2.6.1 — resolved 2026-08-05: release-check and migration-gate
+  URLs repointed at the fork, "Unknown" display branch added), bring-up
+  tool (fails at
   import; reconfirms the #552 exclusion), keypad matrix split (#551 —
   reclassified deferred→excluded: the real blocker is the fork's 4-column
   vs upstream's 5-column matrix constants), focus multi-star (#531 —
