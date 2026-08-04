@@ -149,7 +149,7 @@
     displays.py 3-way clean 확인됨. 드라이버+테스트만 취하는 옵션 포함
     보류. 측정 데이터/하네스(~6,250줄)는 어느 경우에도 제외
   - 2.6.1 릴리즈 커밋 5건 (`2fbc5acc` 등) — 릴리즈 문서/버전. 내용 상당수가
-    rev4 등 미포함 기능. version.txt는 2.6.0 유지. **주의: upstream이
+    rev4 등 미포함 기능. version.txt는 m 접두사 체계로 전환(m2.6.0, 2026-08-05). **주의: upstream이
     2.6.1을 release 브랜치에 발행하면 `ui/software.py:164`의 릴리즈 체크가
     brickbots 기준 "Update Now"를 띄우게 됨 — 2026-08-05 해결: 릴리즈
     체크/마이그레이션 게이트 URL을 포크로 전환, "Unknown" 표시 분기 추가**

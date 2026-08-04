@@ -1894,6 +1894,16 @@ migration this fork excludes.
 - Cutting a release only requires `version.txt` on the release branch for
   the check to work; `pifinder_update.sh` already pulls the fork's own
   release branch, so it needed no change.
+- **Version scheme (same-day follow-up)**: `version.txt` moved to an
+  `m`-prefixed scheme (`2.6.0` → `m2.6.0`, user decision) to distinguish
+  fork releases from upstream's. Display paths (splash/web/API) show the
+  string verbatim — unaffected. `update_needed()` now parses via
+  `_semver_tuple()`, which strips the `m` prefix before comparing —
+  without it, `int("m2")` raised into the error bias (True), so devices
+  would show "Update Now" forever, including right after updating. Four
+  prefix tests added (equal-versions=False is the critical one).
+  Migrations gate on marker files, not the version string — verified
+  unaffected.
 
 ## Install script naming — `pifinder_setup.sh` is now the fork installer (2026-08-04)
 

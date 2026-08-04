@@ -43,6 +43,23 @@ class TestUpdateNeeded:
     def test_unknown_returns_true(self):
         assert update_needed("2.4.0", "Unknown") is True
 
+    # MF releases carry an "m" prefix in version.txt (m2.6.0). The prefix
+    # must be transparent to the compare — most importantly, equal versions
+    # must NOT report an update, or every device would show "Update Now"
+    # forever after updating (int("m2") used to raise into the error bias).
+    def test_mf_prefix_newer_available(self):
+        assert update_needed("m2.6.0", "m2.6.1") is True
+
+    def test_mf_prefix_same_version(self):
+        assert update_needed("m2.6.1", "m2.6.1") is False
+
+    def test_mf_prefix_older_release(self):
+        assert update_needed("m2.6.1", "m2.6.0") is False
+
+    def test_mf_prefix_mixed_with_plain(self):
+        # A device still on a plain upstream-style version vs an m-release
+        assert update_needed("2.6.0", "m2.6.1") is True
+
 
 @pytest.mark.unit
 class TestUnlockSequence:

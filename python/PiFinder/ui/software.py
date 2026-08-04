@@ -68,6 +68,21 @@ def _fetch_migration_config() -> Optional[dict]:
     return data
 
 
+def _semver_tuple(version: str) -> tuple:
+    """Parse "2.6.0" or the fork's "m2.6.0" into a comparable int tuple.
+
+    MF releases prefix version.txt with "m" to distinguish them from
+    upstream's; without stripping it, int("m2") raises and the error bias
+    below reports an update forever — including right after updating.
+    """
+    _tmp_split = version.strip().removeprefix("m").split(".")
+    return (
+        int(_tmp_split[0]),
+        int(_tmp_split[1]),
+        int(_tmp_split[2]),
+    )
+
+
 def update_needed(current_version: str, repo_version: str) -> bool:
     """
     Returns true if an update is available
@@ -77,19 +92,8 @@ def update_needed(current_version: str, repo_version: str) -> bool:
     updates if issues
     """
     try:
-        _tmp_split = current_version.split(".")
-        current_version_compare = (
-            int(_tmp_split[0]),
-            int(_tmp_split[1]),
-            int(_tmp_split[2]),
-        )
-
-        _tmp_split = repo_version.split(".")
-        repo_version_compare = (
-            int(_tmp_split[0]),
-            int(_tmp_split[1]),
-            int(_tmp_split[2]),
-        )
+        current_version_compare = _semver_tuple(current_version)
+        repo_version_compare = _semver_tuple(repo_version)
 
         # tuples compare in significance from first to last element
         return repo_version_compare > current_version_compare
