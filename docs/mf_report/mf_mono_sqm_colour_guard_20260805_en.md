@@ -3,7 +3,10 @@
 > Community write-up from the MF_PiFinder fork
 > ([hjoungjoo/MF_PiFinder](https://github.com/hjoungjoo/MF_PiFinder)), shared
 > for other PiFinder builders and anyone shipping camera-based sky-quality
-> metering. TL;DR: upstream's excellent sky-colour zero-point correction
+> metering.
+> Korean version: [mf_mono_sqm_colour_guard_20260805_ko.md](mf_mono_sqm_colour_guard_20260805_ko.md)
+>
+> TL;DR: upstream's excellent sky-colour zero-point correction
 > (#560, ADR 0026) keys "is this a colour sensor?" off the **driver's format
 > label**, and at least one common IMX462 module carries a colour label on a
 > sensor that measures as true mono. On such a module the correction applies

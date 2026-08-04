@@ -83,7 +83,7 @@
 | [solver_3path_bench_20260801](mf_report/mf_solver_3path_bench_20260801_ko.md) | 둘 다 | **1회성 실측**(2026-08-01) | 밝은 하늘(배경 87%) 동일 프레임 3경로 벤치 — cedar 크롭 0% / cedar 풀프레임 σ8 18% / 하이브리드 88%(라이브 89.5%), 정확도 1σ ~1′ (ADR m0023 재확인). |
 | [solver_fullframe_field_test_20260803](mf_report/mf_solver_fullframe_field_test_20260803_ko.md) | ko | **1회성 실측**(2026-08-03) | cedar 풀프레임 1차 경로 야간 실측(섀도 CSV ~2,200시도) — LP 곡선/타임아웃 A/B. 계획은 [cedar_fullframe_primary_plan](mf_dev/mf_cedar_fullframe_primary_plan_ko.md). |
 | [fullframe_solving_report_20260804](mf_report/mf_fullframe_solving_report_20260804_ko.md) | 둘 다 | **리포트**(2026-08-04) | 풀프레임 솔빙 파이프라인 실측 리포트 — 처리 구조(검출 2종 병렬 + 좌표 4단 캐스케이드)와 실측 결과 정리. |
-| [mono_sqm_colour_guard_20260805](mf_report/mf_mono_sqm_colour_guard_20260805_en.md) | en | **공지**(2026-08-05) | 커뮤니티 공유용 — SRGGB 라벨의 실측 모노 imx462에서 upstream #560 색보정이 SQM을 +0.74 mag 왜곡하는 함정과 `profile.mono` 가드, 모듈 자가진단법. |
+| [mono_sqm_colour_guard_20260805](mf_report/mf_mono_sqm_colour_guard_20260805_ko.md) | 둘 다 | **공지**(2026-08-05) | 커뮤니티 공유용 — SRGGB 라벨의 실측 모노 imx462에서 upstream #560 색보정이 SQM을 +0.74 mag 왜곡하는 함정과 `profile.mono` 가드, 모듈 자가진단법 ([영문판](mf_report/mf_mono_sqm_colour_guard_20260805_en.md)). |
 | [sqm_stack_port_plan](mf_dev/mf_sqm_stack_port_plan_ko.md) | ko | **이식 완료**(2026-07-30) | upstream SQM 스택(#532/#542/#543/#544) 이식 분석·계획과 Phase별 실적. |
 | [gps_aiding_plan](mf_dev/mf_gps_aiding_plan_ko.md) | 둘 다 | **plan(구현 전)** | u-blox GPS aiding(MGA-INI/DBD) 설계 초안. |
 
