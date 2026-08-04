@@ -1872,6 +1872,28 @@ intent is now commented at the `set_gain` handler so it does not get
   change, and right after Apply — before the camera drains its queue —
   the page and config already report the new exposure.
 
+## Last two deferred upstream items ported — SQM colour (#560), Focus multi-star (#531) (2026-08-05)
+
+The two remaining deferred items were ported under the MF-first rule.
+Details live in the sync reference's 2026-08-04 section (items updated
+to applied).
+
+- **#560 (`fde9beaa`)**: sky-colour radiometric zero point — the mono
+  misdetection trap is blocked by a `profile.mono` first-refusal in
+  `_mosaic_phase_is_rggb`; imx462 keeps the constant zero point (no
+  ~+0.74 mag drift), pinned by an MF regression test. Upstream's constant
+  refit (15.25→15.159, −0.09 mag) is accepted as a calibration
+  improvement.
+- **#531 (`b7fa9e8a`)**: the 4-mode Focus rewrite adopted, with the
+  fork's three preview features re-implemented (guide keys, Gain marking
+  menu, daytime raw render → Image mode). A wholesale positioning.py
+  take that clobbered MF fields was caught by tests and backed out. Docs
+  converged on the post-#546 state (closing #546/#547). Verified
+  headless: all 4 modes render, GAIN menu jumps, debug-camera solving
+  works.
+- Full suite: 1,105 pass. The only unported remainder is the five i18n
+  string-wrapping hunks (#562).
+
 ## SSD1333 four-axis brightness port (partial port of upstream #568+#570, 2026-08-05)
 
 With the plan to adopt the SSD1333 (176×176) panel confirmed, the

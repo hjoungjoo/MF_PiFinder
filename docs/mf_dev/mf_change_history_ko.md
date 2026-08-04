@@ -1693,6 +1693,24 @@ systemd 서비스로 동작하므로 데스크톱 부팅 자체를 끈다.
 - 데스크톱이 다시 필요하면 `sudo raspi-config nonint do_boot_behaviour B4`
   (데스크톱 자동로그인)로 되돌린다. VNC 데스크톱을 쓰려는 경우에도 마찬가지.
 
+## 보류 업스트림 2건 이식 — SQM 색보정(#560), Focus 멀티스타(#531) (2026-08-05)
+
+동기화 라운드에서 보류했던 마지막 2건을 "MF 수정 우선" 원칙으로 이식했다.
+판단 근거·상세는 [mf_upstream_patch_reference_ko.md](mf_upstream_patch_reference_ko.md)
+2026-08-04 섹션의 해당 항목(적용 완료로 갱신됨) 참조.
+
+- **#560 (`fde9beaa`)**: 하늘색 기반 radiometric zero point — 함정이었던
+  모노 오검출을 `_mosaic_phase_is_rggb`의 `profile.mono` 선행 거부로 차단.
+  imx462 SQM은 상수 zero point 유지(~+0.74 mag 왜곡 방지), MF 회귀 핀
+  테스트로 고정. upstream 상수 재적합(15.25→15.159)으로 발행 SQM이
+  −0.09 mag 이동하는 것은 수용(보정 개선).
+- **#531 (`b7fa9e8a`)**: Focus 화면 4모드 재작성 수용 + MF 기능 3종
+  (가이드 키, Gain 마킹메뉴, 주간 raw 렌더→Image 모드) 재구현.
+  `positioning.py` 전체 채택이 MF 필드를 지우는 것을 테스트로 잡아 복원.
+  문서는 post-#546 상태로 수렴(#546/#547 종결). 헤드리스 실기 검증:
+  4모드 렌더, GAIN 마킹메뉴 진입, 디버그 카메라 솔빙 정상.
+- 전체 스위트 1,105건 통과. 남은 미이식은 i18n 문자열 래핑 5곳(#562)뿐.
+
 ## SSD1333 4축 밝기 이식 (upstream #568+#570 부분 이식, 2026-08-05)
 
 SSD1333(176×176) 채택 계획이 확정되어, 보류했던 upstream 밝기 재설계를

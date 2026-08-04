@@ -65,7 +65,9 @@ per-item rationale; KO is authoritative):
   fork removed that line on purpose — do not re-litigate next sync)
 - skipped/deferred this round: SQM colour zero point (#560 — TRAP: applies
   clean but silently shifts this fork's mono-imx462 SQM by ~+0.74 mag;
-  needs a `profile.mono` guard before porting), i18n 2.6.1 pass (#562 —
+  **applied 2026-08-05 with a `profile.mono` guard** in
+  `_mosaic_phase_is_rggb`, plus an MF regression pin; imx462/imx290 keep
+  the constant zero point, hq keeps the colour term), i18n 2.6.1 pass (#562 —
   never take the .po/.mo files; only 5 string-wrapping hunks are
   candidates), SSD1333 four-axis brightness (#568+#570 — deferred then
   **applied 2026-08-05 as a partial port** once adopting SSD1333 was
@@ -80,7 +82,13 @@ per-item rationale; KO is authoritative):
   import; reconfirms the #552 exclusion), keypad matrix split (#551 —
   reclassified deferred→excluded: the real blocker is the fork's 4-column
   vs upstream's 5-column matrix constants), focus multi-star (#531 —
-  still deferred), NixOS/CI commits (not applicable)
+  **applied 2026-08-05**: new 4-mode screen adopted with the fork's three
+  preview features re-implemented on it — GuideKeyMixin, camera_gain
+  marking menu, daytime raw-frame path in Image mode; positioning.py took
+  only upstream's docstring delta after a wholesale take clobbered MF
+  fields; docs converged on the post-#546 state, closing #546/#547;
+  verified headless: 4 modes render, GAIN menu jumps, solver solves),
+  NixOS/CI commits (not applicable)
 
 This is not a full change history.  For feature-by-feature history, see
 `docs/mf_dev/mf_change_history_en.md`.

@@ -134,12 +134,17 @@
     128px 화면 오버런 때문에 일부러 지운 줄이라 되살리지 않음(동봉 표시
     테스트도 미이식). 다음 동기화에서 재론 금지
 - 검토 후 이번엔 제외/보류 (상세: 2026-08-04 조사):
-  - SQM 색보정 zero point (#560, `b28f7d9d`) — **함정 주의: clean 적용되고
-    테스트도 통과하지만 이 포크 SQM을 조용히 ~+0.74 mag 이동시킴.**
-    게이트가 드라이버 라벨(`SRGGB`)만 봐서 실측 모노(imx462, R/G=1.000)에
-    색보정이 켜짐. 이식하려면 `_mosaic_phase_is_rggb`에 `profile.mono`
-    가드 필수 + 위상 불변 테스트 2건 수정. 배관(샘플 필드, 스윕 메타데이터,
-    `radiometric_fit.py`)은 가치 있어 다음 라운드 후보
+  - SQM 색보정 zero point (#560, `b28f7d9d`) — **2026-08-05 mono 가드와
+    함께 적용 완료** (보류 해제). `_mosaic_phase_is_rggb`가 `profile.mono`를
+    먼저 거부 — 가드 없이는 실측 모노 imx462(R/G=1.000 고정)에 색보정이
+    켜져 SQM이 조용히 ~+0.74 mag 이동했음(함정 확인 후 차단). imx462/
+    imx290은 상수 zero point 유지(upstream 재적합값 15.159, 기존 15.25
+    대비 −0.09), hq는 색보정 전체 수용. 테스트: shipped-profile 불변
+    테스트를 모노 거부 기준으로 재작성, 샘플러 역학 테스트 4건은
+    `replace(mono=False)`로 색경로 유지, MF 회귀 핀
+    (`test_measured_mono_imx462_keeps_the_constant_zero_point`) 추가.
+    오프라인 재적합 도구(`radiometric_fit.py`)도 수용 — 향후 모노 전용
+    zero point 재적합에 필요
   - i18n 2.6.1 패스 (#562, `26e79dc3`) — `.po`/`.mo`는 절대 수용 금지
     (언어당 527 msgid 소실, 실번역 35~36건 파괴). `ui/software.py` 2곳 +
     `ui/telemetry_list.py` 3곳 문자열 래핑만 후보로 남김(ko 비용: 신규
@@ -169,9 +174,18 @@
     딸려오는 게 아니라(그건 base에 이미 있던 컨텍스트), 실제 장벽은
     MF 4열(20키) vs upstream 5열(25키) 매트릭스 상수 자체. 수용 시 키패드
     오배선이라 제외로 격상. 유일 소비자가 제외된 bringup 도구
-  - Focus multi-star (#531) — 보류 유지. upstream 후속 변경 없음, MF
-    preview.py의 GuideKeyMixin/camera_gain/주간 스트레치 경로가 upstream이
-    삭제하는 기반 위에 있어 재구현 1~2일 규모
+  - Focus multi-star (#531, `70e243b9`) — **2026-08-05 적용 완료** (보류
+    해제). 새 4모드 화면(stars/single/image/stats) 수용, MF 기능 3종을 새
+    화면 위에 재구현: GuideKeyMixin 유지, camera_gain 마킹메뉴(right) 유지,
+    주간/포화 프레임 raw 렌더 경로는 Image 모드로 이식(기존 stretch EMA
+    대신 프레임 median≥220 기준 — 새 화면이 stretch 상태를 제거했기 때문).
+    `types/positioning.py`는 upstream 실제 델타(독스트링 한 문장)만 수용 —
+    전체 채택 시 MF 필드(SolveDiagnostics.Centroids/solve_path, ImuSample
+    보정 텔레메트리)가 소실되는 것을 테스트 4건 실패로 확인 후 복원.
+    문서(quick_start/troubleshooting)는 post-#546 상태로 수렴 — 새 화면
+    채택으로 #547의 구화면용 문구가 대체되고, #531 전제로 제외했던
+    #546(`e9cbfe52`)도 함께 종결. 헤드리스 실행으로 4모드 렌더·GAIN
+    마킹메뉴·솔빙 정상 확인, 전체 1,105건 통과
   - NixOS/CI 8건, 이미 반영된 docs/case 커밋들 — 해당 없음 또는 기반영
 
 ADR 번호 규칙 (2026-07-29 확정):
