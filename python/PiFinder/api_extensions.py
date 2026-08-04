@@ -924,6 +924,10 @@ def register_api_routes(app, server_instance, require_auth=False):
             rendered = _raw_stack_processor().render_image(
                 server_instance.shared_state,
                 settings,
+                # Live preview always uses JPEG: PNG encoding of the
+                # full-size frame is slow enough to drop the refresh rate.
+                # The web_image_format setting only governs downloads.
+                image_format="jpeg",
                 web_theme=request.args.get("theme", "grey"),
                 overlay_sep=request.args.get("overlay") == "sep",
             )

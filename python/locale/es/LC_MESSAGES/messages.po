@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-03 02:21+0900\n"
+"POT-Creation-Date: 2026-08-04 21:05+0900\n"
 "PO-Revision-Date: 2025-01-22 17:58+0100\n"
 "Last-Translator: Claude Code\n"
 "Language: es\n"
@@ -4967,11 +4967,10 @@ msgstr "Malo"
 msgid "Color Mode"
 msgstr "en modo cliente"
 
-# AI-TRANSLATED (claude): needs human review
 #: views/livecam.html:217
-#, fuzzy
-msgid "Image Format"
-msgstr "Usar formato GMS"
+# AI-TRANSLATED (claude): needs human review
+msgid "Download Format"
+msgstr "Formato de descarga"
 
 #: views/livecam.html:222
 msgid "Stack Frames (Max 500)"
@@ -6245,4 +6244,8 @@ msgstr ""
 # AI-TRANSLATED (claude): needs human review
 #~ msgid "Saving {label}..."
 #~ msgstr "Guardando {label}..."
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "Image Format"
+#~ msgstr "Usar formato GMS"
 

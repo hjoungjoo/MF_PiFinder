@@ -310,7 +310,7 @@ flowchart TD
 | `stack_frame_limit` | `10` | 최근 N장만 유지하는 rolling stack 장수 제한 |
 | `preview_mode` | `raw_display` | 카메라별 RAW를 표시 가능한 단일 preview로 변환 |
 | `color_mode` | `theme` | `theme`은 최종 밝기 이미지를 현재 Web theme 색으로 틴트하고, `color`는 Bayer RAW 카메라의 경우 최종 단계에서 RGB로 복원해 표시 |
-| `web_image_format` | `jpeg` | Web으로 전송할 표시용 이미지 포맷 |
+| `web_image_format` | `jpeg` | 다운로드 전용 포맷 (2026-08-04부터 라이브 프리뷰는 항상 JPEG — PNG 인코딩이 갱신 속도를 떨어뜨려 분리) |
 | `display_size` | `0` | `0`이면 원본 크기 전송, 양수이면 Web 전송 전 서버에서 축소할 최대 표시 크기 |
 
 `alignment_enabled`와 `quality_filter_enabled`는 Stage 3/4에서 추가할 후보 옵션이다.
@@ -427,7 +427,9 @@ selected raw uint16
 - `high_percentile`: 기본 99.5
 - `display_size`: 기본 0, 원본 크기 전송
 - `color_mode`: 기본 theme, 필요하면 color로 Bayer 카메라의 RGB preview 유지
-- `web_image_format`: 기본 JPEG, 무손실 디버그가 필요하면 PNG
+- `web_image_format`: 기본 JPEG, 무손실 디버그가 필요하면 PNG.
+  다운로드에만 적용된다 — 라이브 프리뷰는 갱신 속도 유지를 위해 항상
+  JPEG로 인코딩 (UI 라벨도 "Download Format")
 
 테스트:
 

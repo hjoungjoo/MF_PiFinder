@@ -568,9 +568,11 @@ def encode_image(image: Image.Image, image_format: str) -> tuple[bytes, str]:
 
 
 def download_image_format(settings: dict[str, Any]) -> str:
+    """The web_image_format setting governs downloads only -- the live
+    preview always streams JPEG (PNG encoding drops the refresh rate), so
+    the format picked in the UI is delivered exactly as chosen here."""
     normalized = normalize_settings(settings)
-    fmt = normalized["web_image_format"]
-    return "png" if fmt == "webp" else fmt
+    return normalized["web_image_format"]
 
 
 def download_color_mode() -> str:

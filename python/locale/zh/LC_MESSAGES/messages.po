@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-03 02:21+0900\n"
+"POT-Creation-Date: 2026-08-04 21:05+0900\n"
 "PO-Revision-Date: 2025-02-05 15:00+0800\n"
 "Last-Translator: ClawdPulse\n"
 "Language: zh_CN\n"
@@ -5113,9 +5113,9 @@ msgstr "客户端模式"
 
 # AI-TRANSLATED (claude): needs human review
 #: views/livecam.html:217
-#, fuzzy
-msgid "Image Format"
-msgstr "使用度分秒格式"
+# AI-TRANSLATED (claude): needs human review
+msgid "Download Format"
+msgstr "下载格式"
 
 #: views/livecam.html:222
 msgid "Stack Frames (Max 500)"
@@ -6387,4 +6387,8 @@ msgstr ""
 # AI-TRANSLATED (claude): needs human review
 #~ msgid "Saving {label}..."
 #~ msgstr "保存{label}..."
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "Image Format"
+#~ msgstr "使用度分秒格式"
 

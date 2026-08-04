@@ -331,7 +331,7 @@ Initial defaults:
 | `stack_frame_limit` | `10` | Rolling stack limit; only the latest N accepted frames are kept |
 | `preview_mode` | `raw_display` | Convert camera RAW into one displayable preview |
 | `color_mode` | `theme` | `theme` tints the final luminance image to the current Web theme; `color` keeps the final RGB preview for Bayer RAW cameras |
-| `web_image_format` | `jpeg` | Display image format sent to the browser |
+| `web_image_format` | `jpeg` | Download-only format (since 2026-08-04 the live preview always streams JPEG — PNG encoding dropped the refresh rate) |
 | `display_size` | `0` | `0` sends the original display size; positive values limit server-side display size before transfer |
 
 `alignment_enabled` and `quality_filter_enabled` are candidate options for
@@ -456,7 +456,9 @@ Candidate settings:
 - `high_percentile`: default 99.5
 - `display_size`: default 0, original-size transfer
 - `color_mode`: default Theme; use Color to keep the RGB preview for Bayer cameras
-- `web_image_format`: default JPEG; use PNG when lossless debugging is needed
+- `web_image_format`: default JPEG; use PNG when lossless debugging is needed.
+  Applies to downloads only — the live preview always encodes JPEG to keep
+  the refresh rate (the UI label reads "Download Format" accordingly)
 
 Tests:
 

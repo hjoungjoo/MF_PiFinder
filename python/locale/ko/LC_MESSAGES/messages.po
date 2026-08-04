@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-03 02:21+0900\n"
+"POT-Creation-Date: 2026-08-04 21:05+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -4679,8 +4679,9 @@ msgstr "컬러 모드"
 
 # AI-TRANSLATED (claude): needs human review
 #: views/livecam.html:217
-msgid "Image Format"
-msgstr "이미지 형식"
+# AI-TRANSLATED (claude): needs human review
+msgid "Download Format"
+msgstr "다운로드 포맷"
 
 # AI-TRANSLATED (claude): needs human review
 #: views/livecam.html:222
@@ -5834,4 +5835,8 @@ msgstr ""
 
 #~ msgid "Saving {label}..."
 #~ msgstr "Saving {label}..."
+
+# AI-TRANSLATED (claude): needs human review
+#~ msgid "Image Format"
+#~ msgstr "이미지 형식"
 

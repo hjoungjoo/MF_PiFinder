@@ -431,9 +431,12 @@ def test_theme_color_mode_tints_luminance_image():
     assert r > g > b
 
 
-def test_download_uses_png_when_preview_format_is_webp():
-    assert download_image_format({"web_image_format": "webp"}) == "png"
+def test_download_honors_selected_format():
+    """web_image_format is download-only (live preview is always JPEG),
+    so the chosen format must come back verbatim -- including webp."""
+    assert download_image_format({"web_image_format": "webp"}) == "webp"
     assert download_image_format({"web_image_format": "jpeg"}) == "jpeg"
+    assert download_image_format({"web_image_format": "png"}) == "png"
 
 
 def test_download_is_grayscale_not_theme_tinted():
