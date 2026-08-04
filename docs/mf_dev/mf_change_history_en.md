@@ -1872,6 +1872,37 @@ intent is now commented at the `set_gain` handler so it does not get
   change, and right after Apply — before the camera drains its queue —
   the page and config already report the new exposure.
 
+## SSD1333 four-axis brightness port (partial port of upstream #568+#570, 2026-08-05)
+
+With the plan to adopt the SSD1333 (176×176) panel confirmed, the
+deferred upstream brightness redesign was ported partially. Commits
+`0cb8314e` (#568) + `31f0a5c5` (#570) — pre-charge voltage as a fourth
+brightness axis, and the dimming policy refit from a measured response
+surface (knee curve + table lookup) instead of the by-eye gamma.
+
+- Taken: the `displays.py`/`ssd1333_device.py` driver, 17 brightness
+  tests, and the model docs (revised ADR 0023, `docs/ax/display/`
+  CONTEXT+response).
+- Excluded: 44 measurement journals, runner scripts, and the bench
+  harnesses (`panel_photometry`/`precharge_sweep`) — ~6,250 lines of
+  standalone tooling needing a photometer rig; fetch from upstream if
+  this fork's panel ever needs re-characterizing (MF note at the top of
+  the response doc).
+- MF-first preservation verified: `display_spi()` Pi5 helper,
+  `__init__(bus_speed_hz)` (SSD1333 at 40MHz), MF `rotate=0`,
+  `get_display(spi_speed_hz)`, display auto-detection untouched —
+  markers re-checked after each merge.
+- Incidental repair: `test_hardware_detect_display.py` had been left
+  patching the old `board` attribute after July's `get_i2c` migration
+  (cc7ae95e) — invisible because it carried no pytest marker and was
+  always deselected from `-m "smoke or unit"` runs. Rewritten against
+  the `get_i2c` seam, given a unit marker, probe-error fallback test
+  added. Full suite: 1,047 pass.
+- No behaviour change on the current device (SSD1351). When the SSD1333
+  panel is connected: a non-rev4 board has no BQ25895 marker, so
+  auto-detection stays on ssd1351 — pass `--display ssd1333` in the
+  service ExecStart.
+
 ## Release check now points at the fork (2026-08-05)
 
 The Software screen's release check read brickbots' `release/version.txt`,

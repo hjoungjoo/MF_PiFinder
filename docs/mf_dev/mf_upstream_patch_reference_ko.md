@@ -144,10 +144,18 @@
     (언어당 527 msgid 소실, 실번역 35~36건 파괴). `ui/software.py` 2곳 +
     `ui/telemetry_list.py` 3곳 문자열 래핑만 후보로 남김(ko 비용: 신규
     msgstr 3건)
-  - SSD1333 4축 밝기 (#568 `03e2314d` + #570 `3b4a7974`, 세트로만 적용
-    가능) — 이 기기는 SSD1351(Pi4, BQ25895 미검출 확인)이라 동작 무영향.
-    displays.py 3-way clean 확인됨. 드라이버+테스트만 취하는 옵션 포함
-    보류. 측정 데이터/하네스(~6,250줄)는 어느 경우에도 제외
+  - SSD1333 4축 밝기 (#568 `03e2314d` + #570 `3b4a7974`) — **2026-08-05
+    부분 이식으로 적용 완료** (SSD1333 채택 계획 확정에 따라 보류 해제).
+    드라이버(displays.py, ssd1333_device.py)+테스트(17건)+모델 문서
+    (ADR 0023, docs/ax/display/)만 수용. 측정 저널 44개·러너 스크립트·
+    벤치 하네스(panel_photometry/precharge_sweep, ~6,250줄)는 제외 —
+    재특성화가 필요하면 upstream 커밋에서 가져온다(ssd1333-response.md
+    상단 MF note). CONTEXT-MAP 충돌은 Display 항목만 수용(Battery/Sound/
+    NixOS/Bring-up은 제외 컨텍스트). MF displays.py 수정(display_spi,
+    bus_speed_hz, rotate=0, get_display spi_speed_hz) 전부 보존 검증.
+    부수 발견: MF 자동감지 테스트(test_hardware_detect_display)가
+    cc7ae95e의 get_i2c 전환을 안 따라간 채 방치돼 있었음(마커 없어 전체
+    실행에서 항상 제외) — get_i2c seam 기준으로 재작성+unit 마커 부여
   - 2.6.1 릴리즈 커밋 5건 (`2fbc5acc` 등) — 릴리즈 문서/버전. 내용 상당수가
     rev4 등 미포함 기능. version.txt는 m 접두사 체계로 전환(m2.6.0, 2026-08-05). **주의: upstream이
     2.6.1을 release 브랜치에 발행하면 `ui/software.py:164`의 릴리즈 체크가

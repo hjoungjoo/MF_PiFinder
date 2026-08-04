@@ -67,8 +67,12 @@ per-item rationale; KO is authoritative):
   clean but silently shifts this fork's mono-imx462 SQM by ~+0.74 mag;
   needs a `profile.mono` guard before porting), i18n 2.6.1 pass (#562 —
   never take the .po/.mo files; only 5 string-wrapping hunks are
-  candidates), SSD1333 four-axis brightness (#568+#570 — inert on this
-  device's SSD1351), the 2.6.1 release commits (version.txt moved to the m-prefix scheme, m2.6.0, 2026-08-05; note
+  candidates), SSD1333 four-axis brightness (#568+#570 — deferred then
+  **applied 2026-08-05 as a partial port** once adopting SSD1333 was
+  decided: driver+tests+model docs only, measurement journals and bench
+  harnesses excluded; MF displays.py customizations verified preserved;
+  the stale MF auto-detection test was rewritten against the get_i2c
+  seam and given a unit marker), the 2.6.1 release commits (version.txt moved to the m-prefix scheme, m2.6.0, 2026-08-05; note
   `ui/software.py:164` will show a spurious "Update Now" once upstream
   publishes 2.6.1 — resolved 2026-08-05: release-check and migration-gate
   URLs repointed at the fork, "Unknown" display branch added), bring-up

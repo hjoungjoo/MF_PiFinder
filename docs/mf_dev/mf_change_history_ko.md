@@ -1693,6 +1693,31 @@ systemd 서비스로 동작하므로 데스크톱 부팅 자체를 끈다.
 - 데스크톱이 다시 필요하면 `sudo raspi-config nonint do_boot_behaviour B4`
   (데스크톱 자동로그인)로 되돌린다. VNC 데스크톱을 쓰려는 경우에도 마찬가지.
 
+## SSD1333 4축 밝기 이식 (upstream #568+#570 부분 이식, 2026-08-05)
+
+SSD1333(176×176) 채택 계획이 확정되어, 보류했던 upstream 밝기 재설계를
+부분 이식했다. 커밋 `0cb8314e`(#568)+`31f0a5c5`(#570) — pre-charge 전압을
+4번째 밝기 축으로 추가하고, by-eye 감마 대신 실측 응답 표면 기반 knee
+커브·테이블 룩업으로 dimming 정책을 재적합한 것.
+
+- 수용: `displays.py`/`ssd1333_device.py` 드라이버, 밝기 테스트 17건,
+  모델 문서(ADR 0023 개정, `docs/ax/display/` CONTEXT+response).
+- 제외: 측정 저널 44개, 러너 스크립트, 벤치 하네스
+  (`panel_photometry`/`precharge_sweep`) ~6,250줄 — 광도계 리그가 있어야
+  도는 단독 도구라 우리 패널 재특성화가 필요해질 때 upstream에서 가져온다
+  (response 문서 상단 MF note로 안내).
+- MF 우선 보존 확인: `display_spi()` Pi5 헬퍼, `__init__(bus_speed_hz)`
+  (SSD1333 40MHz), MF `rotate=0`, `get_display(spi_speed_hz)`, 디스플레이
+  자동감지 무접촉 — 병합 후 마커 전수 재확인.
+- 부수 수리: `test_hardware_detect_display.py`가 7월 `get_i2c` 전환
+  (cc7ae95e)을 안 따라가고 옛 `board` 속성을 패치한 채 방치돼 있었다
+  (pytest 마커가 없어 `-m "smoke or unit"` 전체 실행에서 항상 제외 —
+  그래서 안 보였음). `get_i2c` seam 기준으로 재작성하고 unit 마커 부여,
+  프로브 예외 폴백 테스트 추가. 전체 1,047건 통과.
+- 현 기기(SSD1351)에서는 동작 무변화. SSD1333 패널 연결 시: rev4 보드가
+  아니면 BQ25895 마커가 없어 자동감지가 ssd1351로 남으므로, 서비스
+  ExecStart에 `--display ssd1333`을 지정해야 한다.
+
 ## 릴리즈 체크를 포크 기준으로 전환 (2026-08-05)
 
 Software 화면의 릴리즈 확인이 brickbots의 `release/version.txt`를 보고 있어서,

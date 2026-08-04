@@ -1,4 +1,17 @@
+"""Tests for the SSD1333 display auto-detection (BQ25895 I2C marker).
+
+The probe goes through PiFinder.i2c_bus.get_i2c (software I2C bus 3 on
+Pi 4 and earlier, hardware bus otherwise), so the tests patch the
+module-level ``get_i2c`` seam — not Blinka's ``board``, which the
+implementation stopped using when the fork moved to the shared bus
+helper (cc7ae95e).
+"""
+
+import pytest
+
 from PiFinder import hardware_detect
+
+pytestmark = pytest.mark.unit
 
 
 class _FakeI2C:
@@ -16,31 +29,32 @@ class _FakeI2C:
         self.unlocked = True
 
 
-class _FakeBoard:
-    def __init__(self, addresses):
-        self.addresses = addresses
-
-    def I2C(self):
-        return _FakeI2C(self.addresses)
-
-
-def test_default_display_falls_back_without_board(monkeypatch):
-    monkeypatch.setattr(hardware_detect, "board", None)
+def test_default_display_falls_back_without_i2c(monkeypatch):
+    monkeypatch.setattr(hardware_detect, "get_i2c", None)
     assert hardware_detect.detect_ssd1333_display() is False
     assert hardware_detect.default_display_hardware() == "ssd1351"
 
 
 def test_default_display_selects_ssd1333_when_marker_present(monkeypatch):
-    monkeypatch.setattr(
-        hardware_detect,
-        "board",
-        _FakeBoard([hardware_detect.BQ25895_ADDRESS]),
-    )
+    i2c = _FakeI2C([hardware_detect.BQ25895_ADDRESS])
+    monkeypatch.setattr(hardware_detect, "get_i2c", lambda: i2c)
     assert hardware_detect.detect_ssd1333_display() is True
     assert hardware_detect.default_display_hardware() == "ssd1333"
+    assert i2c.unlocked is True
 
 
 def test_default_display_uses_ssd1351_when_marker_absent(monkeypatch):
-    monkeypatch.setattr(hardware_detect, "board", _FakeBoard([]))
+    i2c = _FakeI2C([])
+    monkeypatch.setattr(hardware_detect, "get_i2c", lambda: i2c)
+    assert hardware_detect.detect_ssd1333_display() is False
+    assert hardware_detect.default_display_hardware() == "ssd1351"
+    assert i2c.unlocked is True
+
+
+def test_probe_error_falls_back_to_ssd1351(monkeypatch):
+    def _broken():
+        raise OSError("no I2C bus")
+
+    monkeypatch.setattr(hardware_detect, "get_i2c", _broken)
     assert hardware_detect.detect_ssd1333_display() is False
     assert hardware_detect.default_display_hardware() == "ssd1351"

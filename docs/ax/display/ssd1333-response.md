@@ -1,5 +1,13 @@
 # SSD1333 measured response surface (photometric, 2026-08-02)
 
+> **MF note (2026-08-05)**: this fork ports the model and the driver that
+> consumes it, but not the bench tooling it was measured with — the
+> `measurements/ssd1333/` journals, their runner scripts, and the
+> `PiFinder.panel_photometry` / `PiFinder.precharge_sweep` harnesses
+> referenced below live only upstream (brickbots commits `03e2314d`,
+> `3b4a7974`). Fetch them from there if this fork's panel ever needs
+> re-characterizing.
+
 Stage-2 deliverable of the panel-characterization effort: the 1.91" SSD1333's
 light output as measured by the photometer rig (`PiFinder.panel_photometry`),
 replacing the by-eye model recorded in ADR 0023. Every number below is panel
