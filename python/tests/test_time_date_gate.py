@@ -13,6 +13,9 @@ the cold/warm crash-smoke in test_ui_modules.py.
 
 from __future__ import annotations
 
+import inspect
+from pathlib import Path
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -21,6 +24,7 @@ import pytest
 import PiFinder.i18n  # noqa: F401  installs the _() gettext builtin
 from PiFinder.displays import get_display
 from PiFinder.state import Location
+from PiFinder.ui import callbacks
 from PiFinder.ui.dateentry import UIDateEntry
 from PiFinder.ui.timeentry import UITimeEntry
 
@@ -97,6 +101,44 @@ def test_time_entry_gate_message_renders():
     """The base gate helper draws without error on a real headless display."""
     module = _build(UITimeEntry, _UNLOCKED)
     module.draw_gate_message("Set location\nfirst")  # must not raise
+
+
+# Upstream #563's test_time_entry_shows_utc_... is intentionally not ported:
+# this fork's draw_local_time_note() deliberately draws no timezone line
+# (long IANA names overran the 128px screen), so there is nothing to assert.
+
+
+def test_set_time_survives_a_fix_with_no_resolvable_timezone():
+    """The commit path must tolerate what the screen renders.
+
+    _location_locked() gates on the fix alone, so a lock whose zone did not
+    resolve reaches set_time on the way out of the screen. pytz.timezone(None)
+    raises UnknownTimeZoneError, which would surface as a crash on commit --
+    the entry is read as UTC instead, matching what the note now shows.
+    """
+    gps_queue = MagicMock()
+    ui_module = MagicMock()
+    ui_module.command_queues = {"gps": gps_queue}
+    ui_module.shared_state.location.return_value = Location(lock=True, timezone=None)
+    ui_module.item_definition = {"time_str": "21:30:00"}
+
+    callbacks.set_time(ui_module, "21:30:00")  # must not raise
+    callbacks.set_datetime(ui_module, "2026-07-30")  # must not raise
+
+    pushed = [call.args[0] for call in gps_queue.put.call_args_list]
+    assert [name for name, _payload in pushed] == ["time_force", "time_force"]
+    assert [str(payload["time"].tzinfo) for _name, payload in pushed] == ["UTC", "UTC"]
+
+
+def test_enter_local_time_is_an_extractable_literal():
+    """The note must stay a literal so Babel keeps it in the catalogs.
+
+    Passing a variable to _() extracts nothing, which silently obsoletes the
+    msgid on the next extract run and drops every existing translation.
+    """
+    source = Path(inspect.getfile(UITimeEntry)).read_text()
+
+    assert '_("Enter Local Time")' in source
 
 
 # --------------------------------------------------------------------------- #
