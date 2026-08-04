@@ -1,16 +1,17 @@
 # MF_PiFinder Feature Review and Test Checklist
 
-Created: 2026-07-03
+Created: 2026-07-03 / fully refreshed: 2026-08-05
 
 This document lists functional changes and additions in the current
-`mf_pifinder` branch compared with `brickbots/PiFinder` `main`.  It is intended
-as a review and test checklist.
+`main` branch compared with `brickbots/PiFinder` `main`.  It is intended
+as a review and test checklist. The KO version is authoritative.
 
 Baseline:
 
-- Upstream: `upstream/main` (`https://github.com/brickbots/PiFinder/tree/main`)
-- Current source: `mf_pifinder`
-- Comparison date: 2026-07-03
+- Upstream: `upstream/main` (`https://github.com/brickbots/PiFinder/tree/main`,
+  `4a83d25b`, includes the 2.6.1 release merge)
+- Current source: `main` (`f13fde43`)
+- Comparison date: 2026-08-05 (diff: 420 files, +117,825/−9,085)
 - Commands used:
   - `git fetch upstream main`
   - `git rev-list --left-right --count upstream/main...HEAD`
@@ -19,21 +20,27 @@ Baseline:
 
 Summary:
 
-- Major upstream patch not fully applied:
+- Major upstream work not (fully) applied (§16):
   - Full Rev-4 battery/sound/power hardware enablement
-- Major MF additions or changed areas:
+  - bring-up bench tool, keypad matrix split, NixOS release CI
+- Major MF additions or changed areas (§1–§15 = the 07-03 baseline,
+  §17–§25 = added since):
   - Bookworm/RPi4/RPi5/CM5 install and board profiles
-  - AP+STA Wi-Fi
-  - Bluetooth/USB HID keyboard
-  - Red Night/PWA Web UI
-  - Locations catalog
+  - AP+STA Wi-Fi / Bluetooth+USB HID keyboard / joystick
+  - Red Night/PWA Web UI / web catalogs & unified search / Locations catalog
   - chronyd-based time management
-  - INDI/OnStepX/SkySafari mount integration
-  - LCD INDI UI
+  - INDI/OnStepX/SkySafari mount integration + LCD INDI UI +
+    PointingCoordinateService (mount+IMU fusion)
   - IMU compass/calibration
-  - SSD1333 display auto-detection
+  - **cedar+SEP hybrid solving + cedar full-frame primary path**
+    (the light-pollution core of this fork)
+  - star-count auto-exposure controller
+  - SQM radiometer stack + mono colour guard
+  - LiveCam RAW preview/live stack + web camera controls
+  - SSD1333 auto-detection + four-axis brightness (upstream port, driver only)
+  - the three MF features re-implemented on the #531 Focus screen
+  - fork-owned software update channel (m-version scheme)
   - Korean UI localization
-  - camera focus/gain/preview improvements
 
 Related documents:
 
@@ -105,39 +112,45 @@ Test items:
 - [ ] GPS port auto-selection
 - [ ] Camera preview
 
-## 2. Camera Preview / Focus / Gain
+## 2. Camera Focus Screen / Gain (refreshed 2026-08-05 — upstream #531 4-mode screen)
 
 Priority: P1
 
 Main changes:
 
-- Focus preview improvements
-- Bright-background threshold adjustment
+- Adopted upstream #531 Focus rewrite: stars (4 tiles) / single / image /
+  stats modes, raw uninterpolated crops, HFD history
+- Three MF re-implementations: GuideKeyMixin (mount jog from the camera
+  screen), Gain marking-menu entry (right), and the daytime/saturated
+  raw-frame path (Image mode renders the 12-bit raw frame via Bayer-quad
+  average + percentile stretch when the background is bright — the
+  daytime-alignment path)
 - Camera gain profile/runtime selection
 - LCD camera preview debug script
 
 Key files:
 
-- `python/PiFinder/camera_interface.py`
 - `python/PiFinder/ui/preview.py`
+- `python/PiFinder/focus.py`
+- `python/PiFinder/camera_interface.py`
 - `python/PiFinder/ui/callbacks.py`
-- `python/PiFinder/ui/menu_structure.py`
 - `scripts/camera_lcd_preview.py`
 
 Review points:
 
-- [ ] Existing focus workflow still works
-- [ ] Camera gain can be returned to profile default
+- [ ] SQUARE cycles all four modes
+- [ ] Marking menu shows EXPOSURE/GAIN and the GAIN jump works
+- [ ] In daylight the Image mode shows the scene instead of washing out
+- [ ] Guide keys work on the camera screen with mount_control on
 - [ ] Runtime gain matches camera metadata
-- [ ] Pi4 and Pi5/CM5 camera overlay differences do not break startup
 
 Test items:
 
-- [ ] Switch low/high gain
-- [ ] Select profile gain
-- [ ] Verify focus preview against a star or bright point
-- [ ] Run `scripts/camera_lcd_preview.py`
-- [ ] Verify IMX462 camera operation
+- [ ] Stars mode +/− magnification
+- [ ] Single mode HFD readout
+- [ ] Stats mode shows star count/FWHM/exposure/gain
+- [ ] Outdoor daytime Image-mode scene check (daytime alignment path)
+- [ ] Tests: `test_focus_preview.py`, `test_focus.py`, `test_ui_guide_keys.py`
 
 ## 3. Korean UI Localization
 
@@ -731,6 +744,13 @@ Not applied:
 - GPIO14 gpio-poweroff latch
 - battery titlebar icon
 - Raspberry Pi red power LED control
+- bring-up bench tool (#552/#556 — depends on `keypad`/`battery_bq25895`/
+  `sound`; fails at import here)
+- keypad matrix split (#551 — MF 4-column vs upstream 5-column; taking it
+  would miswire the keypad)
+- all NixOS release CI (SD image / migration tarball / manifest)
+- i18n `.po`/`.mo` files (never take — would drop 527 MF msgids per
+  language; only #562's five string-wrapping hunks remain candidates)
 
 Review points:
 
@@ -740,26 +760,203 @@ Review points:
 - [ ] Decide whether charger writes should be separate from read-only telemetry
 - [ ] Preserve current `hardware_detect.py` fallback if adding `HardwareCapabilities`
 
+## 17. cedar+SEP Hybrid Solving / cedar Full-Frame Primary Path
+
+Priority: P0 — the reason this fork exists (accurate solving under light pollution)
+
+Main changes:
+
+- Two detectors in parallel (full-frame cedar σ8 + SEP σ4) + a four-stage
+  coordinate cascade (cedar centre → cedar full → SEP centre → SEP full),
+  behind `solver_cedar_fullframe`
+- Six quality gates (edge/saturation/warm-pixel/cluster …) + optional
+  IMU horizon mask
+- Warm-pixel map (`sep_warm_map.py`), shadow-CSV instrumentation
+  (`sep_shadow.py`), `solver_frame_map` (native-FOV solve → 512 semantics),
+  `solve_path` diagnostics field
+- Design authority: `mf_cedar_sep_hybrid_design_en.md`, ADR m0023
+
+Key files: `python/PiFinder/solver.py`, `sep_detect.py`, `sep_warm_map.py`,
+`sep_shadow.py`, `solver_frame_map.py`, `horizon_mask.py`
+
+Review points:
+
+- [ ] `/api/status` `solve_path` matches conditions (clear: cedar_ff;
+      LP/cloud gaps: sep)
+- [ ] Warm-pixel map is current (bias-238 re-verification — open SQM-port item)
+- [ ] Gates reject ground point-light clusters (building windows)
+
+Test items:
+
+- [ ] Live solve rate under LP sky (reference: 88–90 % measured 08-01)
+- [ ] Solve RMSE and match counts via `/api/status`
+- [ ] `test_solver_cedar_fullframe.py`, `test_sep_detect.py`,
+      `test_sep_fullframe_solve.py`
+
+## 18. Auto Exposure — Star-Count Controller
+
+Priority: P1
+
+Main changes: star-count servo selected via Camera Exp "Star"
+(`camera_exp=auto_star`), solve-success hold (ADR m0022), anchor clamps.
+ADR m0020/m0021/m0022.
+
+Key files: `python/PiFinder/auto_exposure_starcount.py`, `auto_exposure.py`,
+`camera_interface.py`
+
+Review / test items:
+
+- [ ] Star mode select/deselect without regressing the stock AE modes
+- [ ] `test_auto_exposure_starcount.py`
+
+## 19. SQM Radiometer Stack + Mono Colour Guard
+
+Priority: P1
+
+Main changes:
+
+- Upstream SQM stack ported (#532/#542/#543/#544): radiometer-first
+  publishing, raw-green photometry, Gaia colour correction, wizard, sweeps
+- Sweep exposure settling (#561) and the sky-colour zero point (#560)
+  ported **with the mono guard** — without it the measured-mono imx462
+  drifts ~+0.74 mag (`mf_report/mf_mono_sqm_colour_guard_20260805_*.md`)
+
+Key files: `python/PiFinder/sqm/*`, `python/PiFinder/ui/sqm*.py`
+
+Review points:
+
+- [ ] imx462 SQM keeps the constant zero point (no colour fields)
+- [ ] Open items: bias-238 night re-verification + one SQM wizard run
+
+Test items: `test_sqm.py`, `test_radiometer.py`, `test_radiometric_fit.py`,
+`test_sweep_frame_record.py`
+
+## 20. LiveCam RAW Preview / Live Stack / Web Camera Controls
+
+Priority: P1
+
+Main changes:
+
+- RAW preview + rolling stack, SEP overlay, `/api/camera/controls`
+  exposure/gain, 16-bit TIFF download
+- Live view always streams JPEG; the format setting governs downloads only
+  (UI label "Download Format")
+- Downloads are grayscale (mono sensor — debayer chroma is an artifact)
+
+Key files: `python/PiFinder/raw_live_stack.py`, `livecam_config.py`,
+`api_extensions.py`, `python/views/livecam.html`
+
+Review / test items:
+
+- [ ] Live refresh rate holds with the PNG setting (JPEG stream)
+- [ ] Downloads deliver the chosen format verbatim (incl. webp)
+- [ ] `test_raw_live_stack.py`, `test_api_camera_controls.py`
+
+## 21. Web Catalogs / Unified Search / Observing Lists
+
+Priority: P1
+
+Main changes: on-device web catalog pages (routes/filters/push,
+designation-first search ranking); WDS lazy-load designed (not built);
+Stellarium/CSV import (upstream, applied)
+
+Key files: `python/PiFinder/web_catalogs.py`, `python/views/catalogs*.html`
+
+Review / test items:
+
+- [ ] Unified-search ordering (designation first) and push-to
+- [ ] Manual web-UI pass
+
+## 22. Joystick / Gamepad Input
+
+Priority: P2
+
+Main changes: direct evdev reading (`joystick_input.py`), Settings >
+Advanced > Joystick binding UI, mount jog wiring. `python3-evdev` installed
+by the setup script.
+
+Review / test items:
+
+- [ ] Button capture/bind/Clear All, `test_joystick_input.py`
+
+## 23. Software Update Channel — Fork Releases / m-Version
+
+Priority: P1
+
+Main changes:
+
+- Release check and NixOS migration gate URLs point at
+  `hjoungjoo/MF_PiFinder`'s release branch (never brickbots — pinned by
+  tests)
+- `version.txt` uses the m-prefix scheme (`m2.6.0`); `_semver_tuple()`
+  strips it for comparison
+- An unresolvable release ("Unknown") renders an info line instead of
+  "Update Now"
+
+Key files: `python/PiFinder/ui/software.py`, `version.txt`
+
+Review / test items:
+
+- [ ] After cutting a release branch: version compare / Update Now /
+      `pifinder_update.sh` flow
+- [ ] `test_software.py` (4 m-version + Unknown branch + 2 URL pins)
+
+## 24. Display — SSD1333 Auto-Detection + Four-Axis Brightness
+
+Priority: P2 (P1 once the SSD1333 panel is adopted)
+
+Main changes:
+
+- MF auto-detection: BQ25895 (0x6A) ACK → ssd1333, fallback ssd1351
+  (`hardware_detect.py`)
+- Upstream #568+#570 four-axis brightness, partial port (driver + tests +
+  model docs; bench harnesses/journals excluded — see the MF note in
+  `docs/ax/display/ssd1333-response.md`)
+- Pi5 SPI helper (`display_spi`), `bus_speed_hz` signatures, MF `rotate=0`
+  preserved
+
+Review points:
+
+- [ ] **A non-rev4 board with an SSD1333 needs `--display ssd1333`**
+      (auto-detection keys on the rev4 marker)
+- [ ] Title-bar dimmest shade stays lit across the brightness range
+      (no real-panel measurement yet)
+
+Test items: `test_ssd1333_brightness.py` (17),
+`test_hardware_detect_display.py` (4)
+
+## 25. Install Script / Migrations
+
+Priority: P0
+
+Main changes:
+
+- `pifinder_setup.sh` = the fork installer (clones main); the upstream
+  original is preserved as `pifinder_setup.sh.bak`
+- SD-wear reduction (tmpfs /tmp, indiserver logrotate, journald cap),
+  python3-evdev install, console autologin (B2)
+- MF migrations: `mf_apsta_wifi`, `mf_wifi_settings`, `mf_removeipc`
+  (marker-file gated — not version-string gated)
+
+Review / test items:
+
+- [ ] Fresh-OS `pifinder_setup.sh` completes as a normal user
+- [ ] On upstream merges this file conflicts → reconcile against `.bak`
+- [ ] `test_wifi_apsta_static.py` (reads the setup script by path)
+
 ## Minimum Regression Commands
 
-```bash
-python -m compileall -q python/PiFinder
+The full suite finishes in under a minute (1,114 tests / ~55 s on the Pi4
+venv as of 2026-08-05), so run it whole instead of curating file lists:
 
-python -m pytest \
-  python/tests/test_hardware_detect_display.py \
-  python/tests/test_obj_types_docs.py \
-  python/tests/test_menu_struct.py \
-  python/tests/test_time_date_gate.py \
-  python/tests/test_state_datetime.py \
-  python/tests/test_obslist_formats.py \
-  python/tests/test_obslist_resolve.py \
-  python/tests/test_pos_server.py \
-  python/tests/test_mountcontrol_indi.py \
-  python/tests/test_web_theme_static.py \
-  python/tests/test_wifi_apsta_static.py \
-  python/tests/test_location_catalog.py \
-  python/tests/test_sys_utils.py
+```bash
+cd python/ && source .venv/bin/activate
+python -m pytest -m "smoke or unit" -q
+nox -s lint && nox -s format
 ```
+
+Note: without the venv the system Python lacks selenium and collection
+aborts on `tests/website` — check the venv first.
 
 ## Real-Hardware Integration Test Order
 
@@ -785,6 +982,10 @@ Recommended order:
 18. SkySafari Align/Sync
 19. Correction reset after plate solving
 20. Reboot persistence
+21. Night: hybrid solving solve_path / solve rate (§17)
+22. Night: sanity-check the radiometer SQM + run the wizard if still open (§19)
+23. LiveCam preview refresh rate and TIFF/format downloads (§20)
+24. Software screen: release check watches the fork, m-version shown (§23)
 
 ## Result Recording Template
 

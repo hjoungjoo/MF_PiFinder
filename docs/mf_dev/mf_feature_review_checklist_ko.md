@@ -1,16 +1,17 @@
 # MF_PiFinder 기능 검토 및 테스트 체크리스트
 
-작성일: 2026-07-03
+작성일: 2026-07-03 / 전면 갱신: 2026-08-05
 
-이 문서는 `brickbots/PiFinder` `main` 브랜치와 현재 `mf_pifinder` 브랜치를 비교해,
+이 문서는 `brickbots/PiFinder` `main` 브랜치와 현재 `main` 브랜치를 비교해,
 MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토/테스트 항목으로 정리한
 목록이다.
 
 기준:
 
-- 비교 대상: `upstream/main` (`https://github.com/brickbots/PiFinder/tree/main`)
-- 현재 소스: `mf_pifinder`
-- 비교 시점: 2026-07-03
+- 비교 대상: `upstream/main` (`https://github.com/brickbots/PiFinder/tree/main`,
+  `4a83d25b`, 2.6.1 릴리즈 병합 포함)
+- 현재 소스: `main` (`f13fde43`)
+- 비교 시점: 2026-08-05 (diff 규모: 420파일, +117,825/−9,085)
 - 명령 기준:
   - `git fetch upstream main`
   - `git rev-list --left-right --count upstream/main...HEAD`
@@ -19,21 +20,25 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 
 비교 요약:
 
-- upstream에는 있지만 MF에 전체 적용하지 않은 주요 변경:
+- upstream에는 있지만 MF에 전체 적용하지 않은 주요 변경 (§16):
   - Rev-4 battery/sound/power hardware enablement 전체 패치
-- MF에 추가/수정된 주요 영역:
+  - bring-up 벤치 도구, keypad matrix 분리, NixOS 릴리즈 CI
+- MF에 추가/수정된 주요 영역 (§1–§15 = 7/3 기준, §17–§25 = 이후 추가):
   - Bookworm/RPi4/RPi5/CM5 설치 및 보드 profile
-  - AP+STA Wi-Fi
-  - Bluetooth/USB HID keyboard
-  - Red Night/PWA Web UI
-  - Locations catalog
+  - AP+STA Wi-Fi / Bluetooth·USB HID keyboard / 조이스틱
+  - Red Night/PWA Web UI / 웹 카탈로그·통합검색 / Locations catalog
   - chronyd 중심 시간 관리
-  - INDI/OnStepX/SkySafari mount integration
-  - LCD INDI UI
+  - INDI/OnStepX/SkySafari mount integration + LCD INDI UI +
+    PointingCoordinateService(mount+IMU 융합)
   - IMU compass/calibration
-  - SSD1333 display auto-detection
+  - **cedar+SEP 하이브리드 솔빙 + cedar 풀프레임 1차 경로** (광해 대응 핵심)
+  - 자동 노출 별 수 컨트롤러
+  - SQM 라디오미터 스택 + 모노 색보정 가드
+  - LiveCam RAW 프리뷰/라이브 스택 + 웹 카메라 컨트롤
+  - SSD1333 자동감지 + 4축 밝기(업스트림 포트, 드라이버만)
+  - Focus 4모드 화면(업스트림 #531) 위의 MF 기능 3종 재구현
+  - 소프트웨어 업데이트 채널 포크 분리 (m-버전 체계)
   - 한국어 UI
-  - camera focus/gain/preview 개선
 
 관련 문서:
 
@@ -105,39 +110,43 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - [ ] GPS 포트 자동 선택 확인
 - [ ] camera preview 확인
 
-## 2. Camera Preview / Focus / Gain
+## 2. Camera Focus 화면 / Gain (2026-08-05 갱신 — upstream #531 4모드 화면 기준)
 
 우선순위: P1
 
 주요 변경:
 
-- focus preview 개선
-- 밝은 배경 threshold 조정
+- upstream #531 Focus 재작성 수용: stars(별 4타일)/single/image/stats 4모드,
+  raw 무보간 크롭, HFD 히스토리
+- MF 재구현 3종: GuideKeyMixin(카메라 화면 마운트 조그), Gain 마킹메뉴(right),
+  주간/포화 프레임 raw 렌더 경로(Image 모드, median≥220 시 12-bit 원본을
+  베이어 쿼드 평균+퍼센타일 스트레치로 표시 — 주간 정렬용)
 - camera gain profile/runtime 선택
-- LCD camera preview debug script 추가
+- LCD camera preview debug script
 
 주요 파일:
 
-- `python/PiFinder/camera_interface.py`
 - `python/PiFinder/ui/preview.py`
+- `python/PiFinder/focus.py`
+- `python/PiFinder/camera_interface.py`
 - `python/PiFinder/ui/callbacks.py`
-- `python/PiFinder/ui/menu_structure.py`
 - `scripts/camera_lcd_preview.py`
 
 검토 포인트:
 
-- [ ] 기존 focus workflow가 유지되는가
-- [ ] camera gain을 profile default로 되돌릴 수 있는가
+- [ ] SQUARE로 4모드 순환이 되는가
+- [ ] 마킹메뉴에 EXPOSURE/GAIN이 있고 GAIN 점프가 동작하는가
+- [ ] 주간(밝은 배경)에 Image 모드가 검게 뭉개지지 않고 장면을 보여주는가
+- [ ] mount_control on일 때 카메라 화면에서 가이드 키가 동작하는가
 - [ ] runtime gain 변경이 실제 camera metadata와 일치하는가
-- [ ] Pi4와 Pi5/CM5에서 camera overlay 차이가 문제를 만들지 않는가
 
 테스트 항목:
 
-- [ ] 낮은 gain/high gain 설정 전환
-- [ ] profile gain 선택
-- [ ] focus preview에서 별 또는 밝은 점 표시
-- [ ] `scripts/camera_lcd_preview.py` 실행
-- [ ] IMX462 camera 동작 확인
+- [ ] Stars 모드에서 +/−로 확대 배율 변경
+- [ ] Single 모드 HFD 판독 표시
+- [ ] Stats 모드에 별 수/FWHM/노출/게인 표시
+- [ ] 주간 실외에서 Image 모드 장면 확인 (주간 정렬 경로)
+- [ ] 관련 테스트: `test_focus_preview.py`, `test_focus.py`, `test_ui_guide_keys.py`
 
 ## 3. Korean UI Localization
 
@@ -730,6 +739,12 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - GPIO14 gpio-poweroff latch
 - battery titlebar icon
 - Raspberry Pi red power LED control
+- bring-up 벤치 도구 (#552/#556 — `keypad`/`battery_bq25895`/`sound` 의존,
+  import 불가)
+- keypad matrix 분리 (#551 — MF 4열 vs upstream 5열, 수용 시 오배선)
+- NixOS 릴리즈 CI 일체 (SD 이미지/마이그레이션 tarball/매니페스트)
+- i18n `.po`/`.mo` 파일 (수용 금지 — 언어당 527개 MF msgid 소실;
+  #562의 문자열 래핑 5곳만 후보로 남음)
 
 검토 포인트:
 
@@ -739,26 +754,192 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 - [ ] battery charger write 동작을 read-only와 분리할지 결정
 - [ ] `HardwareCapabilities` 타입을 가져올 경우 기존 `hardware_detect.py` fallback 유지
 
+## 17. cedar+SEP 하이브리드 솔빙 / cedar 풀프레임 1차 경로
+
+우선순위: P0 — 이 포크의 존재 이유(광해 하늘 정확 솔빙)
+
+주요 변경:
+
+- 검출기 2종 병렬(cedar 풀프레임 σ8 + SEP σ4) + 좌표 4단 캐스케이드
+  (cedar 중앙→cedar 전체→SEP 중앙→SEP 전체), `solver_cedar_fullframe` 플래그
+- 품질 게이트 6종(엣지·포화·웜픽셀·클러스터 등) + 선택형 IMU 지평선 마스크
+- 웜픽셀 맵(`sep_warm_map.py`), 섀도 CSV 계측(`sep_shadow.py`),
+  `solver_frame_map`(네이티브 FOV→512 의미 통일), `solve_path` 진단 필드
+- 정본 설계: `mf_cedar_sep_hybrid_design_ko.md`, ADR m0023
+
+주요 파일:
+
+- `python/PiFinder/solver.py`, `sep_detect.py`, `sep_warm_map.py`,
+  `sep_shadow.py`, `solver_frame_map.py`, `horizon_mask.py`
+
+검토 포인트:
+
+- [ ] `/api/status`의 `solve_path`가 조건에 맞게 나오는가 (맑음: cedar_ff,
+      광해/구름 틈: sep)
+- [ ] 웜픽셀 맵이 최신인가 (bias 238 기준 재검증 — SQM 포트 잔여 조건)
+- [ ] 게이트가 지상 점광원(건물 불빛)을 걸러내는가
+
+테스트 항목:
+
+- [ ] 광해 하늘 라이브 솔브율 (기준: 8/1 실측 88–90%)
+- [ ] 솔브 RMSE 및 매치 수 확인 (`/api/status`)
+- [ ] `test_solver_cedar_fullframe.py`, `test_sep_detect.py`,
+      `test_sep_fullframe_solve.py`
+
+## 18. 자동 노출 — 검출 별 수 컨트롤러
+
+우선순위: P1
+
+주요 변경:
+
+- Camera Exp 메뉴 "Star"(`camera_exp=auto_star`)로 선택하는 별 수 서보,
+  솔브 성공 홀드(ADR m0022), 앵커 클램프. ADR m0020/m0021/m0022.
+
+주요 파일: `python/PiFinder/auto_exposure_starcount.py`, `auto_exposure.py`,
+`camera_interface.py`
+
+검토 포인트 / 테스트 항목:
+
+- [ ] Star 모드 선택/해제와 기존 자동 노출 모드 무회귀
+- [ ] `test_auto_exposure_starcount.py`
+
+## 19. SQM 라디오미터 스택 + 모노 색보정 가드
+
+우선순위: P1
+
+주요 변경:
+
+- upstream SQM 스택(#532/#542/#543/#544) 이식: 라디오미터 우선 발행,
+  raw-green 측광, Gaia 색보정, 위저드, 스윕
+- 스윕 노출 정착(#561), 하늘색 zero point(#560)를 **mono 가드와 함께** 이식 —
+  실측 모노 imx462에 색보정이 켜지면 ~+0.74 mag 왜곡
+  (`mf_report/mf_mono_sqm_colour_guard_20260805_*.md`)
+
+주요 파일: `python/PiFinder/sqm/*`, `python/PiFinder/ui/sqm*.py`
+
+검토 포인트:
+
+- [ ] imx462 SQM이 상수 zero point를 유지하는가 (색 필드 없음)
+- [ ] 잔여 완료 조건: bias 238 야간 재검증 + SQM 위저드 1회 실행
+
+테스트 항목: `test_sqm.py`, `test_radiometer.py`, `test_radiometric_fit.py`,
+`test_sweep_frame_record.py`
+
+## 20. LiveCam RAW 프리뷰 / 라이브 스택 / 웹 카메라 컨트롤
+
+우선순위: P1
+
+주요 변경:
+
+- RAW 프리뷰·롤링 스택, SEP 오버레이, `/api/camera/controls` 노출/게인,
+  TIFF 16-bit 다운로드
+- 라이브 뷰는 항상 JPEG, 포맷 설정은 다운로드 전용(UI 라벨 "Download Format")
+- 다운로드는 그레이스케일(모노 센서 — 디베이어 크로마는 인공물)
+
+주요 파일: `python/PiFinder/raw_live_stack.py`, `livecam_config.py`,
+`api_extensions.py`, `python/views/livecam.html`
+
+검토 포인트 / 테스트 항목:
+
+- [ ] PNG 설정에서도 라이브 갱신 속도 유지(JPEG 스트림)
+- [ ] 다운로드가 선택 포맷 그대로인가 (webp 포함)
+- [ ] `test_raw_live_stack.py`, `test_api_camera_controls.py`
+
+## 21. 웹 카탈로그 / 통합검색 / 관측 목록
+
+우선순위: P1
+
+주요 변경: 기기 웹 카탈로그 페이지(라우트·필터·push·지정번호 정렬),
+WDS lazy load 설계(미구현), Stellarium/CSV import(upstream 반영분)
+
+주요 파일: `python/PiFinder/web_catalogs.py`, `python/views/catalogs*.html`
+
+검토 포인트 / 테스트 항목:
+
+- [ ] 통합검색 결과 정렬(지정번호 우선)과 push-to 동작
+- [ ] `test_web_catalogs.py` (있는 경우) / 웹 UI 수동 확인
+
+## 22. 조이스틱/게임패드 입력
+
+우선순위: P2
+
+주요 변경: evdev 직접 읽기(`joystick_input.py`), Settings > Advanced >
+Joystick 바인딩 UI, 마운트 조그 연동. `python3-evdev`는 setup 스크립트가 설치.
+
+검토 포인트 / 테스트 항목:
+
+- [ ] 버튼 캡처/바인딩/Clear All, `test_joystick_input.py`
+
+## 23. 소프트웨어 업데이트 채널 — 포크 릴리즈 / m-버전
+
+우선순위: P1
+
+주요 변경:
+
+- 릴리즈 체크·NixOS 마이그레이션 게이트 URL을 `hjoungjoo/MF_PiFinder`
+  release 브랜치로 전환 (brickbots 감시 금지 — 테스트로 핀)
+- `version.txt` m 접두사 체계(`m2.6.0`), `_semver_tuple()`이 접두사 파싱
+- 릴리즈 정보 미확보("Unknown") 시 "Update Now" 대신 안내 표시
+
+주요 파일: `python/PiFinder/ui/software.py`, `version.txt`
+
+검토 포인트 / 테스트 항목:
+
+- [ ] release 브랜치 컷 후: 버전 비교/Update Now/`pifinder_update.sh` 흐름
+- [ ] `test_software.py` (m-버전 4건 + Unknown 분기 + URL 핀 2건)
+
+## 24. 디스플레이 — SSD1333 자동감지 + 4축 밝기
+
+우선순위: P2 (SSD1333 패널 채택 시 P1)
+
+주요 변경:
+
+- MF 자동감지: BQ25895(0x6A) ACK → ssd1333, 실패 시 ssd1351 폴백
+  (`hardware_detect.py`)
+- upstream #568+#570 4축 밝기 부분 이식(드라이버+테스트+모델 문서만;
+  측정 하네스/저널 제외 — `docs/ax/display/ssd1333-response.md` MF note)
+- Pi5 SPI 헬퍼(`display_spi`), `bus_speed_hz` 시그니처, MF `rotate=0` 유지
+
+검토 포인트:
+
+- [ ] **비-rev4 보드에 SSD1333 연결 시 `--display ssd1333` 지정 필요**
+      (자동감지는 rev4 마커 기준)
+- [ ] 밝기 전 구간에서 타이틀바 최암부 계조가 살아 있는가 (실패널 실측 미실시)
+
+테스트 항목: `test_ssd1333_brightness.py`(17), `test_hardware_detect_display.py`(4)
+
+## 25. 설치 스크립트 / 마이그레이션
+
+우선순위: P0
+
+주요 변경:
+
+- `pifinder_setup.sh` = 포크 설치본(main 클론), upstream 원본은
+  `pifinder_setup.sh.bak` 보존
+- SD 마모 저감(tmpfs /tmp, indiserver logrotate, journald 캡),
+  python3-evdev 설치, 콘솔 자동로그인(B2)
+- MF 마이그레이션: `mf_apsta_wifi`, `mf_wifi_settings`, `mf_removeipc`
+  (마커 파일 게이트 — 버전 문자열 아님)
+
+검토 포인트 / 테스트 항목:
+
+- [ ] 새 OS에서 `pifinder_setup.sh` 일반 사용자 실행 완주
+- [ ] upstream 머지 시 이 파일 충돌 → `.bak`과 비교해 선별 반영
+- [ ] `test_wifi_apsta_static.py` (setup 스크립트를 경로로 직접 읽음)
+
 ## 최소 회귀 테스트 명령
 
-```bash
-python -m compileall -q python/PiFinder
+전체 스위트가 1분 안에 끝나므로(2026-08-05 기준 1,114건/약 55초, Pi4 venv)
+개별 파일 나열 대신 전체를 돌린다:
 
-python -m pytest \
-  python/tests/test_hardware_detect_display.py \
-  python/tests/test_obj_types_docs.py \
-  python/tests/test_menu_struct.py \
-  python/tests/test_time_date_gate.py \
-  python/tests/test_state_datetime.py \
-  python/tests/test_obslist_formats.py \
-  python/tests/test_obslist_resolve.py \
-  python/tests/test_pos_server.py \
-  python/tests/test_mountcontrol_indi.py \
-  python/tests/test_web_theme_static.py \
-  python/tests/test_wifi_apsta_static.py \
-  python/tests/test_location_catalog.py \
-  python/tests/test_sys_utils.py
+```bash
+cd python/ && source .venv/bin/activate
+python -m pytest -m "smoke or unit" -q
+nox -s lint && nox -s format
 ```
+
+주의: venv 미활성 시 시스템 파이썬에 selenium이 없어 `tests/website`
+수집 오류로 중단된다 — venv부터 확인할 것.
 
 ## 실제 장비 통합 테스트 순서
 
@@ -784,6 +965,10 @@ python -m pytest \
 18. SkySafari Align/Sync
 19. Plate solve 후 correction reset
 20. Reboot 후 설정 유지 확인
+21. 야간: 하이브리드 솔빙 solve_path/솔브율 확인 (§17)
+22. 야간: SQM 라디오미터 값 상식 검증 + (미완이면) 위저드 실행 (§19)
+23. LiveCam 프리뷰 갱신 속도와 TIFF/포맷 다운로드 (§20)
+24. Software 화면: 릴리즈 체크가 포크를 보는지, m-버전 표시 (§23)
 
 ## 결과 기록 양식
 
