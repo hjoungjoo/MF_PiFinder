@@ -1513,6 +1513,21 @@ pifinder_menu = {
                             "class": UIJoystick,
                             "label": "joystick_settings",
                         },
+                        {
+                            # MF: reload the Wi-Fi driver after a BT-coex
+                            # firmware wedge (STA/AP dead, restarts useless).
+                            "name": _("WiFi Recover"),
+                            "class": UITextMenu,
+                            "select": "Single",
+                            "label": "wifi_recover",
+                            "items": [
+                                {
+                                    "name": _("Confirm"),
+                                    "callback": callbacks.recover_wifi,
+                                },
+                                {"name": _("Cancel"), "callback": callbacks.go_back},
+                            ],
+                        },
                     ],
                 },
                 {

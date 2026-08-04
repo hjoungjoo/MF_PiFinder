@@ -3140,6 +3140,21 @@ def update_software():
     return True
 
 
+def recover_wifi():
+    """
+    Reload the brcmfmac driver stack to un-wedge the Wi-Fi chip
+    (BT-coexistence firmware wedge; see scripts/mf_wifi_recover.sh).
+    Returns True when the script reports a working STA or AP afterwards.
+    """
+    logger.info("SYS: Running Wi-Fi recovery")
+    try:
+        sh.sudo("bash", str(utils.pifinder_dir / "scripts" / "mf_wifi_recover.sh"))
+    except Exception:
+        logger.exception("SYS: Wi-Fi recovery failed")
+        return False
+    return True
+
+
 def verify_password(username, password):
     """
     Checks the provided password against the provided user

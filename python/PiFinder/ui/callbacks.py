@@ -409,6 +409,17 @@ def restart_system(ui_module: UIModule) -> None:
     sys_utils.restart_system()
 
 
+def recover_wifi(ui_module: UIModule) -> None:
+    """MF: reload the Wi-Fi driver to un-wedge a BT-coexistence firmware
+    hang (STA/AP dead, service restarts useless). Blocks ~20-40s; any
+    Wi-Fi SSH session will drop by design."""
+    ui_module.message(_("WiFi recovering"), 40)
+    if sys_utils.recover_wifi():
+        ui_module.message(_("WiFi OK"), 2)
+    else:
+        ui_module.message(_("WiFi still down"), 3)
+
+
 def switch_cam_imx477(ui_module: UIModule) -> None:
     ui_module.message(_("Switching cam"), 2)
     sys_utils.switch_cam_imx477()

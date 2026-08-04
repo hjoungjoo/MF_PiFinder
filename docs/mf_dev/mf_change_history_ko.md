@@ -1693,6 +1693,27 @@ systemd 서비스로 동작하므로 데스크톱 부팅 자체를 끈다.
 - 데스크톱이 다시 필요하면 `sudo raspi-config nonint do_boot_behaviour B4`
   (데스크톱 자동로그인)로 되돌린다. VNC 데스크톱을 쓰려는 경우에도 마찬가지.
 
+## WiFi 복구 도구 — BT 코엑스 펌웨어 웨지 대응 (2026-08-05)
+
+BT 조이스틱 페어링 중 STA가 죽고 재부팅 2회로만 복구된 사건(당일 실측
+분석)의 대응책. CYW43455 단일 2.4GHz 라디오를 WiFi/BT가 공유하는 구조에서
+BT 고밀도 국면(페어링·부팅 직후 재연결 폭풍)이 brcmfmac 펌웨어의 STA 상태
+머신을 웨지시킬 수 있고, 이는 서비스 재시작으로 복구 불가(커널/펌웨어
+계층)다.
+
+- `scripts/mf_wifi_recover.sh`: 유닛 정지(monitor/hostapd/dnsmasq,
+  NetworkManager) → uap0 삭제 → brcmfmac_wcc/brcmfmac/brcmutil 리로드
+  (칩 펌웨어 리셋) → 부팅 순서로 복원(NM→prepare→AP 유닛) → 상태 보고.
+  로그: `PiFinder_data/wifi_recover.log`. 실측: 정상 상태에서 전체 사이클
+  11초, STA 즉시 재접속·AP 복구, SSH 세션 생존.
+- LCD: Settings > Advanced > **WiFi Recover** (Confirm/Cancel, shutdown과
+  동일 패턴). `callbacks.recover_wifi` → `sys_utils.recover_wifi()`
+  (예외 격리, 실패 시 "WiFi still down" 표시). 실기기 화면 확인 완료.
+- i18n: 신규 msgid 4건 5개 언어 번역(AI-TRANSLATED).
+- 현장 수칙(사건 분석에서 도출): 페어링은 집에서, 조이스틱 켠 채 재부팅
+  금지, 마운트(AP 2.4GHz 클라이언트)는 ESP32 계열이라 5GHz 이전 불가 —
+  AP+STA 동일 채널 제약으로 STA도 2.4GHz 고정.
+
 ## 보류 업스트림 2건 이식 — SQM 색보정(#560), Focus 멀티스타(#531) (2026-08-05)
 
 동기화 라운드에서 보류했던 마지막 2건을 "MF 수정 우선" 원칙으로 이식했다.

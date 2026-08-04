@@ -1872,6 +1872,30 @@ intent is now commented at the `set_gain` handler so it does not get
   change, and right after Apply — before the camera drains its queue —
   the page and config already report the new exposure.
 
+## Wi-Fi recovery tool — BT-coexistence firmware wedge response (2026-08-05)
+
+Response to the same-day incident where BT joystick pairing killed the
+STA and only two power cycles recovered it. The CYW43455 shares one
+2.4 GHz radio between Wi-Fi and BT; high-duty BT phases (pairing,
+boot-time reconnect storms) can wedge the brcmfmac firmware's STA state
+machine, which no service restart can fix (kernel/firmware layer).
+
+- `scripts/mf_wifi_recover.sh`: stop units (monitor/hostapd/dnsmasq,
+  NetworkManager) → delete uap0 → reload brcmfmac_wcc/brcmfmac/brcmutil
+  (chip firmware reset) → bring back in boot order (NM → prepare → AP
+  units) → report. Log: `PiFinder_data/wifi_recover.log`. Measured: full
+  cycle 11 s on a healthy stack, STA reassociated immediately, AP back
+  up, SSH session survived.
+- LCD: Settings > Advanced > **WiFi Recover** (Confirm/Cancel, same
+  pattern as shutdown). `callbacks.recover_wifi` →
+  `sys_utils.recover_wifi()` (exception-isolated; failure shows "WiFi
+  still down"). Verified on the real device screen.
+- i18n: four new msgids translated into all five languages.
+- Field rules from the incident analysis: pair at home, never reboot
+  with the joystick powered on; the mount (2.4 GHz-only ESP32 client on
+  the AP) pins the AP — and via the AP+STA same-channel constraint the
+  STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
+
 ## Last two deferred upstream items ported — SQM colour (#560), Focus multi-star (#531) (2026-08-05)
 
 The two remaining deferred items were ported under the MF-first rule.
