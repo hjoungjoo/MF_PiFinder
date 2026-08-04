@@ -359,8 +359,13 @@ class UISoftware(UIModule):
     def key_right(self):
         if self._option_select == "Cancel":
             self.remove_from_stack()
-        else:
-            self.update_software()
+            return
+        # MF: only start an update this screen actually offered. Without the
+        # gate, RIGHT on the "Release info unavailable" / "No Update needed"
+        # states ran the update script against a release that may not exist.
+        if not self._go_for_update:
+            return
+        self.update_software()
 
 
 class UIMigrationConfirm(UIModule):

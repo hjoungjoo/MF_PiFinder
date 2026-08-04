@@ -239,3 +239,78 @@ def test_unknown_release_offers_no_update(monkeypatch, tmp_path):
     module.update(force=True)
 
     assert module._go_for_update is False
+
+
+@pytest.mark.unit
+def test_key_right_without_offered_update_is_inert(monkeypatch, tmp_path):
+    """RIGHT on a screen that offered no update must not run the updater.
+
+    Found live 2026-08-05: on the "Release info unavailable" state a single
+    RIGHT ran pifinder_update.sh (git checkout release), which failed and
+    unwound the UI main loop, killing the app.
+    """
+    import PiFinder.i18n  # noqa: F401
+    from PiFinder import utils
+    from PiFinder.displays import get_display
+    from PiFinder.ui.software import UISoftware
+
+    display = get_display("headless")
+    (tmp_path / "version.txt").write_text("m2.6.0")
+    (tmp_path / "wifi_status.txt").write_text("Client")
+    (tmp_path / "default_config.json").write_text(
+        (utils.pifinder_dir / "default_config.json").read_text()
+    )
+    monkeypatch.setattr(utils, "pifinder_dir", tmp_path)
+
+    shared_state = MagicMock()
+    shared_state.ui_state.return_value.message_timeout.return_value = 0.0
+    shared_state.sqm.return_value = None
+    shared_state.solve_state.return_value = False
+    shared_state.location.return_value = None
+
+    module = UISoftware(
+        display,
+        None,
+        shared_state,
+        {},
+        MagicMock(),
+        MagicMock(),
+        item_definition={},
+        add_to_stack=MagicMock(),
+        remove_from_stack=MagicMock(),
+    )
+    ran = []
+    monkeypatch.setattr(module, "update_software", lambda: ran.append(True))
+
+    assert module._go_for_update is False
+    module.key_right()  # default option is "Update", but nothing was offered
+    assert ran == []
+
+    module._go_for_update = True
+    module.key_right()
+    assert ran == [True]
+
+
+@pytest.mark.unit
+def test_update_software_failure_returns_false(monkeypatch):
+    """A failing update script reports False instead of raising through the
+    UI main loop (which killed the whole app)."""
+    from PiFinder import sys_utils
+
+    def _boom(*a, **k):
+        raise RuntimeError("git checkout release failed")
+
+    monkeypatch.setattr(sys_utils.sh, "bash", _boom)
+    assert sys_utils.update_software() is False
+
+
+@pytest.mark.unit
+def test_fake_imu_monitor_accepts_the_command_queue():
+    """main.py passes 4 args (incl. the compass-calibration command queue);
+    the fake must bind them or every -fh run loses its IMU process."""
+    import inspect
+
+    from PiFinder import imu_fake
+
+    sig = inspect.signature(imu_fake.imu_monitor)
+    sig.bind("shared_state", "console_queue", "log_queue", "command_queue")

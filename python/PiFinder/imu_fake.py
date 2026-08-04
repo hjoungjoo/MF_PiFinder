@@ -53,7 +53,10 @@ class Imu:
         pass
 
 
-def imu_monitor(shared_state, console_queue, log_queue):
+def imu_monitor(shared_state, console_queue, log_queue, command_queue=None):
+    # command_queue matches imu_pi's signature (compass-calibration commands);
+    # the fake consumes nothing from it. Without it the IMU process dies at
+    # startup with a TypeError on every -fh (fake hardware) run.
     MultiprocLogging.configurer(log_queue)
     imu = Imu()
     while True:

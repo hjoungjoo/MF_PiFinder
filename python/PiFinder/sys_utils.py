@@ -3129,7 +3129,14 @@ def update_software():
     service
     """
     logger.info("SYS: Running update")
-    sh.bash(str(utils.pifinder_dir / "pifinder_update.sh"))
+    try:
+        sh.bash(str(utils.pifinder_dir / "pifinder_update.sh"))
+    except Exception:
+        # MF: a failed update script (no release branch cut yet, network
+        # drop mid-pull) must report failure, not unwind the UI main loop
+        # and take the whole app down with it.
+        logger.exception("SYS: software update failed")
+        return False
     return True
 
 
