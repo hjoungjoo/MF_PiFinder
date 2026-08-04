@@ -976,7 +976,7 @@ def _set_imu_alignment_from_target_if_no_solve(
 ) -> bool:
     # Always enabled: a SkySafari Align before the first plate solve is the
     # supported way to bootstrap IMU-only pointing. Confirmed as intended in
-    # both GoTo modes (B7, docs/mf_field_test_20260724_analysis_ko.md): no
+    # both GoTo modes (B7, docs/mf_report/mf_field_test_20260724_analysis_ko.md): no
     # mount transmission, target_pixel untouched, IMU-fallback display only.
     if _has_solved_pointing(shared_state):
         return False
@@ -1312,7 +1312,7 @@ def handle_sync_command(shared_state, _input_str: str):
     imu_aligned = False
     if has_solved_pointing:
         _reset_imu_alignment_correction("SkySafari sync with solved pointing")
-        # B6 mode routing (docs/mf_field_test_20260724_analysis_ko.md): in
+        # B6 mode routing (docs/mf_report/mf_field_test_20260724_analysis_ko.md): in
         # pifinder mode a SkySafari Align performs BOTH the PiFinder align
         # (same as LCD Start > Align) and the INDI mount sync below. In
         # indi_mount mode only the mount sync goes out; the PiFinder align

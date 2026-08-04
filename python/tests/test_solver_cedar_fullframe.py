@@ -4,7 +4,7 @@
 Full-frame cedar primary path (solver_cedar_fullframe).
 
 Covers the solver-side adapter added for the plan in
-docs/mf_cedar_fullframe_primary_plan_ko.md:
+docs/mf_dev/mf_cedar_fullframe_primary_plan_ko.md:
 
 * _count_in_crop keeps SolveDiagnostics.Centroids in 512-crop semantics
   for auto-exposure.

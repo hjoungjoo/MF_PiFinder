@@ -82,9 +82,9 @@ jitters — but the first night also showed the deeper limit: with only
 1–3 detectable stars, no exposure policy can produce a solve (tetra3
 needs ≥4). The binding constraint moved from control to detection
 sensitivity; see
-[mf_auto_exposure_field_review_20260726_ko.md](../mf_auto_exposure_field_review_20260726_ko.md)
+[mf_auto_exposure_field_review_20260726_ko.md](../mf_report/mf_auto_exposure_field_review_20260726_ko.md)
 and the SEP full-frame detection path built in response
-([mf_sep_fullframe_impl_ko.md](../mf_sep_fullframe_impl_ko.md)).
+([mf_sep_fullframe_impl_ko.md](../mf_dev/mf_sep_fullframe_impl_ko.md)).
 
 ## Alternatives considered
 

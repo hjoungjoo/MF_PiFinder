@@ -1456,7 +1456,7 @@ def reboot_onstep_controller_exclusive(
 
     This is the verified recovery for the wedged OnStepX state where
     sync/GoTo/tracking commands are refused while manual moves still work (see
-    docs/mf_goto_tracking_recovery_analysis_ko.md). The controller loses
+    docs/mf_report/mf_goto_tracking_recovery_analysis_ko.md). The controller loses
     date/time on reboot (no RTC), so the caller must re-run the mount init
     (location/time sync, unpark, tracking) after this returns.
     """

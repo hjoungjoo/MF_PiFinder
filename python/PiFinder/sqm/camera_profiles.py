@@ -42,7 +42,7 @@ class CameraProfile:
     # True when the sensor delivers plain luminance (no CFA), regardless of
     # what the driver's raw format label claims. The imx462 module ships a
     # SRGGB12 label but measures as true mono: Bayer phase means are
-    # identical under every sky (docs/mf_sep_fullframe_impl_ko.md §6.4).
+    # identical under every sky (docs/mf_dev/mf_sep_fullframe_impl_ko.md §6.4).
     # Debayering such data only fabricates chroma noise.
     mono: bool = False
 

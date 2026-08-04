@@ -7,7 +7,7 @@ status: accepted
 The fork's confirmed target condition is a heavily light-polluted sky
 where only a handful of stars are visible (maintainer decision,
 2026-07-28). Two nights of field measurement (Seoul, imx462, full
-record in `docs/mf_sep_fullframe_impl_ko.md` §6) settle how solving is
+record in `docs/mf_dev/mf_sep_fullframe_impl_ko.md` §6) settle how solving is
 structured there:
 
 | condition | cedar-512 (stock) | SEP full-frame 12-bit |

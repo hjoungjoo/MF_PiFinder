@@ -6,14 +6,14 @@ SEP (Source Extractor) star detection on the full-sensor RAW frame.
 The production detector (cedar-detect) works on the processed 8-bit
 512x512 solver frame, where the 12->8-bit stretch has already crushed
 faint stars into a couple of levels (see
-docs/mf_auto_exposure_field_review_20260726_ko.md). This module detects
+docs/mf_report/mf_auto_exposure_field_review_20260726_ko.md). This module detects
 in the 12-bit domain instead, on the *uncropped* sensor frame:
 
 1. 2x2 mean binning, for SNR (x2) and PSF energy concentration. (The
    original checkerboard rationale was refuted 2026-07-28: the sensor
    measures as true mono despite the driver's SRGGB12 label -- Bayer
    phase means are identical under every sky, see
-   docs/mf_sep_fullframe_impl_ko.md §6.4. Unbinned detection is an open
+   docs/mf_dev/mf_sep_fullframe_impl_ko.md §6.4. Unbinned detection is an open
    experiment: better centroid precision vs lower per-pixel SNR.)
 2. Estimate and subtract a mesh background (``sep.Background``) -- this
    removes light-pollution gradients and cloud glow, which is exactly
@@ -86,7 +86,7 @@ def warm_pixel_excess(frame: np.ndarray) -> np.ndarray:
     star also shows excess -- which is why map *building* additionally
     requires recurrence at a fixed position across frames (stars move with
     the sky, warm pixels don't; see 2026-07-28 bench,
-    docs/mf_sep_fullframe_impl_ko.md §6.3).
+    docs/mf_dev/mf_sep_fullframe_impl_ko.md §6.3).
     """
     arr = np.asarray(frame, dtype=np.float32)
     h, w = arr.shape

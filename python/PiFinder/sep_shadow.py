@@ -4,7 +4,7 @@
 Shadow / fallback runner for the SEP full-frame detection path.
 
 Purpose: evaluate the SEP candidate (12-bit uncropped detection, see
-docs/mf_auto_exposure_field_review_20260726_ko.md) against the
+docs/mf_report/mf_auto_exposure_field_review_20260726_ko.md) against the
 production cedar-detect path in a single field session:
 
 * **Shadow**: on every solve attempt, also run SEP on the uncropped raw

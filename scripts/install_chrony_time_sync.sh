@@ -3,7 +3,7 @@
 #
 # Besides installing/enabling chronyd, `install` (and `configure`) idempotently
 # applies the field-timing configuration verified on 2026-07-25
-# (docs/mf_field_test_20260724_analysis_ko.md, item A2b):
+# (docs/mf_report/mf_field_test_20260724_analysis_ko.md, item A2b):
 #   - gpsd must run with -n so it feeds NTP SHM without waiting for a client
 #     (a raw-watch-only client such as PiFinder's gps_ubx does not trigger it)
 #   - chrony reads GPS time via the gpsd SHM refclock (refid gps1)

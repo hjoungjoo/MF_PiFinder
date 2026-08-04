@@ -781,7 +781,7 @@ class UIModule:
     # mount for as long as they are held (press starts motion, release stops it),
     # a few discrete commands sit on 0/5/7 and the slew rate is on 9 (faster) /
     # 3 (slower). Continuous jog is also on the keyboard letters. See
-    # docs/mf_input_keymap_*.md.
+    # docs/mf_dev/mf_input_keymap_*.md.
     _MOUNT_JOG_DIRECTIONS = {2: "south", 4: "west", 6: "east", 8: "north"}
 
     def _mount_control_queue(self):

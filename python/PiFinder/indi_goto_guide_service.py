@@ -13,7 +13,7 @@ Responsibilities:
   straight to the mount-control executor. The mount only ever moves on
   user-issued commands and its own tracking: the tracking guide (pulses,
   disturbance recovery, auto sync) is entirely inactive in this mode (B4,
-  docs/mf_field_test_20260724_analysis_ko.md).
+  docs/mf_report/mf_field_test_20260724_analysis_ko.md).
 - ``indi_goto_method = pifinder``: sync the mount to the current
   ``PointingCoordinateService`` coordinate, GoTo the target, and repeat sync +
   GoTo (bounded by ``indi_pifinder_goto_max_gotos``) until within the near
@@ -436,7 +436,7 @@ class IndiGotoGuideService:
     def _sync_context(
         self, origin: str, pointing_source: Optional[str] = None
     ) -> dict[str, Any]:
-        """B5 visibility (docs/mf_field_test_20260724_analysis_ko.md): tag a
+        """B5 visibility (docs/mf_report/mf_field_test_20260724_analysis_ko.md): tag a
         sync command with who requested it and which coordinate source fed
         the value, so mount-control can record it in ``coordinate_sync``."""
         pointing = (
@@ -829,7 +829,7 @@ class IndiGotoGuideService:
             )
 
     def _tick_tracking_guide_states(self) -> None:
-        # B4 mode gate (docs/mf_field_test_20260724_analysis_ko.md): the
+        # B4 mode gate (docs/mf_report/mf_field_test_20260724_analysis_ko.md): the
         # tracking guide is a pifinder-mode feature. In indi_mount (or off)
         # mode the mount moves only on user-issued GoTo/manual/sync commands
         # and its own tracking -- no pulses, no disturbance recovery, no

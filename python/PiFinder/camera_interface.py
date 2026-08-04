@@ -610,7 +610,7 @@ class CameraInterface:
                                 elif self._ae_controller_choice == "star_count":
                                     # Star-count controller: feedback from
                                     # detected centroids, not catalog matches
-                                    # (docs/mf_auto_exposure_plan_ko.md).
+                                    # (docs/mf_dev/mf_auto_exposure_plan_ko.md).
                                     if self._auto_exposure_star is None:
                                         self._auto_exposure_star = (
                                             ExposureStarCountController()

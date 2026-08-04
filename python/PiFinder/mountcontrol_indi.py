@@ -2299,7 +2299,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             "synced_at": time.time(),
             "source": "sync_mount",
         }
-        # B5 visibility (docs/mf_field_test_20260724_analysis_ko.md): record
+        # B5 visibility (docs/mf_report/mf_field_test_20260724_analysis_ko.md): record
         # who requested this sync and which coordinate source (solve / IMU
         # fusion / target) the value came from, for field diagnostics.
         if sync_context:

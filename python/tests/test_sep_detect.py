@@ -25,7 +25,7 @@ def _synthetic_frame(stars, shape=(540, 960), bg=1200.0, peak=400.0):
 
     The checkerboard gain below is a worst-case robustness input: the real
     sensor measures as true mono (no phase response,
-    docs/mf_sep_fullframe_impl_ko.md §6.4), so field frames are easier
+    docs/mf_dev/mf_sep_fullframe_impl_ko.md §6.4), so field frames are easier
     than this fixture.
     """
     h, w = shape

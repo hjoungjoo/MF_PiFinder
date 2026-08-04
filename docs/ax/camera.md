@@ -13,7 +13,7 @@ It focuses on the runtime path in the camera process:
 - `PiFinder/camera_interface.py` — `get_image_loop`, the capture loop that
   wires solve results and UI commands into the controllers.
 
-Glossary: [`camera/CONTEXT.md`](./camera/CONTEXT.md). Decision record for
+Glossary: [`camera/CONTEXT.md`](camera/CONTEXT.md). Decision record for
 the recovery consolidation: [ADR 0010](../adr/0010-zero-match-recovery-single-ladder.md).
 
 ---
@@ -109,7 +109,7 @@ solver-side failure (recovery must not run).
 
 Control law and defaults follow cedar-server's exposure servo
 (same solver stack, field-proven numbers — see
-`docs/mf_auto_exposure_plan_ko.md`):
+`docs/mf_dev/mf_auto_exposure_plan_ko.md`):
 
 - **Target** 20 detected stars, smoothed by an EMA (α = 0.5).
 - **Asymmetric deadband**: act when `ema/target` < 0.8, tolerate excess
@@ -165,7 +165,7 @@ even with all of the above the controller cannot stabilise when the
 detector only ever finds 1–3 stars — exposure control cannot
 manufacture detections. The binding constraint is detection
 sensitivity; see
-`docs/mf_auto_exposure_field_review_20260726_ko.md`.
+`docs/mf_report/mf_auto_exposure_field_review_20260726_ko.md`.
 
 ## 4. Zero-match recovery
 

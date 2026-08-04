@@ -6,7 +6,7 @@ status: accepted
 
 The match-count controller steers exposure with `Matches` — the number of
 stars tetra3 paired against the catalog. That signal has structural
-problems documented in `docs/mf_auto_exposure_methods_ko.md` (P1–P7): it
+problems documented in `docs/mf_dev/mf_auto_exposure_methods_ko.md` (P1–P7): it
 cannot distinguish "too dark" from defocus, motion, clouds, or
 solver-side failure (all arrive as `Matches=0`, so the recovery ladder
 cycles on causes it cannot fix); it depends on catalog density and FOV,
@@ -58,4 +58,4 @@ persisted across restarts.
   because its centroid list may be stale.
 - Whether star_count becomes the default — and whether the match-count
   controller survives as a slow outer quality gate — is deferred until
-  field A/B results (see `docs/mf_auto_exposure_plan_ko.md` §7 검증).
+  field A/B results (see `docs/mf_dev/mf_auto_exposure_plan_ko.md` §7 검증).

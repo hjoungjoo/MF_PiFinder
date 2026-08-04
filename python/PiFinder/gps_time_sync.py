@@ -10,7 +10,7 @@ chronyd tracking state and GPS time candidates for the status UI and the
 mount-sync trust gate, and writes constrained requests for the privileged
 helper when RTC updates are enabled.
 
-Reduced on 2026-07-25 (docs/mf_field_test_20260724_analysis_ko.md, item A3):
+Reduced on 2026-07-25 (docs/mf_report/mf_field_test_20260724_analysis_ko.md, item A3):
 the PiFinder-side SNTP client, software PPS ticks, direct system-clock writes
 (Clock Manager = PiFinder) and the Best/GPS/NTP source modes were removed —
 source selection is chronyd's job.
@@ -51,7 +51,7 @@ HELPER_STATUS_FILE = DATA_DIR / "gps_time_sync_helper_status.json"
 # Written the first time chronyd reports a synchronized clock this boot. Lives
 # on tmpfs so a reboot (which restores a stale fake-hwclock time) clears it,
 # while a mere pifinder.service restart keeps it. The mount time-sync gate and
-# the LCD warning read this marker (docs/mf_field_test_20260724_analysis_ko.md,
+# the LCD warning read this marker (docs/mf_report/mf_field_test_20260724_analysis_ko.md,
 # item A4).
 CLOCK_TRUST_FILE = utils.runtime_dir / "clock_trusted.json"
 

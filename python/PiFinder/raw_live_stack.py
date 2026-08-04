@@ -578,7 +578,7 @@ def download_image_format(settings: dict[str, Any]) -> str:
 def download_color_mode() -> str:
     """Downloads are grayscale: the sensor measures as true mono, so the
     RGB a Bayer-labelled frame debayers into is pure chroma noise
-    (docs/mf_sep_fullframe_impl_ko.md §6.4). Luminance keeps the data,
+    (docs/mf_dev/mf_sep_fullframe_impl_ko.md §6.4). Luminance keeps the data,
     drops the artifact."""
     return COLOR_MODE_MONO
 
