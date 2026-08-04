@@ -106,6 +106,65 @@
   - rev4 rename (#539 `0edff3bb`) — rev4 enablement 미적용 상태에서 rename만
     가져오면 diff만 커짐
 
+2026-08-04 추가 반영 (upstream `a132bc36..4a83d25b`, 2.6.1 릴리즈 포함 31 commits 검토):
+
+- upstream selected commits applied (clean cherry-pick):
+  - catalog_objects 인덱스 (#564, `8d357eb6`) — object 상세 진입 스톨 수정.
+    이 Pi 실측 조회 36ms → 1.1ms. DB 블롭까지 수용(런타임 백필이 no-op이
+    되고, git 추적 파일인 `astro_data/pifinder_objects.db`가 기기에서
+    dirty해지는 문제 회피)
+  - SQM 스윕 노출 정착 (#561, `351129a3`) — imx462가 노출 변경 후 3프레임
+    stale인데 2프레임만 플러시하던 문제. **스윕 재촬영/위저드 실행 전에
+    선행 적용 필수였음(이제 적용됨)**
+  - focus 기법 문서 (#547, `3e23052b`) — 보류 중이던 #546의 release 브랜치
+    백포트판. 현행(pre-#531) focus 화면 기준이라 clean 적용. #546 자체는
+    제외로 종결
+  - ADR 0020 3중 충돌 정리 (`0b76b3c7`) — upstream이
+    `0020-sqm-raw-green-*`→`0024`, `0020-filter-freshness-*`→`0025`로 개명.
+    MF 트리에도 0020이 두 개 공존하던 실결함이 해소됨. `m` 접두사 규칙과
+    무충돌(m0024 ≠ 0024). plain 0020은 이 트리에서 미할당 상태로 남음
+    (upstream SOC ADR 몫). `mf_sqm_stack_port_plan_ko.md`의 인용도 갱신
+- 수동 병합으로 적용:
+  - GPS NAV-SAT latch/floor (#563, `e87abe49`) — NAV-SAT 5초 신선도 창,
+    `_publish_sats()` seen>=used floor(NAV-PVT 선착 시 "0/9" 표시 수정 —
+    MF 수신기의 정상 기동 순서), 파서 uSat 품질 게이트 정합, timezone
+    미해석 시 UTC 폴백(커밋 크래시 수정). MF의 4원소 sats(in_view,
+    top_cno)와 `_gps_time_message()` 유지한 채 병합.
+    **의도적 미수용: `ui/timeentry.py` 타임존 표시줄 복원 hunk** — MF가
+    128px 화면 오버런 때문에 일부러 지운 줄이라 되살리지 않음(동봉 표시
+    테스트도 미이식). 다음 동기화에서 재론 금지
+- 검토 후 이번엔 제외/보류 (상세: 2026-08-04 조사):
+  - SQM 색보정 zero point (#560, `b28f7d9d`) — **함정 주의: clean 적용되고
+    테스트도 통과하지만 이 포크 SQM을 조용히 ~+0.74 mag 이동시킴.**
+    게이트가 드라이버 라벨(`SRGGB`)만 봐서 실측 모노(imx462, R/G=1.000)에
+    색보정이 켜짐. 이식하려면 `_mosaic_phase_is_rggb`에 `profile.mono`
+    가드 필수 + 위상 불변 테스트 2건 수정. 배관(샘플 필드, 스윕 메타데이터,
+    `radiometric_fit.py`)은 가치 있어 다음 라운드 후보
+  - i18n 2.6.1 패스 (#562, `26e79dc3`) — `.po`/`.mo`는 절대 수용 금지
+    (언어당 527 msgid 소실, 실번역 35~36건 파괴). `ui/software.py` 2곳 +
+    `ui/telemetry_list.py` 3곳 문자열 래핑만 후보로 남김(ko 비용: 신규
+    msgstr 3건)
+  - SSD1333 4축 밝기 (#568 `03e2314d` + #570 `3b4a7974`, 세트로만 적용
+    가능) — 이 기기는 SSD1351(Pi4, BQ25895 미검출 확인)이라 동작 무영향.
+    displays.py 3-way clean 확인됨. 드라이버+테스트만 취하는 옵션 포함
+    보류. 측정 데이터/하네스(~6,250줄)는 어느 경우에도 제외
+  - 2.6.1 릴리즈 커밋 5건 (`2fbc5acc` 등) — 릴리즈 문서/버전. 내용 상당수가
+    rev4 등 미포함 기능. version.txt는 2.6.0 유지. **주의: upstream이
+    2.6.1을 release 브랜치에 발행하면 `ui/software.py:164`의 릴리즈 체크가
+    brickbots 기준 "Update Now"를 띄우게 됨 — 포크 측 수정 필요(미결)**
+  - bringup 도구 (#556 `2c8f2606`, `ff57fb22`, `8c813f94`) — import 단계
+    실패(`keypad`/`battery_bq25895`/`sound`/`types.hardware`/`types.sound`
+    부재). #552 제외 결정의 재확인. `ff57fb22`는 기제외 `81a522fe`와
+    바이트 동일
+  - keypad matrix 분리 (#551) — **보류 사유 정정**: rev4 power GPIO가
+    딸려오는 게 아니라(그건 base에 이미 있던 컨텍스트), 실제 장벽은
+    MF 4열(20키) vs upstream 5열(25키) 매트릭스 상수 자체. 수용 시 키패드
+    오배선이라 제외로 격상. 유일 소비자가 제외된 bringup 도구
+  - Focus multi-star (#531) — 보류 유지. upstream 후속 변경 없음, MF
+    preview.py의 GuideKeyMixin/camera_gain/주간 스트레치 경로가 upstream이
+    삭제하는 기반 위에 있어 재구현 1~2일 규모
+  - NixOS/CI 8건, 이미 반영된 docs/case 커밋들 — 해당 없음 또는 기반영
+
 ADR 번호 규칙 (2026-07-29 확정):
 
 - upstream과 MF가 각자 ADR을 추가하면서 0020부터 번호가 갈라졌다 (upstream

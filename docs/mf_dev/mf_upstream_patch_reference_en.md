@@ -51,6 +51,31 @@ Additionally reflected on 2026-07-13:
     would drag in the excluded Rev-4 `state.py` changes, so it is left out
   - Rev-4 hardware enablement (#498, `e82b809`) — kept out by policy
 
+Additionally reflected on 2026-08-04 (upstream `a132bc36..4a83d25b`, 31
+commits incl. the 2.6.1 release, reviewed — see the KO version for the full
+per-item rationale; KO is authoritative):
+
+- applied clean: catalog_objects indexes (#564, `8d357eb6`, incl. the DB
+  blob), SQM sweep exposure settling (#561, `351129a3`), focus technique
+  docs (#547, `3e23052b`, supersedes deferred #546), ADR 0020 collision
+  fix (`0b76b3c7`, upstream renames to 0024/0025)
+- applied with manual merge: GPS NAV-SAT latch/floor fix (#563,
+  `e87abe49`) onto the fork's 4-element sats telemetry; the
+  `ui/timeentry.py` timezone-note hunk was deliberately NOT taken (the
+  fork removed that line on purpose — do not re-litigate next sync)
+- skipped/deferred this round: SQM colour zero point (#560 — TRAP: applies
+  clean but silently shifts this fork's mono-imx462 SQM by ~+0.74 mag;
+  needs a `profile.mono` guard before porting), i18n 2.6.1 pass (#562 —
+  never take the .po/.mo files; only 5 string-wrapping hunks are
+  candidates), SSD1333 four-axis brightness (#568+#570 — inert on this
+  device's SSD1351), the 2.6.1 release commits (version stays 2.6.0; note
+  `ui/software.py:164` will show a spurious "Update Now" once upstream
+  publishes 2.6.1 — fork-side fix pending), bring-up tool (fails at
+  import; reconfirms the #552 exclusion), keypad matrix split (#551 —
+  reclassified deferred→excluded: the real blocker is the fork's 4-column
+  vs upstream's 5-column matrix constants), focus multi-star (#531 —
+  still deferred), NixOS/CI commits (not applicable)
+
 This is not a full change history.  For feature-by-feature history, see
 `docs/mf_dev/mf_change_history_en.md`.
 
