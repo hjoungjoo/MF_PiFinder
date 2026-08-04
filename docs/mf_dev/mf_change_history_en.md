@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-07-25
+Last updated: 2026-08-04
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -1871,6 +1871,22 @@ intent is now commented at the `set_gain` handler so it does not get
   `low_percentile`, a long-lived `Config` reader picks up a web-side
   change, and right after Apply — before the camera drains its queue —
   the page and config already report the new exposure.
+
+## Install script naming — `pifinder_setup.sh` is now the fork installer (2026-08-04)
+
+The fork's installer sat under a separate name (`mf_pifinder_setup.sh`), so
+cloning the repo and running `pifinder_setup.sh` installed the upstream
+release instead. The primary name now belongs to the fork installer.
+
+- `mf_pifinder_setup.sh` → `pifinder_setup.sh` (fork installer is the default).
+- The upstream installer is preserved as `pifinder_setup.sh.bak`, kept as the
+  comparison base for upstream re-syncs.
+- **Clone branch fixed**: `--branch mf_pifinder` → `--branch main`. The
+  `mf_pifinder` branch no longer exists on origin (hjoungjoo/MF_PiFinder), so
+  installing with this script failed at the clone step. The install-command URL
+  in the header was updated to `main/pifinder_setup.sh` as well.
+- `python/tests/test_wifi_apsta_static.py` reads `pifinder_setup.sh` directly —
+  all 6 still pass against the new content (same AP+STA provisioning).
 
 ## Documentation Files
 

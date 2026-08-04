@@ -1,7 +1,7 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
-최종 업데이트: 2026-07-25
+최종 업데이트: 2026-08-04
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
@@ -1692,6 +1692,22 @@ systemd 서비스로 동작하므로 데스크톱 부팅 자체를 끈다.
   load average 3.6 → 1.9, `pifinder`/`cedar_detect` 서비스 정상 유지 확인.
 - 데스크톱이 다시 필요하면 `sudo raspi-config nonint do_boot_behaviour B4`
   (데스크톱 자동로그인)로 되돌린다. VNC 데스크톱을 쓰려는 경우에도 마찬가지.
+
+## 설치 스크립트 이름 정리 — `pifinder_setup.sh`가 포크 설치본 (2026-08-04)
+
+포크 설치본이 `mf_pifinder_setup.sh`라는 별도 이름으로 있어서, 저장소를 받아
+`pifinder_setup.sh`를 실행하면 upstream 릴리즈가 설치됐다. 대표 이름을 포크
+설치본에 넘긴다.
+
+- `mf_pifinder_setup.sh` → `pifinder_setup.sh`(포크 설치본이 기본).
+- upstream 설치본은 `pifinder_setup.sh.bak`으로 보존 — upstream 재동기화 시
+  비교 기준으로 쓴다.
+- **클론 브랜치 수정**: `--branch mf_pifinder` → `--branch main`.
+  `mf_pifinder` 브랜치는 origin(hjoungjoo/MF_PiFinder)에 더 이상 없어서,
+  이 스크립트로 설치하면 clone 단계에서 실패하는 상태였다. 헤더의 설치 명령
+  URL도 `main/pifinder_setup.sh`로 갱신.
+- `python/tests/test_wifi_apsta_static.py`가 `pifinder_setup.sh`를 직접 읽는다 —
+  새 내용에서도 6건 전부 통과(AP+STA 프로비저닝 동일).
 
 ## 문서 파일
 

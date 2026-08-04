@@ -1,6 +1,12 @@
 #!/usr/bin/bash
-# This script installs the PiFinder software on a prepared Raspberry Pi OS.
+# This script installs the MF_PiFinder fork on a prepared Raspberry Pi OS.
+# It clones this fork (hjoungjoo/MF_PiFinder, main branch) instead of the
+# upstream release, and adds the fork's SD-wear, evdev and console-boot steps.
+# The upstream version it derives from is kept as pifinder_setup.sh.bak.
 # See https://pifinder.readthedocs.io/en/release/software.html for more info.
+#
+# Install with:
+#   wget -O - https://raw.githubusercontent.com/hjoungjoo/MF_PiFinder/main/pifinder_setup.sh | bash
 
 set -e
 
@@ -41,7 +47,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
 if [[ -d PiFinder/ ]]; then
     cd PiFinder/ && git config pull.rebase false && git pull
 else
-    git clone --recursive --branch release https://github.com/brickbots/PiFinder.git
+    git clone --recursive --branch main https://github.com/hjoungjoo/MF_PiFinder.git PiFinder
 fi
 
 PIFINDER_REPO_DIR="${PIFINDER_HOME}/PiFinder"
@@ -152,6 +158,33 @@ fi
 echo uhid | sudo tee /etc/modules-load.d/uhid.conf >/dev/null
 sudo modprobe uhid || true
 
+# SD-card wear reduction: keep steady log writers off the card.
+# 1) /tmp on tmpfs -- indiserver's stdout log (redirected there by indi-web)
+#    and INDI FIFOs/sockets then live in RAM.
+if ! grep -qE '^\s*tmpfs\s+/tmp\s+tmpfs' /etc/fstab; then
+    echo "tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777,size=256M 0 0" \
+        | sudo tee -a /etc/fstab >/dev/null
+fi
+# 2) Cap the indiserver log on that tmpfs (no rotation of its own).
+#    'su' is required because /tmp is world-writable (1777).
+sudo tee /etc/logrotate.d/indiserver >/dev/null <<LOGROTATE_EOF
+/tmp/indiserver.log {
+    su ${PIFINDER_USER} ${PIFINDER_USER}
+    size 10M
+    rotate 2
+    copytruncate
+    missingok
+    notifempty
+    compress
+}
+LOGROTATE_EOF
+# 3) journald is volatile (RAM); cap it below the default 15%-of-/run.
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo tee /etc/systemd/journald.conf.d/pifinder-ram-cap.conf >/dev/null <<'JOURNALD_EOF'
+[Journal]
+RuntimeMaxUse=32M
+JOURNALD_EOF
+
 # Samba config
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/smb.conf" /etc/samba/smb.conf
 
@@ -219,6 +252,10 @@ if [[ "$(pifinder_board_profile)" == "pi5_class" ]]; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-rpi-lgpio \
         || echo "WARNING: could not install python3-rpi-lgpio; keypad GPIO may not work on Pi 5." >&2
 fi
+# Joystick/gamepad button input (PiFinder/joystick_input.py reads evdev
+# directly; libinput does not deliver joystick events).
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-evdev \
+    || echo "WARNING: could not install python3-evdev; joystick input will be disabled." >&2
 # Note: camera types are added lateron by python/PiFinder/switch_camera.py
 
 # Keep POSIX shared memory alive across SSH logouts: logind's default
@@ -237,6 +274,14 @@ sudo systemctl disable dhcpcd dnsmasq hostapd 2>/dev/null || true
 # CUPS printing stack ships enabled on desktop Raspberry Pi OS but is unused by
 # PiFinder; its background daemons compete for CPU and SD-card I/O on the Pi.
 sudo systemctl disable cups cups.socket cups-browsed 2>/dev/null || true
+# Boot to console (with autologin) instead of the desktop: PiFinder runs
+# headless, and the Wayland taskbar (wf-panel-pi) busy-loops near 100% CPU
+# when no monitor is attached. B2 = console autologin (takes effect on reboot).
+if command -v raspi-config >/dev/null 2>&1; then
+    sudo raspi-config nonint do_boot_behaviour B2
+else
+    sudo systemctl set-default multi-user.target
+fi
 
 # Enable service
 pifinder_render_config "${PIFINDER_REPO_DIR}/pi_config_files/pifinder.service" /lib/systemd/system/pifinder.service

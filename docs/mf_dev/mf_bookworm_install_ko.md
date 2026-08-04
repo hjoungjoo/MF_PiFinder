@@ -35,7 +35,7 @@ Raspberry Pi OS Legacy Bullseye를 기준으로 작성되어 있습니다. CM5 B
 - 원격 SSH 보호를 위해 `dhcpcd`, `dnsmasq`, `hostapd` 자동 시작은 비활성화
 - 부팅은 콘솔 자동로그인(`raspi-config nonint do_boot_behaviour B2`)으로 전환 —
   헤드리스 상태에서 데스크톱 패널 `wf-panel-pi`가 CPU 한 코어를 상시 점유하는
-  문제 회피. `mf_pifinder_setup.sh`가 자동 적용하며, 데스크톱이 필요하면
+  문제 회피. `pifinder_setup.sh`가 자동 적용하며, 데스크톱이 필요하면
   `do_boot_behaviour B4`로 되돌린다.
 - Bookworm 호환 패치: PiFinder가 `/boot/firmware/config.txt`를 우선 사용하도록
   `PiFinder.boot_config`를 추가하고 카메라 전환/표시 코드를 수정
