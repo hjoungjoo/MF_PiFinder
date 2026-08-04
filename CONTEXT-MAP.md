@@ -10,6 +10,7 @@ PiFinder is a multi-process Raspberry Pi finder/plate-solver. These contexts eac
 - [Equipment](./docs/ax/equipment/CONTEXT.md) — models the user's telescopes and eyepieces; supplies the active optics that drive magnification, true field of view, and object-image orientation.
 - [UI](./docs/ax/ui/CONTEXT.md) — the on-device menu system: menu tree, screen modules, the navigation stack and key dispatch, marking menus.
 - [Camera](./docs/ax/camera/CONTEXT.md) — captures frames and decides exposure: the three exposure regimes, the auto-exposure controllers, and zero-match recovery.
+- [Display](./docs/ax/display/CONTEXT.md) — how panels turn rendered pixels into light: each panel's brightness axes and the dimming policy (knee curve). (Upstream's camera-as-photometer bench rig is documented but not ported — MF takes the runtime policy only.)
 
 ## Relationships
 
@@ -20,6 +21,7 @@ PiFinder is a multi-process Raspberry Pi finder/plate-solver. These contexts eac
 - **Catalog ↔ Positioning**: Catalog supplies the `(RA, Dec)` target for the alignment flow that calibrates `solve_pixel` in Positioning.
 - **Equipment → Catalog**: the active telescope's flip/flop flags and the active eyepiece's true field of view orient and scale the POSS/SDSS object image in `cat_images.get_display_image`.
 - **Positioning → Equipment**: the object-image baseline rotation combines the active telescope's flip/flop with the live solve **roll** from `shared_state` (see [ADR 0003](./docs/adr/0003-object-image-orientation.md)).
+- **Display → UI**: the UI's brightness setting (level, 0-255) is Display vocabulary; `set_brightness` in the display drivers maps it to each panel's axes. The UI's tonal-range canary (the title-bar shade) constrains how far the dimming policy may cap rendered pixel values.
 
 Companion architecture docs live next to each `CONTEXT.md`:
 - [`docs/ax/catalog.md`](./docs/ax/catalog.md)
