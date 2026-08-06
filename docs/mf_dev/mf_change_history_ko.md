@@ -508,6 +508,19 @@ migrate_db.sql
 - 여러 대를 `scope-a.local`, `scope-b.local`처럼 분리해 mDNS 충돌을 줄일 수 있다.
 - update/migration도 `/home/pifinder`에 묶이지 않는다.
 
+### mDNS 안정화 (2026-08-06)
+
+안드로이드에서 `<hostname>.local` 접속이 됐다 안 됐다 하는 문제를 잡기 위해
+`pifinder_setup.sh`에 두 가지 설정을 추가했다.
+
+- WiFi 절전모드 해제: brcmfmac이 절전 중 멀티캐스트(mDNS 질의)를 유실한다.
+  PC는 캐시·재시도로 가려지지만 안드로이드 `.local` 리졸버는 타임아웃이 짧아
+  간헐 실패로 드러난다. `/etc/NetworkManager/conf.d/wifi-powersave.conf`에
+  `wifi.powersave = 2`(끔)를 기록한다.
+- avahi IPv6 광고 차단: wlan0에 link-local(`fe80::`)뿐인데 AAAA로 광고되면
+  IPv6를 우선하는 안드로이드가 zone 없는 `fe80::`로 접속을 시도해 실패한다.
+  `avahi-daemon.conf`에 `use-ipv6=no`, `publish-aaaa-on-ipv4=no`를 적용한다.
+
 ## `pi_config_files/*.service`, `pi_config_files/smb.conf`
 
 service와 Samba 설정 파일을 설치 시 렌더링하는 템플릿으로 변경했다.

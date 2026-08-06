@@ -549,6 +549,21 @@ Expected effect:
   reduce mDNS collisions.
 - Update and migration scripts are no longer tied to `/home/pifinder`.
 
+### mDNS reliability (2026-08-06)
+
+`pifinder_setup.sh` now applies two settings that fix `<hostname>.local`
+resolving intermittently from Android phones.
+
+- Disable WiFi power save: brcmfmac drops multicast frames (mDNS queries)
+  while the radio dozes. PCs mask this with caching and retries, but Android's
+  `.local` resolver times out fast, so the name flaps. The script writes
+  `wifi.powersave = 2` (off) to
+  `/etc/NetworkManager/conf.d/wifi-powersave.conf`.
+- Stop avahi from advertising IPv6: wlan0 only carries a link-local (`fe80::`)
+  address, and advertising it as an AAAA record makes IPv6-preferring Android
+  clients try an unconnectable zone-less `fe80::` address. The script sets
+  `use-ipv6=no` and `publish-aaaa-on-ipv4=no` in `avahi-daemon.conf`.
+
 ## `pi_config_files/*.service`, `pi_config_files/smb.conf`
 
 Systemd and Samba files now act as install-time templates.

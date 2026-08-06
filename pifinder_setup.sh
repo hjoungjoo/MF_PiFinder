@@ -146,6 +146,27 @@ pifinder_prepare_apsta_nat_config
 pifinder_prepare_sta_band_config
 sudo python3 "${PIFINDER_REPO_DIR}/scripts/import_initial_wifi_networks.py"
 
+# mDNS reliability (reaching <hostname>.local from phones)
+# 1) brcmfmac WiFi power save drops multicast frames while the radio dozes, so
+#    mDNS queries go unanswered intermittently.  PCs mask this with caching and
+#    retries, but Android's .local resolver times out fast and caches little,
+#    which shows up as the hostname resolving one moment and failing the next.
+sudo mkdir -p /etc/NetworkManager/conf.d
+sudo tee /etc/NetworkManager/conf.d/wifi-powersave.conf >/dev/null <<'POWERSAVE_EOF'
+[connection]
+# 2 = disable WiFi power saving on NetworkManager-managed WiFi devices
+wifi.powersave = 2
+POWERSAVE_EOF
+# 2) The Pi carries only a link-local IPv6 address (fe80::) on wlan0, but avahi
+#    still advertises it as an AAAA record.  Android prefers IPv6 and a fe80::
+#    address without a zone index can never connect, so clients that pick the
+#    AAAA answer fail while A-record picks work.  IPv4-only mDNS avoids this.
+if [[ -f /etc/avahi/avahi-daemon.conf ]]; then
+    sudo sed -i 's/^use-ipv6=yes/use-ipv6=no/' /etc/avahi/avahi-daemon.conf
+    grep -q '^publish-aaaa-on-ipv4=' /etc/avahi/avahi-daemon.conf \
+        || sudo sed -i '/^\[publish\]/a publish-aaaa-on-ipv4=no' /etc/avahi/avahi-daemon.conf
+fi
+
 # Bluetooth HID keyboards
 if [[ -f /etc/bluetooth/input.conf ]]; then
     sudo sed -i \
