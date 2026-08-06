@@ -1053,6 +1053,27 @@ Added a new gettext catalog for the Korean UI.
 
 New UI module for Bluetooth keyboard pairing and connection.
 
+### Band-aware WiFi pause for BT pairing (2026-08-07)
+
+The unconditional WiFi cut during BT pairing/reconnect is now band-aware.
+Bluetooth is 2.4GHz-only, so when every active WiFi link is on 5GHz (current
+setup: STA and uap0 both on ch153/5765MHz — single radio, the AP follows the
+STA) or no link is active, there is no coexistence contention and the pause
+is skipped.
+
+- New `sys_utils.bt_pairing_needs_wifi_pause()` — decides from the channel
+  frequency in `iw dev <iface> info`; an undeterminable state pauses
+  (conservative).
+- `pause_wifi_for_bt_pairing()` returns whether it actually paused; callers
+  (the bluetooth screen's link context and pairing flow) resume only then —
+  a skip also avoids the resume side effects (`nmcli connection up`, hostapd
+  restart).
+- Verified on-device: real call on 5GHz → skipped (False), journal clean,
+  WiFi stayed up. Five unit tests (band combinations, conservative iw
+  failure).
+- Effect: on a 5GHz network, remote (SSH/web) sessions survive BT work.
+  Any active 2.4GHz link keeps the previous pause behavior.
+
 ### UI harness sys_utils mock gap fix (2026-08-07)
 
 Running `nox -s ui_tests` (the all-screen key sweep) on the device made the

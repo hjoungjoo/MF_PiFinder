@@ -156,11 +156,12 @@ class UIBluetoothKeyboard(UITextMenu):
         Silence WiFi while establishing a Bluetooth link, then always restore
         it. Onboard WiFi/BT share one 2.4GHz antenna and coexistence breaks BLE
         connection setup; a detached watchdog restores WiFi even if we die here.
+        The pause is skipped (returns False) while every active WiFi link is on
+        5GHz -- no contention with 2.4GHz-only Bluetooth, so WiFi stays up.
         """
         paused = False
         try:
-            sys_utils.pause_wifi_for_bt_pairing()
-            paused = True
+            paused = bool(sys_utils.pause_wifi_for_bt_pairing())
         except Exception as e:
             logger.warning("BT link: could not pause WiFi: %s", e)
         try:
@@ -259,10 +260,11 @@ class UIBluetoothKeyboard(UITextMenu):
         # Onboard WiFi shares the 2.4GHz antenna with Bluetooth and reliably
         # breaks BLE pairing (HCI 0x3e). Silence WiFi for the attempt; it is
         # always restored in _close_pair_process (plus a detached watchdog).
+        # Skipped (returns False) while every active WiFi link is on 5GHz --
+        # no contention with 2.4GHz-only Bluetooth, so WiFi stays up.
         self.pair_status = "Pausing WiFi"
         try:
-            sys_utils.pause_wifi_for_bt_pairing()
-            self.wifi_paused = True
+            self.wifi_paused = bool(sys_utils.pause_wifi_for_bt_pairing())
         except Exception as e:
             logger.warning("BT pairing: could not pause WiFi: %s", e)
 

@@ -36,6 +36,8 @@ def ensure_uhid_loaded():
 
 def pause_wifi_for_bt_pairing(safety_timeout=150):
     logger.info("FAKE SYS: pause_wifi_for_bt_pairing (no-op)")
+    # Nothing was paused, so callers skip their resume path too.
+    return False
 
 
 def resume_wifi_after_bt_pairing():

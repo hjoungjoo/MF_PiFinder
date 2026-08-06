@@ -11,7 +11,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, Optional
 
 import pam
 import requests
@@ -192,8 +192,16 @@ UHID_MODULE = "uhid"
 # connection-establishment events, so pairing a keyboard fails ~0.3s after
 # connect with HCI 0x3e (Connection Failed to be Established). We therefore
 # silence WiFi for the duration of a pairing attempt and always restore it.
+# Bluetooth only occupies 2.4GHz, though: when every active WiFi link sits in
+# the 5GHz band the radio does not contend with BLE and the pause is skipped
+# (see bt_pairing_needs_wifi_pause).
 BT_PAIRING_STA_INTERFACE = "wlan0"
 BT_PAIRING_AP_INTERFACE = "uap0"
+# Channel frequencies at or above this are 5GHz-band; below is 2.4GHz.
+BT_PAIRING_5GHZ_MIN_FREQ_MHZ = 4900
+# `iw dev <iface> info` reports the active channel as e.g.
+# "channel 153 (5765 MHz), width: 80 MHz, ..." only while a link is up.
+_IW_CHANNEL_FREQ_RE = re.compile(r"channel\s+\d+\s+\((\d+)\s*MHz\)")
 BT_PAIRING_WIFI_SAFETY_TIMEOUT = 60
 # In-process WiFi restore fired this many seconds after a pause, regardless of
 # whether the caller's own resume path survives (see pause_wifi_for_bt_pairing).
@@ -2690,18 +2698,70 @@ def _capture_wlan_connection() -> None:
         logger.warning("SYS: could not stash wlan0 connection: %s", e)
 
 
+def _active_wifi_link_freqs_mhz() -> Optional[list[int]]:
+    """
+    Channel frequencies (MHz) of the WiFi interfaces that currently have an
+    active link. Interfaces that are absent or down contribute nothing.
+    Returns None when the state cannot be determined, so callers can fall back
+    to the conservative behavior.
+    """
+    freqs: list[int] = []
+    for interface in (BT_PAIRING_STA_INTERFACE, BT_PAIRING_AP_INTERFACE):
+        try:
+            result = subprocess.run(
+                ["iw", "dev", interface, "info"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                continue
+            match = _IW_CHANNEL_FREQ_RE.search(result.stdout or "")
+        except Exception as e:
+            logger.warning("SYS: could not read %s channel: %s", interface, e)
+            return None
+        if match:
+            freqs.append(int(match.group(1)))
+    return freqs
+
+
+def bt_pairing_needs_wifi_pause() -> bool:
+    """
+    Whether Bluetooth pairing needs WiFi silenced first.
+
+    Bluetooth occupies only the 2.4GHz band, so the coexistence interference
+    that breaks BLE pairing (HCI 0x3e) needs an active 2.4GHz WiFi link on the
+    shared radio. With every active link on 5GHz -- or no active link at all --
+    WiFi can stay up. An undeterminable state pauses (conservative).
+    """
+    freqs = _active_wifi_link_freqs_mhz()
+    if freqs is None:
+        return True
+    return any(freq < BT_PAIRING_5GHZ_MIN_FREQ_MHZ for freq in freqs)
+
+
 def pause_wifi_for_bt_pairing(
     safety_timeout: int = BT_PAIRING_WIFI_SAFETY_TIMEOUT,
-) -> None:
+) -> bool:
     """
     Silence the 2.4GHz radio so a Bluetooth keyboard can pair without WiFi
     coexistence interference (see BT_PAIRING_* notes above).
+
+    Returns True when WiFi was actually paused -- callers resume only then.
+    When every active WiFi link is on 5GHz the pause is skipped (returns
+    False) and WiFi stays up throughout the pairing attempt.
 
     A detached watchdog restores WiFi after ``safety_timeout`` seconds no matter
     what, so a crash mid-pairing can never leave the device without networking.
     ``resume_wifi_after_bt_pairing`` restores it sooner on the normal path.
     """
     ensure_uhid_loaded()
+    if not bt_pairing_needs_wifi_pause():
+        logger.info(
+            "SYS: WiFi idle or 5GHz-only; skipping WiFi pause for Bluetooth pairing"
+        )
+        return False
     # Remember exactly which client profile is up so we can bring it back cleanly.
     _capture_wlan_connection()
     # In-process fallback: restore WiFi even if the caller's resume path never
@@ -2748,6 +2808,7 @@ def pause_wifi_for_bt_pairing(
         text=True,
         check=False,
     )
+    return True
 
 
 def resume_wifi_after_bt_pairing() -> None:

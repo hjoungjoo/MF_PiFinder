@@ -951,6 +951,23 @@ Settings > Advanced > Keyboard
 
 Bluetooth 키보드 페어링과 연결을 위한 새 UI 모듈이다.
 
+### 5GHz 대역 인지형 WiFi pause (2026-08-07)
+
+BT 페어링/재연결 시 WiFi를 무조건 끄던 것을 대역 인지형으로 개선.
+Bluetooth는 2.4GHz 전용이므로, 활성 WiFi 링크가 전부 5GHz이거나(현 운용:
+STA·uap0 모두 ch153/5765MHz — 단일 라디오라 AP가 STA를 따라감) 링크가
+없으면 공존 간섭이 없어 pause를 건너뛴다.
+
+- `sys_utils.bt_pairing_needs_wifi_pause()` 신설 — `iw dev <iface> info`의
+  채널 주파수로 판정, 판정 불가 시 보수적으로 pause 유지.
+- `pause_wifi_for_bt_pairing()`이 실제 pause 여부를 bool로 반환; 호출부
+  (bluetooth_keyboard의 링크 컨텍스트·페어링)는 반환값으로 resume 여부 결정
+  — 스킵 시 `nmcli connection up`/hostapd 재시작류 복구 부작용도 없음.
+- 실장비 검증: 5GHz 상태에서 실제 호출 → 스킵(False)·journal 무흔적·WiFi
+  유지. 단위테스트 5종(대역 조합·iw 실패 보수 동작 포함).
+- 효과: 5GHz 망 운용 시 원격(SSH/웹) 세션이 BT 연결 작업 중에도 안 끊긴다.
+  2.4GHz 링크가 하나라도 있으면 기존 pause 동작 그대로.
+
 ### UI 하니스 sys_utils mock 누락 수정 (2026-08-07)
 
 실장비에서 `nox -s ui_tests`(전 화면 키 스위프)를 돌리면 Bluetooth 화면의

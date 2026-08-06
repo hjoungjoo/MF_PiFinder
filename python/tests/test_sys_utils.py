@@ -610,6 +610,7 @@ try:
         run_cmds = []
         popen_cmds = []
         monkeypatch.setattr(sys_utils, "ensure_uhid_loaded", lambda: True)
+        monkeypatch.setattr(sys_utils, "bt_pairing_needs_wifi_pause", lambda: True)
         monkeypatch.setattr(sys_utils, "_capture_wlan_connection", lambda: None)
         monkeypatch.setattr(
             sys_utils.subprocess, "run", lambda cmd, **k: run_cmds.append(cmd)
@@ -617,7 +618,7 @@ try:
         monkeypatch.setattr(
             sys_utils.subprocess, "Popen", lambda cmd, **k: popen_cmds.append(cmd)
         )
-        sys_utils.pause_wifi_for_bt_pairing(safety_timeout=42)
+        assert sys_utils.pause_wifi_for_bt_pairing(safety_timeout=42) is True
         # radio is turned off (both client wifi and the AP interface)
         assert [
             "sudo",
@@ -642,6 +643,69 @@ try:
         assert watchdog[:4] == ["sudo", "-n", "setsid", "bash"]
         assert "sleep 42" in watchdog[-1]
         assert "radio wifi on" in watchdog[-1]
+
+    @pytest.mark.unit
+    def test_pause_wifi_skipped_when_no_2_4ghz_link(monkeypatch):
+        """5GHz-only WiFi does not contend with 2.4GHz-only Bluetooth: the
+        pause is skipped, nothing is executed, and callers must not resume."""
+        run_cmds = []
+        monkeypatch.setattr(sys_utils, "ensure_uhid_loaded", lambda: True)
+        monkeypatch.setattr(sys_utils, "bt_pairing_needs_wifi_pause", lambda: False)
+        monkeypatch.setattr(
+            sys_utils.subprocess, "run", lambda cmd, **k: run_cmds.append(cmd)
+        )
+        monkeypatch.setattr(
+            sys_utils.subprocess, "Popen", lambda cmd, **k: run_cmds.append(cmd)
+        )
+        assert sys_utils.pause_wifi_for_bt_pairing() is False
+        assert run_cmds == []
+
+    def _iw_info_runner(freq_by_interface):
+        """Fake `iw dev <iface> info` runner; None value = command fails."""
+
+        def fake_run(cmd, **_kwargs):
+            interface = cmd[2]
+            freq = freq_by_interface.get(interface)
+
+            class Result:
+                returncode = 1 if freq is None else 0
+                stdout = (
+                    ""
+                    if freq is None
+                    else f"\tchannel 100 ({freq} MHz), width: 80 MHz\n"
+                    if freq
+                    else "\ttype managed\n"
+                )
+
+            return Result()
+
+        return fake_run
+
+    @pytest.mark.unit
+    def test_bt_pairing_pause_needed_only_with_a_2_4ghz_link(monkeypatch):
+        cases = [
+            # (wlan0 freq, uap0 freq, expected) -- None: iface absent, 0: no link
+            (5765, 5765, False),  # STA + AP both 5GHz
+            (5765, None, False),  # 5GHz STA only
+            (0, 0, False),  # no active link at all
+            (2437, None, True),  # 2.4GHz STA
+            (5765, 2437, True),  # 5GHz STA but 2.4GHz AP
+        ]
+        for sta, ap, expected in cases:
+            monkeypatch.setattr(
+                sys_utils.subprocess,
+                "run",
+                _iw_info_runner({"wlan0": sta, "uap0": ap}),
+            )
+            assert sys_utils.bt_pairing_needs_wifi_pause() is expected, (sta, ap)
+
+    @pytest.mark.unit
+    def test_bt_pairing_pause_conservative_when_iw_fails(monkeypatch):
+        def raise_run(cmd, **_kwargs):
+            raise OSError("iw missing")
+
+        monkeypatch.setattr(sys_utils.subprocess, "run", raise_run)
+        assert sys_utils.bt_pairing_needs_wifi_pause() is True
 
     @pytest.mark.unit
     def test_resume_wifi_after_bt_pairing_restores_radio(monkeypatch):
