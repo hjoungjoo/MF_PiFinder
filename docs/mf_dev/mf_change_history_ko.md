@@ -1529,6 +1529,22 @@ libinput(`keyboard_pi.py`)은 조이스틱 클래스 장치를 무시하므로, 
   디스패치, keepalive, 방향 교체 시 이전 릴리스 무시, mount off 무시, 요청
   기능 전체 커버). 전체 799 unit 통과.
 
+### 수동이동 8초 재전송 추가 (2026-08-07)
+
+버튼/키를 계속 눌러도 조이스틱은 ~11초, LCD 가이드 화면은 ~10초에 이동이
+멈추던 결함 수정. mountcontrol은 연속이동 상한
+(`MANUAL_MOTION_MAX_CONTINUOUS_SECONDS` 10초)을 넘겨서는 keepalive로 lease를
+연장해 주지 않으므로, 송신 측이 `manual_movement`를 주기 재전송해야 한다
+(ui/base.py 가이드 키·pos_server는 준수, 이 두 곳은 keepalive만 보냄).
+
+- `joystick_input.py`·`ui/indi.py`: `MANUAL_MOTION_RESTART_INTERVAL = 8.0`
+  추가 — 홀드 중 8초마다 keepalive 대신 `manual_movement`를 재전송해 10초
+  카운터를 리셋.
+- 진단 과정에서 OnStep 펌웨어 자체의 ~7초 가이드 자동정지(전 경로 공통 원인)
+  도 실측·확인 — 펌웨어 측에서 수정됨(2026-08-07). 펌웨어 수정 후 남아 있던
+  조이스틱/LCD 11초 정지가 이 재전송 누락이다.
+- 테스트: `test_joystick_input.py`에 장시간 홀드 재전송 1종 추가(13종).
+
 ## Bluetooth 설정 메뉴 — 조이스틱 지원, 이름 변경 (2026-07-26)
 
 Settings > Advanced의 "Keyboard" 항목을 "Bluetooth"(ko: 블루투스)로 바꾸고,

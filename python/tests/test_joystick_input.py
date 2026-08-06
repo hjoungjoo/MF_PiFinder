@@ -15,6 +15,7 @@ from PiFinder import joystick_input
 from PiFinder.joystick_input import (
     MANUAL_MOTION_KEEPALIVE_INTERVAL,
     MANUAL_MOTION_LEASE_SECONDS,
+    MANUAL_MOTION_RESTART_INTERVAL,
     JoystickDispatcher,
     hat_button_id,
 )
@@ -107,6 +108,25 @@ class TestMountActions:
             },
             {"type": "stop_movement"},
         ]
+
+    def test_long_hold_resends_manual_movement_past_the_10s_cap(self):
+        """Keepalives cannot extend one manual_movement past the mount
+        process's 10 s continuous-hold cap; a held button must re-send the
+        full manual_movement so motion continues (stops at ~11 s otherwise)."""
+        dispatcher, _, mount = _dispatcher()
+        dispatcher.set_mapping({"mount_up": "BTN_DPAD_UP"})
+
+        dispatcher.handle_button("BTN_DPAD_UP", True, 0.0)
+        dispatcher.tick(MANUAL_MOTION_RESTART_INTERVAL - 0.01)
+        dispatcher.tick(MANUAL_MOTION_RESTART_INTERVAL + 0.01)
+
+        moves = [c for c in _drain(mount) if c["type"] == "manual_movement"]
+        assert len(moves) == 2
+
+        # And the restart re-arms itself for the next interval.
+        dispatcher.tick(2 * MANUAL_MOTION_RESTART_INTERVAL + 0.02)
+        moves = [c for c in _drain(mount) if c["type"] == "manual_movement"]
+        assert len(moves) == 1
 
     def test_direction_names_follow_the_guide_screen(self):
         dispatcher, _, mount = _dispatcher()

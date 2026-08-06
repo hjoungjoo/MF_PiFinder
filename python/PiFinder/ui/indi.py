@@ -42,6 +42,10 @@ SLEW_STEPS = [
 ]
 MANUAL_MOTION_KEEPALIVE_INTERVAL = 0.4
 MANUAL_MOTION_LEASE_SECONDS = 1.2
+# The mount process refuses to extend one manual_movement past its 10 s
+# continuous-hold cap on keepalives alone; re-send the full manual_movement to
+# keep a held key moving (same contract as ui/base.py's guide keys).
+MANUAL_MOTION_RESTART_INTERVAL = 8.0
 
 
 class UIIndiBase(UIModule):
@@ -389,10 +393,12 @@ class UIIndiGuide(UIIndiBase):
         super().__init__(*args, **kwargs)
         self._active_motion_direction = None
         self._next_motion_keepalive_at = 0.0
+        self._next_motion_restart_at = 0.0
 
     def active(self):
         self._active_motion_direction = None
         self._next_motion_keepalive_at = 0.0
+        self._next_motion_restart_at = 0.0
         self._send_mount({"type": "refresh_slew_rate"})
 
     def inactive(self):
@@ -400,12 +406,24 @@ class UIIndiGuide(UIIndiBase):
             self._send_mount({"type": "stop_movement"})
         self._active_motion_direction = None
         self._next_motion_keepalive_at = 0.0
+        self._next_motion_restart_at = 0.0
 
     def _send_motion_keepalive(self):
         if self._active_motion_direction is None:
             return
 
         now = time.monotonic()
+        if now >= self._next_motion_restart_at:
+            self._next_motion_restart_at = now + MANUAL_MOTION_RESTART_INTERVAL
+            self._next_motion_keepalive_at = now + MANUAL_MOTION_KEEPALIVE_INTERVAL
+            self._send_mount(
+                {
+                    "type": "manual_movement",
+                    "direction": self._active_motion_direction,
+                    "lease_seconds": MANUAL_MOTION_LEASE_SECONDS,
+                }
+            )
+            return
         if now < self._next_motion_keepalive_at:
             return
 
@@ -474,12 +492,13 @@ class UIIndiGuide(UIIndiBase):
         if direction == "stop":
             self._active_motion_direction = None
             self._next_motion_keepalive_at = 0.0
+            self._next_motion_restart_at = 0.0
             self._send_mount({"type": "stop_movement"})
         else:
             self._active_motion_direction = direction
-            self._next_motion_keepalive_at = (
-                time.monotonic() + MANUAL_MOTION_KEEPALIVE_INTERVAL
-            )
+            now = time.monotonic()
+            self._next_motion_keepalive_at = now + MANUAL_MOTION_KEEPALIVE_INTERVAL
+            self._next_motion_restart_at = now + MANUAL_MOTION_RESTART_INTERVAL
             self._send_mount(
                 {
                     "type": "manual_movement",

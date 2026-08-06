@@ -1705,6 +1705,24 @@ connected controller's buttons never reached the UI.
 - Tests: 12 in `tests/test_joystick_input.py`; full unit suite (799)
   passing.
 
+### Manual-motion 8 s re-send (2026-08-07)
+
+Fixed held-button motion stopping at ~11 s on the joystick and ~10 s on the
+LCD guide screen. The mount process refuses to extend one `manual_movement`
+past its 10 s continuous-hold cap (`MANUAL_MOTION_MAX_CONTINUOUS_SECONDS`) on
+keepalives alone; senders must periodically re-send the full command
+(ui/base.py guide keys and pos_server already did, these two only sent
+keepalives).
+
+- `joystick_input.py` / `ui/indi.py`: new `MANUAL_MOTION_RESTART_INTERVAL =
+  8.0` — while held, re-send `manual_movement` every 8 s instead of a
+  keepalive, resetting the 10 s counter.
+- The same investigation also measured OnStep firmware auto-stopping guides
+  after ~7 s (the cause common to every input path); fixed on the firmware
+  side (2026-08-07). The remaining 11 s stop after that fix was this missing
+  re-send.
+- Tests: one long-hold re-send case added to `test_joystick_input.py` (13).
+
 ## Bluetooth settings menu — joystick support, renamed (2026-07-26)
 
 Settings > Advanced "Keyboard" is now "Bluetooth", and the

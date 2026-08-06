@@ -46,6 +46,11 @@ CONFIG_KEY = "joystick_mapping"
 # never leave the mount slewing.
 MANUAL_MOTION_KEEPALIVE_INTERVAL = 0.4
 MANUAL_MOTION_LEASE_SECONDS = 1.2
+# The mount process refuses to extend one manual_movement past its 10 s
+# continuous-hold cap on keepalives alone; the sender must re-send the full
+# manual_movement to keep a held button moving (same contract as ui/base.py's
+# guide keys and pos_server).
+MANUAL_MOTION_RESTART_INTERVAL = 8.0
 
 DEVICE_RESCAN_SECONDS = 3.0
 
@@ -114,6 +119,7 @@ class JoystickDispatcher:
         self._held_direction: Optional[str] = None
         self._held_button: Optional[str] = None
         self._next_keepalive = 0.0
+        self._next_restart = 0.0
 
     def set_mapping(self, mapping: dict[str, Any]) -> None:
         """Accept an {action: button_id} mapping (the config layout)."""
@@ -162,6 +168,7 @@ class JoystickDispatcher:
             self._held_direction = direction
             self._held_button = button_id
             self._next_keepalive = now + MANUAL_MOTION_KEEPALIVE_INTERVAL
+            self._next_restart = now + MANUAL_MOTION_RESTART_INTERVAL
             self.mountcontrol_queue.put(
                 {
                     "type": "manual_movement",
@@ -176,7 +183,20 @@ class JoystickDispatcher:
 
     def tick(self, now: float) -> None:
         """Renew the motion lease while a mount direction stays held."""
-        if self._held_direction is None or now < self._next_keepalive:
+        if self._held_direction is None:
+            return
+        if now >= self._next_restart:
+            self._next_restart = now + MANUAL_MOTION_RESTART_INTERVAL
+            self._next_keepalive = now + MANUAL_MOTION_KEEPALIVE_INTERVAL
+            self.mountcontrol_queue.put(
+                {
+                    "type": "manual_movement",
+                    "direction": self._held_direction,
+                    "lease_seconds": MANUAL_MOTION_LEASE_SECONDS,
+                }
+            )
+            return
+        if now < self._next_keepalive:
             return
         self._next_keepalive = now + MANUAL_MOTION_KEEPALIVE_INTERVAL
         self.mountcontrol_queue.put(
