@@ -951,6 +951,19 @@ Settings > Advanced > Keyboard
 
 Bluetooth 키보드 페어링과 연결을 위한 새 UI 모듈이다.
 
+### UI 하니스 sys_utils mock 누락 수정 (2026-08-07)
+
+실장비에서 `nox -s ui_tests`(전 화면 키 스위프)를 돌리면 Bluetooth 화면의
+Reconnect가 **실물** `pause_wifi_for_bt_pairing()`을 실행해 WiFi가 60~90초
+끊기는 사고가 실측됨(2026-08-07 08:15, SSH 세션 단절). 원인:
+`test_ui_modules.py`의 `_inert_sys_utils` fixture가 모듈 3곳만 하드코딩
+패치하는데, 화면들은 임포트 시점에 `sys_utils = utils.get_sys_utils()`로
+실물을 바인딩하므로 이후 추가된 화면(bluetooth_keyboard, sqm, equipment)이
+mock 밖에 있었다. 수정: `sys_utils` 모듈 속성을 가진 모든 로드된 PiFinder
+모듈을 동적으로 찾아 일괄 패치 — 새 화면이 생겨도 자동 커버. 검증: 장비에서
+전체 스위프 277 통과 + journal에 nmcli/WiFi 조작 무흔적. 참고: 장비에서
+스위트를 돌릴 때는 `PIFINDER_USE_FAKE_SYS_UTILS=1` 안전망 병용 권장.
+
 ### 메뉴 항목
 
 ```text

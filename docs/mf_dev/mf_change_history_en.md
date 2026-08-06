@@ -1053,6 +1053,20 @@ Added a new gettext catalog for the Korean UI.
 
 New UI module for Bluetooth keyboard pairing and connection.
 
+### UI harness sys_utils mock gap fix (2026-08-07)
+
+Running `nox -s ui_tests` (the all-screen key sweep) on the device made the
+Bluetooth screen's Reconnect execute the **real** `pause_wifi_for_bt_pairing()`,
+cutting WiFi for 60-90 s (observed 2026-08-07 08:15; dropped the SSH session).
+Cause: `test_ui_modules.py`'s `_inert_sys_utils` fixture patched a hardcoded
+list of three modules, but screens bind the real module at import time
+(`sys_utils = utils.get_sys_utils()`), so screens added later
+(bluetooth_keyboard, sqm, equipment) sat outside the mock. Fix: dynamically
+patch the `sys_utils` attribute of every loaded PiFinder module, so future
+screens are covered automatically. Verified on-device: full sweep 277 passed
+with zero nmcli/WiFi activity in the journal. When running the suite on a
+device, also consider the `PIFINDER_USE_FAKE_SYS_UTILS=1` safety net.
+
 ### Menu Items
 
 ```text

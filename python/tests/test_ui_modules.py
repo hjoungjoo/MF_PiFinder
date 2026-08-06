@@ -48,6 +48,7 @@ Run from ``python/`` (paths in ``PiFinder.utils`` are relative to CWD):
 from __future__ import annotations
 
 import builtins
+import contextlib
 import copy
 import datetime
 import importlib
@@ -55,6 +56,8 @@ import io
 import pkgutil
 import queue
 import shutil
+import sys
+import types
 from typing import Iterator, cast
 from unittest import mock
 
@@ -376,20 +379,30 @@ def _inert_sys_utils():
     """Neutralize the system-action boundary.
 
     sys_utils is the OS/hardware action layer: shutdown(), restart_system(),
-    switch_cam_*(), go_wifi_*(), update_software(). The key sweep selects menu
-    items, which fire these as real actions -- on a Pi this harness would
-    reboot or reconfigure the device, and off-Pi sys_utils_fake is missing
-    some of them (e.g. switch_cam_imx462).
-    Replace it with an inert mock everywhere the UI imported it,
-    so actions are safe no-ops while all UI logic stays real.
+    switch_cam_*(), go_wifi_*(), pause_wifi_for_bt_pairing(). The key sweep
+    selects menu items, which fire these as real actions -- on a Pi this
+    harness would reboot or reconfigure the device, and off-Pi sys_utils_fake
+    is missing some of them (e.g. switch_cam_imx462).
+
+    Modules bind the real module at import time (``sys_utils =
+    utils.get_sys_utils()``), so patching ``get_sys_utils`` alone cannot reach
+    them -- a hardcoded patch list silently misses screens added later (the
+    Bluetooth screen's Reconnect once shut down the device's WiFi mid-sweep
+    this way). Instead, patch the ``sys_utils`` attribute of every imported
+    PiFinder module that carries one; discovery imports the whole UI tree
+    before this session fixture runs, so the sweep's screens are all covered.
     """
     inert = mock.MagicMock(name="sys_utils")
-    with (
-        mock.patch.object(callbacks, "sys_utils", inert),
-        mock.patch("PiFinder.ui.software.sys_utils", inert),
-        mock.patch("PiFinder.ui.status.sys_utils", inert),
-        mock.patch.object(utils, "get_sys_utils", lambda: inert),
-    ):
+    bound_modules = [
+        module
+        for name, module in list(sys.modules.items())
+        if name.startswith("PiFinder.")
+        and isinstance(getattr(module, "sys_utils", None), types.ModuleType)
+    ]
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(mock.patch.object(utils, "get_sys_utils", lambda: inert))
+        for module in bound_modules:
+            stack.enter_context(mock.patch.object(module, "sys_utils", inert))
         yield
 
 
