@@ -232,8 +232,11 @@ class Network:
     def apply_sta_changes(self):
         self.sta_dirty = False
 
-    def connect_wifi_network(self, network_id):
+    def connect_wifi_network(self, network_id, async_switch=True):
         return False, "FAKE SYS: connect_wifi_network (no-op)"
+
+    def get_last_connect_result(self):
+        return None
 
     def delete_wifi_network(self, network_id):
         """

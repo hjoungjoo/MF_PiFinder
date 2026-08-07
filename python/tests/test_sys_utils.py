@@ -1,4 +1,5 @@
 from __future__ import annotations
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -429,10 +430,14 @@ try:
 
         monkeypatch.setattr(sys_utils.Network, "_nmcli", staticmethod(fake_nmcli))
 
-        ok, _message = network.connect_wifi_network(0)
+        network._last_connect_result = None
+        ok, message = network.connect_wifi_network(0, async_switch=False)
 
         assert ok is True
         assert calls == [["-w", "25", "con", "up", "PiFinder lab"]]
+        result = network.get_last_connect_result()
+        assert result is not None and result["ok"] is True
+        assert "lab" in message
 
     @pytest.mark.unit
     def test_connect_wifi_network_proceeds_on_scan_failure(monkeypatch):
@@ -456,9 +461,42 @@ try:
             ),
         )
 
-        ok, _message = network.connect_wifi_network(0)
+        network._last_connect_result = None
+        ok, _message = network.connect_wifi_network(0, async_switch=False)
 
         assert ok is True
+
+    @pytest.mark.unit
+    def test_connect_wifi_network_async_returns_before_switch(monkeypatch):
+        # The HTTP response must leave before the link can drop: async mode
+        # returns immediately with a switching notice and runs nmcli in a
+        # background thread.
+        network = sys_utils.Network.__new__(sys_utils.Network)
+        network._wifi_networks = [{"id": 0, "ssid": "lab", "key_mgmt": "WPA-PSK"}]
+        network._last_connect_result = None
+        monkeypatch.setattr(
+            sys_utils.Network, "_networkmanager_active", staticmethod(lambda: True)
+        )
+        monkeypatch.setattr(
+            sys_utils.Network,
+            "_networkmanager_wifi_profiles",
+            staticmethod(lambda: [{"name": "PiFinder lab", "ssid": "lab"}]),
+        )
+        monkeypatch.setattr(network, "scan_wifi_networks", lambda: ["lab"])
+        monkeypatch.setattr(sys_utils.time, "sleep", lambda _s: None)
+        done = threading.Event()
+
+        def fake_nmcli(args):
+            done.set()
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(sys_utils.Network, "_nmcli", staticmethod(fake_nmcli))
+
+        ok, message = network.connect_wifi_network(0)
+
+        assert ok is True
+        assert "Switching to lab" in message
+        assert done.wait(5.0)
 
     @pytest.mark.unit
     def test_iw_scan_parsing_dedupes_ssids():

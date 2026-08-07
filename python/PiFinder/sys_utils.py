@@ -1623,7 +1623,14 @@ class Network:
         # list cannot drop the connection the editor is using.
         self.sta_dirty = False
 
+        # Outcome of the most recent background STA switch (see
+        # connect_wifi_network); shown as a banner on the next page render.
+        self._last_connect_result: dict[str, Any] | None = None
+
         self.populate_wifi_networks()
+
+    def get_last_connect_result(self) -> dict[str, Any] | None:
+        return self._last_connect_result
 
     def populate_wifi_networks(self) -> None:
         self._wifi_networks = []
@@ -2092,10 +2099,20 @@ class Network:
             wpa_cli("reconfigure")
         self.sta_dirty = False
 
-    def connect_wifi_network(self, network_id: int) -> tuple[bool, str]:
+    def connect_wifi_network(
+        self, network_id: int, async_switch: bool = True
+    ) -> tuple[bool, str]:
         """
         Manually switch the STA link to a saved network right now (explicit
         user action, so this one is immediate by design).
+
+        Validation (profile exists, SSID in range) runs synchronously while
+        the current link is untouched; the actual switch runs in a background
+        thread AFTER the HTTP response has left. Doing the `con up` inline
+        tears down the link that is carrying the response, so the user saw
+        no feedback at all whether the switch worked or silently reverted
+        (field-observed 2026-08-08). The outcome lands in
+        get_last_connect_result() for the next page render.
         """
         try:
             network = self._wifi_networks[network_id]
@@ -2115,9 +2132,8 @@ class Network:
         if profile is None:
             return False, f"No NetworkManager profile for {ssid} (apply first)"
         # A `con up` on an out-of-range SSID is destructive: NetworkManager
-        # drops the CURRENT link first, fails after its timeout, and the web
-        # session serving this request dies with it (autoconnect then quietly
-        # reverts to another saved network -- observed 2026-08-08). Refuse up
+        # drops the CURRENT link first, fails after its timeout, and
+        # autoconnect then quietly reverts to another saved network. Refuse up
         # front while the link is untouched. An empty scan result proceeds
         # best-effort so a scan hiccup cannot block a legitimate switch; the
         # trade-off is that hidden SSIDs cannot be switched to while other
@@ -2128,10 +2144,41 @@ class Network:
                 f"{ssid} is not in range (router off or out of reach); "
                 "keeping the current connection"
             )
-        result = Network._nmcli(["-w", "25", "con", "up", profile["name"]])
-        if result.returncode != 0:
-            return False, (result.stderr or result.stdout or "nmcli failed").strip()
-        return True, f"Connecting to {ssid}"
+
+        profile_name = profile["name"]
+
+        def _switch() -> None:
+            if async_switch:
+                # Let the HTTP response flush before the link may drop.
+                time.sleep(1.0)
+            result = Network._nmcli(["-w", "25", "con", "up", profile_name])
+            ok = result.returncode == 0
+            message = (
+                f"Connected to {ssid}"
+                if ok
+                else (result.stderr or result.stdout or "nmcli failed").strip()
+            )
+            self._last_connect_result = {
+                "ssid": ssid,
+                "ok": ok,
+                "message": message,
+                "at": time.time(),
+            }
+            if not ok:
+                logger.warning("Manual STA switch to %s failed: %s", ssid, message)
+
+        if async_switch:
+            threading.Thread(
+                target=_switch, name=f"sta-switch-{ssid}", daemon=True
+            ).start()
+        else:
+            _switch()
+            last = self._last_connect_result or {}
+            return bool(last.get("ok")), str(last.get("message") or "")
+        return True, (
+            f"Switching to {ssid} now. If this page is on the old network it "
+            "will briefly lose connection -- reload after the switch."
+        )
 
     def add_wifi_network(self, ssid, key_mgmt, psk=None):
         """
