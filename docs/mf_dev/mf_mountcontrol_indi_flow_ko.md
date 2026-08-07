@@ -558,6 +558,11 @@ INDI sync:
 
 - PyIndi/INDI property를 사용해 latitude, longitude, elevation, UTC time을 보낸다.
 
+시계 신뢰 게이트(A4): 미신뢰 시계도 전송을 막지 않고 현재 PiFinder 시간을
+잠정(provisional)으로 보낸다 — 상세 규약과 근거는
+[mf_time_sync_ko.md](mf_time_sync_ko.md)(정규 소유자) 참조. Multi-Point
+Align 시작만 하드 게이트를 유지한다(`_sync_multipoint_location_time`).
+
 ## Park/Home/Tracking/Slew
 
 Park/Home:

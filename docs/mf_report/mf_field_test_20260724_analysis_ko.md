@@ -240,6 +240,10 @@ time_sync_enabled = false (기본값 Off → 관찰/경고 전부 꺼짐)
     미신뢰면 전송을 보류하고 상태 메시지("Mount time sync deferred...")를
     남긴다. Multi Align 시작은 위치/시간 sync 실패로 세션이 명확한 메시지와
     함께 실패한다.
+    - **2026-08-08 완화**: 보류가 현장 세션을 통째로 묶는 문제(시간 없는
+      마운트는 슬루 전면 거부 → 솔빙 가능한 하늘로 이동 불가)가 실측되어,
+      일반 sync는 잠정(provisional) 시간 전송으로 변경. Multi Align만 하드
+      게이트 유지. 현행 규약은 [mf_time_sync_ko.md](../mf_dev/mf_time_sync_ko.md).
   - **LCD 경고**: 타이틀바 우측에 미신뢰 동안 "T"가 점멸(INDI 문제 표시와
     같은 규칙). **웹 경고**: `/indi` 페이지 상단 빨간 배너
     (`/indi/current_values`의 `clock_trusted`).

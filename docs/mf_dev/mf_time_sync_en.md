@@ -88,12 +88,21 @@ Legacy keys still present in older configs (`ntp_*`, `software_pps*`,
   `selected` is null and the state mirrors the chrony/GPS observation states.
 - GPS candidates are observed for diagnostics only: `tAcc`, sample jitter and
   staleness drive `stable/collecting/low_quality/unstable/stale`.
-- **Clock-trust gate (A4, implemented)**: when chronyd first synchronizes this
-  boot, a tmpfs marker `/dev/shm/pifinder/clock_trusted.json` (with the boot
-  id) is written. `gps_time_sync.clock_is_trusted()` judges from the marker
-  (plus a direct `chronyc` check when needed); while untrusted, mount
-  location/time sync is deferred, a blinking "T" shows in the LCD title bar
-  and the web `/indi` page shows a warning banner.
+- **Clock-trust gate (A4, implemented; softened 2026-08-08)**: when chronyd
+  first synchronizes this boot, a tmpfs marker
+  `/dev/shm/pifinder/clock_trusted.json` (with the boot id) is written.
+  `gps_time_sync.clock_is_trusted()` judges from the marker (plus a direct
+  `chronyc` check when needed). While untrusted, mount location/time sync is
+  **no longer blocked -- the current PiFinder time is sent as a provisional
+  value**: a mount with no time at all refuses every slew, stranding a field
+  session that only needs to reach a solvable patch of sky (field-observed
+  2026-08-08). The provisional time is replaced automatically by the A5 hook
+  on the trust transition / clock jump, and is flagged in the status message
+  and the `time_sync_provisional` field of `mount_control_status.json`. The
+  blinking "T" in the LCD title bar and the web `/indi` warning banner remain.
+  **Multi-Point Align keeps the hard gate**: its alignment model bakes in the
+  LST, so with an untrusted clock the session fails with a clear message
+  (a manually set time is accepted).
 - **Clock-jump re-sync (A5, implemented)**: when the clock jumps by more than
   2 s (chrony stepping after a late GPS fix), the mount site/time is re-sent
   and the tracking target is cleared. A trust transition without a visible

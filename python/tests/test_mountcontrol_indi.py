@@ -1018,7 +1018,7 @@ def test_multipoint_align_skysafari_goto_target_becomes_confirm_target():
     assert mount._multipoint_align["completed"][0]["name"] == "SkySafari Target"
 
 
-def test_sync_location_time_blocked_while_clock_untrusted(monkeypatch):
+def test_sync_location_time_sends_provisional_time_while_clock_untrusted(monkeypatch):
     mount = DummyMountControl(DummySharedStateWithLocation())
     monkeypatch.setattr(mci.gps_time_sync, "clock_is_trusted", lambda **kwargs: False)
     applied = []
@@ -1027,6 +1027,7 @@ def test_sync_location_time_blocked_while_clock_untrusted(monkeypatch):
         "apply_indi_onstep_location_time",
         lambda **kwargs: applied.append(kwargs) or {"ok": True},
     )
+    monkeypatch.setattr(sys_utils, "write_onstep_location_cache", lambda *args: None)
     statuses = []
     monkeypatch.setattr(
         mount,
@@ -1034,10 +1035,39 @@ def test_sync_location_time_blocked_while_clock_untrusted(monkeypatch):
         lambda state, message="", **extra: statuses.append((state, message)),
     )
 
-    assert mount.sync_location_time() is False
+    # An untrusted clock no longer blocks the send: a mount with no time
+    # refuses every slew, so the current PiFinder time goes out as a
+    # provisional value (A5 re-sends once the clock becomes trusted).
+    assert mount.sync_location_time() is True
 
-    assert applied == []
-    assert "clock has not been synchronized" in statuses[-1][1]
+    assert len(applied) == 1
+    assert applied[0]["utc_datetime"] == "2026-07-01T14:45:00+00:00"
+    assert mount._time_sync_provisional is True
+    assert "provisional" in statuses[-1][1]
+
+
+def test_multipoint_align_location_time_requires_trusted_clock(monkeypatch):
+    mount = DummyMountControl(DummySharedStateWithLocation())
+    monkeypatch.setattr(mci.gps_time_sync, "clock_is_trusted", lambda **kwargs: False)
+    sync_calls = []
+    monkeypatch.setattr(
+        mount, "sync_location_time", lambda **kwargs: sync_calls.append(kwargs) or True
+    )
+    statuses = []
+    monkeypatch.setattr(
+        mount,
+        "_align_session_status",
+        lambda state, message: statuses.append((state, message)),
+    )
+
+    # Alignment bakes the LST into its model, so it keeps the hard gate the
+    # plain location/time sync dropped.
+    result = mci.MountControlIndi._sync_multipoint_location_time(mount, {})
+
+    assert result is False
+    assert sync_calls == []
+    assert statuses[-1][0] == mci.STATE_FAILED
+    assert "synchronized clock" in statuses[-1][1]
 
 
 def test_sync_location_time_allows_manual_time_over_trust_gate(monkeypatch):

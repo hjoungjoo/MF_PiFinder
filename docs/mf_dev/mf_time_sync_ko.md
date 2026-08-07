@@ -85,11 +85,19 @@ UI 항목:
   비어 있고, 상태는 chrony/GPS 관찰 상태를 그대로 보여줍니다.
 - GPS 후보는 진단용으로만 관찰합니다: `tAcc`, 샘플 jitter, stale 여부로
   `stable/collecting/low_quality/unstable/stale`을 판정합니다.
-- **시계 신뢰 게이트(A4, 구현됨)**: chronyd가 이번 부팅에서 처음 동기되면
-  tmpfs 마커 `/dev/shm/pifinder/clock_trusted.json`(boot_id 포함)이 기록됩니다.
-  `gps_time_sync.clock_is_trusted()`가 이 마커(+필요 시 `chronyc` 직접 확인)로
-  판정하며, 미신뢰 동안 마운트 location/time sync는 보류되고 LCD 타이틀바에
-  "T"가 점멸, 웹 `/indi` 페이지에 경고 배너가 표시됩니다.
+- **시계 신뢰 게이트(A4, 구현됨 · 2026-08-08 완화)**: chronyd가 이번 부팅에서
+  처음 동기되면 tmpfs 마커 `/dev/shm/pifinder/clock_trusted.json`(boot_id
+  포함)이 기록됩니다. `gps_time_sync.clock_is_trusted()`가 이 마커(+필요 시
+  `chronyc` 직접 확인)로 판정합니다. 미신뢰 동안에도 마운트 location/time
+  sync는 **차단하지 않고 현재 PiFinder 시간을 잠정(provisional)으로
+  전송**합니다 — 시간이 전혀 없는 마운트는 모든 슬루를 거부해 현장 세션이
+  솔빙 가능한 하늘로 이동조차 못 하기 때문입니다(2026-08-08 현장 실측).
+  잠정 시간은 A5가 신뢰 전이/점프 시 자동으로 교체하며, 상태 메시지와
+  `mount_control_status.json`의 `time_sync_provisional` 필드에 표시됩니다.
+  LCD 타이틀바 "T" 점멸과 웹 `/indi` 경고 배너는 그대로 유지됩니다.
+  **Multi-Point Align은 예외로 하드 게이트를 유지**합니다 — 정렬 모델에
+  LST가 구워지므로 미신뢰 시계에서는 명확한 메시지와 함께 세션이
+  실패합니다(수동 설정 시간은 허용).
 - **시간 점프 재동기(A5, 구현됨)**: 시계가 2초 이상 점프하면(늦은 GPS fix를
   chrony가 스텝) 마운트 site/time을 재전송하고 추적 타깃을 해제합니다.
   점프 없이 신뢰 상태로 전이해도 site/time을 재전송합니다.

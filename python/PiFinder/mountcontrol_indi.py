@@ -512,6 +512,9 @@ class MountControlIndi(BacklashCalibrationMixin):
         # a state change logs in full; repeats run with WARNING/INFO logging
         # suppressed so an offline mount does not fill the log every retry.
         self._auto_connect_failures = 0
+        # True while the last location/time sync carried an untrusted
+        # (provisional) clock -- the A5 hook replaces it once trusted.
+        self._time_sync_provisional = False
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -628,6 +631,8 @@ class MountControlIndi(BacklashCalibrationMixin):
             )
             if self._track_freq_label:
                 payload["track_freq_label"] = self._track_freq_label
+        if self._time_sync_provisional:
+            payload["time_sync_provisional"] = True
         payload["guide_correction_enabled"] = self._guide_correction_enabled
         if self._guide_correction_target is not None:
             payload["guide_correction_target_ra"] = self._guide_correction_target[0]
@@ -1511,7 +1516,12 @@ class MountControlIndi(BacklashCalibrationMixin):
         sys_utils.write_onstep_location_cache(latitude, longitude, elevation, dt)
         self._write_controller_status(
             "connected" if was_connected else "idle",
-            "Location/time sent via direct LX200 OnStep commands",
+            "Location/time sent via direct LX200 OnStep commands"
+            + (
+                " (provisional clock, awaiting GPS/NTP)"
+                if self._time_sync_provisional
+                else ""
+            ),
         )
 
         if reconnect_after and was_connected:
@@ -1524,26 +1534,29 @@ class MountControlIndi(BacklashCalibrationMixin):
         include_default_location: bool = False,
     ) -> bool:
         try:
-            # A4 clock-trust gate: never plant an unsynchronized system time
-            # (stale fake-hwclock restore) in the mount -- on an Alt/Az mount
-            # a wrong LST breaks every subsequent GoTo far from the sync star.
-            # A user-set manual time takes priority over the gate: the value
-            # sent below is shared_state.datetime(), which carries exactly
-            # that manual time (the flag dies with the service, so a reboot
-            # always clears the override).
-            if (
-                not self._manual_datetime_active()
-                and not gps_time_sync.clock_is_trusted(check_chrony=True)
-            ):
-                message = (
-                    "Mount time sync deferred: system clock has not been "
-                    "synchronized (GPS/NTP) since boot"
+            # A4 clock-trust gate, softened (2026-08-08): an untrusted clock
+            # (stale fake-hwclock restore, field session before GPS/NTP sync)
+            # no longer blocks the send -- a mount with NO time refuses every
+            # slew, which strands a field session that only needs to reach a
+            # solvable patch of sky. The provisional time is recoverable: the
+            # A5 hook re-sends site/time (and drops the tracking target) as
+            # soon as the clock steps or becomes trusted, and the PiFinder
+            # GoTo method re-anchors the mount frame from plate solves.
+            # Multi-point alignment still requires a trusted clock (its model
+            # would be built on the wrong LST) -- see
+            # _sync_multipoint_location_time. A user-set manual time counts
+            # as trusted: the value sent below is shared_state.datetime(),
+            # which carries exactly that manual time.
+            self._time_sync_provisional = not self._manual_datetime_active() and (
+                not gps_time_sync.clock_is_trusted(check_chrony=True)
+            )
+            if self._time_sync_provisional:
+                logger.warning(
+                    "System clock is not synchronized (GPS/NTP) yet; sending "
+                    "provisional PiFinder time to the mount so it can slew. "
+                    "Site/time is re-sent automatically once the clock is "
+                    "trusted"
                 )
-                logger.warning(message)
-                self._write_controller_status(
-                    "connected" if self.connected else "idle", message
-                )
-                return False
 
             latitude, longitude, elevation, dt = self._shared_location_time_values(
                 include_default_location=include_default_location
@@ -1597,7 +1610,12 @@ class MountControlIndi(BacklashCalibrationMixin):
 
             self._write_controller_status(
                 "connected" if self.connected else "idle",
-                "Location/time sent via INDI",
+                "Location/time sent via INDI"
+                + (
+                    " (provisional clock, awaiting GPS/NTP)"
+                    if self._time_sync_provisional
+                    else ""
+                ),
             )
             if latitude is not None and longitude is not None:
                 sys_utils.write_onstep_location_cache(
@@ -2788,6 +2806,18 @@ class MountControlIndi(BacklashCalibrationMixin):
         return None
 
     def _sync_multipoint_location_time(self, session: dict[str, Any]) -> bool:
+        # Multi-point alignment keeps the hard clock-trust gate that plain
+        # slewing no longer has: the alignment model bakes in the LST, so a
+        # provisional (untrusted) time would silently corrupt every point.
+        if not self._manual_datetime_active() and not gps_time_sync.clock_is_trusted(
+            check_chrony=True
+        ):
+            self._align_session_status(
+                STATE_FAILED,
+                "Multi-point alignment needs a synchronized clock (GPS/NTP) "
+                "or a manually set time",
+            )
+            return False
         if not self.sync_location_time(
             reconnect_after=True,
             include_default_location=True,

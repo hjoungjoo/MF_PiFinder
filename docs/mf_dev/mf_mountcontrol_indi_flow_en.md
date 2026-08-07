@@ -507,6 +507,12 @@ flowchart TD
 Direct sync is exclusive because the OnStep TCP/serial port should not be shared
 with an active driver connection.
 
+Clock-trust gate (A4): an untrusted clock no longer blocks the send -- the
+current PiFinder time goes out as a provisional value; see
+[mf_time_sync_en.md](mf_time_sync_en.md) (canonical owner) for the contract.
+Only the Multi-Point Align start keeps the hard gate
+(`_sync_multipoint_location_time`).
+
 ## Park / Home / Tracking / Slew
 
 Park/Home:
