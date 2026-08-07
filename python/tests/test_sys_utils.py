@@ -1,4 +1,6 @@
 from __future__ import annotations
+from types import SimpleNamespace
+
 import pytest
 
 try:
@@ -378,6 +380,85 @@ try:
             {"id": 0, "ssid": "Home", "psk": "secretpass", "key_mgmt": "WPA-PSK"},
             {"id": 1, "ssid": "Open", "psk": None, "key_mgmt": "NONE"},
         ]
+
+    @pytest.mark.unit
+    def test_connect_wifi_network_refuses_out_of_range_ssid(monkeypatch):
+        network = sys_utils.Network.__new__(sys_utils.Network)
+        network._wifi_networks = [
+            {"id": 0, "ssid": "lab", "key_mgmt": "WPA-PSK"},
+            {"id": 1, "ssid": "home", "key_mgmt": "WPA-PSK"},
+        ]
+        monkeypatch.setattr(
+            sys_utils.Network, "_networkmanager_active", staticmethod(lambda: True)
+        )
+        monkeypatch.setattr(
+            sys_utils.Network,
+            "_networkmanager_wifi_profiles",
+            staticmethod(lambda: [{"name": "PiFinder lab", "ssid": "lab"}]),
+        )
+        monkeypatch.setattr(network, "scan_wifi_networks", lambda: ["home", "other"])
+
+        def forbidden(*_a, **_k):
+            raise AssertionError("must not touch the link for an unreachable SSID")
+
+        monkeypatch.setattr(sys_utils.Network, "_nmcli", staticmethod(forbidden))
+
+        ok, message = network.connect_wifi_network(0)
+
+        assert ok is False
+        assert "not in range" in message
+
+    @pytest.mark.unit
+    def test_connect_wifi_network_proceeds_when_ssid_visible(monkeypatch):
+        network = sys_utils.Network.__new__(sys_utils.Network)
+        network._wifi_networks = [{"id": 0, "ssid": "lab", "key_mgmt": "WPA-PSK"}]
+        monkeypatch.setattr(
+            sys_utils.Network, "_networkmanager_active", staticmethod(lambda: True)
+        )
+        monkeypatch.setattr(
+            sys_utils.Network,
+            "_networkmanager_wifi_profiles",
+            staticmethod(lambda: [{"name": "PiFinder lab", "ssid": "lab"}]),
+        )
+        monkeypatch.setattr(network, "scan_wifi_networks", lambda: ["lab", "home"])
+        calls = []
+
+        def fake_nmcli(args):
+            calls.append(args)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(sys_utils.Network, "_nmcli", staticmethod(fake_nmcli))
+
+        ok, _message = network.connect_wifi_network(0)
+
+        assert ok is True
+        assert calls == [["-w", "25", "con", "up", "PiFinder lab"]]
+
+    @pytest.mark.unit
+    def test_connect_wifi_network_proceeds_on_scan_failure(monkeypatch):
+        # An empty scan (driver hiccup) must not block a legitimate switch.
+        network = sys_utils.Network.__new__(sys_utils.Network)
+        network._wifi_networks = [{"id": 0, "ssid": "lab", "key_mgmt": "WPA-PSK"}]
+        monkeypatch.setattr(
+            sys_utils.Network, "_networkmanager_active", staticmethod(lambda: True)
+        )
+        monkeypatch.setattr(
+            sys_utils.Network,
+            "_networkmanager_wifi_profiles",
+            staticmethod(lambda: [{"name": "PiFinder lab", "ssid": "lab"}]),
+        )
+        monkeypatch.setattr(network, "scan_wifi_networks", lambda: [])
+        monkeypatch.setattr(
+            sys_utils.Network,
+            "_nmcli",
+            staticmethod(
+                lambda args: SimpleNamespace(returncode=0, stdout="", stderr="")
+            ),
+        )
+
+        ok, _message = network.connect_wifi_network(0)
+
+        assert ok is True
 
     @pytest.mark.unit
     def test_iw_scan_parsing_dedupes_ssids():

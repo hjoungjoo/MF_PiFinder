@@ -2114,7 +2114,21 @@ class Network:
         )
         if profile is None:
             return False, f"No NetworkManager profile for {ssid} (apply first)"
-        result = Network._nmcli(["con", "up", profile["name"]])
+        # A `con up` on an out-of-range SSID is destructive: NetworkManager
+        # drops the CURRENT link first, fails after its timeout, and the web
+        # session serving this request dies with it (autoconnect then quietly
+        # reverts to another saved network -- observed 2026-08-08). Refuse up
+        # front while the link is untouched. An empty scan result proceeds
+        # best-effort so a scan hiccup cannot block a legitimate switch; the
+        # trade-off is that hidden SSIDs cannot be switched to while other
+        # networks are visible.
+        visible = self.scan_wifi_networks()
+        if visible and ssid not in visible:
+            return False, (
+                f"{ssid} is not in range (router off or out of reach); "
+                "keeping the current connection"
+            )
+        result = Network._nmcli(["-w", "25", "con", "up", profile["name"]])
         if result.returncode != 0:
             return False, (result.stderr or result.stdout or "nmcli failed").strip()
         return True, f"Connecting to {ssid}"
