@@ -1046,6 +1046,66 @@ def test_sync_location_time_sends_provisional_time_while_clock_untrusted(monkeyp
     assert "provisional" in statuses[-1][1]
 
 
+def test_guide_rate_write_reasserts_user_slew_rate_after_pulse(monkeypatch):
+    mount = DummyConnectedMount()
+    mount.slew_rate = 6
+    mount._pulse_guide_supported = True
+    mount._guide_correction_accuracy_arcmin = 3.0
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (0.5, 0.5))
+    monkeypatch.setattr(mount, "_guide_pulse_inversions", lambda: (False, False))
+    mount._slew_rate_polluted = True  # a GUIDE_RATE write happened this cycle
+
+    # 6 arcmin Dec error -> NS pulse goes out, restore is scheduled after it.
+    mount._apply_guide_pulse(297.0, 8.9, 297.0, 9.0, 6.0)
+    assert mount._slew_rate_reassert_at is not None
+
+    mount._slew_rate_reassert_at = time.monotonic() - 0.01
+    mount._check_slew_rate_reassert()
+
+    assert mount.client.switches[-1] == ("LX200 OnStep", "TELESCOPE_SLEW_RATE", "6")
+    assert mount._slew_rate_polluted is False
+    assert mount._slew_rate_reassert_at is None
+
+
+def test_manual_move_reasserts_slew_rate_when_polluted():
+    mount = DummyMountControl()
+    mount.client = DummyIndiClient()
+    mount.device = DummyIndiDevice()
+    mount.slew_rate = 6
+    mount._slew_rate_polluted = True
+
+    assert mount.manual_move("north", lease_seconds=0.3)
+
+    assert ("LX200 OnStep", "TELESCOPE_SLEW_RATE", "6") in mount.client.switches
+    assert mount._slew_rate_polluted is False
+
+
+def test_guide_fallback_manual_move_keeps_polluted_guide_rate():
+    mount = DummyMountControl()
+    mount.client = DummyIndiClient()
+    mount.device = DummyIndiDevice()
+    mount.slew_rate = 6
+    mount._slew_rate_polluted = True
+
+    # The guide-correction fallback nudge opts out: its duration was computed
+    # for the slow guide rate, so the user rate must NOT come back first.
+    assert mount.manual_move("north", lease_seconds=1.0, reassert_slew_rate=False)
+
+    assert ("LX200 OnStep", "TELESCOPE_SLEW_RATE", "6") not in mount.client.switches
+    assert mount._slew_rate_polluted is True
+
+
+def test_set_slew_rate_clears_pending_reassert():
+    mount = DummyMountControl()
+    mount._slew_rate_polluted = True
+    mount._slew_rate_reassert_at = time.monotonic() + 5.0
+
+    assert mount.set_slew_rate(4)
+
+    assert mount._slew_rate_reassert_at is None
+    assert mount._slew_rate_polluted is False
+
+
 def test_multipoint_align_location_time_requires_trusted_clock(monkeypatch):
     mount = DummyMountControl(DummySharedStateWithLocation())
     monkeypatch.setattr(mci.gps_time_sync, "clock_is_trusted", lambda **kwargs: False)

@@ -781,6 +781,17 @@ button); a timed guide pulse moves at the guide rate for a specified **duration
   disabled. If the driver rejects the `GUIDE_RATE` write, the current rate is
   kept and no further writes are attempted (the pulse-duration math always
   reads the actual rate back, so this is safe).
+  - **Manual-move speed pollution and restore (2026-08-08)**: the OnStepX
+    driver forwards a `GUIDE_RATE` write as the firmware's shared rate
+    selector `:R<n>#` (0.5× → :R1, 1.0× → :R2), so every guide-rate switch
+    also drags the joystick/manual-move speed down to 0.5×/1× (field
+    observed). Countermeasures: each guide cycle re-applies
+    `TELESCOPE_SLEW_RATE.<user rate>` after the pulse window
+    (`_check_slew_rate_reassert`, max pulse duration + 0.5 s); a user
+    `manual_move` re-applies it immediately before starting when pollution
+    is detected (the guide-correction manual fallback opts out -- its slow
+    rate is intentional). A user `set_slew_rate` is fresh authority and
+    cancels any pending re-apply.
 - **Capability detection**: if the driver exposes `TELESCOPE_TIMED_GUIDE_*`, use
   timed guide pulses; otherwise fall back to the **short manual-movement lease**
   as before (result is cached).

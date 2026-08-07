@@ -540,6 +540,12 @@ Slew rate:
 Guide rate:
 
 - `set_guide_rate(rate)` applies the driver's guide rate number vector.
+- The OnStepX driver forwards this write as the firmware's shared rate
+  selector `:R<n>#`, which also pollutes the manual-move speed -- each guide
+  cycle re-applies the user's slew rate after the pulse window, and a user
+  `manual_move` re-applies it immediately when pollution is detected (details:
+  [mf_indi_goto_guide_plan_en.md](mf_indi_goto_guide_plan_en.md),
+  recovery-speed switching).
 - The current backlash test is organized as a GoTo loop rather than a
   pulse-guide approach.
 

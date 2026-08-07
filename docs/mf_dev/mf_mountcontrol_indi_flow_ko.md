@@ -588,6 +588,11 @@ Slew rate:
 Guide rate:
 
 - `set_guide_rate(rate)`는 driver의 guide rate number vector를 적용한다.
+- OnStepX 드라이버는 이 쓰기를 펌웨어 공유 레이트 선택자 `:R<n>#`로 보내
+  수동 이동 속도까지 오염시킨다 — 가이드 사이클마다 펄스 창 종료 후 사용자
+  slew rate를 재적용하고, 사용자 `manual_move` 직전에도 오염 시 즉시
+  재적용한다(상세: [mf_indi_goto_guide_plan_ko.md](mf_indi_goto_guide_plan_ko.md)
+  복귀 속도 전환 절).
 - 현재 backlash 테스트는 pulse guide 방식이 아니라 GoTo loop 방식으로 정리되어 있다.
 
 ## Backlash 관련 흐름 요약

@@ -725,6 +725,14 @@ flowchart TD
   꺼질 때도 0.5×로 복원한다. 드라이버가 `GUIDE_RATE` 쓰기를 거부하면 현재
   레이트를 그대로 쓰고 재시도하지 않는다(펄스 시간 계산은 항상 실제 레이트를
   다시 읽으므로 안전).
+  - **수동이동 속도 오염과 복원(2026-08-08)**: OnStepX 드라이버는 `GUIDE_RATE`
+    쓰기를 펌웨어 공유 레이트 선택자 `:R<n>#`(0.5×→:R1, 1.0×→:R2)로 보내므로,
+    가이드 레이트 전환이 조이스틱/수동 이동 속도까지 0.5×/1×로 끌어내린다
+    (현장 실측). 대응: 매 가이드 사이클에서 펄스 창이 끝난 뒤
+    `TELESCOPE_SLEW_RATE.<사용자 레이트>`를 재적용하고(`_check_slew_rate_reassert`,
+    펄스 최대 지속 + 0.5 s 뒤), 사용자 `manual_move`는 시작 직전에 오염이
+    감지되면 즉시 재적용한다(가이드 보정의 manual fallback은 저속이 의도라
+    제외). 사용자의 `set_slew_rate`는 대기 중 재적용을 무효화하는 새 권위다.
 - **capability 감지**: 드라이버에 `TELESCOPE_TIMED_GUIDE_*` 프로퍼티가 있으면
   timed guide pulse를 쓰고, 없으면 기존처럼 **짧은 manual movement lease를
   fallback**으로 사용한다(감지 결과는 캐시).

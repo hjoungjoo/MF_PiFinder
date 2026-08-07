@@ -515,6 +515,15 @@ class MountControlIndi(BacklashCalibrationMixin):
         # True while the last location/time sync carried an untrusted
         # (provisional) clock -- the A5 hook replaces it once trusted.
         self._time_sync_provisional = False
+        # Monotonic deadline for re-applying the user's slew rate after a
+        # GUIDE_RATE write. The OnStepX driver maps GUIDE_RATE onto the
+        # firmware's shared move-rate selector (:R<n>#), so every fine/fast
+        # guide-rate switch also drags the manual-move speed down to
+        # 0.5x/1x until TELESCOPE_SLEW_RATE is re-asserted.
+        self._slew_rate_reassert_at: Optional[float] = None
+        # True from a successful GUIDE_RATE write until the user's slew rate
+        # has been re-applied (keeps idle guide cycles from re-writing).
+        self._slew_rate_polluted = False
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -2002,6 +2011,8 @@ class MountControlIndi(BacklashCalibrationMixin):
         if not enabled:
             self._guide_correction_enabled = False
             self._restore_fine_guide_rate()
+            if self._slew_rate_polluted:
+                self._schedule_slew_rate_reassert(0.0)
             self._write_controller_status("connected", "Guide correction disabled")
             self._console("Guide corr\nOff")
             return True
@@ -2101,7 +2112,11 @@ class MountControlIndi(BacklashCalibrationMixin):
         if not direction:
             return
 
-        if self.manual_move(direction, lease_seconds=GUIDE_CORRECTION_PULSE_SECONDS):
+        if self.manual_move(
+            direction,
+            lease_seconds=GUIDE_CORRECTION_PULSE_SECONDS,
+            reassert_slew_rate=False,
+        ):
             self._write_controller_status(
                 "guide_correction",
                 f"Guide correction pulse {direction}; error {separation:.1f} arcmin",
@@ -2184,6 +2199,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         if self._set_guide_rate(desired):
             self._guide_rate_writable = True
             self._guide_rate_boosted = desired == GUIDE_RATE_FAST_X
+            self._slew_rate_polluted = True
             logger.info(
                 "Guide rate set to %.2fx sidereal (error %.1f arcmin, "
                 "fast band > %.1f arcmin)",
@@ -2207,6 +2223,39 @@ class MountControlIndi(BacklashCalibrationMixin):
             return
         if self._set_guide_rate(GUIDE_RATE_FINE_X):
             logger.info("Guide rate restored to %.2fx sidereal", GUIDE_RATE_FINE_X)
+            self._slew_rate_polluted = True
+            self._schedule_slew_rate_reassert(0.3)
+
+    def _schedule_slew_rate_reassert(self, delay_seconds: float) -> None:
+        """Queue a TELESCOPE_SLEW_RATE re-apply after a guide-rate write.
+
+        Delayed past the pulse window because the firmware uses the shared
+        rate selector for the in-flight timed guide pulse; the later of two
+        pending deadlines wins so a fresh pulse extends the wait.
+        """
+        at = time.monotonic() + max(0.0, delay_seconds)
+        if self._slew_rate_reassert_at is None or at > self._slew_rate_reassert_at:
+            self._slew_rate_reassert_at = at
+
+    def _check_slew_rate_reassert(self) -> None:
+        if self._slew_rate_reassert_at is None:
+            return
+        if time.monotonic() < self._slew_rate_reassert_at:
+            return
+        self._slew_rate_reassert_at = None
+        self._reassert_slew_rate()
+
+    def _reassert_slew_rate(self) -> bool:
+        if self.client is None or self.device is None:
+            return False
+        if not self.client.set_switch(
+            self.device, "TELESCOPE_SLEW_RATE", str(self.slew_rate)
+        ):
+            logger.debug("Slew rate %d re-assert failed", self.slew_rate)
+            return False
+        self._slew_rate_polluted = False
+        logger.debug("Slew rate %d reasserted after guide-rate write", self.slew_rate)
+        return True
 
     def _guide_pulse_ms(self, error_arcsec: float, guide_rate_x: float) -> int:
         rate_arcsec_per_sec = max(0.01, guide_rate_x) * SIDEREAL_ARCSEC_PER_SEC
@@ -2261,6 +2310,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         threshold_arcsec = max(0.5, self._guide_correction_accuracy_arcmin / 2.0) * 60.0
 
         pulses: list[str] = []
+        max_pulse_ms = 0
         if abs(dec_arcsec) > threshold_arcsec:
             ns_dir = "north" if dec_arcsec > 0 else "south"
             if invert_ns:
@@ -2268,6 +2318,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             ns_ms = self._guide_pulse_ms(dec_arcsec, guide_ns_x)
             if self._send_guide_pulse(ns_dir, ns_ms):
                 pulses.append(f"{ns_dir} {ns_ms}ms")
+                max_pulse_ms = max(max_pulse_ms, ns_ms)
         if abs(ra_arcsec) > threshold_arcsec:
             we_dir = "east" if ra_arcsec > 0 else "west"
             if invert_we:
@@ -2275,6 +2326,14 @@ class MountControlIndi(BacklashCalibrationMixin):
             we_ms = self._guide_pulse_ms(ra_arcsec, guide_we_x)
             if self._send_guide_pulse(we_dir, we_ms):
                 pulses.append(f"{we_dir} {we_ms}ms")
+                max_pulse_ms = max(max_pulse_ms, we_ms)
+
+        # Put the user's manual-move speed back once the pulse window has
+        # passed (the GUIDE_RATE write for this cycle landed on the shared
+        # :R<n># move-rate selector). Scheduled even when no pulse fired,
+        # because the rate write alone already polluted the selector.
+        if self._slew_rate_polluted:
+            self._schedule_slew_rate_reassert(max_pulse_ms / 1000.0 + 0.5)
 
         if pulses:
             self._write_controller_status(
@@ -2414,8 +2473,22 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._console("INDI mount\nstopped")
         return True
 
-    def manual_move(self, direction: str, lease_seconds: Any = None) -> bool:
+    def manual_move(
+        self,
+        direction: str,
+        lease_seconds: Any = None,
+        reassert_slew_rate: bool = True,
+    ) -> bool:
         direction = direction.lower()
+        # A guide-rate write may have just dragged the shared :R<n># selector
+        # down to 0.5x/1x; put the user's rate back before the move starts.
+        # The guide-correction manual fallback opts out (it wants the slow
+        # rate its nudge duration was computed for).
+        if reassert_slew_rate and (
+            self._slew_rate_polluted or self._slew_rate_reassert_at is not None
+        ):
+            self._slew_rate_reassert_at = None
+            self._reassert_slew_rate()
         motion_map = {
             "north": [self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH")],
             "south": [self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH")],
@@ -2508,6 +2581,9 @@ class MountControlIndi(BacklashCalibrationMixin):
 
     def set_slew_rate(self, rate: int) -> bool:
         self.slew_rate = max(0, min(9, int(rate)))
+        # This write is the fresh authority on the shared rate selector.
+        self._slew_rate_reassert_at = None
+        self._slew_rate_polluted = False
         if not self._apply_indi_properties(
             [self._indi_property_on(f"TELESCOPE_SLEW_RATE.{self.slew_rate}")],
             "connected" if self.connected else "idle",
@@ -3620,6 +3696,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             self._check_goto_motion()
             self._check_pending_goto_refine()
             self._check_guide_correction()
+            self._check_slew_rate_reassert()
             try:
                 command = self.mount_queue.get(
                     timeout=self._manual_motion_queue_timeout()
@@ -3631,6 +3708,7 @@ class MountControlIndi(BacklashCalibrationMixin):
                 self._check_goto_motion()
                 self._check_pending_goto_refine()
                 self._check_guide_correction()
+                self._check_slew_rate_reassert()
                 self._reassert_track_frequency()
                 now = time.monotonic()
                 if not self.connected and now >= next_auto_connect_at:
