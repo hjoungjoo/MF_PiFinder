@@ -280,7 +280,9 @@ Advanced
          UBlox (the built-in receiver) or GPSD for a generic receiver.  Restarts
          the PiFinder.
       GPS Baud Rate
-         Serial speed for the receiver — 9600 (standard) or 115200 (UBlox-10).
+         Serial speed for the receiver.  rev4 units carry a 10th-generation
+         UBlox receiver and run at 115200; the older receiver in v3 and v2.5
+         units runs at 9600.
 IMU Settings
    IMU-related behavior and calibration controls.
 
