@@ -1053,6 +1053,28 @@ Added a new gettext catalog for the Korean UI.
 
 New UI module for Bluetooth keyboard pairing and connection.
 
+### Network web UI save/apply split + STA priority & manual connect (2026-08-07)
+
+Editing the STA list or AP settings used to take effect immediately, causing
+frequent disconnects and failed reconnects. Edits now save to config only;
+the disruptive step is an explicit apply. Also adds STA connection-priority
+editing and on-demand connect to a selected SSID. Details in
+`mf_wifi_apsta_ko.md`.
+
+- `sys_utils.Network`: add/delete/band changes save only and set `sta_dirty`
+  (previously they ran `nmcli con delete` + `wpa_cli reconfigure` at once).
+  New `apply_sta_changes()` (NM sync + reconfigure), `move_wifi_network()`
+  (rewrites `priority=`, list sorted by priority desc with ids reassigned),
+  `connect_wifi_network()` (immediate `nmcli con up`). NM sync now sets
+  `connection.autoconnect-priority`; the wpa parser reads `priority`.
+- `server.py`: `/network/update` gains an `apply` flag (0 = save only,
+  1 = save + mode switch + restart); new `/network/apply_sta`,
+  `/network/move/<id>/<dir>`, `/network/connect/<id>` routes.
+- Templates: separate Save Settings / Apply & Restart buttons, an orange
+  "Apply Now" banner while `sta_dirty`, per-row up/down + connect icons,
+  delete wording now says it takes effect on apply. New UI strings are
+  English-only until the next i18n pass.
+
 ### Band-aware WiFi pause for BT pairing (2026-08-07)
 
 The unconditional WiFi cut during BT pairing/reconnect is now band-aware.

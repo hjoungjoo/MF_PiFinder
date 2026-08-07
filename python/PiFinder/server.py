@@ -643,6 +643,45 @@ class Server:
             self.network.delete_wifi_network(network_id)
             return redirect("/network")
 
+        @app.route("/network/move/<int:network_id>/<direction>")
+        @auth_required
+        def network_move(network_id, direction):
+            if direction in ("up", "down"):
+                self.network.move_wifi_network(network_id, direction)
+            return redirect("/network")
+
+        @app.route("/network/apply_sta", methods=["POST"])
+        @auth_required
+        def network_apply_sta():
+            # The one deliberately disruptive STA step: NM profile sync +
+            # supplicant reconfigure. May briefly drop/reconnect the STA link.
+            try:
+                self.network.apply_sta_changes()
+                message = _("STA changes applied")
+            except Exception as e:
+                logger.warning("Could not apply STA changes: %s", e)
+                message = str(e)
+            return _render_network_page(status_message=message)
+
+        @app.route("/network/connect/<int:network_id>", methods=["POST"])
+        @auth_required
+        def network_connect(network_id):
+            ok, message = self.network.connect_wifi_network(network_id)
+            if ok:
+                return _render_network_page(status_message=message)
+            return _render_network_page(error_message=message)
+
+        def _render_network_page(status_message=None, error_message=None):
+            return app.jinja_env.get_template("network.html").render(
+                title=_("Network"),
+                net=self.network,
+                show_new_form=0,
+                scanned_networks=[],
+                scan_error="",
+                status_message=status_message,
+                error_message=error_message,
+            )
+
         @app.route("/network/update", methods=["POST"])
         @auth_required
         def network_update():
@@ -654,6 +693,9 @@ class Server:
             apsta_share_internet = request.form.get("apsta_share_internet") == "1"
             sta_band_preference = request.form.get("sta_band_preference")
             host_name = request.form.get("host_name")
+            # "1" = save AND apply (switch mode + restart); anything else saves
+            # config files only, so the current session survives the edit.
+            apply_now = request.form.get("apply") == "1"
 
             try:
                 self.network.set_ap_name(ap_name)
@@ -662,19 +704,18 @@ class Server:
                 self.network.set_apsta_internet_sharing(apsta_share_internet)
                 self.network.set_sta_band_preference(sta_band_preference)
                 self.network.set_host_name(host_name)
-                self.network.set_wifi_mode(wifi_mode)
-                return app.jinja_env.get_template("restart.html").render(
-                    title=_("Restart")
+                if apply_now:
+                    self.network.set_wifi_mode(wifi_mode)
+                    return app.jinja_env.get_template("restart.html").render(
+                        title=_("Restart")
+                    )
+                return _render_network_page(
+                    status_message=_(
+                        "Settings saved. Use Apply & Restart to activate them."
+                    )
                 )
             except ValueError as e:
-                return app.jinja_env.get_template("network.html").render(
-                    title=_("Network"),
-                    net=self.network,
-                    show_new_form=0,
-                    scanned_networks=[],
-                    scan_error="",
-                    error_message=str(e),
-                )
+                return _render_network_page(error_message=str(e))
 
         @app.route("/tools/pwchange", methods=["POST"])
         @auth_required

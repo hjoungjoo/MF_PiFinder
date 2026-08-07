@@ -951,6 +951,28 @@ Settings > Advanced > Keyboard
 
 Bluetooth 키보드 페어링과 연결을 위한 새 UI 모듈이다.
 
+### 네트워크 웹 UI 저장/적용 분리 + STA 우선순위·수동접속 (2026-08-07)
+
+STA 목록/AP 설정 편집이 즉시 적용되면서 수시 끊김·재접속 실패를 유발하던
+것을 저장(파일 기록)과 적용(네트워크 재구성)으로 분리하고, STA 우선순위
+편집과 SSID 수동 접속을 추가했다. 상세는 `mf_wifi_apsta_ko.md` 참조.
+
+- `sys_utils.Network`: add/delete/밴드변경이 저장만 하고 `sta_dirty` 표시
+  (기존엔 즉시 `nmcli con delete`+`wpa_cli reconfigure`로 끊김 유발).
+  `apply_sta_changes()`(NM 동기화+reconfigure), `move_wifi_network()`
+  (priority 재기록, 목록은 priority 내림차순 정렬·id 재부여),
+  `connect_wifi_network()`(nmcli con up 즉시 전환) 신설. NM 동기화에
+  `connection.autoconnect-priority` 반영, wpa 파서에 `priority` 추가.
+- `server.py`: `/network/update`에 `apply` 플래그(0=저장만, 1=저장+모드
+  전환+재시작), `/network/apply_sta`·`/network/move/<id>/<dir>`·
+  `/network/connect/<id>` 라우트 신설.
+- `network.html`/`network_item.html`: Save Settings/Apply & Restart 버튼
+  분리, sta_dirty 시 주황 "Apply Now" 배너, 행별 ▲▼/Wi-Fi 접속 아이콘,
+  삭제 문구를 "적용 시 반영"으로 수정. status_message 표시 블록 추가.
+- 테스트: priority 파싱, move 재정렬·dirty, add/delete가 nmcli/wpa_cli를
+  건드리지 않음(3종 추가, 50 passed). 신규 UI 문자열은 영문 상태(다음 i18n
+  패스에서 번역 예정).
+
 ### 5GHz 대역 인지형 WiFi pause (2026-08-07)
 
 BT 페어링/재연결 시 WiFi를 무조건 끄던 것을 대역 인지형으로 개선.

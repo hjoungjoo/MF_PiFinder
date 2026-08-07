@@ -1,9 +1,26 @@
   <tr class="grey-text text-lighten-1">
+      <td style="width: 56px; white-space: nowrap;">
+        {% if network["id"] > 0 %}
+        <a href="/network/move/{{ network["id"] }}/up" class="grey-text" title="{{ _('Higher priority') }}">
+          <i class="material-icons">arrow_upward</i>
+        </a>
+        {% endif %}
+        {% if network["id"] < net.get_wifi_networks()|length - 1 %}
+        <a href="/network/move/{{ network["id"] }}/down" class="grey-text" title="{{ _('Lower priority') }}">
+          <i class="material-icons">arrow_downward</i>
+        </a>
+        {% endif %}
+      </td>
       <td>
           <h5>{{ network["ssid"] }}</h5>
           {{ _('Security') }}: <b>{{ network["key_mgmt"] }}</b>
       </td>
-      <td>
+      <td style="white-space: nowrap;">
+        <form action="/network/connect/{{ network["id"] }}" method="post" style="display: inline; margin: 0px;">
+          <button type="submit" class="btn-flat grey-text" title="{{ _('Connect to this network now') }}" style="padding: 0px;">
+            <i class="material-icons">wifi</i>
+          </button>
+        </form>
         <a href="#modal{{ network["id"] }}" class="grey-text modal-trigger">
           <i class="material-icons">delete</i>
         </a>
@@ -12,7 +29,7 @@
   <div id="modal{{ network["id"] }}" class="modal">
     <div class="modal-content">
       <h4>{{ _('Delete') }} {{ network["ssid"] }}</h4>
-      <p>{{ _('This will take effect immediately and can not be undone. Are you sure?') }}</p>
+      <p>{{ _('This removes the saved network. It takes effect when you apply the pending changes.') }}</p>
     </div>
     <div class="modal-footer">
       <a href="/network/delete/{{ network["id"] }}" class="modal-close btn-flat">{{ _('Delete') }}</a>

@@ -251,6 +251,83 @@ try:
         assert result[1]["psk"] == "1234@===!!!"
 
     @pytest.mark.unit
+    def test_parse_wpa_supplicant_reads_priority():
+        wpa_list = [
+            "network={",
+            'ssid="low"',
+            "key_mgmt=NONE",
+            "}",
+            "network={",
+            'ssid="high"',
+            "key_mgmt=NONE",
+            "priority=5",
+            "}",
+        ]
+        result = sys_utils.Network._parse_wpa_supplicant(wpa_list)
+        assert result[0]["priority"] is None
+        assert result[1]["priority"] == "5"
+
+    @pytest.mark.unit
+    def test_move_wifi_network_reorders_and_marks_dirty(monkeypatch, tmp_path):
+        wpa_path = tmp_path / "wpa_supplicant.conf"
+        wpa_path.write_text(
+            "update_config=1\n"
+            'network={\n\tssid="first"\n\tkey_mgmt=NONE\n}\n'
+            'network={\n\tssid="second"\n\tkey_mgmt=NONE\n}\n'
+        )
+        monkeypatch.setattr(sys_utils, "WPA_SUPPLICANT_PATH", str(wpa_path))
+        monkeypatch.setattr(sys_utils, "BOOT_WPA_SUPPLICANT_PATHS", [])
+        monkeypatch.setattr(
+            sys_utils, "NETWORKMANAGER_CONNECTION_GLOB", str(tmp_path / "none/*")
+        )
+        network = sys_utils.Network.__new__(sys_utils.Network)
+        network.sta_dirty = False
+        network.populate_wifi_networks()
+        assert [n["ssid"] for n in network.get_wifi_networks()] == [
+            "first",
+            "second",
+        ]
+
+        network.move_wifi_network(1, "up")  # "second" to the top
+        assert network.sta_dirty is True
+        assert [n["ssid"] for n in network.get_wifi_networks()] == [
+            "second",
+            "first",
+        ]
+        # priorities persisted: top of the list wins after a re-parse
+        contents = wpa_path.read_text()
+        assert "priority=2" in contents and "priority=1" in contents
+        # non-network preamble survives the rewrite
+        assert "update_config=1" in contents
+
+    @pytest.mark.unit
+    def test_add_and_delete_are_saved_only(monkeypatch, tmp_path):
+        wpa_path = tmp_path / "wpa_supplicant.conf"
+        wpa_path.write_text('network={\n\tssid="keep"\n\tkey_mgmt=NONE\n}\n')
+        monkeypatch.setattr(sys_utils, "WPA_SUPPLICANT_PATH", str(wpa_path))
+        monkeypatch.setattr(sys_utils, "BOOT_WPA_SUPPLICANT_PATHS", [])
+        monkeypatch.setattr(
+            sys_utils, "NETWORKMANAGER_CONNECTION_GLOB", str(tmp_path / "none/*")
+        )
+
+        def forbidden(*_a, **_k):
+            raise AssertionError("edits must not touch nmcli/wpa_cli")
+
+        monkeypatch.setattr(sys_utils.Network, "_nmcli", staticmethod(forbidden))
+        monkeypatch.setattr(sys_utils, "wpa_cli", forbidden)
+
+        network = sys_utils.Network.__new__(sys_utils.Network)
+        network._wifi_mode = sys_utils.WIFI_MODE_CLIENT
+        network.sta_dirty = False
+        network.populate_wifi_networks()
+
+        network.add_wifi_network("added", "NONE")
+        assert network.sta_dirty is True
+        network.delete_wifi_network(0)
+        ssids = [n["ssid"] for n in network.get_wifi_networks()]
+        assert "added" in ssids and "keep" not in ssids
+
+    @pytest.mark.unit
     def test_populate_wifi_networks_missing_wpa_file(monkeypatch):
         real_open = open
 

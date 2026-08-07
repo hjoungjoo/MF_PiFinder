@@ -42,6 +42,25 @@ Network Setup > Wifi Mode > AP+STA
 - STA 밴드 선호: Auto, Prefer 2.4 GHz, Prefer 5 GHz
 - AP 접속 장치 목록. 현재 연결된 station 상태와 DHCP lease를 함께 보여줍니다.
 
+### 저장과 적용의 분리 (2026-08-07)
+
+Network 페이지의 편집은 **저장(설정 파일 기록)**과 **적용(네트워크 재구성)**이
+분리되어 있습니다. STA 목록 추가/삭제/우선순위 변경과 밴드 선호 변경은 저장만
+되고, 주황색 "Apply Now" 배너 버튼을 눌러야 NetworkManager 프로파일 동기화와
+`wpa_cli reconfigure`가 실행됩니다(이 단계에서만 STA 링크가 잠시 끊길 수
+있습니다). 모드/AP 설정 폼도 "Save Settings"(저장만)와 "Apply &
+Restart"(저장+모드 전환+재시작)로 나뉩니다. 수시 끊김과 재접속 실패를 막기
+위한 구조입니다.
+
+### STA 우선순위와 수동 접속
+
+- 저장된 STA 목록은 접속 우선순위 순으로 표시되며, 행의 ▲/▼로 순서를
+  바꿉니다. 우선순위는 `wpa_supplicant`의 `priority=`(높을수록 선호)와
+  NetworkManager `connection.autoconnect-priority`에 함께 기록됩니다(적용 시).
+- 행의 Wi-Fi 아이콘은 해당 SSID로 **지금 즉시** 접속을 전환합니다(nmcli
+  `con up`; 명시적 사용자 액션이라 적용 대기 없이 실행). 해당 SSID의
+  NetworkManager 프로파일이 아직 없으면 먼저 Apply가 필요합니다.
+
 기기 UI:
 
 ```text

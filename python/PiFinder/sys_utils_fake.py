@@ -215,7 +215,7 @@ class Network:
     """
 
     def __init__(self):
-        pass
+        self.sta_dirty = False
 
     def populate_wifi_networks(self):
         """
@@ -225,6 +225,15 @@ class Network:
 
     def get_wifi_networks(self):
         return ""
+
+    def move_wifi_network(self, network_id, direction):
+        pass
+
+    def apply_sta_changes(self):
+        self.sta_dirty = False
+
+    def connect_wifi_network(self, network_id):
+        return False, "FAKE SYS: connect_wifi_network (no-op)"
 
     def delete_wifi_network(self, network_id):
         """

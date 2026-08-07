@@ -1617,6 +1617,12 @@ class Network:
         with open(self.wifi_txt, "r") as wifi_f:
             self._wifi_mode = wifi_f.read()
 
+        # Saved-but-not-applied STA edits (add/delete/reorder/band). Edits only
+        # rewrite config files; the disruptive part (NetworkManager profile
+        # sync + wpa reconfigure) waits for apply_sta_changes() so editing the
+        # list cannot drop the connection the editor is using.
+        self.sta_dirty = False
+
         self.populate_wifi_networks()
 
     def populate_wifi_networks(self) -> None:
@@ -1649,7 +1655,15 @@ class Network:
             except IOError as e:
                 logger.error(f"Error reading NetworkManager connection {path}: {e}")
 
-        self._wifi_networks = Network._dedupe_wifi_networks(parsed_networks)
+        deduped = Network._dedupe_wifi_networks(parsed_networks)
+        # Highest priority first; file order breaks ties. ids track list
+        # position so the web routes' delete/move/connect stay aligned.
+        deduped.sort(
+            key=lambda network: -int(network.get("priority") or 0),
+        )
+        for index, network in enumerate(deduped):
+            network["id"] = index
+        self._wifi_networks = deduped
 
     @staticmethod
     def _dedupe_wifi_networks(networks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1749,6 +1763,7 @@ class Network:
                     "psk": None,
                     "key_mgmt": None,
                     "scan_freq": None,
+                    "priority": None,
                 }
 
             elif line == "}" and in_network_block:
@@ -1884,6 +1899,8 @@ class Network:
                 profile_name,
                 "connection.autoconnect",
                 "yes",
+                "connection.autoconnect-priority",
+                str(int(network.get("priority") or 0)),
                 "802-11-wireless.band",
                 nm_band,
             ]
@@ -1988,20 +2005,15 @@ class Network:
         Network._write_root_file(PIFINDER_STA_BAND_CONF_PATH, contents)
         self._apply_sta_band_preference(preference)
         self.populate_wifi_networks()
-        self._sync_networkmanager_profiles()
-        if self._wifi_mode in (WIFI_MODE_CLIENT, WIFI_MODE_APSTA):
-            wpa_cli("reconfigure")
+        # Saved-only; the NM sync + reconfigure happen in apply_sta_changes().
+        self.sta_dirty = True
 
     @staticmethod
     def _quote_wpa_value(value: str) -> str:
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
-    def delete_wifi_network(self, network_id):
-        """
-        Immediately deletes a wifi network
-        """
-        self._wifi_networks.pop(network_id)
-
+    def _write_wpa_networks(self) -> None:
+        """Rewrite every network block from self._wifi_networks (order kept)."""
         with open(WPA_SUPPLICANT_PATH, "r") as wpa_conf:
             wpa_contents = list(wpa_conf)
 
@@ -2029,11 +2041,83 @@ class Network:
                 wpa_conf.write(f"\tkey_mgmt={key_mgmt}\n")
                 if scan_freq:
                     wpa_conf.write(f"\tscan_freq={scan_freq}\n")
+                if network.get("priority"):
+                    wpa_conf.write(f"\tpriority={int(network['priority'])}\n")
 
                 wpa_conf.write("}\n")
 
+    def delete_wifi_network(self, network_id):
+        """
+        Delete a saved wifi network. Saved to config only -- takes effect on
+        apply_sta_changes() so editing cannot drop the current connection.
+        """
+        self._wifi_networks.pop(network_id)
+        self._write_wpa_networks()
         self.populate_wifi_networks()
+        self.sta_dirty = True
+
+    def move_wifi_network(self, network_id: int, direction: str) -> None:
+        """
+        Move a saved network up/down in connection priority. Priorities are
+        rewritten so the top of the list is preferred. Saved-only (see
+        delete_wifi_network).
+        """
+        offset = -1 if direction == "up" else 1
+        target = network_id + offset
+        if not (
+            0 <= network_id < len(self._wifi_networks)
+            and 0 <= target < len(self._wifi_networks)
+        ):
+            return
+        networks = self._wifi_networks
+        networks[network_id], networks[target] = (
+            networks[target],
+            networks[network_id],
+        )
+        total = len(networks)
+        for index, network in enumerate(networks):
+            network["priority"] = total - index
+        self._write_wpa_networks()
+        self.populate_wifi_networks()
+        self.sta_dirty = True
+
+    def apply_sta_changes(self) -> None:
+        """
+        Apply saved STA edits: mirror them into NetworkManager and reconfigure
+        the supplicant. This is the disruptive step (it may drop/reconnect the
+        STA link), so the web UI runs it only from an explicit apply button.
+        """
         self._sync_networkmanager_profiles()
+        if self._wifi_mode in (WIFI_MODE_CLIENT, WIFI_MODE_APSTA):
+            wpa_cli("reconfigure")
+        self.sta_dirty = False
+
+    def connect_wifi_network(self, network_id: int) -> tuple[bool, str]:
+        """
+        Manually switch the STA link to a saved network right now (explicit
+        user action, so this one is immediate by design).
+        """
+        try:
+            network = self._wifi_networks[network_id]
+        except IndexError:
+            return False, "Unknown network"
+        ssid = network.get("ssid") or ""
+        if not Network._networkmanager_active():
+            return False, "NetworkManager is not active"
+        profile = next(
+            (
+                p
+                for p in Network._networkmanager_wifi_profiles()
+                if p.get("ssid") == ssid
+            ),
+            None,
+        )
+        if profile is None:
+            return False, f"No NetworkManager profile for {ssid} (apply first)"
+        result = Network._nmcli(["con", "up", profile["name"]])
+        if result.returncode != 0:
+            return False, (result.stderr or result.stdout or "nmcli failed").strip()
+        return True, f"Connecting to {ssid}"
 
     def add_wifi_network(self, ssid, key_mgmt, psk=None):
         """
@@ -2061,10 +2145,9 @@ class Network:
             wpa_conf.write("}\n")
 
         self.populate_wifi_networks()
-        self._sync_networkmanager_profiles()
-        if self._wifi_mode in (WIFI_MODE_CLIENT, WIFI_MODE_APSTA):
-            # Restart the supplicant
-            wpa_cli("reconfigure")
+        # Saved-only: NetworkManager sync + supplicant reconfigure wait for
+        # apply_sta_changes() so adding a network cannot drop the current link.
+        self.sta_dirty = True
 
     @staticmethod
     def _parse_iw_scan(output: str) -> list[str]:
