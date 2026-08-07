@@ -300,6 +300,23 @@ equinox-of-date 위치를 직접 계산한다. `calc_planets()`는 J2000 그대�
 
 ---
 
+## 5.1 마지막 방문 카탈로그 페이지 복귀 (2026-08-08)
+
+GoTo 후 다른 페이지(원격 등)에 갔다가 네비 "Catalogs"로 돌아오면 홈이 아니라
+**마지막으로 보던 카탈로그 페이지**(목록 `/catalogs/<code>` 또는 상세
+`/catalogs/object/<id>`)로 복귀한다.
+
+- 구현: 목록/상세 렌더 시 쿠키 `pf_last_catalog`(path=/catalogs, 30일)에
+  해당 URL 저장(`_remember_catalog_page`). `/catalogs` 진입 시 쿠키가 있고
+  **Referer가 카탈로그 섹션이 아니면** 그 URL로 302.
+- 홈 접근 경로 보존: 카탈로그 페이지 안에서 홈으로 가는 이동(Referer가
+  `/catalogs*`)은 리다이렉트하지 않으며, `?home=1`이 명시적 탈출구.
+- 필터/페이지 상태는 URL에 없으므로(2.2, JS 메모리) 복귀 단위는 페이지 URL이다.
+- 테스트: `test_catalogs_home_resumes_last_visited_page`,
+  `test_catalogs_home_resumes_at_object_detail`.
+
+---
+
 ## 6. 리스크 및 결정 기록
 
 - **astro_data DB에 쓰기 금지** — 저장소 추적 파일이므로 인덱스 생성도 하지 않는다. 성능은 측정 후 판단.

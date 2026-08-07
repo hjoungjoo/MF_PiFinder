@@ -97,6 +97,42 @@ def test_pages_and_apis_require_auth(web_app):
 
 
 @pytest.mark.unit
+def test_catalogs_home_resumes_last_visited_page(web_app):
+    app, _server = web_app
+    client = _login(app.test_client())
+
+    # Visiting a catalog list page remembers it in the cookie.
+    assert client.get("/catalogs/M").status_code == 200
+
+    # Arriving from outside the catalog section resumes there...
+    response = client.get("/catalogs", headers={"Referer": "http://x/remote"})
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/catalogs/M")
+
+    # ...navigating home FROM a catalog page still shows the home,
+    response = client.get("/catalogs", headers={"Referer": "http://x/catalogs/M"})
+    assert response.status_code == 200
+
+    # and ?home=1 is the explicit escape hatch.
+    response = client.get("/catalogs?home=1", headers={"Referer": "http://x/remote"})
+    assert response.status_code == 200
+
+
+@pytest.mark.unit
+def test_catalogs_home_resumes_at_object_detail(web_app):
+    app, _server = web_app
+    client = _login(app.test_client())
+    object_id = _m31_object_id()
+
+    assert client.get(f"/catalogs/object/{object_id}").status_code == 200
+
+    # No Referer at all (bookmark / address bar) also resumes.
+    response = client.get("/catalogs")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/catalogs/object/{object_id}")
+
+
+@pytest.mark.unit
 def test_home_page(web_app):
     app, _server = web_app
     response = _login(app.test_client()).get("/catalogs")

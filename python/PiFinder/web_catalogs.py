@@ -36,7 +36,15 @@ from datetime import timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
-from flask import Response, redirect, render_template, request, send_file, session
+from flask import (
+    Response,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    session,
+)
 
 from PiFinder import nonsidereal, utils
 from PiFinder.calc_utils import FastAltAz, dec_to_dms, ra_to_hms
@@ -97,6 +105,11 @@ CATALOG_PRIORITY = [
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
+# Last-visited catalog page (list or object detail), remembered so the nav
+# "Catalogs" link resumes there after a GoTo instead of at the catalog home.
+# Scoped to path=/catalogs so the cookie rides along only on catalog requests.
+LAST_CATALOG_COOKIE = "pf_last_catalog"
+LAST_CATALOG_COOKIE_MAX_AGE = 30 * 24 * 3600
 # Above this many filtered rows, per-row altitude work (up-now filter and
 # altitude sort) is disabled to keep requests fast on the Pi (WDS: 131k rows).
 ALT_COMPUTE_LIMIT = 12000
@@ -324,6 +337,22 @@ def register_catalog_routes(app, server_instance):
         """Same behavior as server.auth_required: send to /login with ?next=."""
         return redirect(f"/login?next={quote(request.url, safe='')}")
 
+    def _remember_catalog_page(html):
+        """Wrap a catalog/object page render and remember its URL in a cookie.
+
+        Coming back to /catalogs from OUTSIDE the catalog pages (nav link
+        after a GoTo, browser bookmark) resumes at this page instead of the
+        catalog home; navigation between catalog pages is unaffected.
+        """
+        resp = make_response(html)
+        resp.set_cookie(
+            LAST_CATALOG_COOKIE,
+            request.full_path.rstrip("?") if request.query_string else request.path,
+            max_age=LAST_CATALOG_COOKIE_MAX_AGE,
+            path="/catalogs",
+        )
+        return resp
+
     # ──────────────────────────────────────────────────────────────
     # Pages
     # ──────────────────────────────────────────────────────────────
@@ -332,6 +361,18 @@ def register_catalog_routes(app, server_instance):
     def catalogs_home():
         if not _auth_ok():
             return _page_login_redirect()
+        # Resume at the last-visited catalog page when arriving from outside
+        # the catalog section (nav link after a GoTo, bookmark). Coming FROM
+        # a catalog page (breadcrumb / nav) still lands on this home, so the
+        # home stays one click away. ?home=1 always shows the home.
+        last_page = request.cookies.get(LAST_CATALOG_COOKIE, "")
+        referrer = request.headers.get("Referer", "")
+        if (
+            last_page.startswith("/catalogs/")
+            and request.args.get("home") != "1"
+            and "/catalogs" not in referrer
+        ):
+            return redirect(last_page)
         rows = _query(
             """
             SELECT c.catalog_code, c.desc,
@@ -404,15 +445,17 @@ def register_catalog_routes(app, server_instance):
         if not _auth_ok():
             return _page_login_redirect()
         if catalog_code == "PL":
-            return render_template(
-                "catalogs/catalog.html",
-                title="Catalogs - PL",
-                catalog_code="PL",
-                catalog_desc="Planets & Moon — live positions",
-                object_count=len(PLANET_SEQUENCE),
-                obj_types=[],
-                constellations=[],
-                alt_enabled=True,
+            return _remember_catalog_page(
+                render_template(
+                    "catalogs/catalog.html",
+                    title="Catalogs - PL",
+                    catalog_code="PL",
+                    catalog_desc="Planets & Moon — live positions",
+                    object_count=len(PLANET_SEQUENCE),
+                    obj_types=[],
+                    constellations=[],
+                    alt_enabled=True,
+                )
             )
         rows = _query(
             "SELECT catalog_code, desc, max_sequence FROM catalogs WHERE catalog_code = ?",
@@ -441,23 +484,25 @@ def register_catalog_routes(app, server_instance):
             """,
             (catalog_code,),
         )
-        return render_template(
-            "catalogs/catalog.html",
-            title=f"Catalogs - {catalog_code}",
-            catalog_code=catalog_code,
-            catalog_desc=(catalog["desc"] or "").strip().splitlines()[0]
-            if catalog["desc"]
-            else "",
-            object_count=count,
-            obj_types=[
-                {
-                    "code": row["obj_type"],
-                    "label": OBJ_TYPES.get(row["obj_type"], row["obj_type"]),
-                }
-                for row in obj_types
-            ],
-            constellations=[row["const"] for row in consts],
-            alt_enabled=count <= ALT_COMPUTE_LIMIT,
+        return _remember_catalog_page(
+            render_template(
+                "catalogs/catalog.html",
+                title=f"Catalogs - {catalog_code}",
+                catalog_code=catalog_code,
+                catalog_desc=(catalog["desc"] or "").strip().splitlines()[0]
+                if catalog["desc"]
+                else "",
+                object_count=count,
+                obj_types=[
+                    {
+                        "code": row["obj_type"],
+                        "label": OBJ_TYPES.get(row["obj_type"], row["obj_type"]),
+                    }
+                    for row in obj_types
+                ],
+                constellations=[row["const"] for row in consts],
+                alt_enabled=count <= ALT_COMPUTE_LIMIT,
+            )
         )
 
     @app.route("/catalogs/object/<int:object_id>")
@@ -467,10 +512,12 @@ def register_catalog_routes(app, server_instance):
         obj = _load_object_bundle(object_id)
         if obj is None:
             return Response("Object not found", status=404)
-        return render_template(
-            "catalogs/object.html",
-            title=obj["display"],
-            obj=obj,
+        return _remember_catalog_page(
+            render_template(
+                "catalogs/object.html",
+                title=obj["display"],
+                obj=obj,
+            )
         )
 
     # ──────────────────────────────────────────────────────────────
