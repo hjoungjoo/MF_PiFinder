@@ -18,7 +18,10 @@ if [ -z "${ARCHIVE}" ]; then
     exit 1
 fi
 
-TMPDIR="$(mktemp -d)"
+# pifinder_setup.sh mounts /tmp as a small tmpfs (SD-wear reduction), far too
+# small to rebuild the split archive and extract its rootfs; use disk-backed
+# /var/tmp instead of the mktemp default.
+TMPDIR="$(mktemp -d /var/tmp/pifinder-indi.XXXXXX)"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
 prepare_archive() {
