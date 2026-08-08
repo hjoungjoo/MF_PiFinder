@@ -4,6 +4,9 @@ from pathlib import Path
 
 
 MODEL_PATH = Path("/proc/device-tree/model")
+PWM_SYSFS_ROOT = Path("/sys/class/pwm")
+# RP1 PWM0 block (the one pwm-2chan routes to GPIO12/13) in /proc/device-tree.
+RP1_PWM0_DEVICE = "1f00098000.pwm"
 
 
 @dataclass(frozen=True)
@@ -11,9 +14,11 @@ class BoardProfile:
     name: str
     gps_device: str
     uart_overlay: str
-    # sysfs PWM chip index for the keypad backlight PWM.  Pi 1-4 expose the
-    # SoC PWM block as pwmchip0; the Pi 5 / CM5 drive PWM through the RP1
-    # controller, which the rpi-hardware-pwm library addresses as chip 2.
+    # Fallback sysfs PWM chip index for the keypad backlight PWM.  Pi 1-4
+    # expose the SoC PWM block as pwmchip0.  Pi 5 / CM5 drive PWM through the
+    # RP1 controller, whose chip index depends on the kernel (2 on 6.6, 0 on
+    # 6.12+), so get_pwm_chip() resolves it from sysfs and only uses this
+    # value when the scan finds nothing.
     pwm_chip: int
 
 
@@ -61,5 +66,20 @@ def get_uart_overlay(model: str | None = None) -> str:
     return get_board_profile(model).uart_overlay
 
 
+def _find_rp1_pwm_chip(sysfs_root: Path = PWM_SYSFS_ROOT) -> int | None:
+    for chip in sorted(sysfs_root.glob("pwmchip*")):
+        try:
+            device = (chip / "device").resolve().name
+        except OSError:
+            continue
+        if device == RP1_PWM0_DEVICE:
+            return int(chip.name.removeprefix("pwmchip"))
+    return None
+
+
 def get_pwm_chip(model: str | None = None) -> int:
-    return get_board_profile(model).pwm_chip
+    profile = get_board_profile(model)
+    if profile.name != PI5_CLASS.name:
+        return profile.pwm_chip
+    chip = _find_rp1_pwm_chip()
+    return profile.pwm_chip if chip is None else chip
