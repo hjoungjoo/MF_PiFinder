@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-08-08
+Last updated: 2026-08-09
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -1985,6 +1985,18 @@ machine, which no service restart can fix (kernel/firmware layer).
   with the joystick powered on; the mount (2.4 GHz-only ESP32 client on
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
+
+## LiveCam web preview — fit mode was shrink-only (2026-08-09)
+
+Fit mode relied solely on CSS `max-width/height: 100%` (contain), which
+**never enlarges a frame smaller than the shell**. A colour variant's
+debayered preview is half resolution, so it rendered at 1:1 while the
+zoom label showed the real fit scale (e.g. 136%) — label and image
+disagreed, and only manual zoom (explicit pixel sizing) looked right.
+Fit mode now applies the `fitScale()` result as explicit pixel
+dimensions (floored to avoid a 1px scrollbar), falling back to CSS
+contain until the shell has resolved dimensions. The existing frame-load
+and window-resize listeners re-apply it unchanged.
 
 ## LiveCam downloads — colour variants keep their measured chroma (2026-08-08)
 

@@ -763,10 +763,23 @@ function applyImageZoom() {
   // Fit mode contains the whole frame in the shell (no scrollbars in
   // either direction); zooming switches to an explicit scale with scroll.
   if (fitMode) {
-    image.style.width = 'auto';
-    image.style.height = 'auto';
-    image.style.maxWidth = '100%';
-    image.style.maxHeight = '100%';
+    // CSS max-width/height alone is shrink-only: a frame smaller than the
+    // shell (e.g. a debayered half-resolution colour preview) would sit at
+    // 1:1 while the zoom label reports the real fit scale. Apply the
+    // computed scale as explicit pixels (floor avoids a 1px scrollbar);
+    // fall back to CSS contain until the shell has resolved dimensions.
+    const scale = fitScale();
+    if (scale === null) {
+      image.style.width = 'auto';
+      image.style.height = 'auto';
+      image.style.maxWidth = '100%';
+      image.style.maxHeight = '100%';
+    } else {
+      image.style.width = `${Math.floor(naturalWidth * scale)}px`;
+      image.style.height = `${Math.floor(naturalHeight * scale)}px`;
+      image.style.maxWidth = 'none';
+      image.style.maxHeight = 'none';
+    }
   } else {
     image.style.width = `${Math.round(naturalWidth * imageZoom)}px`;
     image.style.height = `${Math.round(naturalHeight * imageZoom)}px`;
