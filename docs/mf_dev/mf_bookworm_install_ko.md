@@ -18,8 +18,9 @@ Raspberry Pi OS Legacy Bullseye를 기준으로 작성되어 있습니다. CM5 B
 - Python은 3.11이며, `pip` 전역 설치에는 `--break-system-packages`가 필요합니다.
 - Bookworm 기본 네트워크 관리는 NetworkManager입니다. PiFinder의 Wi-Fi/AP 전환
   스크립트는 `dhcpcd`, `wpa_supplicant`, `hostapd`, `dnsmasq` 모델을 전제로 합니다.
-- 저장소의 Nox 설정은 Python 3.9를 요구합니다. Bookworm 기본 Python 3.11에서는
-  직접 `pytest`/`ruff`를 실행하거나 Nox에 `--force-python 3.11`을 사용합니다.
+- 저장소의 Nox 설정은 Python 3.9를 우선하지만, `noxfile.py`가 3.9 부재 시
+  실행 인터프리터로 자동 폴백하므로 Bookworm 3.11에서 `nox -s <session>`이
+  그대로 동작합니다(구버전 안내였던 `--force-python 3.11`은 더 이상 불필요).
 
 ## 현재 장비에 적용한 설치 상태
 
@@ -246,20 +247,28 @@ git fetch --all
 
 ### 3. Bookworm에서 테스트 실행
 
-저장소의 `noxfile.py`는 Python 3.9를 지정합니다. Bookworm 기본 Python 3.11에서는
-아래 명령을 우선 사용합니다.
+권장 절차는 프로젝트 고정 버전(ruff/mypy/pytest 등)을 격리 설치하는 venv입니다
+(CLAUDE.md의 개발 절차와 동일; Bookworm에는 3.9가 없으므로 시스템 3.11 사용).
 
 ```bash
 cd "$PF_REPO/python"
-python3 -m ruff check PiFinder tests
-python3 -m ruff format PiFinder tests
-python3 -m pytest -m smoke
+python3 -m venv .venv
+source .venv/bin/activate
+# pifinder_setup.sh 설치본은 /tmp가 256M tmpfs라 pip 임시 파일이 넘칠 수 있음
+TMPDIR=/var/tmp pip install -r requirements.txt -r requirements_dev.txt
+
+nox -s lint format type_hints smoke_tests   # 또는 개별 세션
+pytest -m smoke
 ```
 
-Nox를 꼭 쓰려면 다음처럼 Python 3.11을 강제로 지정합니다.
+`noxfile.py`는 Python 3.9를 우선하되 없으면 실행 인터프리터로 자동 폴백하므로,
+3.11 venv 안에서 `nox -s <session>`이 그대로 동작합니다. 구버전 안내였던
+`--force-python 3.11` 강제는 더 이상 필요 없습니다. venv 없이 빠르게 확인만
+할 때는 시스템 python3로 직접 실행해도 됩니다.
 
 ```bash
-python3 -m nox --force-python 3.11 -s smoke_tests
+python3 -m ruff check PiFinder tests
+python3 -m pytest -m smoke
 ```
 
 ### 4. 명령행 실행/디버깅

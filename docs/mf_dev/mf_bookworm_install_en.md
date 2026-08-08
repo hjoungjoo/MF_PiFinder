@@ -21,9 +21,10 @@ following differences matter:
 - Bookworm uses NetworkManager by default. PiFinder's Wi-Fi/AP switching
   scripts assume the older `dhcpcd`, `wpa_supplicant`, `hostapd`, and
   `dnsmasq` model.
-- The repository Nox configuration requests Python 3.9. On Bookworm's default
-  Python 3.11, run `pytest`/`ruff` directly or use Nox with
-  `--force-python 3.11`.
+- The repository Nox configuration prefers Python 3.9, but `noxfile.py`
+  falls back to the running interpreter when 3.9 is absent, so plain
+  `nox -s <session>` works on Bookworm's 3.11 (the old `--force-python 3.11`
+  advice is no longer needed).
 
 ## Current Installation State On This Device
 
@@ -258,20 +259,30 @@ If you only need read access, keeping the current `origin` is fine.
 
 ### 3. Run Tests On Bookworm
 
-The repository `noxfile.py` requests Python 3.9. On Bookworm's default Python
-3.11, prefer these direct commands:
+The recommended setup is a venv with the project's pinned tool versions
+(ruff/mypy/pytest etc.), matching the CLAUDE.md development flow; Bookworm
+has no 3.9, so use the system 3.11.
 
 ```bash
 cd "$PF_REPO/python"
-python3 -m ruff check PiFinder tests
-python3 -m ruff format PiFinder tests
-python3 -m pytest -m smoke
+python3 -m venv .venv
+source .venv/bin/activate
+# On a pifinder_setup.sh install /tmp is a 256M tmpfs, which pip's temp
+# files can overflow — point them at disk:
+TMPDIR=/var/tmp pip install -r requirements.txt -r requirements_dev.txt
+
+nox -s lint format type_hints smoke_tests   # or individual sessions
+pytest -m smoke
 ```
 
-If you need to use Nox, force Python 3.11:
+`noxfile.py` prefers Python 3.9 but falls back to the running interpreter
+when 3.9 is absent, so `nox -s <session>` works as-is inside the 3.11 venv;
+the old `--force-python 3.11` advice is no longer needed. For a quick check
+without a venv, running the system python3 directly is still fine:
 
 ```bash
-python3 -m nox --force-python 3.11 -s smoke_tests
+python3 -m ruff check PiFinder tests
+python3 -m pytest -m smoke
 ```
 
 ### 4. Run And Debug From The Command Line
