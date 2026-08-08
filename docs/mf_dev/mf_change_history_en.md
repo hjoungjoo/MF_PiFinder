@@ -1986,6 +1986,18 @@ machine, which no service restart can fix (kernel/firmware layer).
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
 
+## LiveCam downloads — colour variants keep their measured chroma (2026-08-08)
+
+`download_color_mode()` hardcoded grayscale on the pre-variant premise
+that "this fork's sensors measure as true mono". It now reads the `mono`
+flag on the published frame info: only mono frames are forced to
+grayscale, while declared colour variants (imx462_color etc.) keep their
+measured chroma (missing frame info conservatively falls back to mono).
+A grayscale-looking preview by itself is not a bug — the LiveCam display
+default is `theme` (single-colour tint); pick Color Mode `color` to see
+colour. Verified on the colour imx462: colour-mode preview shows real
+R/G/B channel separation and downloads stay RGB.
+
 ## Pi 5 raw scale normalization — PiSP's MSB-aligned 16-bit delivery (2026-08-08)
 
 Pi 5 / CM5 (PiSP frontend) delivers raw **only as 16-bit MSB-aligned

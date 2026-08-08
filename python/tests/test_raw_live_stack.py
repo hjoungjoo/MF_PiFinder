@@ -440,15 +440,17 @@ def test_download_honors_selected_format():
 
 
 def test_download_is_grayscale_not_theme_tinted():
-    """Downloads drop both the theme tint and the fabricated chroma: the
-    sensor measures as true mono, so a debayered RGB download is colour
-    noise (impl doc §6.4). The preview keeps its theme tint."""
+    """Mono-sensor downloads drop both the theme tint and the fabricated
+    chroma: on a sensor that measures as true mono a debayered RGB download
+    is colour noise (impl doc §6.4). The preview keeps its theme tint.
+    Declared colour variants keep chroma instead -- see
+    test_colour_variant_download_keeps_real_chroma."""
     shared = DummySharedState()
     frame = np.arange(100, dtype=np.uint16).reshape(10, 10)
     publish_selected_frame(
         shared,
         {"processing_enabled": True},
-        _bayer_profile(),
+        _mono_bayer_profile(),
         "test",
         frame,
         frame,
@@ -469,7 +471,7 @@ def test_download_is_grayscale_not_theme_tinted():
         shared,
         settings,
         image_format="png",
-        color_mode=download_color_mode(),
+        color_mode=download_color_mode(shared),
         web_theme="red",
         accept_new_frame=False,
     )
@@ -512,12 +514,45 @@ def test_mono_sensor_preview_keeps_full_resolution():
         shared,
         settings,
         image_format="png",
-        color_mode=download_color_mode(),
+        color_mode=download_color_mode(shared),
         accept_new_frame=False,
     )
     image = Image.open(io.BytesIO(download_bytes))
     assert image.mode == "L"
     assert image.size == (10, 10)
+
+
+def test_colour_variant_download_keeps_real_chroma():
+    """A declared colour variant (CameraProfile.mono False) keeps colour in
+    downloads -- the grayscale rule exists for mono sensors whose Bayer label
+    would fabricate chroma (§6.4), not for a real CFA."""
+    shared = DummySharedState()
+    frame = np.arange(100, dtype=np.uint16).reshape(10, 10)
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True},
+        _bayer_profile(),
+        "imx462_color",
+        frame,
+        frame,
+        metadata={"timestamp": 1.0, "frame_id": 1},
+    )
+    assert shared.raw_live_frame()["info"]["mono"] is False
+
+    processor = RawLiveStackProcessor()
+    settings = normalize_settings(
+        {"processing_enabled": True, "web_image_format": "png"}
+    )
+    download_bytes, _ = processor.render_image(
+        shared,
+        settings,
+        image_format="png",
+        color_mode=download_color_mode(shared),
+        accept_new_frame=False,
+    )
+    image = Image.open(io.BytesIO(download_bytes))
+    assert image.mode == "RGB"
+    assert image.size == (5, 5)  # a real CFA debayers to half resolution
 
 
 def test_real_bayer_sensor_still_debayers_to_half_res():

@@ -19,6 +19,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from PiFinder.livecam_config import (
+    COLOR_MODE_COLOR,
     COLOR_MODE_MONO,
     COLOR_MODE_THEME,
     OUTPUT_LATEST,
@@ -575,12 +576,17 @@ def download_image_format(settings: dict[str, Any]) -> str:
     return normalized["web_image_format"]
 
 
-def download_color_mode() -> str:
-    """Downloads are grayscale: the sensor measures as true mono, so the
-    RGB a Bayer-labelled frame debayers into is pure chroma noise
-    (docs/mf_dev/mf_sep_fullframe_impl_ko.md §6.4). Luminance keeps the data,
-    drops the artifact."""
-    return COLOR_MODE_MONO
+def download_color_mode(shared_state) -> str:
+    """Grayscale for mono frames, real colour for declared colour variants.
+
+    A mono sensor's Bayer label is a driver artifact: the RGB it debayers
+    into is pure chroma noise (docs/mf_dev/mf_sep_fullframe_impl_ko.md §6.4),
+    so luminance keeps the data and drops the artifact. A device declared as
+    the real CFA variant (CameraProfile.mono False, carried on the published
+    frame info) keeps its measured chroma. No frame info defaults to mono --
+    the conservative side."""
+    info = _shared_info(shared_state) or {}
+    return COLOR_MODE_MONO if info.get("mono", True) else COLOR_MODE_COLOR
 
 
 def _theme_tint(luminance: np.ndarray, web_theme: str) -> np.ndarray:

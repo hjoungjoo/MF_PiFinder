@@ -972,7 +972,7 @@ def register_api_routes(app, server_instance, require_auth=False):
                 server_instance.shared_state,
                 settings,
                 image_format=image_format,
-                color_mode=download_color_mode(),
+                color_mode=download_color_mode(server_instance.shared_state),
                 web_theme=request.args.get("theme", "grey"),
                 accept_new_frame=False,
             )
