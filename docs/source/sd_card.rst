@@ -101,7 +101,8 @@ of minutes.
    After swapping the card you'll most likely need to set the **Camera Type**
    again.  A freshly imaged card defaults to one sensor, and if it doesn't match
    your unit the camera view will be blank.  Set it under Settings → Advanced → Camera Type
-   — the v3 sensors are ``imx462`` and ``imx296`` — then **fully power the
+   — the v3 sensors are ``imx462`` and ``imx296``, in the Mono variants for
+   standard kits — then **fully power the
    PiFinder off and on**, as a software restart alone won't apply the change.
    See :ref:`troubleshooting:the camera view is blank or black` for more.  It's
    also worth re-checking your WiFi settings, since they won't carry over to a

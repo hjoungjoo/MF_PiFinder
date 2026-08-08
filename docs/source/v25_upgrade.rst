@@ -96,7 +96,9 @@ which. From the main PiFinder menu:
 
 .. image:: images/v25_upgrade/v25_upgrade_42.png
 
-* Choose either v3 - imx462 or v3 - imx296
+* Choose the entry matching your sensor — upgrade kits ship mono modules, so
+  pick v3 - imx462 Mono or v3 - imx296 Mono (the Color entries are only for
+  measured colour units)
 
 .. image:: images/v25_upgrade/v25_upgrade_44.png
 

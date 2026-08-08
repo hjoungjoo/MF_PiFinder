@@ -74,7 +74,9 @@ not even faint noise with the lens cap on — the **Camera Type** setting probab
 match the camera in your unit.
 
 - Open Settings → Advanced and try a different Camera Type.  The v3 sensors are ``imx462`` and
-  ``imx296``; older v2 cameras are ``imx477``.  It won't hurt to try each.
+  ``imx296``; older v2 cameras are ``imx477``.  It won't hurt to try each.  Keep the Mono
+  variants unless you know your module is a colour unit — Mono/Color only affects image
+  processing, not whether the camera is detected.
 - **After changing Camera Type you must fully power the PiFinder off and on** — a software
   restart alone won't apply it.
 - A software update can quietly reset this setting, so re-check it after you update.

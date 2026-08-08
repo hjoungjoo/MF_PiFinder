@@ -12,7 +12,7 @@ This module is the camera
 from PIL import Image
 from PiFinder import config
 from PiFinder.camera_interface import CameraInterface
-from PiFinder.sqm import get_camera_profile, detect_camera_type
+from PiFinder.sqm import apply_variant, detect_camera_type, get_camera_profile
 from PiFinder.sqm.radiometer import collect_radiometer_sample
 from typing import Tuple
 import logging
@@ -36,14 +36,19 @@ logger = logging.getLogger("Camera.Pi")
 class CameraPI(CameraInterface):
     """The camera class for PI cameras.  Implements the CameraInterface interface."""
 
-    def __init__(self, exposure_time) -> None:
+    def __init__(self, exposure_time, cfg=None) -> None:
         from picamera2 import Picamera2
 
         self.camera = Picamera2()
         self.exposure_time = exposure_time
 
-        # Detect camera type and load complete profile (hardware config + noise characteristics)
-        self.camera_type = detect_camera_type(self.camera.camera.id)
+        # Detect camera type and load complete profile (hardware config + noise
+        # characteristics). The mono/colour variant cannot be detected -- it is
+        # declared in config ("camera_variant") and folded into the profile
+        # name here, so camType carries it to every consumer process.
+        detected_type = detect_camera_type(self.camera.camera.id)
+        variant = cfg.get_option("camera_variant", "mono") if cfg else "mono"
+        self.camera_type = apply_variant(detected_type, variant)
         self.profile = get_camera_profile(self.camera_type)
         logger.info(
             f"Loaded profile for {self.camera_type}: "
@@ -299,15 +304,7 @@ class CameraPI(CameraInterface):
         self.camera.start()
 
         # Crop like normal capture but don't process
-        if self.camera_type == "imx296":
-            raw_capture = raw_capture[:, 184:-184]
-            raw_capture = np.rot90(raw_capture, 2)
-        elif self.camera_type == "imx462":
-            raw_capture = raw_capture[50:-50, 470:-470]
-        elif self.camera_type == "hq":
-            raw_capture = raw_capture[:, 256:-256]
-
-        return raw_capture
+        return self.profile.crop_and_rotate(raw_capture)
 
     def capture_file(self, filename) -> None:
         tmp_capture = self.capture()
@@ -452,7 +449,7 @@ def get_images(shared_state, camera_image, command_queue, console_queue, log_que
     if exposure_time in ("auto", "auto_star"):
         exposure_time = 400000  # Start with default 400ms
 
-    camera_hardware = CameraPI(exposure_time)
+    camera_hardware = CameraPI(exposure_time, cfg)
     camera_hardware.get_image_loop(
         shared_state, camera_image, command_queue, console_queue, cfg
     )

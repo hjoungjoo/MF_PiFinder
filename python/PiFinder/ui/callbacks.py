@@ -19,7 +19,7 @@ from datetime import datetime
 
 import pytz
 
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 from PiFinder import timez
 from PiFinder import utils, calc_utils
 from PiFinder.boot_config import get_boot_config_path
@@ -420,25 +420,8 @@ def recover_wifi(ui_module: UIModule) -> None:
         ui_module.message(_("WiFi still down"), 3)
 
 
-def switch_cam_imx477(ui_module: UIModule) -> None:
-    ui_module.message(_("Switching cam"), 2)
-    sys_utils.switch_cam_imx477()
-    restart_system(ui_module)
-
-
-def switch_cam_imx296(ui_module: UIModule) -> None:
-    ui_module.message(_("Switching cam"), 2)
-    sys_utils.switch_cam_imx296()
-    restart_system(ui_module)
-
-
-def switch_cam_imx462(ui_module: UIModule) -> None:
-    ui_module.message(_("Switching cam"), 2)
-    sys_utils.switch_cam_imx462()
-    restart_system(ui_module)
-
-
-def get_camera_type(ui_module: UIModule) -> list[str]:
+def _boot_camera_id() -> str:
+    """The active camera dtoverlay id in the boot config (imx290 -> imx462)."""
     cam_id = "000"
 
     # read config.txt into a list
@@ -452,6 +435,69 @@ def get_camera_type(ui_module: UIModule) -> list[str]:
             # Older installs used the imx290 overlay for imx462 cameras.
             if cam_id == "imx290":
                 cam_id = "imx462"
+
+    return cam_id
+
+
+def _switch_camera(ui_module: UIModule, cam_type: str, variant: Optional[str]) -> None:
+    """Apply a Camera Type selection: sensor overlay plus mono/colour variant.
+
+    The boot config owns the sensor choice and changing it needs a reboot;
+    the variant is config-only (the dtoverlay is never touched for it -- plan
+    doc D1), so a variant-only change restarts just the PiFinder service.
+    variant=None leaves the stored variant alone (imx477 ignores it).
+    """
+    config_object = ui_module.config_object
+    variant_changed = (
+        variant is not None
+        and config_object.get_option("camera_variant", "mono") != variant
+    )
+    overlay_changed = _boot_camera_id() != cam_type
+    if variant_changed:
+        config_object.set_option("camera_variant", variant)
+    if overlay_changed:
+        ui_module.message(_("Switching cam"), 2)
+        switch_cam = {
+            "imx477": sys_utils.switch_cam_imx477,
+            "imx296": sys_utils.switch_cam_imx296,
+            "imx462": sys_utils.switch_cam_imx462,
+        }[cam_type]
+        switch_cam()
+        restart_system(ui_module)
+    elif variant_changed:
+        restart_pifinder(ui_module)
+
+
+def switch_cam_imx477(ui_module: UIModule) -> None:
+    _switch_camera(ui_module, "imx477", None)
+
+
+def switch_cam_imx296_mono(ui_module: UIModule) -> None:
+    _switch_camera(ui_module, "imx296", "mono")
+
+
+def switch_cam_imx296_color(ui_module: UIModule) -> None:
+    _switch_camera(ui_module, "imx296", "color")
+
+
+def switch_cam_imx462_mono(ui_module: UIModule) -> None:
+    _switch_camera(ui_module, "imx462", "mono")
+
+
+def switch_cam_imx462_color(ui_module: UIModule) -> None:
+    _switch_camera(ui_module, "imx462", "color")
+
+
+def get_camera_type(ui_module: UIModule) -> list[str]:
+    cam_id = _boot_camera_id()
+
+    # v3 sensors exist in mono and colour variants; the boot config only
+    # knows the sensor, so compose the menu value with the configured variant.
+    if cam_id in ("imx296", "imx462"):
+        variant = ui_module.config_object.get_option("camera_variant", "mono")
+        if variant not in ("mono", "color"):
+            variant = "mono"
+        return [f"{cam_id}_{variant}"]
 
     return [cam_id]
 

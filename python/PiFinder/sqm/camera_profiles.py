@@ -8,7 +8,7 @@ dark frame measurements for improved accuracy.
 """
 
 from dataclasses import dataclass, replace
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
@@ -414,6 +414,46 @@ CAMERA_PROFILES: Dict[str, CameraProfile] = {
         sqm_band_offset=0.99,
     ),
 }
+
+# Colour variants of the v3 sensors. Mono and colour modules share the same
+# silicon and register map; the CFA is an optical layer the sensor cannot
+# report over I2C, so the variant is declared once per device via the
+# "camera_variant" config option (docs/mf_dev/mf_camera_mono_color_plan_ko.md)
+# and applied with apply_variant() -- it is never detected at runtime. SQM
+# calibration constants are inherited from the mono units and are unverified
+# on colour hardware.
+CAMERA_PROFILES["imx462_color"] = replace(
+    # SRGGB12 label kept: on a real CFA the colour-linked zero point (#560)
+    # works as upstream intended -- mono=False opens the colour gate.
+    CAMERA_PROFILES["imx462"],
+    mono=False,
+)
+CAMERA_PROFILES["imx296_color"] = replace(
+    # The colour IMX296 reports a Bayer label, not the mono-only "R10": the
+    # kernel driver (drivers/media/i2c/imx296.c) returns Y10 for mono and the
+    # SBGGR10 family for colour. The Bayer order is unverified on real
+    # hardware, but a non-SRGGB label keeps the colour gate closed and
+    # photometry on the full-res path -- the safe fallback (plan doc §6 V1).
+    CAMERA_PROFILES["imx296"],
+    mono=False,
+    format="SBGGR10",
+)
+
+
+def apply_variant(camera_type: str, variant: Optional[str]) -> str:
+    """Reflect the configured mono/colour hardware variant in a profile name.
+
+    The variant cannot be read from the sensor (see the colour-variant block
+    above), so callers pass the per-device "camera_variant" config value.
+    Cameras without a colour twin (hq is always colour) and unknown variant
+    values pass through unchanged; "mono" is the default and keeps the base
+    profile name.
+    """
+    if variant == "color":
+        color_name = f"{camera_type}_color"
+        if color_name in CAMERA_PROFILES:
+            return color_name
+    return camera_type
 
 
 def detect_camera_type(hardware_id: str) -> str:

@@ -382,7 +382,7 @@ def _inert_sys_utils():
     switch_cam_*(), go_wifi_*(), pause_wifi_for_bt_pairing(). The key sweep
     selects menu items, which fire these as real actions -- on a Pi this
     harness would reboot or reconfigure the device, and off-Pi sys_utils_fake
-    is missing some of them (e.g. switch_cam_imx462).
+    may lag the real module's function set.
 
     Modules bind the real module at import time (``sys_utils =
     utils.get_sys_utils()``), so patching ``get_sys_utils`` alone cannot reach

@@ -86,7 +86,7 @@ Last updated: 2026-08-04. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | [mono_sqm_colour_guard_20260805](mf_report/mf_mono_sqm_colour_guard_20260805_en.md) | both | **announcement** (2026-08-05) | Community share — how upstream #560's sky-colour SQM correction silently shifts a mislabeled mono imx462 by +0.74 mag, the `profile.mono` guard, and how to test your own module. |
 | [sqm_stack_port_plan](mf_dev/mf_sqm_stack_port_plan_ko.md) | ko | **port complete** (2026-07-30) | Analysis and plan for porting the upstream SQM stack (#532/#542/#543/#544), with per-phase outcomes. |
 | [gps_aiding_plan](mf_dev/mf_gps_aiding_plan_en.md) | both | **plan (pre-impl)** | u-blox GPS aiding (MGA-INI/DBD) design draft. |
-| [camera_mono_color_plan](mf_dev/mf_camera_mono_color_plan_ko.md) | ko | **plan (pre-impl)** | Make the IMX296/IMX462 mono·colour variant a setting (5-entry Camera Type menu + `camera_variant`) — variant-suffixed profile names propagate to every process, dtoverlay untouched. |
+| [camera_mono_color_plan](mf_dev/mf_camera_mono_color_plan_ko.md) | ko | **implemented** (2026-08-08) | Make the IMX296/IMX462 mono·colour variant a setting (5-entry Camera Type menu + `camera_variant`) — variant-suffixed profile names propagate to every process, dtoverlay untouched. Propagation verified on a real colour imx462; SQM constants still inherited from mono, unverified (§8). |
 
 ## Meta · history · process
 

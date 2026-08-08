@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-08-05
+Last updated: 2026-08-08
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -1985,6 +1985,39 @@ machine, which no service restart can fix (kernel/firmware layer).
   with the joystick powered on; the mount (2.4 GHz-only ESP32 client on
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
+
+## Camera mono/colour variant selection (2026-08-08)
+
+Implemented P1–P4 of the design doc
+[mf_camera_mono_color_plan_ko.md](mf_camera_mono_color_plan_ko.md)
+(plan → implemented, postscript §8). The CFA cannot be read over I2C, so the
+variant is a one-time per-device declaration carried in derived profile names
+(`imx462_color`/`imx296_color`) that propagate to every process for free.
+
+- `sqm/camera_profiles.py`: two `replace()`-derived colour profiles +
+  `apply_variant()` helper. The imx296_color format is `SBGGR10`, confirmed
+  from the kernel driver source (mono=Y10; Bayer order unverified on real
+  hardware → non-SRGGB keeps the colour gate closed, the safe fallback).
+- `camera_pi.py`: pass config into `CameraPI(exposure_time, cfg)` and apply
+  `camera_variant`. Replaced the per-camera crop ladder in `capture_bias`
+  with `profile.crop_and_rotate()` (verified equivalent).
+- `default_config.json`: `"camera_variant": "mono"` (bit-identical default).
+- Camera Type menu grown to five entries (imx477, imx296/imx462 ×
+  Mono/Color) with unified callbacks: sensor (overlay) changes reboot,
+  variant-only changes restart the service, reselecting is a no-op.
+  `get_camera_type()` composes the boot overlay id with the variant. Added
+  the missing `switch_cam_imx462` to `sys_utils_fake.py`.
+- Tests: new `test_camera_variant.py` (profile derivation, apply_variant,
+  composed checkmark, restart policy, menu value coherence); the shipped-
+  profile radiometer guard now covers `imx462_color` (gate open) and
+  `imx296_color` (gate closed). 7 smoke + 1,131 unit tests pass (3 failures
+  are pre-existing device-state-dependent ones, reproduced on the unmodified
+  tree).
+- On-device verification with a real colour imx462: with
+  `camera_variant=color` the camera process starts as `imx462_color`
+  (SRGGB12 stream healthy) and the web API reports
+  `camera_type=imx462_color`. SQM constants remain inherited from the mono
+  unit and unverified (needs an on-sky session).
 
 ## Last two deferred upstream items ported — SQM colour (#560), Focus multi-star (#531) (2026-08-05)
 

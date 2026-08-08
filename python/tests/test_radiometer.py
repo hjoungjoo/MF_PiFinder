@@ -331,8 +331,9 @@ def test_shipped_colour_profiles_hold_the_phase_invariants():
     imx290 as measured mono (CameraProfile.mono, §6.4) — for them the
     colour term must stay OFF, or the model reads their pinned R/G≈1.00
     as a dark-site spectrum and shifts the published SQM by ~+0.8 mag.
-    Only hq remains a colour profile here; its invariants are guarded as
-    upstream intended.
+    hq is colour as upstream intended, and a device declared as the real
+    CFA variant (imx462_color, mf_camera_mono_color_plan_ko.md) opts back
+    into the colour term with the same invariants.
     """
     from PiFinder.sqm.radiometer import _mosaic_phase_is_rggb
 
@@ -341,10 +342,19 @@ def test_shipped_colour_profiles_hold_the_phase_invariants():
         assert profile.mono, name
         assert not _mosaic_phase_is_rggb(profile), name
 
-    profile = get_camera_profile("hq")
-    assert _mosaic_phase_is_rggb(profile)
-    assert profile.rotation_90 == 0
-    assert profile.crop_x[0] % 2 == 0 and profile.crop_y[0] % 2 == 0
+    for name in ("hq", "imx462_color"):
+        profile = get_camera_profile(name)
+        assert not profile.mono, name
+        assert _mosaic_phase_is_rggb(profile), name
+        assert profile.rotation_90 == 0, name
+        assert profile.crop_x[0] % 2 == 0 and profile.crop_y[0] % 2 == 0, name
+
+    # imx296_color ships a non-SRGGB Bayer label (order unverified on real
+    # hardware): the sampler cannot read it, so the colour gate stays closed
+    # and the zero point stays constant — the safe fallback (plan doc §6 V1).
+    profile = get_camera_profile("imx296_color")
+    assert not profile.mono
+    assert not _mosaic_phase_is_rggb(profile)
 
 
 @pytest.mark.unit

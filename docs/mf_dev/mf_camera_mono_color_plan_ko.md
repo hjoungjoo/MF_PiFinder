@@ -1,6 +1,6 @@
 # 카메라 mono/color 변형 선택 계획 (IMX296 · IMX462)
 
-> 상태: **plan(구현 전)** · 작성 2026-08-05
+> 상태: **구현됨(2026-08-08)** · 작성 2026-08-05 · 구현 후기는 §8
 > 관련: [mf_mono_sqm_colour_guard_20260805_ko.md](../mf_report/mf_mono_sqm_colour_guard_20260805_ko.md)(모노 실측·#560 가드),
 > `docs/mf_dev/mf_sep_fullframe_impl_ko.md` §6.4(위상 실측), ADR 0026(색 기반 zero point)
 
@@ -234,3 +234,26 @@ mono(기본, 현행 유지) 대비 **color 선택 시**:
   필요(P2에서 grep 전수).
 - **debug 카메라**: `camera_debug.py:35`의 `"Debug imx296"`은 mono 프로파일
   경로를 타며 현행 유지. 필요 시 후속으로 variant 반영.
+
+## 8. 구현 후기 (2026-08-08)
+
+P1–P4를 설계대로 구현했다 (`camera_profiles.py`의 파생 프로파일 +
+`apply_variant`, `camera_pi.py`의 cfg 전달과 `capture_bias` 크롭 사다리의
+`profile.crop_and_rotate` 대체, Camera Type 5항목 메뉴와 변형-전용
+서비스 재시작, `sys_utils_fake.switch_cam_imx462` 보강 포함).
+
+하드웨어 검증 항목 결과:
+
+- **V1 (해소)**: 커널 드라이버 소스(`drivers/media/i2c/imx296.c`)로 확정 —
+  mono는 `Y10`, colour는 SBGGR10 계열(플립 설정에 따라 4종). `imx296_color`
+  프로파일은 `SBGGR10`으로 출하하며, 실기 라벨 검증 전까지는 non-SRGGB
+  라벨이라 색 게이트가 닫힌 보수 폴백으로 동작한다(계획 §6 V1의 허용 범위).
+- **V2 (소스로 확인)**: imx296 드라이버는 compatible 문자열 또는 센서 정보
+  레지스터로 mono/color를 자가 감지할 수 있다. imx296에 한한 variant 자동
+  유도(감지값-설정 불일치 경고 포함)는 후속 과제로 유지; 수동 선택이 정본.
+- **V3 (해소)**: 컬러 imx462 실기가 이 포크에 확보되어 전파 경로를 실기
+  검증했다 — `camera_variant=color` 설정 후 카메라 프로세스가
+  `imx462_color`로 기동(SRGGB12 스트림 정상), 웹 API `camera_type`이
+  `imx462_color`를 반환. **SQM 상수는 여전히 mono 승계 미검증** — 야간
+  실측(색 필드 수집과 #560 zero point 거동) 전까지 §4의 "inherited from
+  mono unit, unverified" 상태가 유지된다.

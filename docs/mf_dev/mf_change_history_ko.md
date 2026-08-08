@@ -1,7 +1,7 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
-최종 업데이트: 2026-08-05
+최종 업데이트: 2026-08-08
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
@@ -1794,6 +1794,35 @@ BT 고밀도 국면(페어링·부팅 직후 재연결 폭풍)이 brcmfmac 펌�
 - 현장 수칙(사건 분석에서 도출): 페어링은 집에서, 조이스틱 켠 채 재부팅
   금지, 마운트(AP 2.4GHz 클라이언트)는 ESP32 계열이라 5GHz 이전 불가 —
   AP+STA 동일 채널 제약으로 STA도 2.4GHz 고정.
+
+## 카메라 mono/color 변형 선택 (2026-08-08)
+
+설계 문서 [mf_camera_mono_color_plan_ko.md](mf_camera_mono_color_plan_ko.md)
+(plan → 구현됨, 후기 §8)의 P1–P4를 구현했다. CFA는 I2C로 읽을 수 없어
+런타임 판별이 불가하므로, mono/color는 기기당 1회 설정으로 선언하고 파생
+프로파일 이름(`imx462_color`/`imx296_color`)에 실어 전 프로세스에 전파한다.
+
+- `sqm/camera_profiles.py`: `replace()` 파생 컬러 프로파일 2종 +
+  `apply_variant()` 헬퍼. imx296_color 포맷은 커널 드라이버 소스로 확정한
+  `SBGGR10`(mono=Y10; Bayer 순서는 실기 미검증 → non-SRGGB라 색 게이트가
+  닫히는 보수 폴백).
+- `camera_pi.py`: `CameraPI(exposure_time, cfg)`로 config 전달,
+  `camera_variant` 적용. `capture_bias`의 카메라별 크롭 사다리를
+  `profile.crop_and_rotate()`로 대체(등가 — 프로파일 상수와 일치 확인).
+- `default_config.json`: `"camera_variant": "mono"` (기존 기기 비트 동일).
+- Camera Type 메뉴 5항목(imx477, imx296/imx462 × Mono/Color) + 콜백 통합:
+  센서(오버레이) 변경 시에만 재부팅, 변형만 변경 시 서비스 재시작, 무변경
+  재선택은 no-op. `get_camera_type()`이 부트 오버레이 id에 변형을 합성.
+  `sys_utils_fake.py`에 누락돼 있던 `switch_cam_imx462` 보강.
+- 테스트: `test_camera_variant.py` 신규(프로파일 파생·apply_variant·
+  합성 체크마크·재시작 정책·메뉴 value 정합), radiometer 출하 프로파일
+  가드에 `imx462_color`(게이트 통과)/`imx296_color`(게이트 폐쇄) 편입.
+  smoke 7건 + unit 1,131건 통과(실패 3건은 기기 상태 의존 기존 실패로
+  변경 전 트리에서 동일 재현 확인).
+- 실기 검증: 컬러 imx462 장착 기기에서 `camera_variant=color` 적용 후
+  카메라 프로세스 `imx462_color` 기동(SRGGB12 스트림 정상), 웹 API
+  `camera_type=imx462_color` 확인. SQM 상수는 mono 승계 미검증 상태
+  유지(야간 실측 필요).
 
 ## 보류 업스트림 2건 이식 — SQM 색보정(#560), Focus 멀티스타(#531) (2026-08-05)
 

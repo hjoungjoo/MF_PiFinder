@@ -183,6 +183,16 @@ After deploying: live SQM on the device reads the same as before the port
    makes the mislabeled-module case safe by default. Modules with lying
    labels are common in the IMX462 aftermarket.
 
+## Postscript (2026-08-08): the variant is now a setting
+
+The follow-up this report called for has been implemented: Settings →
+Advanced → Camera Type now has five entries (imx477, imx296/imx462 ×
+Mono/Color), backed by the `camera_variant` config and the derived
+`imx462_color`/`imx296_color` profiles. The default is Mono (bit-identical
+to prior behaviour), and selecting Color without a measurement reintroduces
+the +0.74 mag shift described here — "keep Mono unless measured" still
+stands. Details: `docs/mf_dev/mf_camera_mono_color_plan_ko.md` §8.
+
 ## References
 
 - Fork port commit: `fde9beaa` (upstream `b28f7d9d`, PR #560; guard +

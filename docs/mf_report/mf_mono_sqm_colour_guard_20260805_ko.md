@@ -171,6 +171,15 @@ point가 프로파일 상수로 유지된다 — upstream의 의도적 상수 �
    하면 라벨이 거짓인 모듈이 기본값으로 안전해진다. IMX462 애프터마켓에는
    라벨이 거짓말하는 모듈이 흔하다.
 
+## 후기 (2026-08-08): 변형이 설정으로 선택화됨
+
+이 리포트가 남긴 후속 과제였던 mono/color 선택이 구현되었다: Settings →
+Advanced → Camera Type이 5항목(imx477, imx296/imx462 × Mono/Color)으로
+확장되어 `camera_variant` 설정과 `imx462_color`/`imx296_color` 파생
+프로파일로 반영된다. 기본값은 Mono(현행 동작 비트 동일)이고, 실측 없이
+Color를 선택하면 본문의 +0.74 mag 왜곡이 그대로 발생하므로 "실측 없이는
+Mono 유지" 원칙은 그대로다. 상세: `docs/mf_dev/mf_camera_mono_color_plan_ko.md` §8.
+
 ## 참고
 
 - 포크 이식 커밋: `fde9beaa` (upstream `b28f7d9d`, PR #560; 위의 가드 +

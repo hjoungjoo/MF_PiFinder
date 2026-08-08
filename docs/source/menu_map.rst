@@ -267,7 +267,12 @@ Advanced
       Screen orientation / build variant — Left, Right, Straight, Flat v3, Flat
       v2, or AS Bloom.  Restarts the PiFinder.
    Camera Type
-      Which camera sensor is fitted — v2 (imx477), v3 (imx296), or v3 (imx462).
+      Which camera sensor is fitted — v2 (imx477), v3 (imx296 Mono/Color), or
+      v3 (imx462 Mono/Color).  Mono vs Color declares the sensor's
+      colour-filter variant, which the software cannot detect on its own.
+      PiFinder kits ship mono modules, so keep Mono unless your module is a
+      known colour unit.  Changing the sensor reboots the PiFinder; changing
+      only Mono/Color restarts the software.
    GPS Settings
       Configure the GPS receiver.
 
