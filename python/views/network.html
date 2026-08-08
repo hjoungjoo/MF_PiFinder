@@ -240,6 +240,7 @@
         </td>
       </tr>
 {% endif %}
+{% set connected_ssid = net.get_connected_ssid() %}
 {% for network in net.get_wifi_networks() %}
   {% include 'network_item.html' %}
 {% endfor %}

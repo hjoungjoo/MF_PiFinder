@@ -12,15 +12,25 @@
         {% endif %}
       </td>
       <td>
-          <h5>{{ network["ssid"] }}</h5>
+          <h5>{{ network["ssid"] }}
+          {% if connected_ssid and network["ssid"] == connected_ssid %}
+          <span class="green-text text-lighten-2" style="font-size: 0.55em; vertical-align: middle; white-space: nowrap;">
+            <i class="material-icons" style="font-size: 1.4em; vertical-align: text-bottom;">check_circle</i>{{ _('Connected') }}
+          </span>
+          {% endif %}
+          </h5>
           {{ _('Security') }}: <b>{{ network["key_mgmt"] }}</b>
       </td>
       <td style="white-space: nowrap;">
+        {% if connected_ssid and network["ssid"] == connected_ssid %}
+        <i class="material-icons green-text text-lighten-2" title="{{ _('Currently connected') }}">wifi</i>
+        {% else %}
         <form action="/network/connect/{{ network["id"] }}" method="post" style="display: inline; margin: 0px;">
           <button type="submit" class="btn-flat grey-text" title="{{ _('Connect to this network now') }}" style="padding: 0px;">
             <i class="material-icons">wifi</i>
           </button>
         </form>
+        {% endif %}
         <a href="#modal{{ network["id"] }}" class="grey-text modal-trigger">
           <i class="material-icons">delete</i>
         </a>
