@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PiFinder VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-05 08:40+0900\n"
+"POT-Creation-Date: 2026-08-08 09:55+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ko\n"
@@ -173,7 +173,7 @@ msgstr "고급"
 msgid "Wi-Fi scan failed"
 msgstr "Wi-Fi 스캔 실패"
 
-#: PiFinder/server.py:377 PiFinder/server.py:632 PiFinder/server.py:671
+#: PiFinder/server.py:377 PiFinder/server.py:632 PiFinder/server.py:676
 msgid "Network"
 msgstr "네트워크"
 
@@ -226,93 +226,102 @@ msgstr "Altitude must be between -1000 and 10000 meters"
 msgid "Error must be between 0 and 10000 meters"
 msgstr "Error must be between 0 and 10000 meters"
 
-#: PiFinder/server.py:667 PiFinder/ui/menu_structure.py:1771
+#: PiFinder/server.py:660
+#, fuzzy
+msgid "STA changes applied"
+msgstr "Save Changes"
+
+#: PiFinder/server.py:710 PiFinder/ui/menu_structure.py:1771
 msgid "Restart"
 msgstr "재시작"
 
-#: PiFinder/server.py:688 PiFinder/server.py:697 PiFinder/server.py:701
-#: PiFinder/server.py:705 PiFinder/server.py:1060
+#: PiFinder/server.py:713
+msgid "Settings saved. Use Apply & Restart to activate them."
+msgstr ""
+
+#: PiFinder/server.py:729 PiFinder/server.py:738 PiFinder/server.py:742
+#: PiFinder/server.py:746 PiFinder/server.py:1101
 #: PiFinder/ui/menu_structure.py:1618 views/base.html:68 views/base.html:82
 #: views/tools.html:6
 msgid "Tools"
 msgstr "도구"
 
-#: PiFinder/server.py:689
+#: PiFinder/server.py:730
 msgid "You must fill in all password fields"
 msgstr "You must fill in all password fields"
 
-#: PiFinder/server.py:697
+#: PiFinder/server.py:738
 msgid "Password Changed"
 msgstr "Password Changed"
 
-#: PiFinder/server.py:701
+#: PiFinder/server.py:742
 msgid "Incorrect current password"
 msgstr "Incorrect current password"
 
-#: PiFinder/server.py:705
+#: PiFinder/server.py:746
 msgid "New passwords do not match"
 msgstr "New passwords do not match"
 
-#: PiFinder/server.py:730 PiFinder/server.py:741 PiFinder/server.py:758
-#: PiFinder/server.py:840 PiFinder/server.py:896 PiFinder/server.py:909
-#: PiFinder/server.py:982 PiFinder/server.py:995
+#: PiFinder/server.py:771 PiFinder/server.py:782 PiFinder/server.py:799
+#: PiFinder/server.py:881 PiFinder/server.py:937 PiFinder/server.py:950
+#: PiFinder/server.py:1023 PiFinder/server.py:1036
 #: PiFinder/ui/menu_structure.py:1623 views/base.html:65 views/base.html:79
 #: views/equipment.html:6
 msgid "Equipment"
 msgstr "장비"
 
-#: PiFinder/server.py:747
+#: PiFinder/server.py:788
 msgid "set as active instrument."
 msgstr "set as active instrument."
 
-#: PiFinder/server.py:764
+#: PiFinder/server.py:805
 msgid "set as active eyepiece."
 msgstr "set as active eyepiece."
 
-#: PiFinder/server.py:842
+#: PiFinder/server.py:883
 msgid "Equipment Imported, restart your PiFinder to use this new data"
 msgstr "Equipment Imported, restart your PiFinder to use this new data"
 
-#: PiFinder/server.py:858
+#: PiFinder/server.py:899
 msgid "Edit Eyepiece"
 msgstr "Edit Eyepiece"
 
-#: PiFinder/server.py:898
+#: PiFinder/server.py:939
 msgid "Eyepiece added, restart your PiFinder to use"
 msgstr "Eyepiece added, restart your PiFinder to use"
 
-#: PiFinder/server.py:911
+#: PiFinder/server.py:952
 msgid "Eyepiece Deleted, restart your PiFinder to remove from menu"
 msgstr "Eyepiece Deleted, restart your PiFinder to remove from menu"
 
-#: PiFinder/server.py:936
+#: PiFinder/server.py:977
 msgid "Edit Instrument"
 msgstr "Edit Instrument"
 
-#: PiFinder/server.py:984
+#: PiFinder/server.py:1025
 msgid "Instrument Added, restart your PiFinder to use"
 msgstr "Instrument Added, restart your PiFinder to use"
 
-#: PiFinder/server.py:997
+#: PiFinder/server.py:1038
 msgid "Instrument Deleted, restart your PiFinder to remove from menu"
 msgstr "Instrument Deleted, restart your PiFinder to remove from menu"
 
-#: PiFinder/server.py:1025 views/base.html:63 views/base.html:77
+#: PiFinder/server.py:1066 views/base.html:63 views/base.html:77
 msgid "Observations"
 msgstr "관측기록"
 
-#: PiFinder/server.py:1054
+#: PiFinder/server.py:1095
 msgid "Session Log"
 msgstr "세션 로그"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1078 views/base.html:69 views/base.html:83
+#: PiFinder/server.py:1119 views/base.html:69 views/base.html:83
 #: views/livecam.html:144
 msgid "LiveCam"
 msgstr "LiveCam"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1148
+#: PiFinder/server.py:1189
 #, python-format
 msgid ""
 "This INDI profile uses %(driver)s. OnStepX controls are available only "
@@ -322,198 +331,198 @@ msgstr ""
 "OnStepX일 때만 사용할 수 있습니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1152
+#: PiFinder/server.py:1193
 msgid "unknown driver"
 msgstr "알 수 없는 드라이버"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1450
+#: PiFinder/server.py:1491
 msgid "Backlash must be a number"
 msgstr "백래시는 숫자여야 합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1453
+#: PiFinder/server.py:1494
 #, python-format
 msgid "Backlash must be between 0 and %(max)d"
 msgstr "백래시는 0에서 %(max)d 사이여야 합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1465 PiFinder/server.py:1804 PiFinder/server.py:2124
-#: PiFinder/server.py:2139
+#: PiFinder/server.py:1506 PiFinder/server.py:1845 PiFinder/server.py:2165
+#: PiFinder/server.py:2180
 msgid "Mount-control process is not available"
 msgstr "마운트 제어 프로세스를 사용할 수 없습니다"
 
-#: PiFinder/server.py:1497 PiFinder/ui/menu_structure.py:81 views/base.html:66
+#: PiFinder/server.py:1538 PiFinder/ui/menu_structure.py:81 views/base.html:66
 #: views/base.html:80 views/indi_mount.html:11
 msgid "INDI"
 msgstr "INDI"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1601
+#: PiFinder/server.py:1642
 msgid "Invalid SkySafari mount status code"
 msgstr "잘못된 SkySafari 마운트 상태 코드"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1616
+#: PiFinder/server.py:1657
 msgid "SkySafari mount settings applied"
 msgstr "SkySafari 마운트 설정을 적용했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1623
+#: PiFinder/server.py:1664
 msgid "Invalid INDI GoTo method"
 msgstr "잘못된 INDI GoTo 방식"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1665
+#: PiFinder/server.py:1706
 msgid "INDI GoTo / Guide settings applied"
 msgstr "INDI GoTo / Guide 설정을 적용했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1672
+#: PiFinder/server.py:1713
 msgid "Invalid action"
 msgstr "잘못된 동작"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1675
+#: PiFinder/server.py:1716
 msgid "GoTo/Guide service unavailable"
 msgstr "GoTo/Guide 서비스를 사용할 수 없음"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1679
+#: PiFinder/server.py:1720
 msgid "Guide paused"
 msgstr "가이드 일시정지됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1679
+#: PiFinder/server.py:1720
 msgid "Guide resumed"
 msgstr "가이드 재개됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1727
+#: PiFinder/server.py:1768
 msgid "INDI OnStep settings applied"
 msgstr "INDI OnStep 설정을 적용했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1786
+#: PiFinder/server.py:1827
 msgid "INDI server restarted and driver connected"
 msgstr "INDI 서버를 재시작하고 드라이버를 연결했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1806
+#: PiFinder/server.py:1847
 #, fuzzy
 msgid "Mount controller reboot requested"
 msgstr "좌표 초기화를 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:1939
+#: PiFinder/server.py:1980
 msgid "Motion command sent"
 msgstr "이동 명령을 전송했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2000
+#: PiFinder/server.py:2041
 msgid "Location and UTC time sent via INDI"
 msgstr "INDI로 위치와 UTC 시간을 전송했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2017
+#: PiFinder/server.py:2058
 msgid "Invalid alignment mode"
 msgstr "잘못된 정렬 모드"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2021 PiFinder/server.py:2038
+#: PiFinder/server.py:2062 PiFinder/server.py:2079
 msgid "Select a valid alignment star"
 msgstr "유효한 정렬 별을 선택하세요"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2030
+#: PiFinder/server.py:2071
 msgid "Multi-point alignment started"
 msgstr "다지점 정렬을 시작했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2046
+#: PiFinder/server.py:2087
 msgid "Alignment star GoTo requested"
 msgstr "정렬 별 GoTo를 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2055
+#: PiFinder/server.py:2096
 msgid "Alignment point confirmed"
 msgstr "정렬점을 확정했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2062
+#: PiFinder/server.py:2103
 msgid "Multi-point alignment cancelled"
 msgstr "다지점 정렬을 취소했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2067
+#: PiFinder/server.py:2108
 msgid "Invalid alignment action"
 msgstr "잘못된 정렬 동작"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2096
+#: PiFinder/server.py:2137
 msgid "Backlash settings saved"
 msgstr "백래시 설정을 저장했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2108
+#: PiFinder/server.py:2149
 msgid "Invalid backlash auto mode"
 msgstr "잘못된 백래시 자동 모드"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2115
+#: PiFinder/server.py:2156
 msgid "Motion test repeats must be a number"
 msgstr "이동 테스트 반복 횟수는 숫자여야 합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2120
+#: PiFinder/server.py:2161
 #, python-format
 msgid "Motion test repeats must be between 1 and %(max)d"
 msgstr "이동 테스트 반복 횟수는 1에서 %(max)d 사이여야 합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2128
+#: PiFinder/server.py:2169
 msgid "Solved GoTo motion test started"
 msgstr "해석 좌표 GoTo 이동 테스트를 시작했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2142
+#: PiFinder/server.py:2183
 msgid "Solved GoTo loop continue requested"
 msgstr "해석 좌표 GoTo 루프 계속을 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2167 views/indi_mount.html:1442
+#: PiFinder/server.py:2208 views/indi_mount.html:1442
 msgid "Backlash motion test stop requested"
 msgstr "백래시 이동 테스트 정지를 요청했습니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2173
+#: PiFinder/server.py:2214
 msgid "Backlash stop requested; waiting for mount-control process stop"
 msgstr "백래시 정지를 요청했습니다. 마운트 제어 프로세스 종료를 기다리는 중"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2189 views/indi_mount.html:1380
+#: PiFinder/server.py:2230 views/indi_mount.html:1380
 msgid "Pointing reset requested"
 msgstr "좌표 초기화를 요청했습니다"
 
-#: PiFinder/server.py:2196 PiFinder/server.py:2292 views/base.html:70
+#: PiFinder/server.py:2237 PiFinder/server.py:2333 views/base.html:70
 #: views/base.html:84
 msgid "Logs"
 msgstr "로그"
 
-#: PiFinder/server.py:2292
+#: PiFinder/server.py:2333
 msgid "Error creating log archive"
 msgstr "로그 압축 오류"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/server.py:2320
+#: PiFinder/server.py:2361
 msgid "No log files to save"
 msgstr "저장할 로그 파일이 없습니다"
 
-#: PiFinder/server.py:2381 views/restart_pifinder.html:6
+#: PiFinder/server.py:2422 views/restart_pifinder.html:6
 msgid "Restarting PiFinder"
 msgstr "PiFinder 재시작 중"
 
-#: PiFinder/server.py:2443
+#: PiFinder/server.py:2484
 msgid "Restart PiFinder"
 msgstr "PiFinder 재시작"
 
@@ -587,13 +596,13 @@ msgstr "자동"
 msgid " Cancel"
 msgstr " Cancel"
 
-#: PiFinder/ui/base.py:751 PiFinder/ui/base.py:885 PiFinder/ui/indi.py:505
-#: PiFinder/ui/indi.py:539 PiFinder/ui/indi.py:913
+#: PiFinder/ui/base.py:751 PiFinder/ui/base.py:885 PiFinder/ui/indi.py:524
+#: PiFinder/ui/indi.py:558 PiFinder/ui/indi.py:932
 msgid "Speed +"
 msgstr "속도 +"
 
-#: PiFinder/ui/base.py:751 PiFinder/ui/base.py:888 PiFinder/ui/indi.py:508
-#: PiFinder/ui/indi.py:539 PiFinder/ui/indi.py:916
+#: PiFinder/ui/base.py:751 PiFinder/ui/base.py:888 PiFinder/ui/indi.py:527
+#: PiFinder/ui/indi.py:558 PiFinder/ui/indi.py:935
 msgid "Speed -"
 msgstr "속도 -"
 
@@ -610,8 +619,8 @@ msgstr "GoTo 끔"
 msgid "Mount GoTo"
 msgstr "마운트 GoTo"
 
-#: PiFinder/ui/base.py:871 PiFinder/ui/indi.py:579 PiFinder/ui/indi.py:1054
-#: PiFinder/ui/indi.py:1059 PiFinder/ui/object_details.py:411
+#: PiFinder/ui/base.py:871 PiFinder/ui/indi.py:598 PiFinder/ui/indi.py:1073
+#: PiFinder/ui/indi.py:1078 PiFinder/ui/object_details.py:411
 #: PiFinder/ui/polar_align.py:444
 msgid "No solve"
 msgstr "해 없음"
@@ -645,38 +654,38 @@ msgstr "블루투스"
 msgid "BT scanning"
 msgstr "BT 스캔 중"
 
-#: PiFinder/ui/bluetooth_keyboard.py:176
+#: PiFinder/ui/bluetooth_keyboard.py:177
 msgid "Connecting"
 msgstr "연결 중"
 
-#: PiFinder/ui/bluetooth_keyboard.py:195
+#: PiFinder/ui/bluetooth_keyboard.py:196
 msgid "Pair+Connect"
 msgstr "페어+연결"
 
-#: PiFinder/ui/bluetooth_keyboard.py:197
+#: PiFinder/ui/bluetooth_keyboard.py:198
 msgid "Pair Again"
 msgstr "다시 페어"
 
-#: PiFinder/ui/bluetooth_keyboard.py:198 PiFinder/ui/menu_structure.py:95
+#: PiFinder/ui/bluetooth_keyboard.py:199 PiFinder/ui/menu_structure.py:95
 msgid "Connect"
 msgstr "연결"
 
-#: PiFinder/ui/bluetooth_keyboard.py:200
+#: PiFinder/ui/bluetooth_keyboard.py:201
 msgid "Disconnect"
 msgstr "연결 해제"
 
-#: PiFinder/ui/bluetooth_keyboard.py:201
+#: PiFinder/ui/bluetooth_keyboard.py:202
 msgid "Remove"
 msgstr "제거"
 
-#: PiFinder/ui/bluetooth_keyboard.py:202 PiFinder/ui/menu_structure.py:361
+#: PiFinder/ui/bluetooth_keyboard.py:203 PiFinder/ui/menu_structure.py:361
 #: PiFinder/ui/menu_structure.py:1528 PiFinder/ui/menu_structure.py:1767
 #: PiFinder/ui/menu_structure.py:1780 PiFinder/ui/software.py:325
 #: PiFinder/ui/software.py:385 PiFinder/ui/software.py:479
 #: views/edit_eyepiece.html:54 views/edit_instrument.html:108
 #: views/equipment.html:58 views/location_form.html:106
-#: views/locations.html:187 views/locations.html:200 views/network.html:101
-#: views/network.html:205 views/network_item.html:19 views/tools.html:97
+#: views/locations.html:187 views/locations.html:200 views/network.html:118
+#: views/network.html:236 views/network_item.html:46 views/tools.html:97
 msgid "Cancel"
 msgstr "취소"
 
@@ -750,7 +759,7 @@ msgstr ""
 "마운트 제어\n"
 "꺼짐"
 
-#: PiFinder/ui/callbacks.py:308 PiFinder/ui/indi.py:56
+#: PiFinder/ui/callbacks.py:308 PiFinder/ui/indi.py:60
 msgid "Mount Control Off"
 msgstr "마운트 제어 꺼짐"
 
@@ -774,17 +783,16 @@ msgstr "초기화 실패"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/callbacks.py:416
-# AI-TRANSLATED (claude): needs human review
 msgid "WiFi recovering"
 msgstr "WiFi 복구 중"
 
-#: PiFinder/ui/callbacks.py:418
 # AI-TRANSLATED (claude): needs human review
+#: PiFinder/ui/callbacks.py:418
 msgid "WiFi OK"
 msgstr "WiFi 정상"
 
-#: PiFinder/ui/callbacks.py:420
 # AI-TRANSLATED (claude): needs human review
+#: PiFinder/ui/callbacks.py:420
 msgid "WiFi still down"
 msgstr "WiFi 여전히 다운"
 
@@ -1015,7 +1023,7 @@ msgid "{square} Details"
 msgstr "{square} 상세"
 
 #: PiFinder/ui/gps_time_sync_status.py:144
-#: PiFinder/ui/gps_time_sync_status.py:193 PiFinder/ui/indi.py:101
+#: PiFinder/ui/gps_time_sync_status.py:193 PiFinder/ui/indi.py:105
 #, python-brace-format
 msgid "State: {state}"
 msgstr "상태: {state}"
@@ -1175,7 +1183,7 @@ msgid "Precise"
 msgstr "정밀"
 
 #: PiFinder/ui/gpsstatus.py:45 PiFinder/ui/menu_structure.py:1600
-#: views/gps.html:77 views/network.html:203
+#: views/gps.html:77 views/network.html:234
 msgid "Save"
 msgstr "저장"
 
@@ -1230,7 +1238,7 @@ msgid "Lock Type:"
 msgstr "고정 방식:"
 
 #: PiFinder/ui/gpsstatus.py:230 PiFinder/ui/menu_structure.py:505
-#: PiFinder/ui/menu_structure.py:537 views/network.html:196
+#: PiFinder/ui/menu_structure.py:537 views/network.html:227
 msgid "None"
 msgstr "없음"
 
@@ -1300,293 +1308,293 @@ msgstr "출처:  {location_source}"
 msgid "Top C/N0: {cno}"
 msgstr "상위 C/N0: {cno}"
 
-#: PiFinder/ui/indi.py:66
+#: PiFinder/ui/indi.py:70
 msgid "No status"
 msgstr "상태 없음"
 
-#: PiFinder/ui/indi.py:110
+#: PiFinder/ui/indi.py:114
 #, python-brace-format
 msgid "Speed: {rate} {label}"
 msgstr "속도: {rate} {label}"
 
-#: PiFinder/ui/indi.py:116
+#: PiFinder/ui/indi.py:120
 #, python-brace-format
 msgid "RA {ra:.1f} Dec {dec:.1f}"
 msgstr "RA {ra:.1f} Dec {dec:.1f}"
 
-#: PiFinder/ui/indi.py:123
+#: PiFinder/ui/indi.py:127
 #, python-brace-format
 msgid "Loc: {lat:.4f},{lon:.4f}"
 msgstr "위치: {lat:.4f},{lon:.4f}"
 
-#: PiFinder/ui/indi.py:127
+#: PiFinder/ui/indi.py:131
 msgid "Loc: default/GPS none"
 msgstr "위치: 기본/GPS 없음"
 
-#: PiFinder/ui/indi.py:134
+#: PiFinder/ui/indi.py:138
 msgid "1 Init   2 Time"
 msgstr "1 연결   2 시간"
 
-#: PiFinder/ui/indi.py:135
+#: PiFinder/ui/indi.py:139
 msgid "3 Park   6 Unpark"
 msgstr "3 파크   6 해제"
 
-#: PiFinder/ui/indi.py:136
+#: PiFinder/ui/indi.py:140
 msgid "4 Home   5 Return"
 msgstr "4 홈설정 5 복귀"
 
-#: PiFinder/ui/indi.py:137
+#: PiFinder/ui/indi.py:141
 msgid "7 SetPark"
 msgstr "7 파크설정"
 
-#: PiFinder/ui/indi.py:138
+#: PiFinder/ui/indi.py:142
 #, fuzzy
 msgid "8 Restart 9 Reboot"
 msgstr "8 재시작"
 
-#: PiFinder/ui/indi.py:152
+#: PiFinder/ui/indi.py:156
 msgid "INDI Init"
 msgstr "INDI 연결"
 
-#: PiFinder/ui/indi.py:155
+#: PiFinder/ui/indi.py:159
 msgid "Time/Location"
 msgstr "시간/위치"
 
-#: PiFinder/ui/indi.py:158 PiFinder/ui/menu_structure.py:107
+#: PiFinder/ui/indi.py:162 PiFinder/ui/menu_structure.py:107
 #: views/indi_mount.html:249
 msgid "Park"
 msgstr "파크"
 
-#: PiFinder/ui/indi.py:161 PiFinder/ui/menu_structure.py:115
+#: PiFinder/ui/indi.py:165 PiFinder/ui/menu_structure.py:115
 msgid "Set Home"
 msgstr "홈 설정"
 
-#: PiFinder/ui/indi.py:164 PiFinder/ui/menu_structure.py:119
+#: PiFinder/ui/indi.py:168 PiFinder/ui/menu_structure.py:119
 #: views/indi_mount.html:248
 msgid "Return Home"
 msgstr "홈으로 복귀"
 
-#: PiFinder/ui/indi.py:167 PiFinder/ui/menu_structure.py:111
+#: PiFinder/ui/indi.py:171 PiFinder/ui/menu_structure.py:111
 #: views/indi_mount.html:250
 msgid "Unpark"
 msgstr "언파크"
 
-#: PiFinder/ui/indi.py:170 PiFinder/ui/menu_structure.py:123
+#: PiFinder/ui/indi.py:174 PiFinder/ui/menu_structure.py:123
 #: views/indi_mount.html:251
 msgid "Set-Park"
 msgstr "파크 위치 설정"
 
-#: PiFinder/ui/indi.py:173
+#: PiFinder/ui/indi.py:177
 msgid "INDI Restart"
 msgstr "INDI 재시작"
 
-#: PiFinder/ui/indi.py:176
+#: PiFinder/ui/indi.py:180
 #, fuzzy
 msgid "Mount Reboot"
 msgstr "마운트 GoTo"
 
-#: PiFinder/ui/indi.py:291 PiFinder/ui/indi.py:786 views/indi_mount.html:295
+#: PiFinder/ui/indi.py:295 PiFinder/ui/indi.py:805 views/indi_mount.html:295
 #: views/indi_mount.html:1164
 msgid "Idle"
 msgstr "대기"
 
-#: PiFinder/ui/indi.py:302
+#: PiFinder/ui/indi.py:306
 #, python-brace-format
 msgid "Axis: {axis}"
 msgstr "축: {axis}"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:308
+#: PiFinder/ui/indi.py:312
 msgid "+ RA  - DE"
 msgstr "+ RA  - DE"
 
-#: PiFinder/ui/indi.py:309
+#: PiFinder/ui/indi.py:313
 msgid "Digits input  0 clear"
 msgstr "숫자 입력  0 지움"
 
-#: PiFinder/ui/indi.py:310
+#: PiFinder/ui/indi.py:314
 msgid "Right Auto  Square Save"
 msgstr "오른쪽 자동  네모 저장"
 
-#: PiFinder/ui/indi.py:348
+#: PiFinder/ui/indi.py:352
 msgid "Auto Backlash"
 msgstr "백래시 자동"
 
-#: PiFinder/ui/indi.py:361
+#: PiFinder/ui/indi.py:365
 msgid "Backlash Saved"
 msgstr "백래시 저장됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:453
+#: PiFinder/ui/indi.py:471
 msgid "2/4/6/8 : Move"
 msgstr "2/4/6/8 : 이동"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:458
+#: PiFinder/ui/indi.py:476
 #, python-brace-format
 msgid "9/3 : Speed {label}"
 msgstr "9/3 : 속도 {label}"
 
-#: PiFinder/ui/indi.py:464
+#: PiFinder/ui/indi.py:482
 #, python-brace-format
 msgid "0 : Guide {state}"
 msgstr "0 : 가이드 {state}"
 
-#: PiFinder/ui/indi.py:502
+#: PiFinder/ui/indi.py:521
 msgid "Guide Correction"
 msgstr "가이드 보정"
 
-#: PiFinder/ui/indi.py:582
+#: PiFinder/ui/indi.py:601
 msgid "Aligned"
 msgstr "정렬됨"
 
-#: PiFinder/ui/indi.py:756
+#: PiFinder/ui/indi.py:775
 msgid "Align Complete"
 msgstr "정렬 완료"
 
-#: PiFinder/ui/indi.py:790 views/indi_mount.html:325
+#: PiFinder/ui/indi.py:809 views/indi_mount.html:325
 msgid "Align Points"
 msgstr "정렬점 수"
 
-#: PiFinder/ui/indi.py:791 PiFinder/ui/indi.py:807 PiFinder/ui/indi.py:823
+#: PiFinder/ui/indi.py:810 PiFinder/ui/indi.py:826 PiFinder/ui/indi.py:842
 #, python-brace-format
 msgid "Points: {points}"
 msgstr "점수: {points}"
 
-#: PiFinder/ui/indi.py:792
+#: PiFinder/ui/indi.py:811
 #, python-brace-format
 msgid "Progress: {done}/{total}"
 msgstr "진행: {done}/{total}"
 
-#: PiFinder/ui/indi.py:796
+#: PiFinder/ui/indi.py:815
 msgid "+/- or 1-9 select"
 msgstr "+/- 또는 1-9 선택"
 
-#: PiFinder/ui/indi.py:797
+#: PiFinder/ui/indi.py:816
 msgid "Right/Square next"
 msgstr "오른쪽/네모 다음"
 
-#: PiFinder/ui/indi.py:798
+#: PiFinder/ui/indi.py:817
 msgid "Left back"
 msgstr "왼쪽 뒤로"
 
-#: PiFinder/ui/indi.py:806
+#: PiFinder/ui/indi.py:825
 msgid "Preparing Align"
 msgstr "정렬 준비"
 
-#: PiFinder/ui/indi.py:811
+#: PiFinder/ui/indi.py:830
 msgid "Syncing PiFinder"
 msgstr "PiFinder 동기화"
 
-#: PiFinder/ui/indi.py:812
+#: PiFinder/ui/indi.py:831
 msgid "Wait for mount"
 msgstr "마운트 대기"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:813 PiFinder/ui/indi.py:854
+#: PiFinder/ui/indi.py:832 PiFinder/ui/indi.py:873
 msgid "Left mode/cancel"
 msgstr "왼쪽 모드/취소"
 
-#: PiFinder/ui/indi.py:821 views/indi_mount.html:321
+#: PiFinder/ui/indi.py:840 views/indi_mount.html:321
 msgid "Align Mode"
 msgstr "정렬 모드"
 
-#: PiFinder/ui/indi.py:822
+#: PiFinder/ui/indi.py:841
 #, python-brace-format
 msgid "Mode: {mode}"
 msgstr "모드: {mode}"
 
-#: PiFinder/ui/indi.py:827
+#: PiFinder/ui/indi.py:846
 msgid "1 Manual  2 Auto"
 msgstr "1 수동  2 자동"
 
-#: PiFinder/ui/indi.py:828
+#: PiFinder/ui/indi.py:847
 msgid "Up/Down change"
 msgstr "위/아래 변경"
 
-#: PiFinder/ui/indi.py:829
+#: PiFinder/ui/indi.py:848
 msgid "Right/Square start"
 msgstr "오른쪽/네모 시작"
 
-#: PiFinder/ui/indi.py:830
+#: PiFinder/ui/indi.py:849
 msgid "Left points"
 msgstr "왼쪽 점수"
 
-#: PiFinder/ui/indi.py:838
+#: PiFinder/ui/indi.py:857
 #, python-brace-format
 msgid "Alt: {alt:.0f} deg"
 msgstr "고도: {alt:.0f}도"
 
-#: PiFinder/ui/indi.py:840
+#: PiFinder/ui/indi.py:859
 msgid "Alt: unknown"
 msgstr "고도: 알 수 없음"
 
-#: PiFinder/ui/indi.py:844
+#: PiFinder/ui/indi.py:863
 msgid "Manual Star"
 msgstr "수동 별"
 
-#: PiFinder/ui/indi.py:845
+#: PiFinder/ui/indi.py:864
 #, python-brace-format
 msgid "Star: {star}"
 msgstr "별: {star}"
 
-#: PiFinder/ui/indi.py:847 PiFinder/ui/indi.py:880
+#: PiFinder/ui/indi.py:866 PiFinder/ui/indi.py:899
 #, python-brace-format
 msgid "Point {done}/{total}"
 msgstr "점 {done}/{total}"
 
-#: PiFinder/ui/indi.py:851
+#: PiFinder/ui/indi.py:870
 msgid "Up/Down star"
 msgstr "위/아래 별 선택"
 
-#: PiFinder/ui/indi.py:852
+#: PiFinder/ui/indi.py:871
 msgid "Right/Square GoTo"
 msgstr "오른쪽/네모 GoTo"
 
-#: PiFinder/ui/indi.py:853
+#: PiFinder/ui/indi.py:872
 msgid "SkySafari GoTo/Align OK"
 msgstr "SkySafari GoTo/정렬 OK"
 
-#: PiFinder/ui/indi.py:863
+#: PiFinder/ui/indi.py:882
 msgid "Align Star"
 msgstr "정렬 별"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:885
+#: PiFinder/ui/indi.py:904
 msgid "8/2/4/6 move  9/3 speed"
 msgstr "8/2/4/6 이동  9/3 속도"
 
 # AI-TRANSLATED (claude): needs human review
-#: PiFinder/ui/indi.py:889
+#: PiFinder/ui/indi.py:908
 msgid "Release stop  Left back"
 msgstr "떼면 정지  왼쪽 뒤로"
 
-#: PiFinder/ui/indi.py:893
+#: PiFinder/ui/indi.py:912
 msgid "Square : Confirm"
 msgstr "네모 : 확정"
 
-#: PiFinder/ui/indi.py:1002 PiFinder/ui/indi.py:1008 PiFinder/ui/indi.py:1014
-#: PiFinder/ui/indi.py:1094
+#: PiFinder/ui/indi.py:1021 PiFinder/ui/indi.py:1027 PiFinder/ui/indi.py:1033
+#: PiFinder/ui/indi.py:1113
 msgid "Align Cancelled"
 msgstr "정렬 취소됨"
 
-#: PiFinder/ui/indi.py:1050
+#: PiFinder/ui/indi.py:1069
 msgid "Manual Align"
 msgstr "수동 정렬"
 
-#: PiFinder/ui/indi.py:1073
+#: PiFinder/ui/indi.py:1092
 msgid "Auto Align"
 msgstr "자동 정렬"
 
-#: PiFinder/ui/indi.py:1079
+#: PiFinder/ui/indi.py:1098
 msgid "Below horizon"
 msgstr "지평선 아래"
 
-#: PiFinder/ui/indi.py:1089
+#: PiFinder/ui/indi.py:1108
 msgid "GoTo Sent"
 msgstr "GoTo 전송됨"
 
-#: PiFinder/ui/indi.py:1117
+#: PiFinder/ui/indi.py:1136
 msgid "Point Confirmed"
 msgstr "정렬점 확정"
 
@@ -1645,8 +1653,8 @@ msgid "Rename"
 msgstr "이름변경"
 
 #: PiFinder/ui/location_list.py:30 views/locations.html:95
-#: views/locations.html:201 views/network_item.html:14
-#: views/network_item.html:18
+#: views/locations.html:201 views/network_item.html:41
+#: views/network_item.html:45
 msgid "Delete"
 msgstr "삭제"
 
@@ -2215,7 +2223,7 @@ msgstr "노출"
 
 #: PiFinder/ui/menu_structure.py:982 PiFinder/ui/menu_structure.py:1388
 #: views/indi_mount.html:319 views/indi_mount.html:442 views/livecam.html:574
-#: views/livecam.html:674 views/network.html:32
+#: views/livecam.html:674 views/network.html:48
 msgid "Auto"
 msgstr "자동"
 
@@ -2526,7 +2534,6 @@ msgstr "RTC 동기화"
 
 # AI-TRANSLATED (claude): needs human review
 #: PiFinder/ui/menu_structure.py:1519
-# AI-TRANSLATED (claude): needs human review
 msgid "WiFi Recover"
 msgstr "WiFi 복구"
 
@@ -2555,7 +2562,7 @@ msgid "Clear"
 msgstr "지우기"
 
 #: PiFinder/ui/menu_structure.py:1622 views/livecam.html:332
-#: views/network.html:116
+#: views/network.html:133
 msgid "Status"
 msgstr "상태"
 
@@ -3537,7 +3544,7 @@ msgid "Make"
 msgstr "Make"
 
 #: views/edit_eyepiece.html:24 views/equipment.html:69 views/equipment.html:117
-#: views/locations.html:62 views/network.html:191
+#: views/locations.html:62 views/network.html:222
 msgid "Name"
 msgstr "Name"
 
@@ -3888,7 +3895,7 @@ msgid "INDI Server Port"
 msgstr "INDI 서버 포트"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/indi_mount.html:99 views/indi_mount.html:127 views/network.html:182
+#: views/indi_mount.html:99 views/indi_mount.html:127 views/network.html:213
 msgid "Manual entry"
 msgstr "수동 입력"
 
@@ -5028,7 +5035,7 @@ msgstr "Please fix the validation errors before saving"
 msgid "Login Required"
 msgstr "Login Required"
 
-#: views/login.html:23 views/network.html:197
+#: views/login.html:23 views/network.html:228
 msgid "Password"
 msgstr "Password"
 
@@ -5126,205 +5133,248 @@ msgstr "Upload failed:"
 msgid "Network Settings"
 msgstr "Network Settings"
 
-#: views/network.html:22
+#: views/network.html:27
+msgid "Last Wi-Fi switch"
+msgstr ""
+
+#: views/network.html:38
 msgid "Access Point"
 msgstr "Access Point"
 
-#: views/network.html:23
+#: views/network.html:39
 msgid "Client"
 msgstr "Client"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:24
+#: views/network.html:40
 msgid "AP+STA"
 msgstr "AP+STA"
 
-#: views/network.html:26
+#: views/network.html:42
 msgid "Wifi Mode"
 msgstr "Wifi Mode"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:33
+#: views/network.html:49
 msgid "Prefer 2.4 GHz"
 msgstr "2.4 GHz 우선"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:34
+#: views/network.html:50
 msgid "Prefer 5 GHz"
 msgstr "5 GHz 우선"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:36
+#: views/network.html:52
 msgid "STA Band Preference"
 msgstr "STA 대역 우선순위"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:37
+#: views/network.html:53
 msgid "Use 2.4 GHz when AP+STA clients require a 2.4 GHz AP channel"
 msgstr "AP+STA 클라이언트가 2.4 GHz AP 채널을 요구할 때 2.4 GHz 사용"
 
-#: views/network.html:43
+#: views/network.html:59
 msgid "AP Network Name"
 msgstr "AP Network Name"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:49
+#: views/network.html:65
 msgid "AP IP Address"
 msgstr "AP IP 주소"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:50
+#: views/network.html:66
 msgid "Clients will reconnect using this address after restart"
 msgstr "재시작 후 클라이언트가 이 주소로 다시 연결됩니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:56
+#: views/network.html:72
 msgid "Open"
 msgstr "개방"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:57
+#: views/network.html:73
 msgid "WPA2 Password"
 msgstr "WPA2 비밀번호"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:59
+#: views/network.html:75
 msgid "AP Security"
 msgstr "AP 보안"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:62
+#: views/network.html:78
 msgid "Unchanged"
 msgstr "변경 없음"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:63
+#: views/network.html:79
 msgid "AP Password"
 msgstr "AP 비밀번호"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:64 views/network.html:272
+#: views/network.html:80 views/network.html:304
 msgid "Show current AP password"
 msgstr "현재 AP 비밀번호 표시"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:67
+#: views/network.html:83
 msgid "8-63 characters; leave blank to keep current password"
 msgstr "8~63자. 비워 두면 현재 비밀번호를 유지합니다"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:75
+#: views/network.html:91
 msgid "Share STA internet in AP+STA mode"
 msgstr "AP+STA 모드에서 STA 인터넷 공유"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:78
+#: views/network.html:94
 msgid "Off by default. Internet sharing may add system load and can be slow."
 msgstr "기본값은 꺼짐. 인터넷 공유는 시스템 부하를 늘리고 느려질 수 있습니다."
 
-#: views/network.html:85
+#: views/network.html:101
 msgid "Host Name"
 msgstr "Host Name"
 
-#: views/network.html:91
-msgid "Update and Restart"
-msgstr "Update and Restart"
+#: views/network.html:107
+#, fuzzy
+msgid "Save Settings"
+msgstr "GPS 설정"
 
-#: views/network.html:96
-msgid "Save and Restart"
+#: views/network.html:108
+#, fuzzy
+msgid "Apply & Restart"
 msgstr "Save and Restart"
 
-#: views/network.html:97
+#: views/network.html:113
+#, fuzzy
+msgid "Apply and Restart"
+msgstr "Save and Restart"
+
+#: views/network.html:114
+#, fuzzy
 msgid ""
-"This will update the network settings and restart the PiFinder. You may "
-"have to adjust your network settings to re-connect. Are you sure?"
+"This will save the network settings, apply them and restart the PiFinder."
+" You may have to adjust your network settings to re-connect. Are you "
+"sure?"
 msgstr ""
 "This will update the network settings and restart the PiFinder. You may "
 "have to adjust your network settings to re-connect. Are you sure?"
 
-#: views/network.html:100 views/tools.html:96
+#: views/network.html:117 views/tools.html:96
 msgid "Do It"
 msgstr "Do It"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:106
+#: views/network.html:123
 msgid "AP Connected Devices"
 msgstr "AP 연결 장치"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:117
+#: views/network.html:134
 msgid "Host"
 msgstr "호스트"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:118
+#: views/network.html:135
 msgid "IP"
 msgstr "IP"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:119
+#: views/network.html:136
 msgid "MAC"
 msgstr "MAC"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:120
+#: views/network.html:137
 msgid "Link"
 msgstr "링크"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:128
+#: views/network.html:145 views/network_item.html:18
 msgid "Connected"
 msgstr "연결됨"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:130
+#: views/network.html:147
 msgid "Lease only"
 msgstr "리스만"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:148
+#: views/network.html:165
 msgid "No AP clients are currently visible."
 msgstr "현재 보이는 AP 클라이언트가 없습니다."
 
-#: views/network.html:154
+#: views/network.html:171
 msgid "Wifi Networks"
 msgstr "Wifi Networks"
 
+#: views/network.html:183
+msgid ""
+"Saved network changes are not applied yet. Applying may briefly drop the "
+"Wifi connection."
+msgstr ""
+
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:178
+#: views/network.html:187
+#, fuzzy
+msgid "Apply Now"
+msgstr "적용"
+
+# AI-TRANSLATED (claude): needs human review
+#: views/network.html:209
 msgid "Select scanned SSID"
 msgstr "검색된 SSID 선택"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:184
+#: views/network.html:215
 msgid "Nearby Wi-Fi"
 msgstr "주변 Wi-Fi"
 
-#: views/network.html:198
+#: views/network.html:229
 msgid "Too Short"
 msgstr "Too Short"
 
-#: views/network.html:198
+#: views/network.html:229
 msgid "Min 8 Characters or leave None"
 msgstr "Min 8 Characters or leave None"
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:275
+#: views/network.html:307
 msgid "No current AP password is set."
 msgstr "현재 AP 비밀번호가 설정되어 있지 않습니다."
 
 # AI-TRANSLATED (claude): needs human review
-#: views/network.html:278
+#: views/network.html:310
 msgid "Hide current AP password"
 msgstr "현재 AP 비밀번호 숨기기"
 
 #: views/network_item.html:4
+msgid "Higher priority"
+msgstr ""
+
+#: views/network_item.html:9
+msgid "Lower priority"
+msgstr ""
+
+#: views/network_item.html:22
 msgid "Security"
 msgstr "Security"
 
-#: views/network_item.html:15
-msgid "This will take effect immediately and can not be undone. Are you sure?"
-msgstr "This will take effect immediately and can not be undone. Are you sure?"
+#: views/network_item.html:26
+msgid "Currently connected"
+msgstr "현재 접속 중"
+
+#: views/network_item.html:29
+msgid "Connect to this network now"
+msgstr ""
+
+#: views/network_item.html:42
+msgid ""
+"This removes the saved network. It takes effect when you apply the "
+"pending changes."
+msgstr ""
 
 #: views/obs_session_log.html:4
 msgid "Observing Session"
@@ -5868,4 +5918,10 @@ msgstr ""
 
 #~ msgid "Zoom x{zoom_number}"
 #~ msgstr "Zoom x{zoom_number}"
+
+#~ msgid "Update and Restart"
+#~ msgstr "Update and Restart"
+
+#~ msgid "This will take effect immediately and can not be undone. Are you sure?"
+#~ msgstr "This will take effect immediately and can not be undone. Are you sure?"
 
