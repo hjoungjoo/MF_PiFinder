@@ -1795,6 +1795,23 @@ BT 고밀도 국면(페어링·부팅 직후 재연결 폭풍)이 brcmfmac 펌�
   금지, 마운트(AP 2.4GHz 클라이언트)는 ESP32 계열이라 5GHz 이전 불가 —
   AP+STA 동일 채널 제약으로 STA도 2.4GHz 고정.
 
+## Pi 5 raw 스케일 정규화 — PiSP의 MSB 정렬 16비트 대응 (2026-08-08)
+
+Pi 5/CM5(PiSP 프런트엔드)는 raw를 **16비트 MSB 정렬 샘플로만** 반환한다:
+SRGGB12를 요청해도 SRGGB16(값 ×16)이 온다. Pi 4(Unicam)는 프로파일
+비트수 그대로를 반환하므로, 12비트(최대 4095)를 가정하는 모든 하위 경로
+(bias 238 차감, 8비트 스트레치, LiveCam `_linear_scale`, 웹 raw API,
+포화 검사, SQM)가 Pi 5에서 ×16 값을 받아 전부 클리핑됐다 — 증상: 게인을
+1로 낮춰도 Align(day)·LiveCam·`/api/camera/raw`가 순백(Focus의 주간
+raw 렌더만 데이터 최대값 자동 스케일이라 정상으로 보임).
+
+수정: `camera_pi.raw_downshift()`가 전달 포맷의 비트수와 프로파일
+비트수의 차만큼 캡처 경계(3개 `make_array("raw")` 지점 공통 헬퍼
+`_raw_array`)에서 우시프트해 전 소비자가 프로파일 단위를 유지한다.
+실기(Pi 5 + 컬러 imx462) 검증: shift=4 감지, raw 평균 651(rpicam 직접
+측정 658과 일치), `capture()` 프리뷰가 순백에서 정상 이미지로 복귀.
+유닛 테스트 `test_camera_pi_raw.py` 추가.
+
 ## 카메라 mono/color 변형 선택 (2026-08-08)
 
 설계 문서 [mf_camera_mono_color_plan_ko.md](mf_camera_mono_color_plan_ko.md)

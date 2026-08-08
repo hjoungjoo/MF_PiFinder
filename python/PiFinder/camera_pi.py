@@ -16,6 +16,7 @@ from PiFinder.sqm import apply_variant, detect_camera_type, get_camera_profile
 from PiFinder.sqm.radiometer import collect_radiometer_sample
 from typing import Tuple
 import logging
+import re
 import time
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.livecam_config import (
@@ -31,6 +32,20 @@ from PiFinder.livecam_config import (
 import numpy as np
 
 logger = logging.getLogger("Camera.Pi")
+
+
+def raw_downshift(delivered_format: str, profile_bit_depth: int) -> int:
+    """Bits to right-shift delivered raw samples into profile-depth units.
+
+    Pi 5 / CM5 (PiSP frontend) delivers raw only as 16-bit samples with the
+    sensor's bits MSB-aligned: a SRGGB12 request comes back as SRGGB16 with
+    values x16. Pi 4's Unicam returns true profile-depth values (shift 0).
+    An unparseable format is treated as profile-depth -- passing values
+    through unscaled is the conservative choice.
+    """
+    match = re.search(r"\d+", str(delivered_format))
+    delivered_depth = int(match.group()) if match else profile_bit_depth
+    return max(0, delivered_depth - profile_bit_depth)
 
 
 class CameraPI(CameraInterface):
@@ -72,8 +87,28 @@ class CameraPI(CameraInterface):
             raw={"size": self.profile.raw_size, "format": self.profile.format},
         )
         self.camera.configure(cam_config)
+
+        # Downshift PiSP's MSB-aligned 16-bit raw (see raw_downshift) in
+        # _raw_array() so every consumer keeps working in the profile's
+        # bit-depth units (bias offsets, the 8-bit stretch, saturation
+        # checks, SQM calibration).
+        delivered_format = str(self.camera.camera_configuration()["raw"]["format"])
+        self._raw_shift = raw_downshift(delivered_format, self.profile.bit_depth)
+        if self._raw_shift:
+            logger.info(
+                f"Raw delivered as {delivered_format}; downshifting by "
+                f"{self._raw_shift} bits to {self.profile.bit_depth}-bit units"
+            )
+
         self._default_controls()
         self.start_camera()
+
+    def _raw_array(self, request) -> np.ndarray:
+        """A request's raw frame in the profile's bit-depth units (uint16)."""
+        raw = request.make_array("raw").copy().view(np.uint16)
+        if self._raw_shift:
+            raw >>= self._raw_shift
+        return raw
 
     def _default_controls(self) -> None:
         self.camera.set_controls({"AeEnable": False})
@@ -95,8 +130,7 @@ class CameraPI(CameraInterface):
         amount of the 255 level space.
         """
         _request = self.camera.capture_request()
-        # raw is actually 16 bit
-        raw_capture = _request.make_array("raw").copy().view(np.uint16)
+        raw_capture = self._raw_array(_request)
         # tmp_image = _request.make_image("main")
 
         # Log actual camera metadata for exposure verification (debug level only)
@@ -295,7 +329,7 @@ class CameraPI(CameraInterface):
         self.camera.set_controls({"ExposureTime": 0})
         self.camera.start()
         _request = self.camera.capture_request()
-        raw_capture = _request.make_array("raw").copy().view(np.uint16)
+        raw_capture = self._raw_array(_request)
         _request.release()
 
         self.camera.stop()
@@ -333,8 +367,7 @@ class CameraPI(CameraInterface):
         Live photometry is unaffected: it reads ``cam_raw()``, still the crop.
         """
         _request = self.camera.capture_request()
-        # raw is actually 16 bit
-        raw_capture = _request.make_array("raw").copy().view(np.uint16)
+        raw_capture = self._raw_array(_request)
 
         # Log actual camera metadata for exposure verification (debug level only)
         metadata = _request.get_metadata()

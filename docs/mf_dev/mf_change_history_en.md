@@ -1986,6 +1986,25 @@ machine, which no service restart can fix (kernel/firmware layer).
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
 
+## Pi 5 raw scale normalization — PiSP's MSB-aligned 16-bit delivery (2026-08-08)
+
+Pi 5 / CM5 (PiSP frontend) delivers raw **only as 16-bit MSB-aligned
+samples**: request SRGGB12 and you get SRGGB16 with values x16. Pi 4's
+Unicam returns true profile-depth values, so every downstream path that
+assumes 12-bit units (bias 238 subtraction, the 8-bit stretch, LiveCam
+`_linear_scale`, the web raw API, saturation checks, SQM) clipped to
+white on Pi 5 — symptom: Align (day), LiveCam and `/api/camera/raw` were
+pure white even at gain 1, while Focus's daytime raw render (auto-scaled
+to the data max) looked fine.
+
+Fix: `camera_pi.raw_downshift()` right-shifts by the delivered-vs-profile
+bit-depth difference at the capture boundary (shared `_raw_array` helper
+behind all three `make_array("raw")` sites), so every consumer keeps
+profile units. Verified on the Pi 5 + colour imx462: shift=4 detected,
+raw mean 651 (matches 658 measured directly with rpicam), and
+`capture()` previews returned from pure white to a real image. Unit
+tests added in `test_camera_pi_raw.py`.
+
 ## Camera mono/colour variant selection (2026-08-08)
 
 Implemented P1–P4 of the design doc
