@@ -119,25 +119,46 @@ authoritative):
   - **Caveat: `pf_remote launch -fb` fails on this fork** — `main.py` has no
     `-fb/--fakebattery` (battery not ported). The default path
     (`--display headless_176`) works: `DisplayHeadless176` exists here.
-- **Deferred on conflict — awaiting user decision** (not merged on
-  judgement): `016e0282` (#576, `menu_map.rst`: MF's `IMU Settings` tree and
-  Camera Type Mono/Color vs upstream's GPS Baud rewording), `84a2fbaf`
-  (#583, `troubleshooting.rst`: upstream's new "Align (Day)" prose rewrites
-  the Camera Type bullet carrying MF's Mono/Color sentence), `43200f86`
-  (#584 — **pure cascade**; verified clean in a worktree once `84a2fbaf` is
-  resolved).
+- Three conflicts — **resolved by user decision and applied 2026-08-09**:
+  - **Docs policy (user):** keep the rev4 manual **as upstream wrote it**.
+    Sections now describe features this fork lacks (battery indicator,
+    charging, low-battery warnings and shutdown, sounds) and deliberately
+    carry no "unsupported here" note, to keep the upstream diff minimal;
+    porting the rev4 software will make them true. **Do not revert these on
+    accuracy grounds in a future sync — the state is intentional.**
+  - `016e0282` (#576, `menu_map.rst`): kept MF's `IMU Settings` tree, took
+    upstream's GPS Baud Rate wording, and **excluded the Volume entry** —
+    menu_map diagrams the real menu, and this fork has neither `sound.py`
+    nor a Volume item. The `Sounds` section in `user_guide.rst` was taken
+    verbatim per the docs policy, so menu_map is fork-accurate while the
+    prose is upstream-accurate. That asymmetry is intended.
+  - `84a2fbaf` (#583, `troubleshooting.rst`): took upstream's new
+    "Align (Day)" diagnostic prose and restored MF's Mono/Color sentence
+    into the rewritten Camera Type bullet, converting its em-dash to a
+    sentence split to match the STE style just adopted in `7eaf058c`.
+  - `43200f86` (#584): confirmed a pure cascade; applied clean once
+    `84a2fbaf` was resolved.
 - Excluded this round: `27ca9624` (#573 — both `battery_bq25895.py` and
   `docs/adr/0020-*.md` are absent here; needs the `#498`/`#541`/`#549`
   battery port decision first), `0edff3bb` (#539 rev4 rename — touches many
   MF-modified runtime files and changes PiFinder Type identifiers; must not
   ride along with a docs round).
-- Verification: zero `python/` changes; Sphinx unavailable locally so
-  structural checks were run instead (243 section labels, zero dangling
-  `:ref:`, zero undefined substitutions, 261 image directives all resolve);
-  confirmed no dangling ref to the `user_guide:sounds` section that deferred
-  `016e0282` would create; both changed skill scripts compile; 12 tests pass
-  (`test_menu_struct`, `test_hardware_detect_display`, `test_obj_types_docs`).
-  Committed but not pushed; rollback point `5b49bc82`.
+- Outcome: 11 of the 12 new commits applied; only `27ca9624` excluded.
+- Verification (re-run after conflict resolution): zero `python/` changes;
+  Sphinx unavailable locally so structural checks were run instead (244
+  section labels, zero dangling `:ref:`, substitutions `min_software` and
+  `v3_docs` both defined with zero undefined uses, 264 image directives all
+  resolve, zero leftover conflict markers); both changed skill scripts
+  compile; 12 tests pass (`test_menu_struct`,
+  `test_hardware_detect_display`, `test_obj_types_docs`). Committed but not
+  pushed; rollback point `5b49bc82`.
+- Deferred to a future round (the rev4 body port): `#498` (hardware
+  enablement), `#541`/`#549` (battery UX), `#551` (keypad matrix),
+  `#552`/`#556` (bring-up), `0edff3bb` (#539 rename). Under the new policy
+  these are an **undecided backlog**, not a standing exclusion. The manual
+  already describes rev4, so porting closes the gap. Handle `0edff3bb`
+  first to avoid repeating ordering conflicts like the
+  `product-knowledge-base.md` one.
 
 This is not a full change history.  For feature-by-feature history, see
 `docs/mf_dev/mf_change_history_en.md`.

@@ -221,20 +221,26 @@
     `.claude/skills/`는 포크가 merge-base 이후 무수정이라 드리프트 없음
   - `aac4a7fb` rev4 하드웨어 설계 자산(KiCad/거버/STL/f3z, 약 19MB).
     런타임 영향 0
-- **충돌로 보류 — 사용자 결정 대기** (임의 병합하지 않음):
-  - `016e0282` (#576) rev4 사운드/Volume — `docs/source/menu_map.rst` 충돌.
-    MF가 `IMU Sensit.`를 `IMU Settings` 트리(Sensitivity/Compass/Calibration)로
-    확장하고 Camera Type에 Mono/Color를 추가한 자리와, upstream의 GPS Baud
-    Rate 문구 재작성이 같은 블록에서 겹친다. 병합 방향은 명확하다 — MF의 IMU
-    트리를 유지하고 upstream의 GPS Baud 문구만 취하면 된다. Volume 항목 추가
-    hunk 자체는 별도 위치라 무충돌
-  - `84a2fbaf` (#583) rev4 사진 배치 — `docs/source/troubleshooting.rst` 충돌.
-    upstream이 "Align (Day)로 카메라 생존 확인" 절을 새로 넣으면서 Camera Type
-    불릿을 재작성하는데, 그 불릿에 MF가 넣은 Mono/Color 안내 문장이 있다.
-    병합 방향: upstream 신규 산문 + MF의 Mono/Color 문장 복원
+- 충돌 3건 — **사용자 결정 후 수동 병합으로 적용 완료 (2026-08-09)**:
+  - **문서 방침 결정 (사용자)**: rev4 문서는 **upstream 그대로 유지**한다.
+    포크에 없는 기능(배터리 잔량 표시·충전·저전력 경고·자동 종료, 사운드)을
+    설명하는 절이 생기지만, "미지원" note를 달지 않고 upstream diff를 최소로
+    유지하는 쪽을 택했다. rev4 소프트웨어를 이식하면 문서가 자동으로 맞는다.
+    **따라서 다음 동기화에서 "문서가 없는 기능을 설명한다"는 이유로 되돌리지
+    말 것** — 의도된 상태다
+  - `016e0282` (#576) rev4 사운드/Volume — `menu_map.rst` 충돌.
+    **결정: MF의 IMU Settings 트리 유지 + upstream GPS Baud Rate 문구 채택 +
+    Volume 항목은 제외.** menu_map은 실제 메뉴 구조를 그리는 문서라 포크
+    메뉴와 일치시켰다(포크엔 `sound.py`도 Volume 메뉴 항목도 없음).
+    `user_guide.rst`의 `Sounds` 절은 문서 방침 결정에 따라 upstream 그대로
+    수용했다 — menu_map만 실물 기준, 산문은 upstream 기준이라는 비대칭이
+    의도된 것임에 주의
+  - `84a2fbaf` (#583) rev4 사진 배치 — `troubleshooting.rst` 충돌.
+    **결정: upstream의 신규 "Align (Day)" 진단 산문을 받고, 그 Camera Type
+    불릿에 MF의 Mono/Color 안내 문장을 복원.** 복원 시 em-dash를 문장 분리로
+    바꿔 방금 도입한 STE 하우스 스타일(`7eaf058c`)에 맞췄다 — 의미는 동일
   - `43200f86` (#584) v3 매뉴얼 아카이브 링크(`conf.py`의 `|v3_docs|` 치환자)
-    — **순수 cascade 충돌**. 워크트리에서 `84a2fbaf`를 해소한 뒤 재시도하면
-    clean하게 붙는 것을 확인했다. `84a2fbaf` 결정이 나면 자동 해소된다
+    — 예상대로 **순수 cascade**였다. `84a2fbaf` 해소 후 clean 적용됨
 - 이번 라운드 제외:
   - `27ca9624` (#573) ADR 0020 배터리 프로파일링 + SOC_LUT 주석 —
     `battery_bq25895.py`와 `docs/adr/0020-soc-as-runtime-fraction.md` **둘 다
@@ -246,18 +252,25 @@
     `ui/menu_structure.py`, `camera_interface.py` 등 **MF가 수정한 런타임
     파일 다수**를 건드리고 PiFinder Type 식별자를 바꾼다. "현재 동작 무손상"
     조건상 문서 라운드와 섞으면 안 된다. rev4 본체 이식을 결정할 때 함께 다룬다
-- 검증 (2026-08-09):
+- 결과: 신규 12건 중 **11건 적용, 1건 제외**(`27ca9624` — 적용 대상 파일 부재)
+- 검증 (2026-08-09, 충돌 해소 후 재실행):
   - `python/` 이하 변경 0건 — 런타임 회귀 가능성 구조적으로 없음
   - Sphinx가 미설치라 실제 빌드는 못 했고, 대신 구조 검증을 돌렸다:
-    `:ref:` 타깃 전수 확인(243개 라벨, dangling 0건), `|치환자|` 미정의 0건,
-    `.. image::` 261건 전수 확인(누락 0건 — `includes/` 상대경로 2건은 포함
-    문서 기준으로 해석되는 정상 케이스)
-  - 보류한 `016e0282`가 만드는 `user_guide:sounds` 절을 참조하는 dangling
-    ref가 없음을 확인 — 부분 적용 상태로도 문서가 일관됨
+    `:ref:` 타깃 전수 확인(244개 라벨, dangling 0건), `|치환자|` 정의
+    `min_software`/`v3_docs` 2건에 미정의 사용 0건, `.. image::` 264건 전수
+    확인(누락 0건 — `includes/` 상대경로는 포함 문서 기준으로 해석되는 정상
+    케이스), 잔존 충돌 마커 0건
   - `pf_remote.py`/`screenshot_to_doc.py` py_compile 통과
   - `test_menu_struct.py`, `test_hardware_detect_display.py`,
     `test_obj_types_docs.py` 12건 통과
   - 커밋만 했고 push하지 않았다. 롤백 기준점: `5b49bc82`
+- 다음 라운드로 넘긴 결정 (rev4 본체 이식):
+  - `#498`(rev4 hardware enablement) / `#541`·`#549`(배터리 UX) /
+    `#551`(keypad matrix) / `#552`·`#556`(bringup) / `0edff3bb`(#539 rename)
+    — rev4 허용 정책으로 바뀌었으니 이제 "정책상 제외"가 아니라 **미결정
+    백로그**다. 문서는 이미 rev4를 설명하고 있으므로, 이식하면 문서와
+    소프트웨어가 비로소 일치한다. 착수 시 `0edff3bb`를 먼저 처리해야
+    `product-knowledge-base.md` 류의 순서 충돌이 재발하지 않는다
 
 ADR 번호 규칙 (2026-07-29 확정):
 
