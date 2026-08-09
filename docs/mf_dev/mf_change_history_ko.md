@@ -1795,6 +1795,43 @@ BT 고밀도 국면(페어링·부팅 직후 재연결 폭풍)이 brcmfmac 펌�
   금지, 마운트(AP 2.4GHz 클라이언트)는 ESP32 계열이라 5GHz 이전 불가 —
   AP+STA 동일 채널 제약으로 STA도 2.4GHz 고정.
 
+## 문서 빌드를 개발 환경에 편입 — `nox -s docs` (2026-08-10)
+
+`docs/source/*.rst`를 고쳐도 로컬에서 검증할 방법이 없었다. Sphinx가 개발
+환경에 포함돼 있지 않아 Read the Docs가 푸시 후 빌드할 때까지 깨진 참조를
+알 수 없었고, 실제로 직전 동기화 라운드에서는 임시 파이썬 스크립트로
+`:ref:`/치환자/이미지를 전수 검사해 대신했다. 그 방식은 문법 오류나 목차
+구조 문제는 못 잡는다.
+
+**MF 로컬 변경 (upstream에 없음 — 동기화 시 보존할 것):**
+
+- `python/requirements_dev.txt`: 끝에 `-r ../docs/source/requirements.txt`
+  한 줄 추가. 버전을 여기서 다시 고정하지 않고 **참조**만 한 이유는 Read
+  the Docs가 설치하는 파일과 단일 출처를 유지하기 위해서다(로컬 빌드 결과가
+  발행본과 어긋나지 않는다). 이 한 줄로 기존 개발 환경 구축 절차
+  (`pip install -r requirements.txt -r requirements_dev.txt`)가 그대로
+  Sphinx까지 설치한다 — CLAUDE.md와 Bookworm 설치 문서 양쪽이 이미 이
+  명령을 안내하므로 별도 단계가 늘지 않는다.
+- `python/noxfile.py`: `docs` 세션 추가.
+  `python -m sphinx -n -W --keep-going -q -E ../docs/source ../docs/build/html`.
+  `-n`은 누락된 참조를 보고하고 `-W`는 경고를 실패로 만든다 — "렌더는
+  됐다"를 "맞다"로 오해하지 않기 위해서다. `--keep-going`으로 한 번에 전부
+  보고한다. `nox.options.sessions` 기본 목록에는 **넣지 않았다**(문서를
+  건드리지 않는 커밋에서 매번 돌 이유가 없음).
+- CLAUDE.md의 nox 명령 목록, `mf_bookworm_install_ko/en.md`의 개발 환경
+  절차에 반영.
+
+빌드 산출물 `docs/build/`는 이미 루트 `.gitignore`의 `build/`에 걸린다.
+
+검증: 이 기기(Bookworm, Python 3.11)에 설치 후 `nox -s docs` 실행 성공,
+경고 0건. 설치된 것은 `docs/source/requirements.txt`의 고정 버전 —
+Sphinx 7.2.6, sphinx-rtd-theme 1.3.0, sphinxcontrib-mermaid 0.9.2.
+
+주의: `requirements_dev.txt`를 설치하는 nox 세션들(`type_hints`,
+`unit_tests`, `smoke_tests`, `web_tests`, `ui_tests`, `babel`)의 venv에도
+Sphinx가 함께 들어간다. `reuse_venv=True`라 최초 1회 비용이며, 대신 개발
+환경 어디서든 문서 빌드가 가능해진다는 쪽을 택했다.
+
 ## upstream 동기화 — rev4 문서/자산 수용 (`4a83d25b..7eaf058c`, 2026-08-09)
 
 upstream 신규 12건 중 **11건 적용, 1건 제외**. 재동기화 판단 기준과 커밋
@@ -1862,8 +1899,10 @@ upstream 신규 12건 중 **11건 적용, 1건 제외**. 재동기화 판단 기
 (`min_software`, `v3_docs`) 미정의 사용 0건 / `.. image::` 264건 누락 0건 /
 잔존 충돌 마커 0건 / 스킬 스크립트 2건 py_compile 통과 /
 `test_menu_struct`·`test_hardware_detect_display`·`test_obj_types_docs` 12건
-통과. Sphinx가 이 기기에 미설치라 실제 빌드 대신 구조 검증으로 대체했다 —
-**빌드 가능한 환경이 생기면 한 번 돌려볼 것.**
+통과. **(2026-08-10 보강) Sphinx를 설치하고 실제 빌드까지 확인했다 —
+nitpicky 모드(`-n`) 경고 0건, `-W`(경고=실패)로도 성공.** Volume을 제외한
+부분 적용이 문서를 깨뜨리지 않았음이 구조 검증이 아닌 실제 빌드로
+확정됐다. 이 검증 절차는 `nox -s docs`로 상시화했다(아래 항목 참조).
 
 **다음 라운드 백로그 (rev4 본체 이식)**: `#498`(hardware enablement),
 `#541`·`#549`(배터리 UX), `#551`(keypad matrix), `#552`·`#556`(bringup),

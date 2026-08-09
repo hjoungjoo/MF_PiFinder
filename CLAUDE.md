@@ -49,6 +49,7 @@ nox -s smoke_tests   # Quick functionality validation
 nox -s unit_tests    # Full unit test suite
 nox -s babel         # I18n message extraction and compilation
 nox -s web_tests     # Testing the webserver, see below
+nox -s docs          # Build the Sphinx manual; any warning fails the session
 ```
 
 **Direct testing with pytest:**

@@ -605,6 +605,28 @@ upstream 변경 시 이 기능들이 깨지지 않는지 우선 확인한다.
 - calibration은 자동 저장/로드를 우선하고, 수동 save/load/clear 메뉴를 제공한다.
 - calibration 상태 UI는 실제 BNO055 상태를 반영한다.
 
+### 문서 빌드 툴체인 (2026-08-10 추가)
+
+주요 파일:
+
+- `python/requirements_dev.txt`
+- `python/noxfile.py`
+- `CLAUDE.md`
+- `docs/mf_dev/mf_bookworm_install_ko.md` / `_en.md`
+
+보존해야 할 정책:
+
+- `requirements_dev.txt` 마지막의 `-r ../docs/source/requirements.txt` 한 줄을
+  유지한다. upstream에는 없는 MF 추가분이며, 이것 때문에 기존 개발 환경 구축
+  명령만으로 Sphinx가 함께 설치된다.
+- 버전을 `requirements_dev.txt`에 직접 고정하지 않는다. Read the Docs가 쓰는
+  `docs/source/requirements.txt`를 참조해 단일 출처를 유지한다.
+- `noxfile.py`의 `docs` 세션을 유지한다. `-n -W --keep-going`이 핵심이다 —
+  경고를 실패로 만들지 않으면 부분 적용으로 끊긴 참조를 놓친다.
+- `docs` 세션은 `nox.options.sessions` 기본 목록에 넣지 않는다.
+- upstream이 자체 docs 세션이나 docs extra를 추가하면 중복 여부를 확인하고
+  한쪽으로 정리한다.
+
 ## 충돌 가능성이 높은 파일
 
 upstream sync 때 먼저 확인할 파일:
@@ -627,6 +649,8 @@ python/PiFinder/ui/base.py
 python/PiFinder/ui/callbacks.py
 python/PiFinder/ui/menu_manager.py
 python/PiFinder/ui/menu_structure.py
+python/requirements_dev.txt
+python/noxfile.py
 python/views/base.html
 python/views/css/style.css
 python/views/network.html

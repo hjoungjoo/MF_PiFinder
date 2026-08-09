@@ -272,8 +272,19 @@ source .venv/bin/activate
 TMPDIR=/var/tmp pip install -r requirements.txt -r requirements_dev.txt
 
 nox -s lint format type_hints smoke_tests   # or individual sessions
+nox -s docs                                 # build the manual; one warning fails it
 pytest -m smoke
 ```
+
+`requirements_dev.txt` references `docs/source/requirements.txt`, so that one
+install also brings in the Sphinx toolchain (Sphinx, the RTD theme, the
+mermaid extension). They are the same pins Read the Docs uses, so a local
+build matches what gets published.
+
+Run `nox -s docs` after touching `docs/source/*.rst`. It catches broken
+cross-references (`:ref:`), substitutions (`|v3_docs|` and friends) and image
+paths — which matters most after applying an upstream doc change only in
+part. Output lands in `docs/build/html/index.html` and is gitignored.
 
 `noxfile.py` prefers Python 3.9 but falls back to the running interpreter
 when 3.9 is absent, so `nox -s <session>` works as-is inside the 3.11 venv;

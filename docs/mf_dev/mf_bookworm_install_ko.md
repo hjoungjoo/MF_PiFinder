@@ -258,8 +258,19 @@ source .venv/bin/activate
 TMPDIR=/var/tmp pip install -r requirements.txt -r requirements_dev.txt
 
 nox -s lint format type_hints smoke_tests   # 또는 개별 세션
+nox -s docs                                 # 사용자 매뉴얼 빌드 (경고 1건이면 실패)
 pytest -m smoke
 ```
+
+`requirements_dev.txt`가 `docs/source/requirements.txt`를 참조하므로 위
+설치 한 번으로 Sphinx 툴체인(Sphinx, RTD 테마, mermaid 확장)까지 함께
+들어옵니다. Read the Docs가 쓰는 것과 같은 고정 버전이라 로컬 빌드 결과가
+발행본과 어긋나지 않습니다.
+
+`docs/source/*.rst`를 건드렸다면 `nox -s docs`를 돌려 보십시오. 문서 간
+참조(`:ref:`), 치환자(`|v3_docs|` 등), 이미지 경로가 끊겼는지 잡아냅니다 —
+upstream 문서 커밋을 부분 적용했을 때 특히 필요합니다. 빌드 결과는
+`docs/build/html/index.html`이고 gitignore 대상입니다.
 
 `noxfile.py`는 Python 3.9를 우선하되 없으면 실행 인터프리터로 자동 폴백하므로,
 3.11 venv 안에서 `nox -s <session>`이 그대로 동작합니다. 구버전 안내였던

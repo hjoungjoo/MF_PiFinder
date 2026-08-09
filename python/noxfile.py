@@ -177,3 +177,30 @@ def babel(session: nox.Session) -> None:
     )
     session.run("pybabel", "update", "-i", "locale/messages.pot", "-d", "locale")
     session.run("pybabel", "compile", "-d", "locale")
+
+
+@nox.session(reuse_venv=True, python=_PYTHON)
+def docs(session: nox.Session) -> None:
+    """
+    Build the Sphinx user manual, failing on any warning.
+
+    Read the Docs publishes this manual from the same pinned requirements, but
+    it only builds after a push. Locally this is the check that catches a
+    cross-reference, substitution or image that a partially-applied upstream
+    doc change left dangling -- ``-n`` reports missing references and ``-W``
+    turns every warning into a failure, so "it rendered" is not mistaken for
+    "it is correct". ``--keep-going`` reports all of them in one run.
+    """
+    session.install("-r", "../docs/source/requirements.txt")
+    session.run(
+        "python",
+        "-m",
+        "sphinx",
+        "-n",
+        "-W",
+        "--keep-going",
+        "-q",
+        "-E",
+        "../docs/source",
+        "../docs/build/html",
+    )

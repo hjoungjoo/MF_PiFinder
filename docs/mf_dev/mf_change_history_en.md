@@ -1986,6 +1986,47 @@ machine, which no service restart can fix (kernel/firmware layer).
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
 
+## Docs build folded into the dev environment — `nox -s docs` (2026-08-10)
+
+There was no local way to verify a change to `docs/source/*.rst`. Sphinx was
+not part of the dev environment, so a broken reference stayed invisible until
+Read the Docs built after a push — and in the last sync round a throwaway
+Python script had to stand in, checking every `:ref:`, substitution and image
+by hand. That approach cannot catch syntax errors or toctree problems.
+
+**MF-local changes (not upstream — preserve these across syncs):**
+
+- `python/requirements_dev.txt`: one line appended,
+  `-r ../docs/source/requirements.txt`. It **references** rather than
+  re-pinning so there is a single source of truth with the file Read the Docs
+  installs, keeping a local build identical to the published one. That one
+  line makes the existing setup step
+  (`pip install -r requirements.txt -r requirements_dev.txt`) install Sphinx
+  too — both CLAUDE.md and the Bookworm install doc already document that
+  command, so no new step appears.
+- `python/noxfile.py`: new `docs` session running
+  `python -m sphinx -n -W --keep-going -q -E ../docs/source ../docs/build/html`.
+  `-n` reports missing references and `-W` turns warnings into failures, so
+  "it rendered" is not mistaken for "it is correct"; `--keep-going` reports
+  them all at once. Deliberately **not** added to the default
+  `nox.options.sessions` — no reason to run it on commits that leave the docs
+  alone.
+- Reflected in CLAUDE.md's nox command list and the dev-environment section of
+  `mf_bookworm_install_ko/en.md`.
+
+Build output `docs/build/` is already covered by `build/` in the root
+`.gitignore`.
+
+Verified: installed on this unit (Bookworm, Python 3.11) and `nox -s docs`
+succeeds with zero warnings. The pins come from
+`docs/source/requirements.txt` — Sphinx 7.2.6, sphinx-rtd-theme 1.3.0,
+sphinxcontrib-mermaid 0.9.2.
+
+Caveat: the nox sessions that install `requirements_dev.txt` (`type_hints`,
+`unit_tests`, `smoke_tests`, `web_tests`, `ui_tests`, `babel`) now get Sphinx
+in their venvs too. With `reuse_venv=True` that is a one-time cost, traded for
+being able to build the docs from any dev environment.
+
 ## Upstream sync — rev4 docs and assets adopted (`4a83d25b..7eaf058c`, 2026-08-09)
 
 11 of 12 new upstream commits applied. Per-commit rationale lives in the
@@ -2057,9 +2098,12 @@ key, so it runs on the auto-detected `ssd1351` (128x128). Therefore:
 dangling `:ref:`; substitutions (`min_software`, `v3_docs`) with zero
 undefined uses; 264 image directives all resolve; zero leftover conflict
 markers; both skill scripts compile; 12 tests pass (`test_menu_struct`,
-`test_hardware_detect_display`, `test_obj_types_docs`). Sphinx is not
-installed on this machine, so structural checks stood in for a real build —
-**run an actual build once an environment allows it.**
+`test_hardware_detect_display`, `test_obj_types_docs`). **(Amended
+2026-08-10) Sphinx was installed and the real build verified — zero warnings
+in nitpicky mode (`-n`), and it also passes with `-W` (warnings as errors).**
+Excluding Volume from the partial application did not break the docs, now
+confirmed by an actual build rather than structural checks. The check is
+permanent as `nox -s docs` (see the entry above).
 
 **Next-round backlog (the rev4 body port):** `#498` (hardware enablement),
 `#541`/`#549` (battery UX), `#551` (keypad matrix), `#552`/`#556`

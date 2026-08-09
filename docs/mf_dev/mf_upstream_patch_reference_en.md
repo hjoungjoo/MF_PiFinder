@@ -472,6 +472,30 @@ Preserve:
 - Calibration is auto-saved/loaded when possible.
 - Manual save/load/clear controls remain available.
 
+### Docs Build Toolchain (added 2026-08-10)
+
+Key files:
+
+- `python/requirements_dev.txt`
+- `python/noxfile.py`
+- `CLAUDE.md`
+- `docs/mf_dev/mf_bookworm_install_ko.md` / `_en.md`
+
+Policies to preserve:
+
+- Keep the trailing `-r ../docs/source/requirements.txt` line in
+  `requirements_dev.txt`. It is an MF addition upstream does not have, and it
+  is what makes the existing dev-setup command install Sphinx as well.
+- Do not re-pin the versions in `requirements_dev.txt`. Reference
+  `docs/source/requirements.txt` (what Read the Docs installs) so there is a
+  single source of truth.
+- Keep the `docs` session in `noxfile.py`. `-n -W --keep-going` is the point:
+  without warnings-as-errors it will miss a reference broken by a partially
+  applied upstream doc change.
+- Do not add `docs` to the default `nox.options.sessions`.
+- If upstream adds its own docs session or docs extra, check for duplication
+  and consolidate on one.
+
 ## High-Conflict Files
 
 Review these first during upstream sync:
@@ -494,6 +518,8 @@ python/PiFinder/ui/base.py
 python/PiFinder/ui/callbacks.py
 python/PiFinder/ui/menu_manager.py
 python/PiFinder/ui/menu_structure.py
+python/requirements_dev.txt
+python/noxfile.py
 python/views/base.html
 python/views/css/style.css
 python/views/network.html
