@@ -90,6 +90,55 @@ per-item rationale; KO is authoritative):
   verified headless: 4 modes render, GAIN menu jumps, solver solves),
   NixOS/CI commits (not applicable)
 
+Additionally reflected on 2026-08-09 (upstream `4a83d25b..7eaf058c`, 12
+commits reviewed — see the KO version for the full per-item rationale; KO is
+authoritative):
+
+- **Policy change (2026-08-09, user decision):** adopting rev4 hardware
+  changes is now **allowed**, subject to two conditions — the current
+  source's behaviour must not regress, and any conflict is reported to the
+  user for a decision rather than merged on judgement. This supersedes the
+  previous blanket rev4 exclusion.
+- Upstream branch state: `upstream/release` has converged onto
+  `upstream/main` (zero commits exclusive to release; release trails main by
+  `7eaf058c` alone). The `v2.6.1` tag itself (`8c6ae841`, 08-02) was already
+  reviewed in the 2026-08-04 round — the recent "release update" is 11
+  docs/asset commits layered onto release on 08-06..08-07.
+- Character of this round: **zero runtime Python changes.** Entirely the
+  rev4 user-manual rewrite, rev4 hardware design assets, and docs-skill
+  improvements. Verified post-apply that nothing under `python/` changed.
+- Applied (8, clean): `511b599d` (#572, rev4 docs plan + `pf_remote`
+  `--display`/`-fb`), `de285d96` (#574, bring-up reference), `f71ff317`
+  (#575, WP3), `746edad9` (#577, WP1 Power & Charging), `b138894f` (#578,
+  SD card + new v2.5 procedure), `5460cc60` (#582), `7eaf058c` (#585, STE
+  house style), `aac4a7fb` (rev4 KiCad/gerber/STL assets, ~19MB, no runtime
+  impact).
+  - One conflict resolved losslessly: `product-knowledge-base.md` — the fork
+    has never modified it (zero diff vs merge-base), so the conflict came
+    from skipping `0edff3bb`, not from MF drift; took upstream's version.
+  - **Caveat: `pf_remote launch -fb` fails on this fork** — `main.py` has no
+    `-fb/--fakebattery` (battery not ported). The default path
+    (`--display headless_176`) works: `DisplayHeadless176` exists here.
+- **Deferred on conflict — awaiting user decision** (not merged on
+  judgement): `016e0282` (#576, `menu_map.rst`: MF's `IMU Settings` tree and
+  Camera Type Mono/Color vs upstream's GPS Baud rewording), `84a2fbaf`
+  (#583, `troubleshooting.rst`: upstream's new "Align (Day)" prose rewrites
+  the Camera Type bullet carrying MF's Mono/Color sentence), `43200f86`
+  (#584 — **pure cascade**; verified clean in a worktree once `84a2fbaf` is
+  resolved).
+- Excluded this round: `27ca9624` (#573 — both `battery_bq25895.py` and
+  `docs/adr/0020-*.md` are absent here; needs the `#498`/`#541`/`#549`
+  battery port decision first), `0edff3bb` (#539 rev4 rename — touches many
+  MF-modified runtime files and changes PiFinder Type identifiers; must not
+  ride along with a docs round).
+- Verification: zero `python/` changes; Sphinx unavailable locally so
+  structural checks were run instead (243 section labels, zero dangling
+  `:ref:`, zero undefined substitutions, 261 image directives all resolve);
+  confirmed no dangling ref to the `user_guide:sounds` section that deferred
+  `016e0282` would create; both changed skill scripts compile; 12 tests pass
+  (`test_menu_struct`, `test_hardware_detect_display`, `test_obj_types_docs`).
+  Committed but not pushed; rollback point `5b49bc82`.
+
 This is not a full change history.  For feature-by-feature history, see
 `docs/mf_dev/mf_change_history_en.md`.
 

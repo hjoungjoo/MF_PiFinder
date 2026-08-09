@@ -188,6 +188,77 @@
     마킹메뉴·솔빙 정상 확인, 전체 1,105건 통과
   - NixOS/CI 8건, 이미 반영된 docs/case 커밋들 — 해당 없음 또는 기반영
 
+2026-08-09 추가 반영 (upstream `4a83d25b..7eaf058c`, 12 commits 검토):
+
+- **정책 변경 (2026-08-09, 사용자 결정)**: rev4 하드웨어 관련 변경의 수용을
+  **허용**한다. 단 두 가지 조건이 붙는다 — (1) 현재 소스의 동작에 문제가
+  없어야 하고, (2) 충돌이 발생하면 임의 병합하지 말고 사용자에게 보고해
+  결정을 받는다. 이전의 "rev4 전면 제외" 정책은 이 항목으로 대체된다.
+- upstream 브랜치 상태: `upstream/release`가 `upstream/main`에 수렴했다.
+  release에만 있고 main에 없는 커밋은 0건이며, release는 main보다 `7eaf058c`
+  하나 뒤에 있을 뿐이다. `v2.6.1` 태그 자체(`8c6ae841`, 08-02)는 이미
+  2026-08-04 라운드에서 검토 완료였고, "2일 전 업데이트"의 실체는 태그가
+  아니라 08-06~08-07에 release에 얹힌 문서/자산 커밋 11건이다.
+- 이번 라운드의 성격: **런타임 파이썬 코드 변경 0건**. 전량 rev4 사용자
+  매뉴얼 재작성, rev4 하드웨어 설계 자산, 문서 작성용 Claude 스킬 개선이다.
+  적용 후 `git diff --name-only`로 `python/` 이하 변경이 없음을 확인했다.
+- 적용 완료 (8건, clean cherry-pick):
+  - `511b599d` (#572) rev4 문서 갱신 계획 + `pf_remote.py` `--display`/`-fb`
+    플래그. **충돌 1건을 무손실로 해소**: `product-knowledge-base.md`는 포크가
+    merge-base 이후 한 번도 수정한 적이 없어(diff 0) MF 저작 내용이 존재하지
+    않는다. 충돌 원인은 MF 드리프트가 아니라 제외한 `0edff3bb`(rev4 rename)를
+    건너뛴 순서 문제라, upstream의 `511b599d` 시점 버전을 그대로 채택했다.
+    **주의: `pf_remote launch -fb`는 이 포크에서 실패한다** — `main.py`에
+    `-fb/--fakebattery`가 없다(배터리 미이식). 기본 경로(`--display
+    headless_176`)는 포크에 `DisplayHeadless176`이 실재하므로 정상 동작한다
+  - `de285d96` (#574) 내부 브링업 레퍼런스 `docs/ax/bringup.md` + CONTEXT-MAP
+  - `f71ff317` (#575) rev4 화면·조이스틱, "Which PiFinder do I have?" (WP3)
+  - `746edad9` (#577) Power & Charging 전면 재작성 (WP1)
+  - `b138894f` (#578) SD 카드 — rev4 외부 슬롯 우선, v3/v2.5 별도 절 + **신규
+    v2.5 절차**(기존에 없던 정보)
+  - `5460cc60` (#582) 누락 rev4 상호 링크 2건
+  - `7eaf058c` (#585) 문서 스킬 Simplified Technical English 하우스 스타일.
+    `.claude/skills/`는 포크가 merge-base 이후 무수정이라 드리프트 없음
+  - `aac4a7fb` rev4 하드웨어 설계 자산(KiCad/거버/STL/f3z, 약 19MB).
+    런타임 영향 0
+- **충돌로 보류 — 사용자 결정 대기** (임의 병합하지 않음):
+  - `016e0282` (#576) rev4 사운드/Volume — `docs/source/menu_map.rst` 충돌.
+    MF가 `IMU Sensit.`를 `IMU Settings` 트리(Sensitivity/Compass/Calibration)로
+    확장하고 Camera Type에 Mono/Color를 추가한 자리와, upstream의 GPS Baud
+    Rate 문구 재작성이 같은 블록에서 겹친다. 병합 방향은 명확하다 — MF의 IMU
+    트리를 유지하고 upstream의 GPS Baud 문구만 취하면 된다. Volume 항목 추가
+    hunk 자체는 별도 위치라 무충돌
+  - `84a2fbaf` (#583) rev4 사진 배치 — `docs/source/troubleshooting.rst` 충돌.
+    upstream이 "Align (Day)로 카메라 생존 확인" 절을 새로 넣으면서 Camera Type
+    불릿을 재작성하는데, 그 불릿에 MF가 넣은 Mono/Color 안내 문장이 있다.
+    병합 방향: upstream 신규 산문 + MF의 Mono/Color 문장 복원
+  - `43200f86` (#584) v3 매뉴얼 아카이브 링크(`conf.py`의 `|v3_docs|` 치환자)
+    — **순수 cascade 충돌**. 워크트리에서 `84a2fbaf`를 해소한 뒤 재시도하면
+    clean하게 붙는 것을 확인했다. `84a2fbaf` 결정이 나면 자동 해소된다
+- 이번 라운드 제외:
+  - `27ca9624` (#573) ADR 0020 배터리 프로파일링 + SOC_LUT 주석 —
+    `battery_bq25895.py`와 `docs/adr/0020-soc-as-runtime-fraction.md` **둘 다
+    포크에 부재**. rev4가 허용으로 바뀌었어도 이 커밋만 단독 적용하는 것은
+    불가능하다(존재하지 않는 파일에 대한 수정). 배터리 수용은 `#498`/`#541`/
+    `#549` 일괄 이식 결정이 선행되어야 한다
+  - `0edff3bb` (#539) rev4 rename — 이번 라운드에서 의도적으로 제외.
+    `main.py`, `config.py`, `hardware_detect.py`, `splash.py`, `state.py`,
+    `ui/menu_structure.py`, `camera_interface.py` 등 **MF가 수정한 런타임
+    파일 다수**를 건드리고 PiFinder Type 식별자를 바꾼다. "현재 동작 무손상"
+    조건상 문서 라운드와 섞으면 안 된다. rev4 본체 이식을 결정할 때 함께 다룬다
+- 검증 (2026-08-09):
+  - `python/` 이하 변경 0건 — 런타임 회귀 가능성 구조적으로 없음
+  - Sphinx가 미설치라 실제 빌드는 못 했고, 대신 구조 검증을 돌렸다:
+    `:ref:` 타깃 전수 확인(243개 라벨, dangling 0건), `|치환자|` 미정의 0건,
+    `.. image::` 261건 전수 확인(누락 0건 — `includes/` 상대경로 2건은 포함
+    문서 기준으로 해석되는 정상 케이스)
+  - 보류한 `016e0282`가 만드는 `user_guide:sounds` 절을 참조하는 dangling
+    ref가 없음을 확인 — 부분 적용 상태로도 문서가 일관됨
+  - `pf_remote.py`/`screenshot_to_doc.py` py_compile 통과
+  - `test_menu_struct.py`, `test_hardware_detect_display.py`,
+    `test_obj_types_docs.py` 12건 통과
+  - 커밋만 했고 push하지 않았다. 롤백 기준점: `5b49bc82`
+
 ADR 번호 규칙 (2026-07-29 확정):
 
 - upstream과 MF가 각자 ADR을 추가하면서 0020부터 번호가 갈라졌다 (upstream
