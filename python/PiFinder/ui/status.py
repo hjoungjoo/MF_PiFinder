@@ -57,8 +57,7 @@ class UIStatus(GuideKeyMixin, UIModule):
             "CPU TMP": "--",
         }
 
-        with open(f"{utils.pifinder_dir}/wifi_status.txt", "r") as wfs:
-            wifi_mode = wfs.read()
+        wifi_mode = utils.read_wifi_mode()
         self.status_dict["WIFI"] = wifi_mode if wifi_mode else "--"
 
         self.last_temp_time = 0

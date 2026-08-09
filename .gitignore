@@ -161,3 +161,8 @@ astro_data/comets.txt
 test_ubx
 test_ubx/*
 python/telemetry_analysis/
+
+# Runtime state: rewritten by switch-ap.sh / switch-cli.sh / switch-apsta.sh
+# on every Wi-Fi mode change. Seeded by pifinder_setup.sh; PiFinder falls back
+# to "Client" when it is absent (utils.read_wifi_mode).
+wifi_status.txt

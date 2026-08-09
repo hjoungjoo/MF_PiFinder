@@ -14,6 +14,7 @@ import os
 from PIL import Image, ImageDraw
 from PiFinder import displays
 from PiFinder import hardware_detect
+from PiFinder import utils
 import numpy as np
 
 
@@ -39,8 +40,7 @@ def show_splash():
     with open(os.path.join(root_dir, "version.txt"), "r") as ver_f:
         version = "v" + ver_f.read()
 
-    with open(os.path.join(root_dir, "wifi_status.txt"), "r") as wifi_f:
-        wifi_mode = wifi_f.read()
+    wifi_mode = utils.read_wifi_mode()
     banner_height = round(display.resY * 16 / 128)
     screen_draw.rectangle([0, 0, display.resX, banner_height], fill=(0, 0, 0))
     screen_draw.text(

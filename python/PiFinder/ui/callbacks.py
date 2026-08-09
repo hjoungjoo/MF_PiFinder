@@ -538,9 +538,7 @@ def go_wifi_apsta(ui_module: UIModule) -> None:
 
 
 def get_wifi_mode(ui_module: UIModule) -> list[str]:
-    wifi_txt = f"{utils.pifinder_dir}/wifi_status.txt"
-    with open(wifi_txt, "r") as wfs:
-        return [wfs.read()]
+    return [utils.read_wifi_mode()]
 
 
 def set_location(ui_module: UIModule) -> None:

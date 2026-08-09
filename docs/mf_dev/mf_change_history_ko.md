@@ -1795,6 +1795,47 @@ BT 고밀도 국면(페어링·부팅 직후 재연결 폭풍)이 brcmfmac 펌�
   금지, 마운트(AP 2.4GHz 클라이언트)는 ESP32 계열이라 5GHz 이전 불가 —
   AP+STA 동일 채널 제약으로 STA도 2.4GHz 고정.
 
+## `wifi_status.txt` 추적 해제 + 부재 폴백 (2026-08-10)
+
+`wifi_status.txt`는 소스가 아니라 **런타임 상태**다. `switch-ap.sh`,
+`switch-cli.sh`, `switch-apsta.sh`가 모드를 바꿀 때마다 덮어쓰고
+(`echo -n`, 개행 없음), `pifinder_setup.sh:140`이 설치 시 `Client`로
+씨앗을 심는다. 추적 대상이라 기기에서 모드를 바꿀 때마다 저장소가
+dirty해졌고, `git pull`이 "로컬 변경을 덮어쓴다"며 막힐 수 있었다.
+
+`git rm --cached` + `.gitignore` 등록으로 추적을 해제했다.
+
+**단순 추적 해제만으로는 앱이 죽는다 (이래서 폴백을 함께 넣었다).**
+읽는 곳이 5군데인데 전부 예외 처리 없는 맨 `open()`이었다 —
+`splash.py`(부팅 스플래시), `ui/status.py`, `sys_utils.Network.__init__`,
+`ui/callbacks.get_wifi_mode`, `ui/software.py`. 새 클론처럼 파일이 없으면
+`FileNotFoundError`로 부팅이 실패한다.
+
+`utils.read_wifi_mode(default="Client")` 헬퍼를 추가하고 5곳을 모두 여기로
+보냈다. 기본값을 `Client`로 잡은 근거: 설치 스크립트가 쓰는 값과 같고,
+`sys_utils`의 분기(2098/2324/2326/2624/2626/2663/2743/2745)가 전부
+`WIFI_MODE_AP`/`WIFI_MODE_APSTA`를 조건으로 하므로 **AP를 띄우는 경로가
+모두 건너뛰어진다** — 모를 때 틀려도 안전한 방향이다. `.strip()`을 추가했는데
+모든 writer가 `echo -n`이라 실동작은 동일하고, 손으로 편집해 개행이 붙는
+경우만 구제한다.
+
+부수 정리: 이제 아무도 읽지 않는 `self.wifi_txt` 속성 2개
+(`sys_utils.Network`, `ui/software.py`)를 제거했다. 모드 변경은
+`go_wifi_*()` → 셸 스크립트 경로로만 일어난다.
+
+`pifinder_post_update.sh`에 파일 부재 시 `Client`로 재생성하는 가드를 넣었다.
+추적을 해제하는 이 업데이트를 받으면 git이 (수정하지 않은) 로컬 파일을
+지우기 때문이다.
+
+**주의: AP 또는 AP+STA로 쓰던 기기는 이 업데이트 후 기록된 모드가 Client로
+초기화된다.** OS 네트워크 설정 자체(wpa_supplicant/NetworkManager/dhcpcd)는
+그대로이고 이 기록 파일만 잃는 것이므로, 메뉴에서 모드를 다시 선택하면
+된다. 이 기기는 마침 Client 상태였다.
+
+검증: 파일을 치운 상태에서 `read_wifi_mode()` → `'Client'`, `splash` import
+성공, `get_wifi_mode()` → `['Client']` 확인. ruff lint/format 통과, 유닛·스모크
+1143건 통과(기존 실패 2건 외 신규 실패 없음).
+
 ## 문서 빌드를 개발 환경에 편입 — `nox -s docs` (2026-08-10)
 
 `docs/source/*.rst`를 고쳐도 로컬에서 검증할 방법이 없었다. Sphinx가 개발

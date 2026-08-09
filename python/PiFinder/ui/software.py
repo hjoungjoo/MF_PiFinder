@@ -113,9 +113,7 @@ class UISoftware(UIModule):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.version_txt = f"{utils.pifinder_dir}/version.txt"
-        self.wifi_txt = f"{utils.pifinder_dir}/wifi_status.txt"
-        with open(self.wifi_txt, "r") as wfs:
-            self._wifi_mode = wfs.read()
+        self._wifi_mode = utils.read_wifi_mode()
         with open(self.version_txt, "r") as ver:
             self._software_version = ver.read()
 

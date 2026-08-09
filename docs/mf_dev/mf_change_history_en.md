@@ -1986,6 +1986,49 @@ machine, which no service restart can fix (kernel/firmware layer).
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
 
+## `wifi_status.txt` untracked, with a fallback for its absence (2026-08-10)
+
+`wifi_status.txt` is **runtime state, not source**. `switch-ap.sh`,
+`switch-cli.sh` and `switch-apsta.sh` rewrite it on every mode change (via
+`echo -n`, no trailing newline), and `pifinder_setup.sh:140` seeds it with
+`Client` at install. Tracking it meant the repo went dirty every time the
+device changed Wi-Fi mode, and `git pull` could refuse with "your local
+changes would be overwritten".
+
+Untracked with `git rm --cached` plus a `.gitignore` entry.
+
+**Untracking alone would have crashed the app, which is why the fallback
+ships with it.** All five readers used a bare `open()` with no error
+handling: `splash.py` (the boot splash), `ui/status.py`,
+`sys_utils.Network.__init__`, `ui/callbacks.get_wifi_mode` and
+`ui/software.py`. With the file gone — a fresh clone, for instance — that is
+a `FileNotFoundError` during boot.
+
+Added `utils.read_wifi_mode(default="Client")` and routed all five through
+it. `Client` is the right default: it matches what the installer writes, and
+every branch in `sys_utils` (lines 2098, 2324, 2326, 2624, 2626, 2663, 2743,
+2745) tests for `WIFI_MODE_AP` / `WIFI_MODE_APSTA`, so **defaulting to Client
+skips every path that brings an access point up** — the safe direction to be
+wrong in. The added `.strip()` is a no-op against the current writers (all
+`echo -n`) and only rescues a hand-edited file with a trailing newline.
+
+Incidental cleanup: removed the two now-dead `self.wifi_txt` attributes
+(`sys_utils.Network`, `ui/software.py`). Mode changes only ever go through
+`go_wifi_*()` and the shell scripts.
+
+`pifinder_post_update.sh` re-seeds the file with `Client` when it is missing,
+since the very update that untracks it makes git delete any unmodified copy.
+
+**Caveat: a device running in AP or AP+STA reads as Client after this
+update.** The OS network configuration (wpa_supplicant / NetworkManager /
+dhcpcd) is untouched — only this record of the mode is lost — so re-selecting
+the mode in the menu restores it. This unit happened to be in Client mode.
+
+Verified with the file moved away: `read_wifi_mode()` returns `'Client'`,
+`splash` imports, `get_wifi_mode()` returns `['Client']`. ruff lint and format
+pass; 1143 unit+smoke tests pass with no new failures beyond the two
+pre-existing ones.
+
 ## Docs build folded into the dev environment — `nox -s docs` (2026-08-10)
 
 There was no local way to verify a change to `docs/source/*.rst`. Sphinx was

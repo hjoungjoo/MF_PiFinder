@@ -53,6 +53,24 @@ saved_log_dir = data_dir / "logs"
 runtime_capture_dir = runtime_dir / "captures"
 
 
+def read_wifi_mode(default: str = "Client") -> str:
+    """
+    Current Wi-Fi mode as recorded by the switch-*.sh scripts.
+
+    ``wifi_status.txt`` is runtime state, not source: the switch scripts
+    rewrite it on every mode change, so it is untracked and a fresh checkout
+    has none until the installer writes one. Callers used to open it bare,
+    which turned a missing file into a crash on the splash screen and the
+    Status page. Fall back to the installer's own default instead -- guessing
+    "Client" only skips the branches that bring an access point up, which is
+    the safe direction to be wrong in.
+    """
+    try:
+        return (pifinder_dir / "wifi_status.txt").read_text().strip()
+    except OSError:
+        return default
+
+
 def create_dir(adir: str):
     create_path(Path(adir))
 

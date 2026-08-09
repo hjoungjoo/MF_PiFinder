@@ -1613,9 +1613,7 @@ class Network:
     """
 
     def __init__(self):
-        self.wifi_txt = f"{utils.pifinder_dir}/wifi_status.txt"
-        with open(self.wifi_txt, "r") as wifi_f:
-            self._wifi_mode = wifi_f.read()
+        self._wifi_mode = utils.read_wifi_mode()
 
         # Saved-but-not-applied STA edits (add/delete/reorder/band). Edits only
         # rewrite config files; the disruptive part (NetworkManager profile

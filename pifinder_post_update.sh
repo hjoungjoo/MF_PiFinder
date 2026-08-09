@@ -4,6 +4,16 @@ source "${PIFINDER_REPO_DIR}/pifinder_paths.sh"
 git submodule update --init --recursive
 sudo python3 -m pip install --break-system-packages -r "${PIFINDER_REPO_DIR}/python/requirements.txt"
 
+# wifi_status.txt is runtime state and no longer tracked, so the update that
+# untracked it deletes any unmodified copy. Re-seed it to the installer's
+# default rather than leaving the file absent. A device that was in AP or
+# AP+STA reads as Client after this and has to have the mode re-selected --
+# the OS network config is untouched, only this record of it is lost.
+if ! [ -f "${PIFINDER_REPO_DIR}/wifi_status.txt" ]
+then
+    echo -n "Client" > "${PIFINDER_REPO_DIR}/wifi_status.txt"
+fi
+
 # Set up migrations folder if it does not exist
 if ! [ -d "${PIFINDER_DATA_DIR}/migrations" ]
 then
