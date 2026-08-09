@@ -1,7 +1,7 @@
 # MF_PiFinder 소스 수정 히스토리
 
 작성일: 2026-06-25
-최종 업데이트: 2026-08-09
+최종 업데이트: 2026-08-10
 
 이 문서는 Raspberry Pi CM5, Raspberry Pi 4, Raspberry Pi 5 계열의 Bookworm
 64-bit 환경에서 `mf_pifinder` 브랜치를 동작시키기 위해 PiFinder 저장소 안에 적용한
@@ -1794,6 +1794,83 @@ BT 고밀도 국면(페어링·부팅 직후 재연결 폭풍)이 brcmfmac 펌�
 - 현장 수칙(사건 분석에서 도출): 페어링은 집에서, 조이스틱 켠 채 재부팅
   금지, 마운트(AP 2.4GHz 클라이언트)는 ESP32 계열이라 5GHz 이전 불가 —
   AP+STA 동일 채널 제약으로 STA도 2.4GHz 고정.
+
+## upstream 동기화 — rev4 문서/자산 수용 (`4a83d25b..7eaf058c`, 2026-08-09)
+
+upstream 신규 12건 중 **11건 적용, 1건 제외**. 재동기화 판단 기준과 커밋
+단위 근거는 [mf_upstream_patch_reference_ko.md](mf_upstream_patch_reference_ko.md)의
+2026-08-09 라운드에 있고, 여기에는 **다음 업데이트 때 반드시 다시 확인해야
+할 것**만 남긴다.
+
+**정책 변경 (사용자 결정)**: rev4 하드웨어 관련 수용을 **허용**한다. 조건은
+두 가지 — 현재 소스의 동작에 문제가 없어야 하고, 충돌 시 임의 병합하지 않고
+사용자 결정을 받는다. 이전의 "rev4 전면 제외" 정책은 폐기됐다.
+
+**런타임 코드 변경 0건.** `python/` 이하는 한 줄도 바뀌지 않았다(`.claude/`
+스킬 스크립트 제외). 바뀐 영역은 `docs/source/`(rev4 매뉴얼), `docs/ax/`,
+`case/rev4`·`gerbers/rev4`·`kicad/PiFinder_rev4`(약 19MB 설계 자산),
+`.claude/skills/`, `CONTEXT-MAP.md`뿐이다. 실행 중인 앱의 동작은 동일하다.
+
+**다음 동기화에서 되돌리면 안 되는 결정 3건:**
+
+- **rev4 매뉴얼을 upstream 그대로 유지한다.** `user_guide.rst`에 배터리
+  잔량 표시·충전·저전력 경고/자동 종료·사운드 절이 들어와 있는데, 이
+  포크에는 해당 기능이 **없다**. "문서가 없는 기능을 설명한다"는 이유로
+  되돌리지 말 것 — upstream diff를 최소로 유지하고 rev4 소프트웨어 이식
+  시 자동으로 맞아떨어지게 하려는 의도적 선택이다.
+- **`menu_map.rst`에서 Volume 항목만 제외했다.** menu_map은 실제 메뉴
+  구조를 그리는 문서라 포크 메뉴와 일치시켰다(포크엔 `sound.py`도 Volume
+  항목도 없음). 반면 `user_guide.rst`의 `Sounds` 절은 위 방침에 따라
+  upstream 그대로 뒀다. **menu_map만 실물 기준, 산문은 upstream 기준이라는
+  비대칭은 의도된 것**이며 불일치 버그가 아니다.
+- **`troubleshooting.rst`**: upstream의 신규 "Align (Day)" 진단 산문을
+  받으면서, 그것이 재작성한 Camera Type 불릿에 MF의 Mono/Color 안내
+  문장을 복원해 넣었다. em-dash는 같은 라운드에 도입된 STE 하우스
+  스타일(`7eaf058c`)에 맞춰 문장 분리로 바꿨다(의미 동일).
+
+**미적용 1건**: `27ca9624`(#573, ADR 0020 배터리 프로파일링 + SOC_LUT).
+수정 대상인 `battery_bq25895.py`와 `docs/adr/0020-soc-as-runtime-fraction.md`가
+**둘 다 포크에 부재**해 단독 적용이 물리적으로 불가능하다. 배터리 이식을
+결정하면 그때 함께 처리한다.
+
+**발견: `0x6A`가 배터리와 디스플레이 감지에 이중으로 쓰인다 (중요).**
+`hardware_detect.py:44`의 `detect_ssd1333_display()`가
+`i2c_present(0x6A)`(BQ25895 충전칩 ACK)를 **SSD1333 패널 마커로 재사용**하고
+있다. 한편 upstream은 `has_bq25895`와 `has_buzzer`를 같은 `0x6A` 프로브
+하나에서 뽑는다. 이 기기 실측은 I2C 버스 1에 `0x28`(BNO055)만 응답하고
+`0x6A`는 없으며, `config.json`에 `display_hardware` 키가 없어 자동감지
+결과인 `ssd1351`(128×128)로 돌아가는 중이다. 따라서:
+
+- 배터리를 쓰려고 **BQ25895 보드를 물리적으로 붙이면 디스플레이 감지가
+  `ssd1333`(176×176)으로 전환돼 화면이 깨진다** — 패널은 그대로 SSD1351인데.
+  rev4 하드웨어 착수 전에 이 커플링을 먼저 끊어야 한다(`config.json`에
+  `display_hardware` 명시하거나 디스플레이 감지를 배터리 프로브에서 분리).
+- PWM 충돌은 **없다**(확인함). `config.txt`의
+  `dtoverlay=pwm-2chan,pin=12,...,pin2=13,...`이 두 채널을 모두 열고, 포크
+  키패드 백라이트는 채널 1(GPIO13), upstream `sound.py`는 채널 0(GPIO12)을
+  쓴다. 실측상 `pwmchip0`에 `pwm1`만 export돼 있어 채널 0은 비어 있다.
+
+**알려진 부작용 2건 (동작 문제는 아님):**
+
+- `pf_remote launch -fb`는 이 포크에서 실패한다 — `main.py`에
+  `-fb/--fakebattery`가 없다(배터리 미이식).
+- `pf_remote launch`의 새 기본값이 `--display headless_176`인데 **이 기기의
+  실제 패널은 SSD1351 128×128**이다. 문서용 스크린샷을 찍을 때는
+  `--display headless`를 명시할 것.
+
+**검증**: `python/` 변경 0건 / `:ref:` 244개 라벨 dangling 0건 / 치환자
+(`min_software`, `v3_docs`) 미정의 사용 0건 / `.. image::` 264건 누락 0건 /
+잔존 충돌 마커 0건 / 스킬 스크립트 2건 py_compile 통과 /
+`test_menu_struct`·`test_hardware_detect_display`·`test_obj_types_docs` 12건
+통과. Sphinx가 이 기기에 미설치라 실제 빌드 대신 구조 검증으로 대체했다 —
+**빌드 가능한 환경이 생기면 한 번 돌려볼 것.**
+
+**다음 라운드 백로그 (rev4 본체 이식)**: `#498`(hardware enablement),
+`#541`·`#549`(배터리 UX), `#551`(keypad matrix), `#552`·`#556`(bringup),
+`0edff3bb`(#539 rename). 정책 변경으로 "제외"가 아니라 **미결정 백로그**가
+됐다. 문서는 이미 rev4를 설명하고 있으므로 이식하면 문서와 소프트웨어가
+비로소 일치한다. 착수 시 `0edff3bb`를 먼저 처리해야
+`product-knowledge-base.md` 류의 순서 충돌이 재발하지 않는다.
 
 ## LiveCam 웹 프리뷰 — fit 모드가 축소 전용이던 문제 수정 (2026-08-09)
 

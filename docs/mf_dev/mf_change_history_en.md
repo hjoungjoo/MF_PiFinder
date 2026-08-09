@@ -1,7 +1,7 @@
 # MF_PiFinder Source Change History
 
 Date: 2026-06-25
-Last updated: 2026-08-09
+Last updated: 2026-08-10
 
 This document records the source changes applied inside the PiFinder repository
 to make the `mf_pifinder` branch work on Raspberry Pi CM5, Raspberry Pi 4, and
@@ -1985,6 +1985,88 @@ machine, which no service restart can fix (kernel/firmware layer).
   with the joystick powered on; the mount (2.4 GHz-only ESP32 client on
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
+
+## Upstream sync — rev4 docs and assets adopted (`4a83d25b..7eaf058c`, 2026-08-09)
+
+11 of 12 new upstream commits applied. Per-commit rationale lives in the
+2026-08-09 round of
+[mf_upstream_patch_reference_en.md](mf_upstream_patch_reference_en.md); this
+entry keeps only **what must be re-checked at the next update**.
+
+**Policy change (user decision):** adopting rev4 hardware changes is now
+**allowed**, on two conditions — the current source's behaviour must not
+regress, and conflicts go to the user rather than being merged on judgement.
+The former blanket rev4 exclusion is retired.
+
+**Zero runtime code changed.** Nothing under `python/` was touched (the
+`.claude/` skill scripts aside). The changes are `docs/source/` (rev4
+manual), `docs/ax/`, `case/rev4` + `gerbers/rev4` + `kicad/PiFinder_rev4`
+(~19MB of design assets), `.claude/skills/`, and `CONTEXT-MAP.md`. The
+running application behaves identically.
+
+**Three decisions that must not be reverted next sync:**
+
+- **The rev4 manual is kept exactly as upstream wrote it.**
+  `user_guide.rst` now documents the battery indicator, charging,
+  low-battery warnings/shutdown and sounds — none of which exist in this
+  fork. Do not revert this on accuracy grounds: it keeps the upstream diff
+  minimal and becomes true once the rev4 software is ported.
+- **Only the Volume entry was dropped from `menu_map.rst`.** menu_map
+  diagrams the real menu, and this fork has neither `sound.py` nor a Volume
+  item. The `Sounds` section in `user_guide.rst` was kept verbatim per the
+  policy above. **menu_map being fork-accurate while the prose is
+  upstream-accurate is intentional**, not an inconsistency bug.
+- **`troubleshooting.rst`:** upstream's new "Align (Day)" diagnostic prose
+  was taken, and MF's Mono/Color sentence restored into the Camera Type
+  bullet it rewrote. Its em-dash became a sentence split to match the STE
+  house style adopted in the same round (`7eaf058c`); meaning unchanged.
+
+**Not applied (1):** `27ca9624` (#573, ADR 0020 battery profiling +
+SOC_LUT). Both target files — `battery_bq25895.py` and
+`docs/adr/0020-soc-as-runtime-fraction.md` — are **absent here**, so it
+cannot be applied on its own. Handle it with the battery port decision.
+
+**Finding: `0x6A` does double duty for battery and display detection
+(important).** `hardware_detect.py:44`'s `detect_ssd1333_display()` reuses
+`i2c_present(0x6A)` — the BQ25895 charger ACK — **as the SSD1333 panel
+marker**. Upstream separately derives both `has_bq25895` and `has_buzzer`
+from that same probe. Measured on this unit: only `0x28` (BNO055) answers on
+I2C bus 1, there is no `0x6A`, and `config.json` has no `display_hardware`
+key, so it runs on the auto-detected `ssd1351` (128x128). Therefore:
+
+- Fitting a **BQ25895 board to enable the battery would flip display
+  detection to `ssd1333` (176x176) and break the screen**, since the panel
+  is still an SSD1351. Break that coupling before any rev4 hardware work
+  (pin `display_hardware` in `config.json`, or split display detection off
+  the battery probe).
+- There is **no PWM conflict** (verified). `config.txt`'s
+  `dtoverlay=pwm-2chan,pin=12,...,pin2=13,...` opens both channels; the
+  fork's keypad backlight uses channel 1 (GPIO13) and upstream `sound.py`
+  uses channel 0 (GPIO12). Only `pwm1` is exported under `pwmchip0`, so
+  channel 0 is free.
+
+**Two known side effects (not behaviour problems):**
+
+- `pf_remote launch -fb` fails on this fork — `main.py` has no
+  `-fb/--fakebattery` (battery not ported).
+- `pf_remote launch` now defaults to `--display headless_176`, but **this
+  unit's panel is an SSD1351 at 128x128**. Pass `--display headless`
+  explicitly when capturing screenshots for the docs.
+
+**Verification:** zero `python/` changes; 244 section labels with zero
+dangling `:ref:`; substitutions (`min_software`, `v3_docs`) with zero
+undefined uses; 264 image directives all resolve; zero leftover conflict
+markers; both skill scripts compile; 12 tests pass (`test_menu_struct`,
+`test_hardware_detect_display`, `test_obj_types_docs`). Sphinx is not
+installed on this machine, so structural checks stood in for a real build —
+**run an actual build once an environment allows it.**
+
+**Next-round backlog (the rev4 body port):** `#498` (hardware enablement),
+`#541`/`#549` (battery UX), `#551` (keypad matrix), `#552`/`#556`
+(bring-up), `0edff3bb` (#539 rename). Under the new policy these are an
+**undecided backlog**, not a standing exclusion. The manual already
+describes rev4, so porting closes the gap. Lead with `0edff3bb` to avoid
+repeating ordering conflicts like the `product-knowledge-base.md` one.
 
 ## LiveCam web preview — fit mode was shrink-only (2026-08-09)
 
