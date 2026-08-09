@@ -132,3 +132,89 @@ def test_indi_settings_menu_entries_exist():
     setting_names = [item["name"] for item in setting_menu["items"]]
     assert "Multi Align" in setting_names
     assert "Backlash" in setting_names
+
+
+@pytest.mark.unit
+def test_indi_menus_are_hidden_unless_mount_control_is_on():
+    """
+    The INDI menus track the Mount Control switch.
+
+    Without it main.py never starts the mount-control process and every
+    command answers "Mount Control Off", so the entries would be actions the
+    hardware cannot carry out.
+
+    Pruning must also be reversible: the menu tree is module-level state
+    shared by every MenuManager in the process, so a prune that could not be
+    undone would leave later managers -- and the UI sweep tests -- with a tree
+    that quietly lost its INDI modules.
+    """
+    from PiFinder.ui import menu_manager
+
+    class _Cfg:
+        def __init__(self, enabled):
+            self.enabled = enabled
+
+        def get_option(self, key, default=None):
+            return self.enabled if key == "mount_control" else default
+
+    def present():
+        return tuple(
+            menu_manager.find_menu_by_label(label) is not None
+            for label in menu_manager.INDI_MENU_LABELS
+        )
+
+    def start_menu_names():
+        for item in menu_structure.pifinder_menu["items"]:
+            if item["name"] == "Start":
+                return [child["name"] for child in item["items"]]
+        raise AssertionError("Start menu missing")
+
+    original_order = start_menu_names()
+    assert present() == (True, True)
+
+    try:
+        menu_manager.dyn_menu_indi(_Cfg(False))
+        assert present() == (False, False)
+        # Re-running must not prune anything else or lose the cached entries.
+        menu_manager.dyn_menu_indi(_Cfg(False))
+        assert present() == (False, False)
+
+        menu_manager.dyn_menu_indi(_Cfg(True))
+        assert present() == (True, True)
+        menu_manager.dyn_menu_indi(_Cfg(True))
+        assert present() == (True, True)
+        # Restored in place, not appended to the end.
+        assert start_menu_names() == original_order
+    finally:
+        menu_manager.dyn_menu_indi(_Cfg(True))
+
+
+@pytest.mark.unit
+def test_mount_type_stays_visible_without_mount_control():
+    """
+    Mount Type is not INDI-only -- pos_server and telemetry read it with no
+    mount attached -- so it must survive the INDI prune.
+    """
+    from PiFinder.ui import menu_manager
+
+    class _Off:
+        def get_option(self, key, default=None):
+            return False if key == "mount_control" else default
+
+    class _On:
+        def get_option(self, key, default=None):
+            return True if key == "mount_control" else default
+
+    def settings_names():
+        for item in menu_structure.pifinder_menu["items"]:
+            if item["name"] == "Settings":
+                return [child["name"] for child in item["items"]]
+        raise AssertionError("Settings menu missing")
+
+    try:
+        menu_manager.dyn_menu_indi(_Off())
+        names = settings_names()
+        assert "Mount Type" in names
+        assert "INDI Setting" not in names
+    finally:
+        menu_manager.dyn_menu_indi(_On())

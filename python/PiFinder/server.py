@@ -215,6 +215,21 @@ class Server:
 
         app.jinja_env.globals["_"] = gettext
 
+        def mount_control_enabled() -> bool:
+            """Whether the INDI mount-control process is switched on."""
+            try:
+                cfg = config.Config()
+                cfg.load_config()
+                return bool(cfg.get_option("mount_control", False))
+            except Exception:
+                logger.exception("Could not read mount_control for the nav")
+                return False
+
+        # Exposed as a callable, not a value: templates here render straight
+        # off jinja_env, which skips Flask's context processors, and a plain
+        # global would freeze the setting as of server start.
+        app.jinja_env.globals["mount_control_enabled"] = mount_control_enabled
+
         # # Create a simple gettext function for templates that works without translation files
         # def simple_gettext(text):
         #     return text

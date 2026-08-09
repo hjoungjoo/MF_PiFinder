@@ -1795,6 +1795,55 @@ BT 고밀도 국면(페어링·부팅 직후 재연결 폭풍)이 brcmfmac 펌�
   금지, 마운트(AP 2.4GHz 클라이언트)는 ESP32 계열이라 5GHz 이전 불가 —
   AP+STA 동일 채널 제약으로 STA도 2.4GHz 고정.
 
+## INDI 메뉴/링크를 Mount Control에 연동 (2026-08-10)
+
+Mount Control이 꺼져 있으면 INDI 관련 항목을 LCD UI와 웹 UI 양쪽에서 감춘다.
+기능 게이팅은 이미 있었다 — `main.py:706`이 mountcontrol 프로세스 기동을
+막고 `callbacks._send_mount_control`이 명령마다 "Mount Control Off"를
+띄운다. 즉 **동작하지 않는 항목이 화면에만 남아 있던 상태**였고, 이번에
+표시를 맞췄다.
+
+**LCD (`ui/menu_manager.py`, `ui/menu_structure.py`)**
+
+`dyn_menu_equipment()` 선례를 따라 `dyn_menu_indi(cfg)`를 추가하고
+`MenuManager.__init__`에서 **`preload_modules()` 앞에** 호출한다(꺼져 있으면
+INDI UI 모듈을 아예 인스턴스화하지 않는다). 대상 2개에 label을 붙였다 —
+`Start > INDI`(`indi_actions`, 13항목), `Settings > INDI Setting`
+(`indi_settings`, 35항목).
+
+- **`Settings > Mount Type`은 유지한다.** INDI 전용이 아니다 —
+  `pos_server.py:787`(SkySafari)과 `telemetry.py`가 마운트 없이도 읽는다.
+- **토글 위치는 `Tools > Test Mode > Experimental > Mount Control` 그대로
+  둔다** (사용자 결정 2026-08-10, upstream 호환성). 즉 INDI가 감춰진
+  상태에서 다시 켜려면 이 경로를 알아야 한다.
+- **제거가 아니라 복원 가능한 pruning이다.** 메뉴 트리는 프로세스 전역
+  상태라 `test_ui_modules.py`처럼 `MenuManager`를 여러 번 만드는 곳에서
+  영구 삭제하면 이후 매니저가 INDI를 잃은 트리를 보게 된다. 꺼낸 항목을
+  `_pruned_indi_entries`에 (부모 리스트, 인덱스, 항목)로 캐시해 두고
+  켜지면 **원래 자리에** 되돌린다. 멱등하다.
+- 실운영에서는 `mount_control_toggle`이 PiFinder를 재시작하므로 매니저당
+  1회 실행으로 충분하다(실시간 메뉴 갱신 불필요).
+
+**웹 (`server.py`, `views/base.html`)**
+
+링크만 감춘다(사용자 결정) — `/indi/*` 라우트 19개는 그대로라 URL 직접
+접근은 여전히 가능하다.
+
+- **함정: 이 서버는 `render_template()`이 아니라
+  `app.jinja_env.get_template().render()`로 그린다.** Flask의
+  `@app.context_processor`가 **적용되지 않는다.** `jinja_env.globals`에
+  등록해야 하고(216행 `_` 선례), 값이 아니라 **콜러블**로 넣어야 서버 시작
+  시점 값으로 굳지 않는다.
+- `base.html` 상단에서 `show_indi`를 한 번 정의하고 네비 2곳(데스크톱/
+  모바일)에서 쓴다. **전역이 없으면 표시하는 쪽으로 기본값을 잡았다** —
+  `test_web_catalogs.py`처럼 자체 Flask 앱을 만드는 곳은 이 전역을 등록하지
+  않는다(실제로 처음 구현에서 웹 테스트 7건이 `UndefinedError`로 깨졌다).
+  등록 누락 시 조용히 감춰지는 것보다 그냥 보이는 편이 낫다.
+
+검증: `dyn_menu_indi` 숨김/복원/멱등성/원위치 복원과 Mount Type 잔존을
+테스트 2건으로 고정(`test_menu_struct.py`). 템플릿은 전역 없음/True/False
+3가지 상태에서 렌더 확인(2/2/0개). 전체 유닛·스모크 1147건 통과.
+
 ## INDI 위치/시간 테스트 2건의 환경 의존 제거 (2026-08-10)
 
 `test_build_indi_location_time_properties_*` 2건이 이 기기에서 계속 실패하고

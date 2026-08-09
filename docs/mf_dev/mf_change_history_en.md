@@ -1986,6 +1986,57 @@ machine, which no service restart can fix (kernel/firmware layer).
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
 
+## INDI menus and nav link gated on Mount Control (2026-08-10)
+
+With Mount Control off, the INDI entries are hidden in both the LCD UI and
+the web UI. The functional gating already existed — `main.py:706` refuses to
+start the mount-control process and `callbacks._send_mount_control` answers
+every command with "Mount Control Off" — so these were **entries that could
+not do anything but were still on screen.** This aligns the display with it.
+
+**LCD (`ui/menu_manager.py`, `ui/menu_structure.py`)**
+
+Following the `dyn_menu_equipment()` precedent, `dyn_menu_indi(cfg)` runs from
+`MenuManager.__init__` **before `preload_modules()`**, so a disabled INDI is
+never instantiated. Two entries gained labels: `Start > INDI`
+(`indi_actions`, 13 items) and `Settings > INDI Setting` (`indi_settings`,
+35 items).
+
+- **`Settings > Mount Type` stays.** It is not INDI-only — `pos_server.py:787`
+  (SkySafari) and `telemetry.py` read it with no mount attached.
+- **The toggle stays at `Tools > Test Mode > Experimental > Mount Control`**
+  (user decision 2026-08-10, upstream compatibility). Turning INDI back on
+  therefore means knowing that path.
+- **Pruning is reversible, not destructive.** The menu tree is process-global
+  state, so permanently dropping entries would leave later managers — such as
+  those built repeatedly by `test_ui_modules.py` — with a tree that quietly
+  lost its INDI modules. Removed entries are cached in
+  `_pruned_indi_entries` as (parent list, index, entry) and reinserted **at
+  their original position**. Idempotent either way.
+- In normal use `mount_control_toggle` restarts PiFinder, so running once per
+  manager is enough; no live menu refresh is needed.
+
+**Web (`server.py`, `views/base.html`)**
+
+Links only (user decision) — the 19 `/indi/*` routes are untouched, so direct
+URL access still works.
+
+- **Trap: this server renders through `app.jinja_env.get_template().render()`,
+  not `render_template()`.** Flask's `@app.context_processor` therefore does
+  **not** apply. The flag has to go in `jinja_env.globals` (line 216 sets `_`
+  the same way), and as a **callable** — a plain value would freeze the
+  setting as of server start.
+- `base.html` defines `show_indi` once and uses it in both nav lists (desktop
+  and mobile). **It defaults to showing the link when the global is absent**,
+  because bare Flask apps such as `test_web_catalogs.py` never register it —
+  the first cut broke 7 web tests with `UndefinedError`. A missed registration
+  failing visibly beats it hiding the page silently.
+
+Verified: two tests in `test_menu_struct.py` pin the prune, the restore, the
+idempotency, restoration in place, and Mount Type surviving. The template was
+rendered in all three states (no global / True / False → 2 / 2 / 0 links).
+Full unit+smoke run: 1147 passed.
+
 ## Two INDI location/time tests made independent of the machine (2026-08-10)
 
 `test_build_indi_location_time_properties_*` had been failing on this unit.

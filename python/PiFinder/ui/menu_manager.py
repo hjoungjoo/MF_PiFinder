@@ -57,6 +57,64 @@ def find_menu_by_label(label: str):
     return None
 
 
+# Menus that only make sense while the INDI mount-control process is running.
+INDI_MENU_LABELS = ("indi_actions", "indi_settings")
+
+# Entries dyn_menu_indi() has taken out, as {label: (parent_items, index,
+# entry)}. The menu tree is module-level state shared by every MenuManager in
+# the process, so pruning has to be undoable: tests build several managers in
+# one interpreter, and dropping the entries permanently would leave later
+# managers with a tree that silently lost its INDI modules.
+_pruned_indi_entries: dict[str, tuple[list, int, dict]] = {}
+
+
+def _find_parent_items(label: str):
+    """
+    Return (items_list, index) for the entry carrying `label`.
+
+    Unlike find_menu_by_label(), which hands back the entry itself, this finds
+    the list that holds it -- pruning needs the container, not the child.
+    """
+    stack = [menu_structure.pifinder_menu]
+    while stack:
+        node = stack.pop()
+        items = node.get("items")
+        if not isinstance(items, list):
+            continue
+        for index, child in enumerate(items):
+            if isinstance(child, dict) and child.get("label") == label:
+                return items, index
+        stack.extend(child for child in items if isinstance(child, dict))
+    return None
+
+
+def dyn_menu_indi(cfg):
+    """
+    Show the INDI menus only while Mount Control is on.
+
+    Without that option the mount-control process is never started (see
+    main.py) and every command answers "Mount Control Off" (see
+    _send_mount_control), so the entries are actions the hardware cannot
+    perform. Mount Type stays put -- it also feeds pos_server and telemetry,
+    which run with no mount attached.
+
+    Toggling the option restarts PiFinder, so running this once per
+    MenuManager is enough to keep the tree in step.
+    """
+    enabled = cfg.get_option("mount_control", False)
+    for label in INDI_MENU_LABELS:
+        if enabled:
+            cached = _pruned_indi_entries.pop(label, None)
+            if cached is not None:
+                items, index, entry = cached
+                items.insert(min(index, len(items)), entry)
+        elif label not in _pruned_indi_entries:
+            found = _find_parent_items(label)
+            if found is not None:
+                items, index = found
+                _pruned_indi_entries[label] = (items, index, items.pop(index))
+
+
 def dyn_menu_equipment(cfg):
     """
     Add's equipment related menus to the menu tree
@@ -146,6 +204,8 @@ class MenuManager:
         self.ss_count = 0
 
         dyn_menu_equipment(self.config_object)
+        # Before preload_modules(), so a disabled INDI never gets instantiated.
+        dyn_menu_indi(self.config_object)
         self.preload_modules()
 
     def screengrab(self):

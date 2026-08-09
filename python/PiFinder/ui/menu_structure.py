@@ -81,6 +81,8 @@ pifinder_menu = {
                     "name": _("INDI"),
                     "class": UITextMenu,
                     "select": "single",
+                    # Pruned by dyn_menu_indi() unless Mount Control is on.
+                    "label": "indi_actions",
                     "items": [
                         {
                             "name": _("STATUS"),
@@ -1121,6 +1123,8 @@ pifinder_menu = {
                     "name": _("INDI Setting"),
                     "class": UITextMenu,
                     "select": "single",
+                    # Pruned by dyn_menu_indi() unless Mount Control is on.
+                    "label": "indi_settings",
                     "items": [
                         {
                             "name": _("Multi Align"),
