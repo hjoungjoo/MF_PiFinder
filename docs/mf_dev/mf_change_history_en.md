@@ -1986,6 +1986,37 @@ machine, which no service restart can fix (kernel/firmware layer).
   the AP) pins the AP — and via the AP+STA same-channel constraint the
   STA — to 2.4 GHz, so a 5 GHz escape is not available in this setup.
 
+## Two INDI location/time tests made independent of the machine (2026-08-10)
+
+`test_build_indi_location_time_properties_*` had been failing on this unit.
+The cause was not the code — **the tests were reading live device state**.
+
+With `device_name` omitted, `build_indi_location_time_properties()` goes
+through `resolve_indi_device_name()` → `get_indi_profile_device_name()`,
+which reads the **real INDI profile database** (`~/.indi/profiles.db`) and
+uses the telescope-like driver it finds. This unit's profile registers
+`Telescope Simulator`, so that is the name produced — while the tests
+expected `DEFAULT_ONSTEP_DEVICE_NAME` (`LX200 OnStepX`).
+
+**Behaviour ruling (user, 2026-08-10): `Telescope Simulator` is correctly the
+default, and OnStepX is something the user configures.** So
+`DEFAULT_ONSTEP_DEVICE_NAME` is only the fallback for when no profile exists,
+and a present profile winning is the correct current behaviour. The constant
+stays as it is.
+
+Both tests cover coordinate conversion (west −118.25 → 241.75) and offset
+formatting (`9.00` / `-7.00`), not device-name resolution, so they now pass
+`device_name` explicitly. A comment records why it must stay explicit —
+otherwise it reads like a redundant argument and invites removal.
+
+The nature of the trap: **it passes on a dev box with no INDI profile and
+fails only on a configured device.** Running with an isolated `HOME` passed
+even before the fix. These two were the only tests with that dependency.
+
+Verified on this unit (profile present) and with an isolated `HOME` (no
+profile): 54 tests pass in `test_sys_utils.py` either way. **Full unit+smoke
+run is 1145 passed, 0 failed** — clearing the two long-standing failures.
+
 ## `wifi_status.txt` untracked, with a fallback for its absence (2026-08-10)
 
 `wifi_status.txt` is **runtime state, not source**. `switch-ap.sh`,

@@ -1795,6 +1795,36 @@ BT 고밀도 국면(페어링·부팅 직후 재연결 폭풍)이 brcmfmac 펌�
   금지, 마운트(AP 2.4GHz 클라이언트)는 ESP32 계열이라 5GHz 이전 불가 —
   AP+STA 동일 채널 제약으로 STA도 2.4GHz 고정.
 
+## INDI 위치/시간 테스트 2건의 환경 의존 제거 (2026-08-10)
+
+`test_build_indi_location_time_properties_*` 2건이 이 기기에서 계속 실패하고
+있었다. 원인은 코드가 아니라 **테스트가 실기기 상태를 읽는 것**이었다.
+
+`build_indi_location_time_properties()`는 `device_name`을 생략하면
+`resolve_indi_device_name()` → `get_indi_profile_device_name()`을 거쳐
+**실제 INDI 프로파일 DB(`~/.indi/profiles.db`)** 에서 telescope 계열 드라이버
+이름을 찾아 쓴다. 이 기기 프로파일에는 `Telescope Simulator`가 등록돼 있어
+그 이름이 나오는데, 테스트는 `DEFAULT_ONSTEP_DEVICE_NAME`(=`LX200 OnStepX`)을
+기대하고 있었다.
+
+**동작 판정 (사용자 확인, 2026-08-10): `Telescope Simulator`가 기본이 맞고
+OnStepX는 사용자가 설정하는 항목이다.** 즉 `DEFAULT_ONSTEP_DEVICE_NAME`은
+프로파일이 아예 없을 때만 쓰이는 폴백이고, 프로파일이 있으면 그쪽이
+이기는 현재 동작이 정상이다. 상수도 그대로 둔다.
+
+두 테스트는 좌표 변환(서경 −118.25 → 241.75)과 오프셋 포맷(`9.00`/`-7.00`)을
+보는 것이지 디바이스 이름 해석을 보는 게 아니므로, `device_name`을 명시해
+격리했다. 왜 명시해야 하는지 주석으로 남겼다 — 안 그러면 "불필요한 인자"로
+보고 되돌리기 쉽다.
+
+이 함정의 성질: **프로파일이 없는 개발 머신에서는 통과하고, INDI를 설정한
+실기기에서만 실패한다.** 실제로 `HOME`을 격리해 돌리면 수정 전에도 통과했다.
+같은 의존을 가진 테스트는 이 2건뿐임을 확인했다.
+
+검증: 이 기기(프로파일 있음)와 `HOME` 격리(프로파일 없음) 양쪽에서
+`test_sys_utils.py` 54건 통과. **전체 유닛·스모크 1145건 통과, 실패 0건** —
+장기간 남아 있던 실패 2건이 이로써 해소됐다.
+
 ## `wifi_status.txt` 추적 해제 + 부재 폴백 (2026-08-10)
 
 `wifi_status.txt`는 소스가 아니라 **런타임 상태**다. `switch-ap.sh`,

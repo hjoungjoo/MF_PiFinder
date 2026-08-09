@@ -8,17 +8,25 @@ try:
     from PiFinder import board_config
     from PiFinder import sys_utils
 
+    # These two cover coordinate and time formatting, not device-name
+    # resolution, so they pass device_name explicitly. Left to default it,
+    # resolve_indi_device_name() reads the machine's real INDI profile
+    # (~/.indi/profiles.db) and names the telescope driver found there --
+    # "Telescope Simulator" on a stock install -- and only falls back to
+    # DEFAULT_ONSTEP_DEVICE_NAME when no profile exists. That made the
+    # assertions pass on a bare dev box and fail on any configured device.
     @pytest.mark.unit
     def test_build_indi_location_time_properties_uses_input_time_and_offset():
+        device = sys_utils.DEFAULT_ONSTEP_DEVICE_NAME
         properties = sys_utils.build_indi_location_time_properties(
             latitude=37.52704,
             longitude=127.10936,
             elevation=30,
             utc_datetime="2026-06-30T13:45:12",
             utc_offset_hours=9,
+            device_name=device,
         )
 
-        device = sys_utils.DEFAULT_ONSTEP_DEVICE_NAME
         assert f"{device}.GEOGRAPHIC_COORD.LAT=37.52704" in properties
         assert f"{device}.GEOGRAPHIC_COORD.LONG=127.10936" in properties
         assert f"{device}.GEOGRAPHIC_COORD.ELEV=30.0" in properties
@@ -27,14 +35,15 @@ try:
 
     @pytest.mark.unit
     def test_build_indi_location_time_properties_converts_west_longitude():
+        device = sys_utils.DEFAULT_ONSTEP_DEVICE_NAME
         properties = sys_utils.build_indi_location_time_properties(
             latitude=34,
             longitude=-118.25,
             utc_datetime="2026-06-30T13:45:12Z",
             utc_offset_hours=-7,
+            device_name=device,
         )
 
-        device = sys_utils.DEFAULT_ONSTEP_DEVICE_NAME
         assert f"{device}.GEOGRAPHIC_COORD.LONG=241.75" in properties
         assert f"{device}.TIME_UTC.OFFSET=-7.00" in properties
 
