@@ -38,7 +38,7 @@ Last updated: 2026-08-04. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | Doc | ko/en | Status | Summary |
 |---|---|---|---|
 | [cedar_sep_hybrid_design](mf_dev/mf_cedar_sep_hybrid_design_en.md) | both | living ★ | **Design authority** for cedar+SEP hybrid solving — frame spaces / coordinate mapping, the six detection gates, warm-pixel map, fallback & backoff policy, hybrid alignment, AE coupling, defence layers. Decision rationale: ADR m0023; measurement history: sep_fullframe_impl (ko). |
-| [cedar_fullframe_primary_plan](mf_dev/mf_cedar_fullframe_primary_plan_ko.md) | ko | **implemented** (2026-08-03) | Preparation plan for switching the primary path to full-frame cedar — `solver_cedar_fullframe`, quality gates, centre-first cascade. Measurements: [night report](mf_report/mf_solver_fullframe_field_test_20260803_ko.md). |
+| [cedar_fullframe_primary_plan](mf_dev/mf_cedar_fullframe_primary_plan_ko.md) | ko | **implemented, default-on** (2026-08-12) | Full-frame cedar primary transition plan and decision history — `solver_cedar_fullframe`, gates and centre-first cascade; the four-tier path is now the default. |
 
 ## Catalog · web UI
 
@@ -82,6 +82,7 @@ Last updated: 2026-08-04. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | [solver_3path_bench_20260801](mf_report/mf_solver_3path_bench_20260801_en.md) | both | **one-time measurement** (2026-08-01) | Bright-sky (87% background) same-frame bench of three solver paths — cedar crop 0% / cedar full-frame σ8 18% / hybrid 88% (live 89.5%), accuracy 1σ ~1′ (reconfirms ADR m0023). |
 | [solver_fullframe_field_test_20260803](mf_report/mf_solver_fullframe_field_test_20260803_ko.md) | ko | **one-time measurement** (2026-08-03) | Night measurement of the cedar full-frame primary path (~2,200 shadow-CSV attempts) — LP curve and timeout A/B. Plan: [cedar_fullframe_primary_plan](mf_dev/mf_cedar_fullframe_primary_plan_ko.md). |
 | [fullframe_solving_report_20260804](mf_report/mf_fullframe_solving_report_20260804_en.md) | both | **report** (2026-08-04) | Full-frame solving pipeline measurement report — processing structure (two detectors in parallel + four-stage coordinate cascade) and measured results. |
+| [solver_diagnostics_20260812](mf_report/mf_solver_diagnostics_20260812_ko.md) | ko | **one-time measurement** (2026-08-12) | Default-on four-tier full-frame path and per-stage Cedar/SEP diagnostics verification — live `cedar_ff_center` and `cedar_ff` successes. |
 | [feature_test_session_20260805](mf_report/mf_feature_test_session_20260805_ko.md) | ko | **one-time** (2026-08-05) | Automated portion of the checklist re-test — static/suite/API/headless UI pass; three defects found & fixed (ungated Software RIGHT, update exception unwinding the UI, imu_fake signature); remaining manual items listed. |
 | [mono_sqm_colour_guard_20260805](mf_report/mf_mono_sqm_colour_guard_20260805_en.md) | both | **announcement** (2026-08-05) | Community share — how upstream #560's sky-colour SQM correction silently shifts a mislabeled mono imx462 by +0.74 mag, the `profile.mono` guard, and how to test your own module. |
 | [sqm_stack_port_plan](mf_dev/mf_sqm_stack_port_plan_ko.md) | ko | **port complete** (2026-07-30) | Analysis and plan for porting the upstream SQM stack (#532/#542/#543/#544), with per-phase outcomes. |

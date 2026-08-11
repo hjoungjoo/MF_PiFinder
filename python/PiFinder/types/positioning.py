@@ -264,6 +264,14 @@ class SolveDiagnostics:
     # "tetra3" (cedar server unavailable). Diagnostics only -- before
     # this field the path had to be inferred from Matches > Centroids.
     solve_path: str = ""
+    # Per-path detector counts.  ``Centroids`` remains the auto-exposure
+    # feedback signal and therefore changes meaning to the detector that
+    # actually solved.  These fields preserve the full cascade diagnostics
+    # so a SEP rescue does not hide what cedar saw on the same frame.
+    CedarRawCentroids: Optional[int] = None
+    CedarGatedCentroids: Optional[int] = None
+    CedarCenterCentroids: Optional[int] = None
+    SepCentroids: Optional[int] = None
 
 
 @dataclass

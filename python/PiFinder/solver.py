@@ -765,6 +765,10 @@ def _build_successful_solve(
     last_solve_success: float,
     centroid_count: int = 0,
     solve_path: str = "",
+    cedar_raw_centroids: int | None = None,
+    cedar_gated_centroids: int | None = None,
+    cedar_center_centroids: int | None = None,
+    sep_centroids: int | None = None,
 ) -> SuccessfulSolve:
     """Fold a successful tetra3 ``solution`` dict into a
     :class:`SuccessfulSolve` message.
@@ -804,6 +808,10 @@ def _build_successful_solve(
             T_solve=solution.get("T_solve"),
             solve_path=solve_path,
             T_extract=solution.get("T_extract"),
+            CedarRawCentroids=cedar_raw_centroids,
+            CedarGatedCentroids=cedar_gated_centroids,
+            CedarCenterCentroids=cedar_center_centroids,
+            SepCentroids=sep_centroids,
         ),
         alignment=AlignmentResult(
             x_target=solution.get("x_target"),
@@ -821,6 +829,10 @@ def _build_failed_solve(
     t_extract_ms: float,
     centroid_count: int = 0,
     solve_path: str = "",
+    cedar_raw_centroids: int | None = None,
+    cedar_gated_centroids: int | None = None,
+    cedar_center_centroids: int | None = None,
+    sep_centroids: int | None = None,
 ) -> FailedSolve:
     """Build a :class:`FailedSolve` message for an attempt that produced
     no pointing. The integrator's long-lived estimate preserves the
@@ -836,6 +848,10 @@ def _build_failed_solve(
             Centroids=centroid_count,
             T_extract=t_extract_ms,
             solve_path=solve_path,
+            CedarRawCentroids=cedar_raw_centroids,
+            CedarGatedCentroids=cedar_gated_centroids,
+            CedarCenterCentroids=cedar_center_centroids,
+            SepCentroids=sep_centroids,
         ),
     )
 
@@ -1167,6 +1183,10 @@ def solver(
                     used_fullframe = False
                     ff_frame_hw = None
                     ff_center_solved = False
+                    cedar_raw_count = None
+                    cedar_gated_count = None
+                    cedar_center_count = None
+                    sep_count = None
                     sep_thread = None
                     sep_thread_result = {}
                     if cedar_detect is not None:
@@ -1226,6 +1246,7 @@ def solver(
                                 )
                                 used_fullframe = True
                                 ff_raw_count = len(centroids)
+                                cedar_raw_count = ff_raw_count
                                 if cedar_ff_gates_wanted and len(centroids):
                                     centroids = sep_detect.filter_plain_centroids(
                                         centroids,
@@ -1248,6 +1269,7 @@ def solver(
                                     )
                                 else:
                                     ground_dropped = 0
+                                cedar_gated_count = len(centroids)
                                 if ff_raw_count != len(centroids):
                                     logger.debug(
                                         "FF gates: %d -> %d centroids "
@@ -1292,6 +1314,7 @@ def solver(
                             solution = {}
                             if center_first_wanted:
                                 subset = _center_square_subset(centroids, ff_frame_hw)
+                                cedar_center_count = len(subset)
                                 if 4 <= len(subset) < len(centroids):
                                     solution = _solve_cedar_fullframe(
                                         t3,
@@ -1372,6 +1395,8 @@ def solver(
                             sep_run = sep_thread_result.get("run")
                         else:
                             sep_run = sep_shadow.detect(shared_state)
+                        if sep_run is not None:
+                            sep_count = len(sep_run.detection.centroids)
                         if (
                             sep_run is not None
                             and sep_shadow.fallback_enabled
@@ -1534,6 +1559,10 @@ def solver(
                                 )
                             ),
                             solve_path=solve_path,
+                            cedar_raw_centroids=cedar_raw_count,
+                            cedar_gated_centroids=cedar_gated_count,
+                            cedar_center_centroids=cedar_center_count,
+                            sep_centroids=sep_count,
                         )
                         # Popped only now: _build_successful_solve above needs
                         # it for the Gaia-G reference band.
@@ -1592,6 +1621,10 @@ def solver(
                                     else len(centroids)
                                 ),
                                 solve_path=solve_path,
+                                cedar_raw_centroids=cedar_raw_count,
+                                cedar_gated_centroids=cedar_gated_count,
+                                cedar_center_centroids=cedar_center_count,
+                                sep_centroids=sep_count,
                             )
                         )
 

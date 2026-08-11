@@ -1,7 +1,7 @@
 # cedar + SEP 하이브리드 솔빙 — 설계 문서
 
 > 상태: **living(설계 정본)** — 코드가 바뀌면 이 문서를 함께 갱신한다.
-> 코드 기준일: 2026-08-04 (`solver.py` / `sep_detect.py` / `sep_shadow.py` /
+> 코드 기준일: 2026-08-12 (`solver.py` / `sep_detect.py` / `sep_shadow.py` /
 > `solver_frame_map.py` / `sep_warm_map.py` / `horizon_mask.py`).
 > English version: [mf_cedar_sep_hybrid_design_en.md](mf_cedar_sep_hybrid_design_en.md)
 >
@@ -35,7 +35,7 @@
 
 | 제약 | 구현 방식 |
 | --- | --- |
-| 프로덕션 512 경로 무변경 | `solver_cedar_fullframe`=off(기본)이면 cedar 경로는 매 시도 기존과 바이트 동일하게 우선 실행(업스트림 패리티). **on이면 cedar 1차가 비크롭 12-bit 원본(>>4)을 네이티브 FOV로 솔브** — 2026-08-03 사용자 승인(패리티 제약 완화 포함), 계획·소비처 인벤토리는 [mf_cedar_fullframe_primary_plan_ko.md](mf_cedar_fullframe_primary_plan_ko.md). 어느 쪽이든 SEP 폴백·하류 계약은 동일 |
+| 프로덕션 512 경로 보존 | `solver_cedar_fullframe`=off이면 cedar 경로는 기존과 바이트 동일하게 실행되어 즉시 롤백할 수 있다. **기본 on에서는 cedar 1차가 비크롭 12-bit 원본(>>4)을 네이티브 FOV로 솔브**한다. 어느 쪽이든 SEP 폴백·하류 계약은 동일 |
 | 하류 체인(추적·정렬·푸시투·SQM) 무변경 | SEP 솔루션을 기존 좌표 의미로 환산해 같은 메시지로 공급 — 하류는 어느 경로가 풀었는지 모른다 |
 | 실험 코드는 프로덕션을 죽일 수 없다 | `sep_shadow`의 모든 진입점이 예외를 로그 후 삼킴(None 반환) |
 | SD 쓰기 금지(명시적 디버깅 제외) | 섀도 CSV·덤프·로그 전부 tmpfs (§12) |
@@ -132,7 +132,8 @@ SEP 폴백을 유지한 채 1차만 교체하면 회귀 없이 어두운 하늘 
 cedar-FF 직접 95–99%, 절벽(≥65–70%)은 물리 한계로 경로 무관
 (실측 리포트 참조). 중앙 우선 캐스케이드는 사용자 설계(2026-08-04):
 중앙 서브셋이 어두운 하늘에서 RMSE 24→13″(오프라인 A/B). 정식 어두운 밤
-A/B 통과 시 기본 on + ADR 개정 예정.
+A/B와 2026-08-12 실기 재검증을 근거로 풀프레임·중앙 우선 플래그를 기본
+on으로 전환했다. off 롤백 경로는 그대로 보존한다.
 
 ## 3. 프레임 공간과 좌표 정합 (`solver_frame_map.py`)
 
@@ -351,11 +352,24 @@ sep_bkg, sep_rms, sep_ms, fallback_used, fallback_rmse, sep_masked` 등).
 스키마 변경 시 기존 파일을 `.old`로 밀어내고 새로 시작(혼합 폭 방지).
 튜닝 세션에만 켠다(ADR m0023 §2).
 
-**진단 시 주의** (3경로 벤치 §5 교훈): `/api/solution`의 FOV로는 cedar/SEP
-경로 구분이 불가(SEP 솔브도 11.46° 부근), `Centroids`는 폴백 솔브 시 SEP
-수다. 경로 판별은 로그/CSV 또는 오프라인 동일 프레임 대조로. 라이브 sigma
-스윕 진단 시 `PFCedarDetectClient` 새 인스턴스 생성 금지(shmem 충돌) —
-gRPC 인라인으로 접속.
+**API 단계별 진단(2026-08-12)**: `/api/solution`은 `solve_path`와 함께 다음
+검출 수를 노출한다. SEP 구제 성공 시 기존 `Centroids`가 SEP 수로 바뀌어
+Cedar 상태를 숨기던 문제를 해결한 관측 전용 필드이며, 하류 제어에는 쓰지
+않는다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `CedarRawCentroids` | 풀프레임 Cedar 원검출 수 |
+| `CedarGatedCentroids` | 품질·지평선 게이트 후 Cedar 수 |
+| `CedarCenterCentroids` | 중앙 정사각 1단에 투입된 Cedar 수 |
+| `SepCentroids` | 같은 프레임의 SEP 게이트 후 검출 수 |
+
+필드가 없는 구버전 메시지와 Cedar/SEP가 실행되지 않은 경로는 `null`로
+직렬화한다. 기존 `Centroids` 의미와 자동 노출 동작은 호환성을 위해
+변경하지 않았다. 따라서 경로 판별은 `solve_path`, 단계별 검출 병목은 위
+네 필드로 직접 확인한다. 라이브 sigma 스윕 시에는
+`PFCedarDetectClient` 새 인스턴스 생성 금지(shmem 충돌) — gRPC 인라인으로
+접속한다.
 
 ## 11. 안전·방어 설계 요약
 
@@ -374,16 +388,16 @@ gRPC 인라인으로 접속.
 | 키 | 기본 | 의미 |
 | --- | --- | --- |
 | `solver_sep_fallback` | **true** | SEP 폴백 솔브 (+`solver_raw` 발행 트리거) |
-| `solver_cedar_fullframe` | false* | cedar 1차를 비크롭 원본·네이티브 FOV로 (off=기존 512 바이트 동일) |
+| `solver_cedar_fullframe` | **true** | cedar 1차를 비크롭 원본·네이티브 FOV로 (off=기존 512 바이트 동일 롤백) |
 | `solver_cedar_ff_gates` | **true** | FF 검출 품질 게이트 (엣지·포화·웜픽셀·클러스터) |
 | `solver_horizon_mask` | false | IMU 지평선 마스크 (고도<5° 검출 제거) — 관측지 스카이라인별 opt-in |
-| `solver_center_first` | false* | 중앙 정사각 우선 4단 캐스케이드 + SEP 병렬 검출 |
+| `solver_center_first` | **true** | 중앙 정사각 우선 4단 캐스케이드 + SEP 병렬 검출 |
 | `solver_sep_sigma` | **4.0** | SEP 추출 임계(σ, 국소 배경 RMS 단위) |
 | `solver_shadow_detect` | **false** | 섀도 A/B CSV — 튜닝 세션 opt-in |
 | `camera_auto_dump` | false | 솔브 10연속 실패 시 3분 쿨다운 스테이지 덤프(자동 코퍼스 수집) |
 
-모두 재시작 필요. \* 표시는 정식 어두운 밤 검증 통과 시 기본 on 전환
-예정(계획 문서 §5). `solver_raw` 발행은 shadow/fallback/FF 어느 하나라도
+모두 재시작 필요. 풀프레임·중앙 우선 기본화는 2026-08-12 적용했으며
+각 플래그를 off로 바꾸면 이전 경로로 롤백된다. `solver_raw` 발행은 shadow/fallback/FF 어느 하나라도
 쓰면 필요하다.
 
 저장 정책(2026-07-28 사용자 결정): CSV·앱 로그·스테이지 덤프 전부

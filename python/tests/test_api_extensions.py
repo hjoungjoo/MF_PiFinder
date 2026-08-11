@@ -50,6 +50,10 @@ def _populated() -> PointingEstimate:
             FOV=10.2,
             T_solve=0.05,
             T_extract=0.01,
+            CedarRawCentroids=27,
+            CedarGatedCentroids=22,
+            CedarCenterCentroids=14,
+            SepCentroids=31,
         ),
     )
 
@@ -100,6 +104,10 @@ def test_diagnostics_and_timing_keys_preserved():
     assert d["Matches"] == 12
     # Detected vs matched: the auto-exposure signal, not the solve result.
     assert d["Centroids"] == 31
+    assert d["CedarRawCentroids"] == 27
+    assert d["CedarGatedCentroids"] == 22
+    assert d["CedarCenterCentroids"] == 14
+    assert d["SepCentroids"] == 31
     assert d["solve_source"] == "CAM"
     # solve_time keeps the old key name (estimate_time under the hood)
     assert d["solve_time"] == 1234.5

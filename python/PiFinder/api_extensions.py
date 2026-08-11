@@ -123,6 +123,10 @@ def _solution_to_dict(sol) -> dict:
         # Which path produced the attempt: cedar_512 / cedar_ff / sep / tetra3
         # (empty on messages that predate the field).
         "solve_path": getattr(diag, "solve_path", ""),
+        "CedarRawCentroids": getattr(diag, "CedarRawCentroids", None),
+        "CedarGatedCentroids": getattr(diag, "CedarGatedCentroids", None),
+        "CedarCenterCentroids": getattr(diag, "CedarCenterCentroids", None),
+        "SepCentroids": getattr(diag, "SepCentroids", None),
     }
 
 

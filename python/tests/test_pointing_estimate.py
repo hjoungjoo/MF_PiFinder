@@ -284,6 +284,10 @@ class TestSolverBuilders:
             last_image_metadata=self._make_image_metadata(),
             last_solve_attempt=999.0,
             last_solve_success=999.0,
+            cedar_raw_centroids=31,
+            cedar_gated_centroids=24,
+            cedar_center_centroids=18,
+            sep_centroids=48,
         )
         assert isinstance(result, SuccessfulSolve)
         # Flat camera axis = matched-stars solution (no target offset).
@@ -295,6 +299,10 @@ class TestSolverBuilders:
         assert result.diagnostics.Matches == 12
         assert result.diagnostics.RMSE == pytest.approx(0.4)
         assert result.diagnostics.FOV == pytest.approx(10.2)
+        assert result.diagnostics.CedarRawCentroids == 31
+        assert result.diagnostics.CedarGatedCentroids == 24
+        assert result.diagnostics.CedarCenterCentroids == 18
+        assert result.diagnostics.SepCentroids == 48
         assert result.alignment.is_set()
         assert result.matched_centroids == [(1.0, 2.0)]
         assert result.matched_stars == [[1.0, 2.0, 5.5]]
@@ -325,10 +333,18 @@ class TestSolverBuilders:
             last_solve_attempt=999.0,
             last_solve_success=None,
             t_extract_ms=42.0,
+            cedar_raw_centroids=9,
+            cedar_gated_centroids=7,
+            cedar_center_centroids=4,
+            sep_centroids=15,
         )
         assert isinstance(result, FailedSolve)
         assert result.diagnostics.Matches == 0
         assert result.diagnostics.T_extract == pytest.approx(42.0)
+        assert result.diagnostics.CedarRawCentroids == 9
+        assert result.diagnostics.CedarGatedCentroids == 7
+        assert result.diagnostics.CedarCenterCentroids == 4
+        assert result.diagnostics.SepCentroids == 15
         assert result.last_solve_attempt == pytest.approx(999.0)
         assert result.last_solve_success is None
         # No pointing / anchor fields exist on a FailedSolve.

@@ -1,7 +1,7 @@
 # cedar + SEP Hybrid Solving — Design Document
 
 > Status: **living (design authority)** — update this document together with
-> the code. Code baseline: 2026-08-04 (`solver.py` / `sep_detect.py` /
+> the code. Code baseline: 2026-08-12 (`solver.py` / `sep_detect.py` /
 > `sep_shadow.py` / `solver_frame_map.py` / `sep_warm_map.py` /
 > `horizon_mask.py`).
 > 한국어판(정본): [mf_cedar_sep_hybrid_design_ko.md](mf_cedar_sep_hybrid_design_ko.md)
@@ -42,7 +42,7 @@ entire solve load (measured: ADR m0023 table, 3-path bench).
 
 | Constraint | How it is enforced |
 | --- | --- |
-| Production 512 path unchanged | The cedar path runs first on every attempt, byte-identical to stock. Upstream parity preserved |
+| Production 512 rollback preserved | With `solver_cedar_fullframe` off, the cedar path remains byte-identical to the previous 512 path. The default-on path uses uncropped 12-bit raw (`raw >> 4`) at native FOV; SEP fallback and the downstream contract are unchanged in either mode |
 | Downstream chain (tracking, alignment, push-to, SQM) unchanged | The SEP solution is converted into the existing coordinate semantics and delivered in the same message — downstream never knows which path solved |
 | Experimental code cannot kill production | Every `sep_shadow` entry point logs and swallows exceptions (returns None) |
 | No SD writes (outside explicit debugging) | Shadow CSV, dumps and logs all live on tmpfs (§12) |
@@ -144,7 +144,9 @@ regression. Confirmed by the LP ascent-curve field test — cedar-FF solves
 (>= 65-70%) is a physical limit independent of the path (see the field-test
 report). The centre-first cascade is a user design (2026-08-04): the centre
 subset improved RMSE 24 -> 13 arcsec on the dark-sky corpus (offline A/B).
-Default-on plus the ADR revision wait for the formal dark-night A/B.
+The full-frame and centre-first flags became defaults on 2026-08-12 after
+the A/B evidence and another live-device verification. The off rollback
+path remains available.
 
 ## 3. Frame spaces and coordinate mapping (`solver_frame_map.py`)
 
@@ -392,12 +394,24 @@ On a schema change the old file is sidelined to `.old` and a fresh one
 started (prevents mixed-width rows). Enable only for tuning sessions
 (ADR m0023 §2).
 
-**Diagnostic caveats** (lesson from the 3-path bench §5): the FOV in
-`/api/solution` cannot distinguish cedar vs SEP (SEP solves also come out
-near 11.46°), and `Centroids` is the SEP count on fallback solves. Identify
-the path from logs/CSV or offline same-frame comparison. For live sigma
-sweeps, never construct a second `PFCedarDetectClient` (shmem collision) —
-connect over inline gRPC.
+**Per-stage API diagnostics (2026-08-12)**: `/api/solution` exposes the
+following counts beside `solve_path`. These observability-only fields fix
+the ambiguity where a SEP rescue makes legacy `Centroids` report the SEP
+count and hides what Cedar saw.
+
+| Field | Meaning |
+| --- | --- |
+| `CedarRawCentroids` | full-frame Cedar detections before gates |
+| `CedarGatedCentroids` | Cedar detections after quality/horizon gates |
+| `CedarCenterCentroids` | Cedar detections submitted to the centre tier |
+| `SepCentroids` | post-gate SEP detections from the same frame |
+
+Old messages and paths on which a detector did not run serialize the new
+fields as `null`. Legacy `Centroids` and auto-exposure behaviour remain
+unchanged for compatibility. Use `solve_path` for path identity and these
+four fields for detection-stage bottlenecks. For live sigma sweeps, never
+construct a second `PFCedarDetectClient` (shmem collision); connect over
+inline gRPC.
 
 ## 11. Safety and defence summary
 
@@ -416,16 +430,16 @@ connect over inline gRPC.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `solver_sep_fallback` | **true** | SEP fallback solving (+ triggers `solver_raw` publication) |
-| `solver_cedar_fullframe` | false* | cedar primary on the uncropped raw at native FOV (off = byte-identical 512 path) |
+| `solver_cedar_fullframe` | **true** | cedar primary on the uncropped raw at native FOV (off = byte-identical 512 rollback) |
 | `solver_cedar_ff_gates` | **true** | FF detection quality gates (edge / saturation / warm map / cluster) |
 | `solver_horizon_mask` | false | IMU horizon mask (drop detections below 5° altitude) — per-site opt-in |
-| `solver_center_first` | false* | centre-square-first 4-tier cascade + parallel SEP detection |
+| `solver_center_first` | **true** | centre-square-first 4-tier cascade + parallel SEP detection |
 | `solver_sep_sigma` | **4.0** | SEP extraction threshold (σ, units of local background RMS) |
 | `solver_shadow_detect` | **false** | Shadow A/B CSV — opt-in for tuning sessions |
 | `camera_auto_dump` | false | Auto stage dump on 10 consecutive solve failures, 3-min cooldown (automatic corpus collection) |
 
-All require a restart. Entries marked * switch to default-on once the
-formal dark-night validation passes (plan doc §5). `solver_raw`
+All require a restart. Full-frame and centre-first became defaults on
+2026-08-12; switching either flag off retains the rollback path. `solver_raw`
 publication is needed whenever any of shadow / fallback / FF is in use.
 
 Storage policy (maintainer decision 2026-07-28): CSV, app logs and stage
