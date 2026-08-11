@@ -120,7 +120,8 @@ def _solution_to_dict(sol) -> dict:
         "Prob": diag.Prob,
         "T_solve": diag.T_solve,
         "T_extract": diag.T_extract,
-        # Which path produced the attempt: cedar_512 / cedar_ff / sep / tetra3
+        # Which path produced the attempt: cedar_center / sep_center /
+        # cedar_full / sep_full (plus legacy cedar_512 / tetra3 modes).
         # (empty on messages that predate the field).
         "solve_path": getattr(diag, "solve_path", ""),
         "CedarRawCentroids": getattr(diag, "CedarRawCentroids", None),

@@ -915,6 +915,22 @@ def _center_square_subset(centroids, frame_hw):
     return pts[keep]
 
 
+def _solve_center_first_remainder(stages):
+    """Run the remaining cascade in global centre-first order.
+
+    Cedar centre is attempted earlier while SEP detection runs in parallel.
+    If it fails, the policy is SEP centre -> Cedar full -> SEP full so every
+    usable centre solve precedes any distortion/obstruction-prone full-frame
+    solve.  A stage callback may return an empty dict when it is unavailable.
+    """
+    last_solution = {}
+    for solve_path, solve_stage in stages:
+        last_solution = solve_stage() or {}
+        if last_solution.get("RA") is not None:
+            return last_solution, solve_path
+    return last_solution, ""
+
+
 def _count_in_crop(centroids, frame_hw, crop_width_px: int) -> int:
     """Detections inside the (centred) production crop window.
 
@@ -1299,6 +1315,9 @@ def solver(
                     )
 
                     solution: dict = {}
+                    _solver_args = {}
+                    if align_ra != 0 and align_dec != 0:
+                        _solver_args["target_sky_coord"] = [[align_ra, align_dec]]
 
                     if len(centroids) == 0:
                         if log_no_stars_found:
@@ -1306,9 +1325,6 @@ def solver(
                             log_no_stars_found = False
                     else:
                         log_no_stars_found = True
-                        _solver_args = {}
-                        if align_ra != 0 and align_dec != 0:
-                            _solver_args["target_sky_coord"] = [[align_ra, align_dec]]
 
                         if used_fullframe:
                             solution = {}
@@ -1330,7 +1346,15 @@ def solver(
                                     ff_center_solved = bool(
                                         solution and solution.get("RA") is not None
                                     )
-                            if not solution or solution.get("RA") is None:
+                            # With centre-first enabled, defer Cedar full until
+                            # SEP centre has also had a chance.  Full-frame
+                            # coordinates are the last resort because edge
+                            # distortion, horizon glow and obstructions are
+                            # concentrated outside the centre square.
+                            if (
+                                not center_first_wanted
+                                and (not solution or solution.get("RA") is None)
+                            ):
                                 solution = _solve_cedar_fullframe(
                                     t3,
                                     centroids,
@@ -1361,24 +1385,14 @@ def solver(
                         ff_in_crop_count = _count_in_crop(
                             centroids, ff_frame_hw, cedar_ff_geometry["crop_width_px"]
                         )
-                        if solution and solution.get("RA") is not None:
-                            # Same rule as the SEP fallback below: per-centroid
-                            # outputs are in full-frame coordinates, so strip
-                            # them before SQM photometry (which reads the 512
-                            # frame) -- but keep the matched set aside for the
-                            # overlay, which knows the canvas space.
-                            ff_matched_for_overlay = solution.get("matched_centroids")
-                            solution.pop("matched_centroids", None)
-                            solution.pop("matched_stars", None)
-                            solution.pop("matched_catID", None)
 
                     solve_path = (
-                        ("cedar_ff" if used_fullframe else "cedar_512")
+                        ("cedar_full" if used_fullframe else "cedar_512")
                         if cedar_detect is not None
                         else "tetra3"
                     )
                     if used_fullframe and ff_center_solved:
-                        solve_path = "cedar_ff_center"
+                        solve_path = "cedar_center"
 
                     # SEP full-frame experiment: shadow-detect on every
                     # attempt; optionally rescue a failed production solve
@@ -1389,6 +1403,7 @@ def solver(
                         )
                     sep_run = None
                     sep_fallback_used = False
+                    sep_can_solve = False
                     if sep_shadow is not None:
                         if sep_thread is not None:
                             sep_thread.join(timeout=5.0)
@@ -1397,7 +1412,7 @@ def solver(
                             sep_run = sep_shadow.detect(shared_state)
                         if sep_run is not None:
                             sep_count = len(sep_run.detection.centroids)
-                        if (
+                        sep_can_solve = bool(
                             sep_run is not None
                             and sep_shadow.fallback_enabled
                             and (not solution or solution.get("RA") is None)
@@ -1411,72 +1426,132 @@ def solver(
                             and sep_shadow.fallback_should_attempt(
                                 len(sep_run.detection.centroids)
                             )
-                        ):
-                            # Hybrid alignment: cedar keeps priority (this
-                            # branch only runs when it failed); under the
-                            # target sky the SEP solve resolves the alignment
-                            # coordinate and hands y/x_target back in 512
-                            # space (sep_shadow.solve), so the normal
-                            # alignment chain below consumes it unchanged.
-                            _sep_target_sky = (
+                        )
+
+                    if center_first_wanted and (
+                        not solution or solution.get("RA") is None
+                    ):
+                        # Global centre-first policy (2026-08-12): after the
+                        # parallel Cedar-centre attempt, try SEP centre before
+                        # allowing either detector to use edge coordinates.
+                        # This keeps optical distortion, horizon glow and
+                        # obstructions out of the solve whenever the centre is
+                        # sufficient.
+                        _sep_target_sky = (
+                            [[align_ra, align_dec]]
+                            if align_ra != 0 and align_dec != 0
+                            else None
+                        )
+                        sep_subset = None
+                        if sep_can_solve:
+                            sep_subset = _center_square_subset(
+                                sep_run.detection.centroids,
+                                sep_run.frame_hw,
+                            )
+                        sep_attempted = [False]
+
+                        def _sep_center_stage():
+                            if not (
+                                sep_can_solve
+                                and 4
+                                <= len(sep_subset)
+                                < len(sep_run.detection.centroids)
+                            ):
+                                return {}
+                            sep_attempted[0] = True
+                            return sep_shadow.solve(
+                                t3,
+                                sep_run,
+                                shared_state,
+                                target_sky_coord=_sep_target_sky,
+                                centroids_override=sep_subset,
+                            )
+
+                        def _cedar_full_stage():
+                            if not used_fullframe or len(centroids) == 0:
+                                return {}
+                            return _solve_cedar_fullframe(
+                                t3,
+                                centroids,
+                                ff_frame_hw,
+                                cedar_ff_geometry["rotation_deg"],
+                                cedar_ff_geometry["crop_width_px"],
+                                shared_state,
+                                target_sky_coord=_solver_args.get(
+                                    "target_sky_coord"
+                                ),
+                            )
+
+                        def _sep_full_stage():
+                            if not sep_can_solve:
+                                return {}
+                            sep_attempted[0] = True
+                            return sep_shadow.solve(
+                                t3,
+                                sep_run,
+                                shared_state,
+                                target_sky_coord=_sep_target_sky,
+                            )
+
+                        solution, selected_path = _solve_center_first_remainder(
+                            (
+                                ("sep_center", _sep_center_stage),
+                                ("cedar_full", _cedar_full_stage),
+                                ("sep_full", _sep_full_stage),
+                            )
+                        )
+                        if selected_path:
+                            solve_path = selected_path
+                            sep_fallback_used = selected_path.startswith("sep")
+                        if sep_attempted[0]:
+                            sep_shadow.record_fallback_result(
+                                sep_fallback_used,
+                                len(sep_run.detection.centroids),
+                            )
+                    elif sep_can_solve:
+                        # Legacy non-centre mode: Cedar full/512 has already
+                        # failed, so only the SEP full fallback remains.
+                        solution = sep_shadow.solve(
+                            t3,
+                            sep_run,
+                            shared_state,
+                            target_sky_coord=(
                                 [[align_ra, align_dec]]
                                 if align_ra != 0 and align_dec != 0
                                 else None
-                            )
-                            fb_solution = None
-                            sep_center_used = False
-                            if center_first_wanted:
-                                sep_subset = _center_square_subset(
-                                    sep_run.detection.centroids,
-                                    sep_run.frame_hw,
-                                )
-                                if (
-                                    4
-                                    <= len(sep_subset)
-                                    < len(sep_run.detection.centroids)
-                                ):
-                                    fb_solution = sep_shadow.solve(
-                                        t3,
-                                        sep_run,
-                                        shared_state,
-                                        target_sky_coord=_sep_target_sky,
-                                        centroids_override=sep_subset,
-                                    )
-                                    sep_center_used = bool(
-                                        fb_solution
-                                        and fb_solution.get("RA") is not None
-                                    )
-                            if not fb_solution or fb_solution.get("RA") is None:
-                                fb_solution = sep_shadow.solve(
-                                    t3,
-                                    sep_run,
-                                    shared_state,
-                                    target_sky_coord=_sep_target_sky,
-                                )
-                            sep_shadow.record_fallback_result(
-                                bool(fb_solution and fb_solution.get("RA") is not None),
-                                len(sep_run.detection.centroids),
-                            )
-                            if fb_solution and fb_solution.get("RA") is not None:
-                                # Per-centroid outputs are in full-frame
-                                # coordinates; strip them so SQM photometry
-                                # (which reads the 512 frame) never mixes
-                                # coordinate spaces.
-                                fb_solution.pop("matched_centroids", None)
-                                fb_solution.pop("matched_stars", None)
-                                # catID parallels the stripped arrays; keep the
-                                # matched-* trio consistent on the message.
-                                fb_solution.pop("matched_catID", None)
-                                solution = fb_solution
-                                sep_fallback_used = True
-                                solve_path = "sep_center" if sep_center_used else "sep"
-                                logger.debug(
-                                    "SEP fallback solve SUCCESS - %d SEP "
-                                    "centroids (cedar saw %d), RMSE %.1f",
-                                    len(sep_run.detection.centroids),
-                                    len(centroids),
-                                    solution.get("RMSE") or -1.0,
-                                )
+                            ),
+                        )
+                        sep_fallback_used = bool(
+                            solution and solution.get("RA") is not None
+                        )
+                        sep_shadow.record_fallback_result(
+                            sep_fallback_used,
+                            len(sep_run.detection.centroids),
+                        )
+                        if sep_fallback_used:
+                            solve_path = "sep_full"
+
+                    if sep_fallback_used:
+                        # SEP per-centroid outputs are in full-frame space;
+                        # never let them reach 512-space SQM photometry.
+                        solution.pop("matched_centroids", None)
+                        solution.pop("matched_stars", None)
+                        solution.pop("matched_catID", None)
+                        logger.debug(
+                            "SEP fallback solve SUCCESS - %d SEP centroids "
+                            "(cedar saw %d), RMSE %.1f",
+                            len(sep_run.detection.centroids),
+                            len(centroids),
+                            solution.get("RMSE") or -1.0,
+                        )
+                    elif used_fullframe and solution and solution.get("RA") is not None:
+                        # Cedar full-frame coordinates share the SEP canvas;
+                        # retain matches only for the overlay, then strip them
+                        # before the 512-space SQM path.
+                        ff_matched_for_overlay = solution.get("matched_centroids")
+                        solution.pop("matched_centroids", None)
+                        solution.pop("matched_stars", None)
+                        solution.pop("matched_catID", None)
 
                     if "matched_centroids" in solution:
                         if sqm_calculator is None:

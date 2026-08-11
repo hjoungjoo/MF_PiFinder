@@ -47,8 +47,9 @@
 12-bit 비크롭 원본으로 이어받는다. `solver_cedar_fullframe`=on(이 포크의
 운용 구성, 2026-08-03 채택)이면 cedar 1차도 비크롭 원본(raw≫4)을 네이티브
 FOV로 솔브하고, `solver_center_first`=on이면 좌표 레벨 4단 캐스케이드
-(cedar-중앙 정사각 → cedar-전체 → SEP-중앙 → SEP-전체)가 되며 SEP 검출은
-cedar 단들과 워커 스레드로 병렬 실행된다. 두 플래그 모두 off면 기존
+(**cedar-중앙 정사각 → SEP-중앙 정사각 → cedar-전체 → SEP-전체**)가 되며
+SEP 검출은 최초 cedar 중앙 단과 워커 스레드로 병렬 실행된다. 검출기보다
+프레임 영역을 우선한다. 두 플래그 모두 off면 기존
 2계층(cedar-512 → SEP)과 바이트 동일하다.
 
 **블록 다이어그램** — 컴포넌트·데이터 채널 관점:
@@ -69,30 +70,29 @@ flowchart TB
         ced["cedar-detect 풀프레임<br/>raw≫4 · σ8 (shmem 자동 확장)"]
         gates["검출 게이트 (opt-out)<br/>엣지·포화·웜픽셀·클러스터<br/>+ IMU 지평선 마스크 (opt-in)"]
         c1["1단: 중앙 정사각 서브셋 솔브<br/>(center_first, 300ms 캡)"]
-        c2["2단: 전체 좌표 솔브 (300ms 캡)"]
+        c2["3단: cedar 전체 좌표 솔브 (300ms 캡)"]
         subgraph runner["SepShadowRunner — 검출은 병렬 스레드"]
             det["sep_detect (σ4.0)<br/>bin2x2 → 메시 배경 → 게이트 6종"]
             gate["폴백 게이트<br/>SEP ≥ 5 ∧ 백오프 통과"]
         end
-        s3["3단: SEP 중앙 서브셋 솔브"]
+        s3["2단: SEP 중앙 서브셋 솔브"]
         s4["4단: SEP 전체 솔브 (1s 캡)"]
         map["solver_frame_map<br/>회전·스케일·target_pixel 왕복<br/>→ 512 의미 통일"]
     end
     wpm[("sep_warm_pixels.npy")]
     raw --> prod --> ci
     raw --> sr
-    sr --> ced --> gates --> c1 -->|실패| c2
+    sr --> ced --> gates --> c1 -->|실패| gate
     sr --> det
     wpm --> gates
     wpm --> det
-    det --> gate
-    c2 -->|실패| gate --> s3 -->|실패| s4
+    det --> gate --> s3 -->|실패| c2 -->|실패| s4
     c1 -->|성공| map
     c2 -->|성공| map
     s3 -->|성공| map
     s4 --> map
     tp --> map
-    map --> res["SolveResult + solve_path<br/>(cedar_ff_center/cedar_ff/sep_center/sep)<br/>하류는 경로 불투명"]
+    map --> res["SolveResult + solve_path<br/>(cedar_center/sep_center/cedar_full/sep_full)<br/>하류는 경로 불투명"]
     res --> integ["integrator → 추적·푸시투"]
     res --> align["AlignedResult → 정렬 체인"]
     runner --> ov --> web["웹 LiveCam 오버레이"]
@@ -118,9 +118,9 @@ flowchart TB
          ∥ 동시에 워커 스레드: sep_shadow.detect(solver_raw)
          (신선한 solver_raw 부재/cedar 연결 실패 시 그 시도만 512/tetra3 폴백)
   [1단] 중앙 정사각(min(h,w)²) 서브셋 솔브 — 4개 미만 or 전체와 동일하면 스킵
-  [2단] 실패 시 전체 좌표 솔브 (두 단 모두 네이티브 FOV, 300ms 캡)
-  [3·4단] 실패 ∧ SEP ≥ 5 ∧ 백오프 통과 → 스레드 join 후
-         SEP 중앙 서브셋 → SEP 전체 (sep_shadow.solve, 1s 캡)
+  [2단] 실패 ∧ SEP ≥ 5 ∧ 백오프 통과 → 스레드 join 후 SEP 중앙 서브셋
+  [3단] 두 중앙 경로 실패 시에만 cedar 전체 좌표 솔브 (300ms 캡)
+  [4단] 다시 실패하면 SEP 전체 (sep_shadow.solve, 1s 캡)
   [발행] SolveResult(+ solve_path) → integrator, 오버레이 1회 게시, CSV 1행
          Centroids = 게이트 후 크롭 창 내 검출 수 (AE 512 의미 보존)
 ```
@@ -133,7 +133,11 @@ cedar-FF 직접 95–99%, 절벽(≥65–70%)은 물리 한계로 경로 무관
 (실측 리포트 참조). 중앙 우선 캐스케이드는 사용자 설계(2026-08-04):
 중앙 서브셋이 어두운 하늘에서 RMSE 24→13″(오프라인 A/B). 정식 어두운 밤
 A/B와 2026-08-12 실기 재검증을 근거로 풀프레임·중앙 우선 플래그를 기본
-on으로 전환했다. off 롤백 경로는 그대로 보존한다.
+on으로 전환했다. 같은 날 사용자 기준을 명확히 반영해 **모든 중앙 경로를
+모든 전체 경로보다 우선**하도록 순서를 바꿨다. 이유는 상·하단의 광학 왜곡,
+지평선 광해와 장애물이 패턴 오류를 일으킨다는 실기 관찰이며, 전체 프레임은
+중앙 두 경로가 모두 실패했을 때만 쓰는 최후 수단이다. off 롤백 경로는
+그대로 보존한다.
 
 ## 3. 프레임 공간과 좌표 정합 (`solver_frame_map.py`)
 
@@ -294,8 +298,10 @@ tetra3를 호출한다 — 파라미터 차이는 FOV 스케일뿐.
 - **타임아웃 캡**: FF cedar 단 300ms(`CEDAR_FF_SOLVE_TIMEOUT_MS` — 성공
   솔브 실측 9–26ms, 실패 시 빠른 포기로 SEP 기회 보존), SEP 폴백
   1s(`FALLBACK_SOLVE_TIMEOUT_MS` — 500ms 캡은 실측 근거 미확보로 보류).
-- **`SolveDiagnostics.solve_path`**: cedar_ff_center / cedar_ff / cedar_512 /
-  sep_center / sep / tetra3 — 진단 전용(하류 분기 금지), `/api/solution` 노출.
+- **`SolveDiagnostics.solve_path`**: `cedar_center` / `sep_center` /
+  `cedar_full` / `sep_full` — 기본 4단 경로. 이름은 검출 입력이 아니라 실제
+  솔빙에 사용한 영역을 나타낸다. 레거시 롤백 모드는 `cedar_512`, Cedar
+  서버 불가 모드는 `tetra3`. 진단 전용(하류 분기 금지), `/api/solution` 노출.
 
 **cedar 1차 경로 자체의 가용성 방어** (하이브리드와 독립이지만 같은 루프):
 cedar-detect-server 연결 실패(`CedarConnectionError`) 시
@@ -371,6 +377,11 @@ Cedar 상태를 숨기던 문제를 해결한 관측 전용 필드이며, 하류
 `PFCedarDetectClient` 새 인스턴스 생성 금지(shmem 충돌) — gRPC 인라인으로
 접속한다.
 
+**경로 명칭 변경(2026-08-12)**: 종전 `cedar_ff_center`는 풀프레임 원본에서
+검출했더라도 중앙 좌표만 솔빙에 사용하므로 `cedar_center`로 변경했다.
+같은 원칙으로 `cedar_ff`→`cedar_full`, `sep`→`sep_full`로 명시화했다.
+`ff`는 검출 구현과 솔빙 영역을 혼동시키므로 경로 이름에서 사용하지 않는다.
+
 ## 11. 안전·방어 설계 요약
 
 | 층 | 방어 | 실패 시 동작 |
@@ -391,7 +402,7 @@ Cedar 상태를 숨기던 문제를 해결한 관측 전용 필드이며, 하류
 | `solver_cedar_fullframe` | **true** | cedar 1차를 비크롭 원본·네이티브 FOV로 (off=기존 512 바이트 동일 롤백) |
 | `solver_cedar_ff_gates` | **true** | FF 검출 품질 게이트 (엣지·포화·웜픽셀·클러스터) |
 | `solver_horizon_mask` | false | IMU 지평선 마스크 (고도<5° 검출 제거) — 관측지 스카이라인별 opt-in |
-| `solver_center_first` | **true** | 중앙 정사각 우선 4단 캐스케이드 + SEP 병렬 검출 |
+| `solver_center_first` | **true** | 전역 중앙 우선 4단(Cedar 중앙→SEP 중앙→Cedar 전체→SEP 전체) + SEP 병렬 검출 |
 | `solver_sep_sigma` | **4.0** | SEP 추출 임계(σ, 국소 배경 RMS 단위) |
 | `solver_shadow_detect` | **false** | 섀도 A/B CSV — 튜닝 세션 opt-in |
 | `camera_auto_dump` | false | 솔브 10연속 실패 시 3분 쿨다운 스테이지 덤프(자동 코퍼스 수집) |

@@ -84,6 +84,7 @@
 | [solver_fullframe_field_test_20260803](mf_report/mf_solver_fullframe_field_test_20260803_ko.md) | ko | **1회성 실측**(2026-08-03) | cedar 풀프레임 1차 경로 야간 실측(섀도 CSV ~2,200시도) — LP 곡선/타임아웃 A/B. 계획은 [cedar_fullframe_primary_plan](mf_dev/mf_cedar_fullframe_primary_plan_ko.md). |
 | [fullframe_solving_report_20260804](mf_report/mf_fullframe_solving_report_20260804_ko.md) | 둘 다 | **리포트**(2026-08-04) | 풀프레임 솔빙 파이프라인 실측 리포트 — 처리 구조(검출 2종 병렬 + 좌표 4단 캐스케이드)와 실측 결과 정리. |
 | [solver_diagnostics_20260812](mf_report/mf_solver_diagnostics_20260812_ko.md) | ko | **1회성 실측**(2026-08-12) | 풀프레임 4단 기본 활성화 및 단계별 Cedar/SEP 검출 진단 추가 검증 — Cedar 114→90→64, `cedar_ff_center`/`cedar_ff` 실기 성공. |
+| [solver_cascade_order_20260812](mf_report/mf_solver_cascade_order_20260812_ko.md) | ko | **변경 검증**(2026-08-12) | 캐스케이드를 전역 중앙 우선으로 변경하고 순서 테스트·실기 조기 종료를 검증. 경로명도 `cedar_center`/`sep_center`/`cedar_full`/`sep_full`로 명확화. |
 | [feature_test_session_20260805](mf_report/mf_feature_test_session_20260805_ko.md) | ko | **1회성**(2026-08-05) | 기능 체크리스트 자동 검증분 실행 기록 — 정적/스위트/API/헤드리스 UI 통과, 결함 3건 발견·수정(Software RIGHT 미가드, 업데이트 예외 관통, imu_fake 시그니처), 남은 수동 항목 목록. |
 | [mono_sqm_colour_guard_20260805](mf_report/mf_mono_sqm_colour_guard_20260805_ko.md) | 둘 다 | **공지**(2026-08-05) | 커뮤니티 공유용 — SRGGB 라벨의 실측 모노 imx462에서 upstream #560 색보정이 SQM을 +0.74 mag 왜곡하는 함정과 `profile.mono` 가드, 모듈 자가진단법 ([영문판](mf_report/mf_mono_sqm_colour_guard_20260805_en.md)). |
 | [sqm_stack_port_plan](mf_dev/mf_sqm_stack_port_plan_ko.md) | ko | **이식 완료**(2026-07-30) | upstream SQM 스택(#532/#542/#543/#544) 이식 분석·계획과 Phase별 실적. |

@@ -774,8 +774,9 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 
 검토 포인트:
 
-- [ ] `/api/status`의 `solve_path`가 조건에 맞게 나오는가 (맑음: cedar_ff,
-      광해/구름 틈: sep)
+- [ ] `/api/status`의 `solve_path`가 조건에 맞게 나오는가
+      (중앙: `cedar_center`/`sep_center`, 중앙 실패 후 전체:
+      `cedar_full`/`sep_full`)
 - [ ] 웜픽셀 맵이 최신인가 (bias 238 기준 재검증 — SQM 포트 잔여 조건)
 - [ ] 게이트가 지상 점광원(건물 불빛)을 걸러내는가
 

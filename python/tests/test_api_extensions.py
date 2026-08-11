@@ -50,6 +50,7 @@ def _populated() -> PointingEstimate:
             FOV=10.2,
             T_solve=0.05,
             T_extract=0.01,
+            solve_path="cedar_center",
             CedarRawCentroids=27,
             CedarGatedCentroids=22,
             CedarCenterCentroids=14,
@@ -104,6 +105,7 @@ def test_diagnostics_and_timing_keys_preserved():
     assert d["Matches"] == 12
     # Detected vs matched: the auto-exposure signal, not the solve result.
     assert d["Centroids"] == 31
+    assert d["solve_path"] == "cedar_center"
     assert d["CedarRawCentroids"] == 27
     assert d["CedarGatedCentroids"] == 22
     assert d["CedarCenterCentroids"] == 14

@@ -56,8 +56,9 @@ exposure. With `solver_cedar_fullframe`=on (this fork's operating
 configuration, adopted 2026-08-03) the cedar primary also detects on the
 uncropped original (raw>>4) and solves at native FOV; with
 `solver_center_first`=on this becomes a coordinate-level four-tier
-cascade (cedar centre-square -> cedar full -> SEP centre -> SEP full)
-with the SEP detection running concurrently on a worker thread. With
+cascade (**Cedar centre-square -> SEP centre-square -> Cedar full -> SEP
+full**) with SEP detection running concurrently with the first Cedar-centre
+tier. Frame region takes precedence over detector identity. With
 both flags off the behaviour is byte-identical to the original two-tier
 (cedar-512 -> SEP).
 
@@ -79,30 +80,29 @@ flowchart TB
         ced["cedar-detect full-frame<br/>raw>>4 - sigma 8 (shmem auto-grow)"]
         gates["Detection gates (opt-out)<br/>edge - saturation - warm - cluster<br/>+ IMU horizon mask (opt-in)"]
         c1["Tier 1: centre-square subset solve<br/>(center_first, 300ms cap)"]
-        c2["Tier 2: full-set solve (300ms cap)"]
+        c2["Tier 3: Cedar full-set solve (300ms cap)"]
         subgraph runner["SepShadowRunner - detection on a worker thread"]
             det["sep_detect (sigma 4.0)<br/>bin2x2 -> mesh background -> 6 gates"]
             gate["Fallback gate<br/>SEP >= 5 and backoff passed"]
         end
-        s3["Tier 3: SEP centre-subset solve"]
+        s3["Tier 2: SEP centre-subset solve"]
         s4["Tier 4: SEP full solve (1s cap)"]
         map["solver_frame_map<br/>rotation, scale, target_pixel round-trip<br/>-> unified 512 semantics"]
     end
     wpm[("sep_warm_pixels.npy")]
     raw --> prod --> ci
     raw --> sr
-    sr --> ced --> gates --> c1 -->|fail| c2
+    sr --> ced --> gates --> c1 -->|fail| gate
     sr --> det
     wpm --> gates
     wpm --> det
-    det --> gate
-    c2 -->|fail| gate --> s3 -->|fail| s4
+    det --> gate --> s3 -->|fail| c2 -->|fail| s4
     c1 -->|success| map
     c2 -->|success| map
     s3 -->|success| map
     s4 --> map
     tp --> map
-    map --> res["SolveResult + solve_path<br/>(cedar_ff_center/cedar_ff/sep_center/sep)<br/>path-opaque downstream"]
+    map --> res["SolveResult + solve_path<br/>(cedar_center/sep_center/cedar_full/sep_full)<br/>path-opaque downstream"]
     res --> integ["integrator -> tracking / push-to"]
     res --> align["AlignedResult -> alignment chain"]
     runner --> ov --> web["Web LiveCam overlay"]
@@ -128,9 +128,9 @@ Solver process (solver.py, per attempt — FF + center_first configuration)
         ∥ concurrently on a worker thread: sep_shadow.detect(solver_raw)
         (no fresh solver_raw or cedar connection failure → that attempt uses the 512/tetra3 path)
   [tier 1] centre-square (min(h,w)²) subset solve — skipped when <4 stars or identical to full set
-  [tier 2] on failure: full-set solve (both tiers native FOV, 300ms cap)
-  [tiers 3-4] on failure ∧ SEP ≥ 5 ∧ backoff passed → join thread,
-        SEP centre subset → SEP full set (sep_shadow.solve, 1s cap)
+  [tier 2] on failure ∧ SEP ≥ 5 ∧ backoff passed → join thread and solve the SEP centre subset
+  [tier 3] only after both centre paths fail: Cedar full-set solve (300ms cap)
+  [tier 4] on another failure: SEP full set (sep_shadow.solve, 1s cap)
   [publish] SolveResult (+ solve_path) → integrator; overlay published once; one CSV row
         Centroids = post-gate in-crop count (preserves the AE's 512 semantics)
 ```
@@ -146,7 +146,10 @@ report). The centre-first cascade is a user design (2026-08-04): the centre
 subset improved RMSE 24 -> 13 arcsec on the dark-sky corpus (offline A/B).
 The full-frame and centre-first flags became defaults on 2026-08-12 after
 the A/B evidence and another live-device verification. The off rollback
-path remains available.
+path remains available. The same-day policy clarification moved every
+centre path ahead of every full-frame path: upper/lower edge distortion,
+horizon glow and obstructions had caused field errors, so full-frame
+coordinates are now a last resort after both centre detectors fail.
 
 ## 3. Frame spaces and coordinate mapping (`solver_frame_map.py`)
 
@@ -324,9 +327,11 @@ Rules when feeding a fallback solution into the normal chain:
   successful solves measure 9-26 ms; failing fast preserves SEP rescue
   opportunities), SEP fallback 1 s (`FALLBACK_SOLVE_TIMEOUT_MS`; a 500 ms
   cap was shelved for lack of clean evidence).
-- **`SolveDiagnostics.solve_path`**: cedar_ff_center / cedar_ff /
-  cedar_512 / sep_center / sep / tetra3 — diagnostics only (no downstream
-  branching), exposed in `/api/solution`.
+- **`SolveDiagnostics.solve_path`**: `cedar_center` / `sep_center` /
+  `cedar_full` / `sep_full` for the default cascade. Names describe the
+  coordinate region actually submitted to solving, not the detector input.
+  Legacy rollback modes retain `cedar_512` and `tetra3`. Diagnostics only
+  (no downstream branching), exposed in `/api/solution`.
 
 **Availability defence of the cedar tier itself** (independent of the
 hybrid, same loop): on a cedar-detect-server connection failure
@@ -413,6 +418,12 @@ four fields for detection-stage bottlenecks. For live sigma sweeps, never
 construct a second `PFCedarDetectClient` (shmem collision); connect over
 inline gRPC.
 
+**Path-name change (2026-08-12)**: the former `cedar_ff_center` detected on
+the full raw frame but solved only centre coordinates, so it is now
+`cedar_center`. By the same region-based rule, `cedar_ff` became
+`cedar_full` and `sep` became `sep_full`. `ff` no longer appears in path
+names because it mixed detector implementation with the solve region.
+
 ## 11. Safety and defence summary
 
 | Layer | Defence | Behaviour on failure |
@@ -433,7 +444,7 @@ inline gRPC.
 | `solver_cedar_fullframe` | **true** | cedar primary on the uncropped raw at native FOV (off = byte-identical 512 rollback) |
 | `solver_cedar_ff_gates` | **true** | FF detection quality gates (edge / saturation / warm map / cluster) |
 | `solver_horizon_mask` | false | IMU horizon mask (drop detections below 5° altitude) — per-site opt-in |
-| `solver_center_first` | **true** | centre-square-first 4-tier cascade + parallel SEP detection |
+| `solver_center_first` | **true** | global centre-first cascade (Cedar centre → SEP centre → Cedar full → SEP full) + parallel SEP detection |
 | `solver_sep_sigma` | **4.0** | SEP extraction threshold (σ, units of local background RMS) |
 | `solver_shadow_detect` | **false** | Shadow A/B CSV — opt-in for tuning sessions |
 | `camera_auto_dump` | false | Auto stage dump on 10 consecutive solve failures, 3-min cooldown (automatic corpus collection) |

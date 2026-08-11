@@ -125,3 +125,75 @@ def test_center_square_subset_selects_max_centered_square():
     kept = solver._center_square_subset(pts, (1080, 1920))
     assert len(kept) == 3
     assert solver._center_square_subset([], (1080, 1920)).shape == (0, 2)
+
+
+@pytest.mark.unit
+def test_center_first_remainder_prefers_sep_center_before_any_full_frame():
+    calls = []
+
+    def stage(name, solution):
+        def run():
+            calls.append(name)
+            return solution
+
+        return run
+
+    solution, path = solver._solve_center_first_remainder(
+        (
+            ("sep_center", stage("sep_center", {"RA": 1.0})),
+            ("cedar_full", stage("cedar_full", {"RA": 2.0})),
+            ("sep_full", stage("sep_full", {"RA": 3.0})),
+        )
+    )
+
+    assert path == "sep_center"
+    assert solution["RA"] == 1.0
+    assert calls == ["sep_center"]
+
+
+@pytest.mark.unit
+def test_center_first_remainder_uses_full_paths_only_after_center_failure():
+    calls = []
+
+    def stage(name, solution):
+        def run():
+            calls.append(name)
+            return solution
+
+        return run
+
+    solution, path = solver._solve_center_first_remainder(
+        (
+            ("sep_center", stage("sep_center", {})),
+            ("cedar_full", stage("cedar_full", {"RA": 2.0})),
+            ("sep_full", stage("sep_full", {"RA": 3.0})),
+        )
+    )
+
+    assert path == "cedar_full"
+    assert solution["RA"] == 2.0
+    assert calls == ["sep_center", "cedar_full"]
+
+
+@pytest.mark.unit
+def test_center_first_remainder_uses_sep_full_as_last_resort():
+    calls = []
+
+    def stage(name, solution):
+        def run():
+            calls.append(name)
+            return solution
+
+        return run
+
+    solution, path = solver._solve_center_first_remainder(
+        (
+            ("sep_center", stage("sep_center", {})),
+            ("cedar_full", stage("cedar_full", {})),
+            ("sep_full", stage("sep_full", {"RA": 3.0})),
+        )
+    )
+
+    assert path == "sep_full"
+    assert solution["RA"] == 3.0
+    assert calls == ["sep_center", "cedar_full", "sep_full"]

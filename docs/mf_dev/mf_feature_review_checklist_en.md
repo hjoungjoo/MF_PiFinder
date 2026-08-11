@@ -781,8 +781,9 @@ Key files: `python/PiFinder/solver.py`, `sep_detect.py`, `sep_warm_map.py`,
 
 Review points:
 
-- [ ] `/api/status` `solve_path` matches conditions (clear: cedar_ff;
-      LP/cloud gaps: sep)
+- [ ] `/api/status` `solve_path` matches conditions
+      (centre: `cedar_center`/`sep_center`; after centre failure:
+      `cedar_full`/`sep_full`)
 - [ ] Warm-pixel map is current (bias-238 re-verification — open SQM-port item)
 - [ ] Gates reject ground point-light clusters (building windows)
 
