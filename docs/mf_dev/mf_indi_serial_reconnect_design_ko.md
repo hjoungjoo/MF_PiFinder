@@ -3,6 +3,12 @@
 상태: **1.2 설정 불일치 및 USB 재삽입 1회 복구 구현·실장 검증 완료 / 지속 통신 감시는 후속 과제**
 작성일: 2026-08-12
 
+관련 후속 설계:
+
+- [`mf_indi_serial_auto_discovery_design_ko.md`](mf_indi_serial_auto_discovery_design_ko.md):
+  Web Serial Port에서 Auto를 선택했을 때 현재 장치 중 OnStepX stable port를
+  찾는 설정 기능 설계
+
 ## 1. 목적과 변경 경계
 
 USB serial 케이블의 물리적 분리/재삽입과, 정상 연결 중 노이즈·일시 오류·컨트롤러 재부팅을 서로 다른 사건으로 판정하고 안전하게 복구한다.

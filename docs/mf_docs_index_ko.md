@@ -31,6 +31,7 @@
 | [mount_mode_compatibility](mf_dev/mf_mount_mode_compatibility_ko.md) | 둘 다 | plan(대부분 구현) | Alt/Az vs EQ SkySafari 호환성 감사·체크리스트. |
 | [indi_mount_install](mf_dev/mf_indi_mount_install_ko.md) | 둘 다 | install | INDI 마운트 설치·사용 가이드. |
 | [indi_serial_reconnect_design](mf_dev/mf_indi_serial_reconnect_design_ko.md) | ko | **설정 조정·USB 재삽입 구현**(2026-08-12) | INDI/PiFinder 설정 조정과 stable by-id 기반 1회 재접속 구현. 지속 통신 감시는 후속 설계. |
+| [indi_serial_auto_discovery_design](mf_dev/mf_indi_serial_auto_discovery_design_ko.md) | ko | **구현 전 설계**(2026-08-13) | Web Serial Port의 Auto 선택 시 현재 장치를 지원 baud별로 `:GVP#`/`:GVN#` 검사해 OnStep stable port와 속도를 함께 찾는 설계. |
 
 ## 솔빙 (핵심)
 
@@ -88,6 +89,7 @@
 | [solver_cascade_order_20260812](mf_report/mf_solver_cascade_order_20260812_ko.md) | ko | **변경 검증**(2026-08-12) | 캐스케이드를 전역 중앙 우선으로 변경하고 순서 테스트·실기 조기 종료를 검증. 경로명도 `cedar_center`/`sep_center`/`cedar_full`/`sep_full`로 명확화. |
 | [indi_connection_config_reconcile_20260812](mf_report/mf_indi_connection_config_reconcile_20260812_ko.md) | ko | **변경·실장 검증**(2026-08-12) | INDI live/XML 우선 설정 조정, atomic PiFinder mirror 저장, 실장 USB/by-id/115200 migration 및 연결 상태 검증. |
 | [indi_usb_reinsert_field_test_20260812](mf_report/mf_indi_usb_reinsert_field_test_20260812_ko.md) | ko | **구현·실장 검증**(2026-08-12) | OnStepX USB 실제 분리·재삽입 감지, device session 1회 복구, fresh telemetry와 상태 보존 검증. |
+| [indi_serial_port_dedup_20260813](mf_report/mf_indi_serial_port_dedup_20260813_ko.md) | ko | **구현·실장 검증**(2026-08-13) | 같은 실제 tty를 가리키는 by-id와 ttyUSB 중복을 realpath로 합치고 stable by-id 하나만 표시하도록 검증. |
 | [feature_test_session_20260805](mf_report/mf_feature_test_session_20260805_ko.md) | ko | **1회성**(2026-08-05) | 기능 체크리스트 자동 검증분 실행 기록 — 정적/스위트/API/헤드리스 UI 통과, 결함 3건 발견·수정(Software RIGHT 미가드, 업데이트 예외 관통, imu_fake 시그니처), 남은 수동 항목 목록. |
 | [mono_sqm_colour_guard_20260805](mf_report/mf_mono_sqm_colour_guard_20260805_ko.md) | 둘 다 | **공지**(2026-08-05) | 커뮤니티 공유용 — SRGGB 라벨의 실측 모노 imx462에서 upstream #560 색보정이 SQM을 +0.74 mag 왜곡하는 함정과 `profile.mono` 가드, 모듈 자가진단법 ([영문판](mf_report/mf_mono_sqm_colour_guard_20260805_en.md)). |
 | [sqm_stack_port_plan](mf_dev/mf_sqm_stack_port_plan_ko.md) | ko | **이식 완료**(2026-07-30) | upstream SQM 스택(#532/#542/#543/#544) 이식 분석·계획과 Phase별 실적. |

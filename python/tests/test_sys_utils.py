@@ -82,6 +82,70 @@ try:
         assert "LX200 OnStepX.DEVICE_BAUD_RATE.460800=On" in flattened
 
     @pytest.mark.unit
+    def test_list_onstep_serial_ports_deduplicates_aliases_by_realpath(monkeypatch):
+        paths_by_pattern = {
+            "/dev/serial/by-id/*": ["/dev/serial/by-id/onstep"],
+            "/dev/ttyUSB*": ["/dev/ttyUSB0"],
+            "/dev/ttyACM*": [],
+        }
+        monkeypatch.setattr(
+            sys_utils.glob,
+            "glob",
+            lambda pattern: list(paths_by_pattern[pattern]),
+        )
+        monkeypatch.setattr(
+            sys_utils.os.path,
+            "realpath",
+            lambda path: (
+                "/dev/ttyUSB0"
+                if path in {"/dev/serial/by-id/onstep", "/dev/ttyUSB0"}
+                else path
+            ),
+        )
+
+        assert sys_utils.list_onstep_serial_ports() == [
+            {
+                "path": "/dev/serial/by-id/onstep",
+                "label": "/dev/serial/by-id/onstep (/dev/ttyUSB0)",
+                "resolved": "/dev/ttyUSB0",
+            }
+        ]
+
+    @pytest.mark.unit
+    def test_list_onstep_serial_ports_keeps_distinct_targets_and_tty_fallback(
+        monkeypatch,
+    ):
+        paths_by_pattern = {
+            "/dev/serial/by-id/*": ["/dev/serial/by-id/onstep"],
+            "/dev/ttyUSB*": ["/dev/ttyUSB0", "/dev/ttyUSB1"],
+            "/dev/ttyACM*": ["/dev/ttyACM0"],
+        }
+        resolved_paths = {
+            "/dev/serial/by-id/onstep": "/dev/ttyUSB0",
+            "/dev/ttyUSB0": "/dev/ttyUSB0",
+            "/dev/ttyUSB1": "/dev/ttyUSB1",
+            "/dev/ttyACM0": "/dev/ttyACM0",
+        }
+        monkeypatch.setattr(
+            sys_utils.glob,
+            "glob",
+            lambda pattern: list(paths_by_pattern[pattern]),
+        )
+        monkeypatch.setattr(
+            sys_utils.os.path,
+            "realpath",
+            lambda path: resolved_paths.get(path, path),
+        )
+
+        assert [
+            item["path"] for item in sys_utils.list_onstep_serial_ports()
+        ] == [
+            "/dev/serial/by-id/onstep",
+            "/dev/ttyACM0",
+            "/dev/ttyUSB1",
+        ]
+
+    @pytest.mark.unit
     def test_apply_connection_does_not_save_mismatched_readback(monkeypatch):
         calls = []
 

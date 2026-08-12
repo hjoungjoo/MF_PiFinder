@@ -653,10 +653,19 @@ def list_onstep_serial_ports() -> list[dict[str, str]]:
     """
     Return likely USB serial ports for an OnStep controller.
 
-    Prefer stable /dev/serial/by-id names when available, then include common
-    ttyUSB/ttyACM fallbacks. The label includes the resolved target for clarity.
+    Collapse aliases that resolve to the same character device. Prefer stable
+    /dev/serial/by-id names when available, then by-path and common ttyUSB/
+    ttyACM fallbacks. The label includes the resolved target for clarity.
     """
-    ports: dict[str, dict[str, str]] = {}
+    ports_by_target: dict[str, dict[str, str]] = {}
+
+    def path_priority(path: str) -> tuple[int, str]:
+        if path.startswith("/dev/serial/by-id/"):
+            return (0, path)
+        if path.startswith("/dev/serial/by-path/"):
+            return (1, path)
+        return (2, path)
+
     for pattern in ["/dev/serial/by-id/*", "/dev/ttyUSB*", "/dev/ttyACM*"]:
         for path in sorted(glob.glob(pattern)):
             try:
@@ -666,8 +675,13 @@ def list_onstep_serial_ports() -> list[dict[str, str]]:
             label = path
             if resolved != path:
                 label = f"{path} ({resolved})"
-            ports[path] = {"path": path, "label": label, "resolved": resolved}
-    return sorted(ports.values(), key=lambda item: item["path"])
+            candidate = {"path": path, "label": label, "resolved": resolved}
+            existing = ports_by_target.get(resolved)
+            if existing is None or path_priority(path) < path_priority(
+                existing["path"]
+            ):
+                ports_by_target[resolved] = candidate
+    return sorted(ports_by_target.values(), key=lambda item: item["path"])
 
 
 def normalize_onstep_connection_config(

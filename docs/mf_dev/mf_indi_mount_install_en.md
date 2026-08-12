@@ -118,7 +118,9 @@ INDI > LX200 OnStepX Driver Connection
 For USB connections, choose a detected `/dev/serial/by-id`, `/dev/ttyUSB*`,
 or `/dev/ttyACM*` port, or enter the serial port manually. Communication Speed
 offers `9600`, `19200`, `38400`, `57600`, `115200`, `230400`, and `460800`
-baud. Apply
+baud. Aliases that resolve to the same physical serial device are collapsed
+into one entry, preferring the stable `/dev/serial/by-id/...` path when
+available. Apply
 disconnects the driver, writes `DEVICE_PORT` and the standard INDI
 `DEVICE_BAUD_RATE`, reconnects and verifies the connection, then performs
 `CONFIG_SAVE`. Baud applies only to USB Serial and defaults to 9600. For
