@@ -87,6 +87,8 @@ DEFAULT_INDI_PROFILE_NAME = "MF_PiFinder"
 INDI_PROFILE_DB_PATH = utils.home_dir / ".indi" / "profiles.db"
 ONSTEP_CONNECTION_USB = "usb"
 ONSTEP_CONNECTION_NETWORK = "network"
+ONSTEP_SERIAL_BAUD_RATES = (9600, 19200, 38400, 57600, 115200, 230400, 460800)
+DEFAULT_ONSTEP_SERIAL_BAUD = 9600
 ONSTEP_LOCATION_CACHE_FILE = utils.data_dir / "onstep_location_cache.json"
 # The LX200 OnStepX INDI driver may read site latitude/longitude back at minute
 # precision even when the device itself keeps seconds.
@@ -100,6 +102,7 @@ ONSTEP_DISPLAY_PROPERTIES = [
     "CONNECTION_MODE.CONNECTION_SERIAL",
     "CONNECTION_MODE.CONNECTION_TCP",
     "DEVICE_PORT.PORT",
+    "DEVICE_BAUD_RATE.*",
     "DEVICE_ADDRESS.ADDRESS",
     "DEVICE_ADDRESS.PORT",
     "TIME_UTC.UTC",
@@ -717,6 +720,7 @@ def get_indi_onstep_properties(
 def apply_indi_onstep_connection(
     connection_type: str,
     serial_port: str = "",
+    serial_baud: int = DEFAULT_ONSTEP_SERIAL_BAUD,
     network_host: str = "",
     network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
     server_host: str = DEFAULT_INDI_SERVER_HOST,
@@ -731,9 +735,13 @@ def apply_indi_onstep_connection(
     if connection_type == ONSTEP_CONNECTION_USB:
         if not serial_port.strip().startswith("/dev/"):
             raise ValueError("USB serial port must be a /dev path")
+        serial_baud = int(serial_baud)
+        if serial_baud not in ONSTEP_SERIAL_BAUD_RATES:
+            raise ValueError("Unsupported USB serial baud rate")
         config_properties = [
             f"{device_name}.CONNECTION_MODE.CONNECTION_SERIAL=On",
             f"{device_name}.DEVICE_PORT.PORT={serial_port.strip()}",
+            f"{device_name}.DEVICE_BAUD_RATE.{serial_baud}=On",
         ]
     else:
         if not network_host.strip():
@@ -1249,6 +1257,7 @@ def sync_onstep_location_time_exclusive(
     network_host: str = "",
     network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
     serial_port: str = "",
+    serial_baud: int = DEFAULT_ONSTEP_SERIAL_BAUD,
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
     elevation: float | None = None,
@@ -1289,7 +1298,9 @@ def sync_onstep_location_time_exclusive(
         if connection_type == ONSTEP_CONNECTION_USB:
             if not serial_port:
                 raise RuntimeError("No OnStep serial port configured")
-            responses = _send_onstep_lx200_serial_commands(serial_port, commands)
+            responses = _send_onstep_lx200_serial_commands(
+                serial_port, commands, baudrate=int(serial_baud)
+            )
         else:
             if not network_host:
                 raise RuntimeError("No OnStep network host configured")
@@ -1347,6 +1358,7 @@ def reset_onstep_alignment_exclusive(
     network_host: str = "",
     network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
     serial_port: str = "",
+    serial_baud: int = DEFAULT_ONSTEP_SERIAL_BAUD,
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
 ) -> dict[str, Any]:
@@ -1381,7 +1393,9 @@ def reset_onstep_alignment_exclusive(
         if connection_type == ONSTEP_CONNECTION_USB:
             if not serial_port:
                 raise RuntimeError("No OnStep serial port configured")
-            responses = _send_onstep_lx200_serial_commands(serial_port, commands)
+            responses = _send_onstep_lx200_serial_commands(
+                serial_port, commands, baudrate=int(serial_baud)
+            )
         else:
             if not network_host:
                 raise RuntimeError("No OnStep network host configured")
@@ -1455,6 +1469,7 @@ def reboot_onstep_controller_exclusive(
     network_host: str = "",
     network_port: int = DEFAULT_ONSTEP_NETWORK_PORT,
     serial_port: str = "",
+    serial_baud: int = DEFAULT_ONSTEP_SERIAL_BAUD,
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
 ) -> dict[str, Any]:
@@ -1494,7 +1509,7 @@ def reboot_onstep_controller_exclusive(
                 raise RuntimeError("No OnStep serial port configured")
             # :ERESET# has no reply; the controller reboots immediately.
             result["responses"] = _send_onstep_lx200_serial_commands(
-                serial_port, commands
+                serial_port, commands, baudrate=int(serial_baud)
             )
             time.sleep(ONSTEP_REBOOT_SETTLE_SECONDS + ONSTEP_REBOOT_WAIT_SECONDS / 2)
         else:

@@ -1357,6 +1357,7 @@ class MountControlIndi(BacklashCalibrationMixin):
                 network_host=onstep_cfg["network_host"],
                 network_port=onstep_cfg["network_port"],
                 serial_port=onstep_cfg["serial_port"],
+                serial_baud=onstep_cfg.get("serial_baud", 9600),
                 server_host=self.indi_host,
                 server_port=self.indi_port,
             )
@@ -1418,6 +1419,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             "network_host": cfg.get_option("onstep_network_host", ""),
             "network_port": int(cfg.get_option("onstep_network_port", 9999)),
             "serial_port": cfg.get_option("onstep_serial_port", ""),
+            "serial_baud": int(cfg.get_option("onstep_serial_baud", 9600)),
             "direct_location_time_sync": bool(direct_sync),
         }
 
@@ -1504,6 +1506,7 @@ class MountControlIndi(BacklashCalibrationMixin):
                 network_host=onstep_cfg["network_host"],
                 network_port=onstep_cfg["network_port"],
                 serial_port=onstep_cfg["serial_port"],
+                serial_baud=onstep_cfg.get("serial_baud", 9600),
                 server_host=self.indi_host,
                 server_port=self.indi_port,
             )
@@ -2944,6 +2947,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             network_host=onstep_cfg["network_host"],
             network_port=onstep_cfg["network_port"],
             serial_port=onstep_cfg["serial_port"],
+            serial_baud=onstep_cfg.get("serial_baud", 9600),
             server_host=self.indi_host,
             server_port=self.indi_port,
         )

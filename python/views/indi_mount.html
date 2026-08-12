@@ -55,6 +55,9 @@
           <tr><td>{{ _('Serial Mode') }}</td><td id="onstep_serial_mode_value">{{ onstep_props.get(onstep_device ~ '.CONNECTION_MODE.CONNECTION_SERIAL', '') }}</td></tr>
           <tr><td>{{ _('TCP Mode') }}</td><td id="onstep_tcp_mode_value">{{ onstep_props.get(onstep_device ~ '.CONNECTION_MODE.CONNECTION_TCP', '') }}</td></tr>
           <tr><td>{{ _('Serial Port') }}</td><td id="onstep_serial_port_value">{{ onstep_props.get(onstep_device ~ '.DEVICE_PORT.PORT', '') }}</td></tr>
+          <tr><td>{{ _('Serial Baud Rate') }}</td><td id="onstep_serial_baud_value">
+            {% for baud in serial_baud_rates %}{% if onstep_props.get(onstep_device ~ '.DEVICE_BAUD_RATE.' ~ baud, '') == 'On' %}{{ baud }}{% endif %}{% endfor %}
+          </td></tr>
           <tr><td>{{ _('Network Host') }}</td><td id="onstep_network_host_value">{{ onstep_props.get(onstep_device ~ '.DEVICE_ADDRESS.ADDRESS', '') }}</td></tr>
           <tr><td>{{ _('Network Port') }}</td><td id="onstep_network_port_value">{{ onstep_props.get(onstep_device ~ '.DEVICE_ADDRESS.PORT', '') }}</td></tr>
           <tr><td>{{ _('OnStep Location') }}</td><td id="onstep_location_value">{{ onstep_location_display }}</td></tr>
@@ -122,7 +125,7 @@
 
       <div id="usb_settings">
         <div class="row">
-          <div class="input-field col s12">
+          <div class="input-field col s12 m8">
             <select id="serial_port" name="serial_port">
               <option value="__manual__">{{ _('Manual entry') }}</option>
               {% for port in serial_ports %}
@@ -133,6 +136,14 @@
               {% endif %}
             </select>
             <label class="active">{{ _('USB Serial Port') }}</label>
+          </div>
+          <div class="input-field col s12 m4">
+            <select id="serial_baud" name="serial_baud">
+              {% for baud in serial_baud_rates %}
+              <option value="{{ baud }}" {% if serial_baud == baud %}selected{% endif %}>{{ baud }} baud</option>
+              {% endfor %}
+            </select>
+            <label class="active">{{ _('Communication Speed') }}</label>
           </div>
         </div>
         {% if not serial_ports %}
@@ -595,6 +606,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var motionKeepaliveTimer = null;
   var onstepDeviceName = {{ onstep_device_name|default('', true)|tojson }};
   var pifinderMountType = {{ mount_type|default('', true)|tojson }};
+  var serialBaudRates = {{ serial_baud_rates|list|tojson }};
   var initialBacklashAuto = {{ mount_control_status.get('backlash_auto', {})|default({}, true)|tojson }};
   var backlashLabelText = {{ _('Backlash')|tojson }};
   var backlashStartLabel = {{ _('Start Motion Test')|tojson }};
@@ -1062,6 +1074,15 @@ document.addEventListener('DOMContentLoaded', function() {
     setText('onstep_serial_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_SERIAL')]));
     setText('onstep_tcp_mode_value', textOrDash(onstep[onstepKey('CONNECTION_MODE.CONNECTION_TCP')]));
     setText('onstep_serial_port_value', textOrDash(onstep[onstepKey('DEVICE_PORT.PORT')]));
+    var activeSerialBaud = '-';
+    serialBaudRates.some(function(baud) {
+      if (onstep[onstepKey('DEVICE_BAUD_RATE.' + baud)] === 'On') {
+        activeSerialBaud = String(baud);
+        return true;
+      }
+      return false;
+    });
+    setText('onstep_serial_baud_value', activeSerialBaud);
     setText('onstep_network_host_value', textOrDash(onstep[onstepKey('DEVICE_ADDRESS.ADDRESS')]));
     setText('onstep_network_port_value', textOrDash(onstep[onstepKey('DEVICE_ADDRESS.PORT')]));
     var mountState = payload.onstep_mount_state || {};

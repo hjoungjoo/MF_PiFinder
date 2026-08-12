@@ -1196,6 +1196,7 @@ def test_sync_location_time_uses_direct_lx200_for_onstep(monkeypatch):
             "network_host": "10.10.10.12",
             "network_port": 9999,
             "serial_port": "",
+            "serial_baud": 9600,
             "server_host": "localhost",
             "server_port": 7624,
         }

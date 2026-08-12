@@ -1151,6 +1151,8 @@ class Server:
                 "network_host": cfg.get_option("onstep_network_host", ""),
                 "network_port": int(cfg.get_option("onstep_network_port", 9999)),
                 "serial_port": cfg.get_option("onstep_serial_port", ""),
+                "serial_baud": int(cfg.get_option("onstep_serial_baud", 9600)),
+                "serial_baud_rates": sys_utils.ONSTEP_SERIAL_BAUD_RATES,
                 "server_host": cfg.get_option("mount_control_indi_host", "localhost"),
                 "server_port": int(cfg.get_option("mount_control_indi_port", 7624)),
                 "mount_type": cfg.get_option("mount_type", "Alt/Az"),
@@ -1741,6 +1743,7 @@ class Server:
             connection_type = (request.form.get("connection_type") or "network").strip()
             serial_port = (request.form.get("serial_port") or "").strip()
             serial_manual = (request.form.get("serial_manual") or "").strip()
+            serial_baud_value = request.form.get("serial_baud") or "9600"
             network_host = (request.form.get("network_host") or "").strip()
             network_manual = (request.form.get("network_manual") or "").strip()
             server_host = (request.form.get("server_host") or "localhost").strip()
@@ -1751,6 +1754,7 @@ class Server:
                 network_host = network_manual
 
             try:
+                serial_baud = int(serial_baud_value)
                 network_port = int(request.form.get("network_port") or "9999")
                 server_port = int(request.form.get("server_port") or "7624")
                 indi_cfg = _indi_config_values()
@@ -1758,6 +1762,7 @@ class Server:
                 result = sys_utils.apply_indi_onstep_connection(
                     connection_type=connection_type,
                     serial_port=serial_port,
+                    serial_baud=serial_baud,
                     network_host=network_host,
                     network_port=network_port,
                     server_host=server_host,
@@ -1775,6 +1780,7 @@ class Server:
                 cfg.load_config()
                 cfg.set_option("onstep_connection_type", connection_type)
                 cfg.set_option("onstep_serial_port", serial_port)
+                cfg.set_option("onstep_serial_baud", serial_baud)
                 cfg.set_option("onstep_network_host", network_host)
                 cfg.set_option("onstep_network_port", network_port)
                 cfg.set_option("mount_control_indi_host", server_host)

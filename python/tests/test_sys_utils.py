@@ -48,6 +48,40 @@ try:
         assert f"{device}.TIME_UTC.OFFSET=-7.00" in properties
 
     @pytest.mark.unit
+    def test_apply_indi_usb_connection_sets_selected_baud(monkeypatch):
+        calls = []
+
+        def fake_run(args, timeout=5.0):
+            calls.append(list(args))
+            stdout = "LX200 OnStepX.CONNECTION.CONNECT=On\n" if "indi_getprop" in args else ""
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(sys_utils, "_run_indi_command", fake_run)
+        monkeypatch.setattr(sys_utils.time, "sleep", lambda _seconds: None)
+
+        result = sys_utils.apply_indi_onstep_connection(
+            connection_type="usb",
+            serial_port="/dev/ttyUSB0",
+            serial_baud=460800,
+            device_name="LX200 OnStepX",
+        )
+
+        assert result["ok"] is True
+        flattened = [arg for call in calls for arg in call]
+        assert "LX200 OnStepX.DEVICE_PORT.PORT=/dev/ttyUSB0" in flattened
+        assert "LX200 OnStepX.DEVICE_BAUD_RATE.460800=On" in flattened
+
+    @pytest.mark.unit
+    def test_apply_indi_usb_connection_rejects_unsupported_baud():
+        with pytest.raises(ValueError, match="Unsupported USB serial baud rate"):
+            sys_utils.apply_indi_onstep_connection(
+                connection_type="usb",
+                serial_port="/dev/ttyUSB0",
+                serial_baud=12345,
+                device_name="LX200 OnStepX",
+            )
+
+    @pytest.mark.unit
     def test_format_onstep_location_display_matches_onstep_web_sign():
         degree = "\N{DEGREE SIGN}"
         assert (

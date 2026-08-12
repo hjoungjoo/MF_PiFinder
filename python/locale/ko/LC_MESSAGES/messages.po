@@ -3827,6 +3827,12 @@ msgstr "TCP 모드"
 msgid "Serial Port"
 msgstr "시리얼 포트"
 
+msgid "Serial Baud Rate"
+msgstr "시리얼 통신 속도"
+
+msgid "Communication Speed"
+msgstr "통신 속도"
+
 # AI-TRANSLATED (claude): needs human review
 #: views/indi_mount.html:58
 msgid "Network Host"
@@ -5931,4 +5937,3 @@ msgstr ""
 
 #~ msgid "This will take effect immediately and can not be undone. Are you sure?"
 #~ msgstr "This will take effect immediately and can not be undone. Are you sure?"
-

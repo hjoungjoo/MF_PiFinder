@@ -16,6 +16,7 @@ BACKUP_PATH = os.path.join(_pifinder_data_dir, "PiFinder_backup.zip")
 logger = logging.getLogger("SysUtils.Fake")
 ONSTEPX_DEVICE_NAME = "LX200 OnStepX"
 LEGACY_ONSTEP_DEVICE_NAME = "LX200 OnStep"
+ONSTEP_SERIAL_BAUD_RATES = (9600, 19200, 38400, 57600, 115200, 230400, 460800)
 DEFAULT_ONSTEP_DEVICE_NAME = ONSTEPX_DEVICE_NAME
 
 
@@ -74,6 +75,7 @@ def get_indi_onstep_properties(
 def apply_indi_onstep_connection(
     connection_type,
     serial_port="",
+    serial_baud=9600,
     network_host="",
     network_port=9999,
     server_host="localhost",
@@ -168,6 +170,7 @@ def sync_onstep_location_time_exclusive(
     network_host="",
     network_port=9999,
     serial_port="",
+    serial_baud=9600,
     server_host="localhost",
     server_port=7624,
     elevation=None,

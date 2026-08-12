@@ -45,6 +45,7 @@
     "indi_guide_pulse_invert_ns": false,
     "onstep_connection_type": "network",
     "onstep_serial_port": "",
+    "onstep_serial_baud": 9600,
     "onstep_network_host": "",
     "onstep_network_port": 9999,
     "solver_debug": 0,

@@ -115,7 +115,16 @@ When the active INDI profile uses `LX200 OnStepX`, its connection settings can b
 INDI > LX200 OnStepX Driver Connection
 ```
 
-For USB connections, choose a detected `/dev/serial/by-id`, `/dev/ttyUSB*`, or `/dev/ttyACM*` port, or enter the serial port manually. For network connections, choose an IP from the AP connected-device list, or enter a host/IP and TCP port manually when the device is not listed. The default OnStep network TCP port is `9999`.
+For USB connections, choose a detected `/dev/serial/by-id`, `/dev/ttyUSB*`,
+or `/dev/ttyACM*` port, or enter the serial port manually. Communication Speed
+offers `9600`, `19200`, `38400`, `57600`, `115200`, `230400`, and `460800`
+baud. Apply
+disconnects the driver, writes `DEVICE_PORT` and the standard INDI
+`DEVICE_BAUD_RATE`, reconnects and verifies the connection, then performs
+`CONFIG_SAVE`. Baud applies only to USB Serial and defaults to 9600. For
+network connections, choose an IP from the AP connected-device list, or enter
+a host/IP and TCP port manually when the device is not listed. The default
+OnStep network TCP port is `9999`.
 
 ## PiFinder INDI Web Menu
 
@@ -217,6 +226,7 @@ Advanced config keys in `default_config.json`:
 "mount_control_indi_port": 7624,
 "onstep_connection_type": "network",
 "onstep_serial_port": "",
+"onstep_serial_baud": 9600,
 "onstep_network_host": "",
 "onstep_network_port": 9999
 ```

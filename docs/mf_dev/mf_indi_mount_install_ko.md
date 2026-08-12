@@ -115,7 +115,16 @@ Profile을 만들고 사용하는 마운트에 맞는 telescope driver를 선택
 INDI > LX200 OnStepX Driver Connection
 ```
 
-USB 연결은 감지된 `/dev/serial/by-id`, `/dev/ttyUSB*`, `/dev/ttyACM*` 목록에서 선택하거나 수동으로 포트 이름을 입력합니다. 네트워크 연결은 AP에 접속된 장치 목록에서 IP를 선택하거나, 목록에 없으면 IP/host와 TCP port를 수동으로 입력합니다. OnStep 네트워크 연결의 기본 TCP port는 `9999`입니다.
+USB 연결은 감지된 `/dev/serial/by-id`, `/dev/ttyUSB*`, `/dev/ttyACM*`
+목록에서 선택하거나 수동으로 포트 이름을 입력하고, Communication Speed에서
+`9600`/`19200`/`38400`/`57600`/`115200`/`230400`/`460800` baud를
+선택합니다.
+적용 시 드라이버를 먼저 disconnect하고 `DEVICE_PORT`와 INDI 표준
+`DEVICE_BAUD_RATE`를 함께 쓴 다음 reconnect·readback 검증·`CONFIG_SAVE`를
+수행합니다. 속도 선택은 USB Serial일 때만 적용되며 기본값은 9600 baud입니다.
+네트워크 연결은 AP에 접속된 장치 목록에서 IP를 선택하거나, 목록에 없으면
+IP/host와 TCP port를 수동으로 입력합니다. OnStep 네트워크 연결의 기본 TCP
+port는 `9999`입니다.
 
 ## PiFinder INDI 웹 메뉴
 
@@ -216,6 +225,7 @@ Mount Control 프로세스는 켜져 있어도 시작 직후 INDI에 바로 연�
 "mount_control_indi_port": 7624,
 "onstep_connection_type": "network",
 "onstep_serial_port": "",
+"onstep_serial_baud": 9600,
 "onstep_network_host": "",
 "onstep_network_port": 9999
 ```
