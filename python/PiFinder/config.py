@@ -5,8 +5,10 @@ This module handles non-volatile config options
 """
 
 import json
+import fcntl
 import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from PiFinder import utils, equipment, locations
 from typing import Any, Optional, Tuple
@@ -193,6 +195,44 @@ class Config:
                 pass
             raise
 
+    @contextmanager
+    def _write_lock(self):
+        """Serialize cross-process read/merge/write transactions."""
+        lock_path = Path(utils.runtime_dir, "config.json.lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def set_options(self, options: dict[str, Any]) -> None:
+        """Persist multiple plain options in one locked atomic transaction."""
+        if not isinstance(options, dict):
+            raise TypeError("options must be a dict")
+        invalid = [
+            key
+            for key in options
+            if key.startswith(("session.", "equipment.", "locations."))
+        ]
+        if invalid:
+            raise ValueError(
+                "set_options only accepts plain persistent options: "
+                + ", ".join(invalid)
+            )
+        if not options:
+            return
+        with self._write_lock():
+            self._refresh_from_disk()
+            self._config_dict.update(options)
+            self.dump_config()
+
+    def get_stored_option(self, option: str, default: Any = None) -> Any:
+        """Return only the user config value, without default_config fallback."""
+        self._refresh_if_file_changed()
+        return self._config_dict.get(option, default)
+
     def set_option(self, option, value):
         if option.startswith("session."):
             self._session_config_dict[option] = value
@@ -212,9 +252,7 @@ class Config:
         else:
             # Merge onto the current file rather than over it: another process
             # may have changed unrelated keys since we loaded.
-            self._refresh_from_disk()
-            self._config_dict[option] = value
-            self.dump_config()
+            self.set_options({option: value})
 
     def get_option(self, option, default: Any = None):
         if option.startswith("session."):
@@ -244,16 +282,17 @@ class Config:
         config dict and writes it out.
         Effectively resetting filters to default
         """
-        self._refresh_from_disk()
-        keys_to_remove = []
-        for _k in self._config_dict:
-            if _k.startswith("filter."):
-                keys_to_remove.append(_k)
+        with self._write_lock():
+            self._refresh_from_disk()
+            keys_to_remove = []
+            for _k in self._config_dict:
+                if _k.startswith("filter."):
+                    keys_to_remove.append(_k)
 
-        for _k in keys_to_remove:
-            self._config_dict.pop(_k)
+            for _k in keys_to_remove:
+                self._config_dict.pop(_k)
 
-        self.dump_config()
+            self.dump_config()
 
     def __str__(self):
         return str(self._config_dict)

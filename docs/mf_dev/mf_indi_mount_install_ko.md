@@ -126,6 +126,18 @@ USB 연결은 감지된 `/dev/serial/by-id`, `/dev/ttyUSB*`, `/dev/ttyACM*`
 IP/host와 TCP port를 수동으로 입력합니다. OnStep 네트워크 연결의 기본 TCP
 port는 `9999`입니다.
 
+OnStep transport의 운용 기준은 INDI live property, INDI가 저장한 XML,
+PiFinder mirror 순입니다. 시작 시 live/XML이 유효하면 PiFinder mirror만 해당
+값으로 맞추며 정상 driver 설정을 되돌리거나 재적용하지 않습니다. live/XML이
+모두 불완전할 때만 마지막으로 검증된 PiFinder mirror를 한 번 적용하고 live
+readback을 확인합니다. 모두 불완전하면 잘못된 기본값으로 접속하지 않고
+`config_invalid` 상태로 자동 접속을 중지합니다.
+
+Web에서 저장할 때는 INDI reconnect와 live readback, `CONFIG_SAVE`까지 성공해야
+PiFinder의 transport/server 설정이 한 번의 atomic write로 갱신됩니다. 실패하면
+기존 mirror를 유지합니다. reconciliation 상태는 tmpfs의
+`mount_control_status.json`에 기록됩니다.
+
 ## PiFinder INDI 웹 메뉴
 
 PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 이 페이지에서 INDI Web Manager로 바로 이동하고, 실행 중인 INDI profile에서 active driver 이름을 읽습니다. OnStepX 전용 설정과 제어 영역은 active driver가 `LX200 OnStepX`일 때만 표시됩니다.

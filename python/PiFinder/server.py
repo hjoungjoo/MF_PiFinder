@@ -1137,12 +1137,12 @@ class Server:
             status = 200 if ok else 400
             return jsonify({"ok": ok, "message": message, "error": error}), status
 
-        def _indi_config_values():
+        def _indi_config_values(onstep_props=None, resolve_transport=False):
             cfg = config.Config()
             cfg.load_config()
             profile_info = sys_utils.get_indi_profile_drivers()
             device_name = sys_utils.get_indi_profile_device_name()
-            return {
+            values = {
                 "indi_profile_name": profile_info.get("profile", ""),
                 "indi_profile_drivers": profile_info.get("drivers", []),
                 "device_name": device_name,
@@ -1188,6 +1188,26 @@ class Server:
                     cfg.get_option("indi_pifinder_goto_max_gotos", 10)
                 ),
             }
+            effective = None
+            if resolve_transport or onstep_props is not None:
+                if onstep_props is not None:
+                    effective = sys_utils.parse_indi_onstep_connection_properties(
+                        onstep_props, device_name=device_name
+                    )
+                if effective is None:
+                    effective = sys_utils.read_saved_indi_onstep_connection_config(
+                        device_name=device_name
+                    )
+            if effective is not None:
+                values["connection_type"] = effective["connection_type"]
+                values["connection_config_source"] = effective.get("source", "")
+                if effective["connection_type"] == sys_utils.ONSTEP_CONNECTION_USB:
+                    values["serial_port"] = effective["serial_port"]
+                    values["serial_baud"] = effective["serial_baud"]
+                else:
+                    values["network_host"] = effective["network_host"]
+                    values["network_port"] = effective["network_port"]
+            return values
 
         def _onstep_property_name(property_name, indi_cfg=None):
             device_name = (
@@ -1540,7 +1560,7 @@ class Server:
                 time.sleep(0.5)
 
         def _render_indi_page(status_message="", error_message="", onstep_props=None):
-            indi_cfg = _indi_config_values()
+            indi_cfg = _indi_config_values(resolve_transport=True)
 
             try:
                 ap_clients = self.network.get_ap_clients()
@@ -1550,6 +1570,7 @@ class Server:
 
             if onstep_props is None:
                 onstep_props = _get_indi_onstep_properties(indi_cfg)
+            indi_cfg = _indi_config_values(onstep_props=onstep_props)
             backlash_values = _onstep_backlash_values(onstep_props, indi_cfg)
             return app.jinja_env.get_template("indi_mount.html").render(
                 title=_("INDI"),
@@ -1601,8 +1622,9 @@ class Server:
         @app.route("/indi/current_values")
         @auth_required
         def indi_current_values():
-            indi_cfg = _indi_config_values()
+            indi_cfg = _indi_config_values(resolve_transport=True)
             onstep_props = _get_indi_onstep_properties(indi_cfg)
+            indi_cfg = _indi_config_values(onstep_props=onstep_props)
             return jsonify(
                 {
                     "ok": True,
@@ -1776,15 +1798,53 @@ class Server:
                         or "INDI setting command failed"
                     )
 
+                verified_props = sys_utils.get_indi_onstep_properties(
+                    server_host=server_host,
+                    server_port=server_port,
+                    device_name=indi_cfg["device_name"],
+                )
+                verified_connection = (
+                    sys_utils.parse_indi_onstep_connection_properties(
+                        verified_props, device_name=indi_cfg["device_name"]
+                    )
+                )
+                requested_connection = sys_utils.normalize_onstep_connection_config(
+                    {
+                        "connection_type": connection_type,
+                        "serial_port": serial_port,
+                        "serial_baud": serial_baud,
+                        "network_host": network_host,
+                        "network_port": network_port,
+                    }
+                )
+                if not sys_utils.onstep_connection_configs_match(
+                    verified_connection, requested_connection
+                ):
+                    raise RuntimeError(
+                        "INDI connection readback does not match the requested settings"
+                    )
+
                 cfg = config.Config()
                 cfg.load_config()
-                cfg.set_option("onstep_connection_type", connection_type)
-                cfg.set_option("onstep_serial_port", serial_port)
-                cfg.set_option("onstep_serial_baud", serial_baud)
-                cfg.set_option("onstep_network_host", network_host)
-                cfg.set_option("onstep_network_port", network_port)
-                cfg.set_option("mount_control_indi_host", server_host)
-                cfg.set_option("mount_control_indi_port", server_port)
+                cfg.set_options(
+                    {
+                        "onstep_connection_type": connection_type,
+                        "onstep_serial_port": serial_port,
+                        "onstep_serial_baud": serial_baud,
+                        "onstep_network_host": network_host,
+                        "onstep_network_port": network_port,
+                        "mount_control_indi_host": server_host,
+                        "mount_control_indi_port": server_port,
+                    }
+                )
+                if self.mountcontrol_queue is not None:
+                    self.mountcontrol_queue.put(
+                        {
+                            "type": "connection_config_changed",
+                            "server_host": server_host,
+                            "server_port": server_port,
+                        }
+                    )
                 self.ui_queue.put("reload_config")
                 return _render_indi_page(_("INDI OnStep settings applied"))
             except (RuntimeError, ValueError) as e:

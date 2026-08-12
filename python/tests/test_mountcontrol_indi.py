@@ -972,6 +972,18 @@ def test_multipoint_align_resets_stale_onstep_native_alignment(monkeypatch):
     mount = DummyMountControl()
     reset_calls = []
 
+    monkeypatch.setattr(
+        mount,
+        "_onstep_connection_config",
+        lambda: {
+            "connection_type": "network",
+            "network_host": "",
+            "network_port": 9999,
+            "serial_port": "",
+            "serial_baud": 9600,
+            "direct_location_time_sync": False,
+        },
+    )
     monkeypatch.setattr(mount, "_onstep_native_alignment_active", lambda: True)
     monkeypatch.setattr(mount, "disconnect", lambda: reset_calls.append("disconnect"))
     monkeypatch.setattr(mount, "connect", lambda: reset_calls.append("connect") or True)
@@ -1326,6 +1338,107 @@ def test_disconnected_mount_clears_coordinate_sync_anchor():
 
     assert mount._coordinate_sync is None
     assert "coordinate_sync" not in mount._status_fields()
+
+
+def test_connection_reconcile_imports_live_indi_into_pifinder_mirror(
+    monkeypatch, tmp_path
+):
+    data_dir = tmp_path / "PiFinder_data"
+    data_dir.mkdir()
+    (data_dir / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(mci.config.utils, "data_dir", data_dir)
+    device = "LX200 OnStepX"
+    live_properties = {
+        f"{device}.CONNECTION_MODE.CONNECTION_SERIAL": "On",
+        f"{device}.CONNECTION_MODE.CONNECTION_TCP": "Off",
+        f"{device}.DEVICE_PORT.PORT": "/dev/serial/by-id/onstep",
+        f"{device}.DEVICE_BAUD_RATE.115200": "On",
+    }
+    monkeypatch.setattr(
+        mci.sys_utils, "get_indi_profile_device_name", lambda: device
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "get_indi_onstep_properties",
+        lambda **_kwargs: live_properties,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "read_saved_indi_onstep_connection_config",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "apply_indi_onstep_connection",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("live INDI settings must not be reapplied")
+        ),
+    )
+    mount = DummyConnectedMount()
+
+    assert mount.reconcile_onstep_connection_config()
+
+    saved = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+    assert saved["onstep_connection_type"] == "usb"
+    assert saved["onstep_serial_port"] == "/dev/serial/by-id/onstep"
+    assert saved["onstep_serial_baud"] == 115200
+    assert saved["mount_control_indi_host"] == "localhost"
+    assert saved["mount_control_indi_port"] == 7624
+    assert mount._connection_config_status["connection_config_reconciled"] is True
+    assert mount._connection_config_status["connection_config_source"] == "indi_live"
+
+
+def test_connection_reconcile_uses_pifinder_only_when_indi_is_missing(
+    monkeypatch, tmp_path
+):
+    data_dir = tmp_path / "PiFinder_data"
+    data_dir.mkdir()
+    (data_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "onstep_connection_type": "usb",
+                "onstep_serial_port": "/dev/serial/by-id/onstep",
+                "onstep_serial_baud": 115200,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mci.config.utils, "data_dir", data_dir)
+    device = "LX200 OnStepX"
+    verified_properties = {
+        f"{device}.CONNECTION_MODE.CONNECTION_SERIAL": "On",
+        f"{device}.CONNECTION_MODE.CONNECTION_TCP": "Off",
+        f"{device}.DEVICE_PORT.PORT": "/dev/serial/by-id/onstep",
+        f"{device}.DEVICE_BAUD_RATE.115200": "On",
+    }
+    property_reads = iter(({}, verified_properties))
+    apply_calls = []
+    monkeypatch.setattr(
+        mci.sys_utils, "get_indi_profile_device_name", lambda: device
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "get_indi_onstep_properties",
+        lambda **_kwargs: next(property_reads),
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "read_saved_indi_onstep_connection_config",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "apply_indi_onstep_connection",
+        lambda **kwargs: apply_calls.append(kwargs) or {"ok": True},
+    )
+    mount = DummyConnectedMount()
+
+    assert mount.reconcile_onstep_connection_config()
+
+    assert len(apply_calls) == 1
+    assert apply_calls[0]["connection_type"] == "usb"
+    assert apply_calls[0]["serial_baud"] == 115200
+    assert mount._connection_config_status["connection_config_source"] == "indi_live"
 
 
 def test_goto_target_fails_when_indi_target_is_not_accepted():

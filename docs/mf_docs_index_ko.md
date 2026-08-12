@@ -30,6 +30,7 @@
 | [backlash_measurement_flow](mf_dev/mf_backlash_measurement_flow_ko.md) | 둘 다 | living | 자동 백래시 측정 `compass_goto_loop`(**정규 소유자**; 타 문서는 요약+참조). |
 | [mount_mode_compatibility](mf_dev/mf_mount_mode_compatibility_ko.md) | 둘 다 | plan(대부분 구현) | Alt/Az vs EQ SkySafari 호환성 감사·체크리스트. |
 | [indi_mount_install](mf_dev/mf_indi_mount_install_ko.md) | 둘 다 | install | INDI 마운트 설치·사용 가이드. |
+| [indi_serial_reconnect_design](mf_dev/mf_indi_serial_reconnect_design_ko.md) | ko | **설정 조정 구현 / 재접속 설계**(2026-08-12) | INDI/PiFinder 연결 설정 우선순위·원자적 mirror 동기화 구현과 USB 재삽입/통신 감시 후속 설계. |
 
 ## 솔빙 (핵심)
 
@@ -85,6 +86,7 @@
 | [fullframe_solving_report_20260804](mf_report/mf_fullframe_solving_report_20260804_ko.md) | 둘 다 | **리포트**(2026-08-04) | 풀프레임 솔빙 파이프라인 실측 리포트 — 처리 구조(검출 2종 병렬 + 좌표 4단 캐스케이드)와 실측 결과 정리. |
 | [solver_diagnostics_20260812](mf_report/mf_solver_diagnostics_20260812_ko.md) | ko | **1회성 실측**(2026-08-12) | 풀프레임 4단 기본 활성화 및 단계별 Cedar/SEP 검출 진단 추가 검증 — Cedar 114→90→64, `cedar_ff_center`/`cedar_ff` 실기 성공. |
 | [solver_cascade_order_20260812](mf_report/mf_solver_cascade_order_20260812_ko.md) | ko | **변경 검증**(2026-08-12) | 캐스케이드를 전역 중앙 우선으로 변경하고 순서 테스트·실기 조기 종료를 검증. 경로명도 `cedar_center`/`sep_center`/`cedar_full`/`sep_full`로 명확화. |
+| [indi_connection_config_reconcile_20260812](mf_report/mf_indi_connection_config_reconcile_20260812_ko.md) | ko | **변경·실장 검증**(2026-08-12) | INDI live/XML 우선 설정 조정, atomic PiFinder mirror 저장, 실장 USB/by-id/115200 migration 및 연결 상태 검증. |
 | [feature_test_session_20260805](mf_report/mf_feature_test_session_20260805_ko.md) | ko | **1회성**(2026-08-05) | 기능 체크리스트 자동 검증분 실행 기록 — 정적/스위트/API/헤드리스 UI 통과, 결함 3건 발견·수정(Software RIGHT 미가드, 업데이트 예외 관통, imu_fake 시그니처), 남은 수동 항목 목록. |
 | [mono_sqm_colour_guard_20260805](mf_report/mf_mono_sqm_colour_guard_20260805_ko.md) | 둘 다 | **공지**(2026-08-05) | 커뮤니티 공유용 — SRGGB 라벨의 실측 모노 imx462에서 upstream #560 색보정이 SQM을 +0.74 mag 왜곡하는 함정과 `profile.mono` 가드, 모듈 자가진단법 ([영문판](mf_report/mf_mono_sqm_colour_guard_20260805_en.md)). |
 | [sqm_stack_port_plan](mf_dev/mf_sqm_stack_port_plan_ko.md) | ko | **이식 완료**(2026-07-30) | upstream SQM 스택(#532/#542/#543/#544) 이식 분석·계획과 Phase별 실적. |

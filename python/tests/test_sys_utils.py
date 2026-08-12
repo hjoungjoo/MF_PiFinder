@@ -53,7 +53,17 @@ try:
 
         def fake_run(args, timeout=5.0):
             calls.append(list(args))
-            stdout = "LX200 OnStepX.CONNECTION.CONNECT=On\n" if "indi_getprop" in args else ""
+            stdout = ""
+            if "indi_getprop" in args:
+                if any("CONNECTION_MODE" in item for item in args):
+                    stdout = (
+                        "LX200 OnStepX.CONNECTION_MODE.CONNECTION_SERIAL=On\n"
+                        "LX200 OnStepX.CONNECTION_MODE.CONNECTION_TCP=Off\n"
+                        "LX200 OnStepX.DEVICE_PORT.PORT=/dev/ttyUSB0\n"
+                        "LX200 OnStepX.DEVICE_BAUD_RATE.460800=On\n"
+                    )
+                else:
+                    stdout = "LX200 OnStepX.CONNECTION.CONNECT=On\n"
             return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
 
         monkeypatch.setattr(sys_utils, "_run_indi_command", fake_run)
@@ -72,6 +82,63 @@ try:
         assert "LX200 OnStepX.DEVICE_BAUD_RATE.460800=On" in flattened
 
     @pytest.mark.unit
+    def test_apply_connection_does_not_save_mismatched_readback(monkeypatch):
+        calls = []
+
+        def fake_run(args, timeout=5.0):
+            calls.append(list(args))
+            stdout = ""
+            if "indi_getprop" in args:
+                if any("CONNECTION_MODE" in item for item in args):
+                    stdout = (
+                        "LX200 OnStepX.CONNECTION_MODE.CONNECTION_SERIAL=On\n"
+                        "LX200 OnStepX.CONNECTION_MODE.CONNECTION_TCP=Off\n"
+                        "LX200 OnStepX.DEVICE_PORT.PORT=/dev/ttyUSB0\n"
+                        "LX200 OnStepX.DEVICE_BAUD_RATE.9600=On\n"
+                    )
+                else:
+                    stdout = "LX200 OnStepX.CONNECTION.CONNECT=On\n"
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(sys_utils, "_run_indi_command", fake_run)
+        monkeypatch.setattr(sys_utils.time, "sleep", lambda _seconds: None)
+
+        result = sys_utils.apply_indi_onstep_connection(
+            connection_type="usb",
+            serial_port="/dev/ttyUSB0",
+            serial_baud=115200,
+            device_name="LX200 OnStepX",
+        )
+
+        assert result["ok"] is False
+        assert "readback does not match" in result["stderr"]
+        assert not any(
+            "CONFIG_PROCESS.CONFIG_SAVE" in item for call in calls for item in call
+        )
+
+    @pytest.mark.unit
+    def test_normalize_ignores_invalid_inactive_transport_values():
+        usb = sys_utils.normalize_onstep_connection_config(
+            {
+                "connection_type": "usb",
+                "serial_port": "/dev/ttyUSB0",
+                "serial_baud": 115200,
+                "network_port": "not-used",
+            }
+        )
+        network = sys_utils.normalize_onstep_connection_config(
+            {
+                "connection_type": "network",
+                "network_host": "10.0.0.2",
+                "network_port": 9999,
+                "serial_baud": "not-used",
+            }
+        )
+
+        assert usb["network_port"] == 9999
+        assert network["serial_baud"] == 9600
+
+    @pytest.mark.unit
     def test_apply_indi_usb_connection_rejects_unsupported_baud():
         with pytest.raises(ValueError, match="Unsupported USB serial baud rate"):
             sys_utils.apply_indi_onstep_connection(
@@ -80,6 +147,131 @@ try:
                 serial_baud=12345,
                 device_name="LX200 OnStepX",
             )
+
+    @pytest.mark.unit
+    def test_parse_live_indi_usb_connection():
+        device = "LX200 OnStepX"
+        properties = {
+            f"{device}.CONNECTION_MODE.CONNECTION_SERIAL": "On",
+            f"{device}.CONNECTION_MODE.CONNECTION_TCP": "Off",
+            f"{device}.DEVICE_PORT.PORT": "/dev/serial/by-id/onstep",
+            f"{device}.DEVICE_BAUD_RATE.9600": "Off",
+            f"{device}.DEVICE_BAUD_RATE.115200": "On",
+        }
+
+        connection = sys_utils.parse_indi_onstep_connection_properties(
+            properties, device_name=device
+        )
+
+        assert connection == {
+            "connection_type": "usb",
+            "serial_port": "/dev/serial/by-id/onstep",
+            "serial_baud": 115200,
+            "network_host": "",
+            "network_port": 9999,
+            "source": "indi_live",
+            "verified": True,
+        }
+
+    @pytest.mark.unit
+    def test_parse_live_indi_network_connection():
+        device = "LX200 OnStepX"
+        properties = {
+            f"{device}.CONNECTION_MODE.CONNECTION_SERIAL": "Off",
+            f"{device}.CONNECTION_MODE.CONNECTION_TCP": "On",
+            f"{device}.DEVICE_ADDRESS.ADDRESS": "10.10.10.12",
+            f"{device}.DEVICE_ADDRESS.PORT": "9998",
+        }
+
+        connection = sys_utils.parse_indi_onstep_connection_properties(
+            properties, device_name=device
+        )
+
+        assert connection["connection_type"] == "network"
+        assert connection["network_host"] == "10.10.10.12"
+        assert connection["network_port"] == 9998
+
+    @pytest.mark.unit
+    def test_read_saved_indi_usb_connection(tmp_path):
+        xml_path = tmp_path / "onstep.xml"
+        xml_path.write_text(
+            """<INDIDriver>
+            <newSwitchVector name="CONNECTION_MODE">
+              <oneSwitch name="CONNECTION_SERIAL">On</oneSwitch>
+              <oneSwitch name="CONNECTION_TCP">Off</oneSwitch>
+            </newSwitchVector>
+            <newTextVector name="DEVICE_PORT">
+              <oneText name="PORT">/dev/serial/by-id/onstep</oneText>
+            </newTextVector>
+            <newSwitchVector name="DEVICE_BAUD_RATE">
+              <oneSwitch name="115200">On</oneSwitch>
+            </newSwitchVector>
+            </INDIDriver>""",
+            encoding="utf-8",
+        )
+
+        connection = sys_utils.read_saved_indi_onstep_connection_config(
+            device_name="LX200 OnStepX", config_path=xml_path
+        )
+
+        assert connection["connection_type"] == "usb"
+        assert connection["serial_port"] == "/dev/serial/by-id/onstep"
+        assert connection["serial_baud"] == 115200
+        assert connection["source"] == "indi_xml"
+
+    @pytest.mark.unit
+    def test_connection_match_compares_only_active_transport():
+        left = {
+            "connection_type": "usb",
+            "serial_port": "/dev/ttyUSB0",
+            "serial_baud": 460800,
+            "network_host": "old-host",
+            "network_port": 1,
+        }
+        right = {
+            "connection_type": "usb",
+            "serial_port": "/dev/ttyUSB0",
+            "serial_baud": 460800,
+            "network_host": "different-host",
+            "network_port": 65535,
+        }
+
+        assert sys_utils.onstep_connection_configs_match(left, right)
+
+    @pytest.mark.unit
+    def test_apply_connection_fails_when_indi_config_save_fails(monkeypatch):
+        def fake_run(args, timeout=5.0):
+            is_get = "indi_getprop" in args
+            is_save = any("CONFIG_PROCESS.CONFIG_SAVE" in item for item in args)
+            if is_get and any("CONNECTION_MODE" in item for item in args):
+                stdout = (
+                    "LX200 OnStepX.CONNECTION_MODE.CONNECTION_SERIAL=On\n"
+                    "LX200 OnStepX.CONNECTION_MODE.CONNECTION_TCP=Off\n"
+                    "LX200 OnStepX.DEVICE_PORT.PORT=/dev/ttyUSB0\n"
+                    "LX200 OnStepX.DEVICE_BAUD_RATE.115200=On\n"
+                )
+            elif is_get:
+                stdout = "LX200 OnStepX.CONNECTION.CONNECT=On\n"
+            else:
+                stdout = ""
+            return SimpleNamespace(
+                returncode=1 if is_save else 0,
+                stdout=stdout,
+                stderr="save failed" if is_save else "",
+            )
+
+        monkeypatch.setattr(sys_utils, "_run_indi_command", fake_run)
+        monkeypatch.setattr(sys_utils.time, "sleep", lambda _seconds: None)
+
+        result = sys_utils.apply_indi_onstep_connection(
+            connection_type="usb",
+            serial_port="/dev/ttyUSB0",
+            serial_baud=115200,
+            device_name="LX200 OnStepX",
+        )
+
+        assert result["ok"] is False
+        assert result["stderr"] == "save failed"
 
     @pytest.mark.unit
     def test_format_onstep_location_display_matches_onstep_web_sign():

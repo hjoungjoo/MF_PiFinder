@@ -18,6 +18,10 @@ ONSTEPX_DEVICE_NAME = "LX200 OnStepX"
 LEGACY_ONSTEP_DEVICE_NAME = "LX200 OnStep"
 ONSTEP_SERIAL_BAUD_RATES = (9600, 19200, 38400, 57600, 115200, 230400, 460800)
 DEFAULT_ONSTEP_DEVICE_NAME = ONSTEPX_DEVICE_NAME
+ONSTEP_CONNECTION_USB = "usb"
+ONSTEP_CONNECTION_NETWORK = "network"
+DEFAULT_ONSTEP_SERIAL_BAUD = 9600
+DEFAULT_ONSTEP_NETWORK_PORT = 9999
 
 
 def is_onstepx_device_name(device_name):
@@ -61,6 +65,102 @@ def resolve_indi_device_name(device_name=None):
 
 def list_onstep_serial_ports():
     return []
+
+
+def normalize_onstep_connection_config(values, source=""):
+    if not isinstance(values, dict):
+        return None
+    connection_type = str(values.get("connection_type", "")).strip().lower()
+    if connection_type not in {ONSTEP_CONNECTION_USB, ONSTEP_CONNECTION_NETWORK}:
+        return None
+    serial_port = str(values.get("serial_port", "") or "").strip()
+    network_host = str(values.get("network_host", "") or "").strip()
+    if connection_type == ONSTEP_CONNECTION_USB:
+        try:
+            serial_baud = int(
+                values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD)
+            )
+        except (TypeError, ValueError):
+            return None
+        if (
+            not serial_port.startswith("/dev/")
+            or serial_baud not in ONSTEP_SERIAL_BAUD_RATES
+        ):
+            return None
+        try:
+            network_port = int(
+                values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT)
+            )
+        except (TypeError, ValueError):
+            network_port = DEFAULT_ONSTEP_NETWORK_PORT
+    else:
+        try:
+            network_port = int(
+                values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT)
+            )
+        except (TypeError, ValueError):
+            return None
+        if not network_host or not 1 <= network_port <= 65535:
+            return None
+        try:
+            serial_baud = int(
+                values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD)
+            )
+        except (TypeError, ValueError):
+            serial_baud = DEFAULT_ONSTEP_SERIAL_BAUD
+        if serial_baud not in ONSTEP_SERIAL_BAUD_RATES:
+            serial_baud = DEFAULT_ONSTEP_SERIAL_BAUD
+    return {
+        "connection_type": connection_type,
+        "serial_port": serial_port,
+        "serial_baud": serial_baud,
+        "network_host": network_host,
+        "network_port": network_port,
+        "source": source or str(values.get("source", "") or ""),
+        "verified": bool(values.get("verified", False)),
+    }
+
+
+def parse_indi_onstep_connection_properties(properties, device_name=None):
+    return None
+
+
+def read_saved_indi_onstep_connection_config(device_name=None, config_path=None):
+    return None
+
+
+def onstep_connection_configs_match(left, right):
+    left = normalize_onstep_connection_config(left)
+    right = normalize_onstep_connection_config(right)
+    if (
+        left is None
+        or right is None
+        or left["connection_type"] != right["connection_type"]
+    ):
+        return False
+    keys = (
+        ("serial_port", "serial_baud")
+        if left["connection_type"] == ONSTEP_CONNECTION_USB
+        else ("network_host", "network_port")
+    )
+    return all(left[key] == right[key] for key in keys)
+
+
+def onstep_connection_mirror_options(connection):
+    connection = normalize_onstep_connection_config(connection)
+    if connection is None:
+        raise ValueError("Invalid OnStep connection configuration")
+    if connection["connection_type"] == ONSTEP_CONNECTION_USB:
+        return {
+            "onstep_connection_type": ONSTEP_CONNECTION_USB,
+            "onstep_serial_port": connection["serial_port"],
+            "onstep_serial_baud": connection["serial_baud"],
+        }
+    return {
+        "onstep_connection_type": ONSTEP_CONNECTION_NETWORK,
+        "onstep_network_host": connection["network_host"],
+        "onstep_network_port": connection["network_port"],
+    }
 
 
 def get_indi_onstep_properties(

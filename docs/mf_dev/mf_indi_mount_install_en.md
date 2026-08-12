@@ -126,6 +126,19 @@ network connections, choose an IP from the AP connected-device list, or enter
 a host/IP and TCP port manually when the device is not listed. The default
 OnStep network TCP port is `9999`.
 
+The effective OnStep transport is resolved in this order: live INDI
+properties, the INDI-saved XML, then the last verified PiFinder mirror. At
+startup, a valid live/XML value updates only the PiFinder mirror; it does not
+roll back or reapply a working driver configuration. The PiFinder mirror is
+applied once only when both live and XML settings are incomplete, followed by
+live readback verification. If every source is incomplete, automatic connect
+stops with `config_invalid` instead of trying guessed defaults.
+
+A Web save updates PiFinder's transport/server settings in one atomic write
+only after INDI reconnect, live readback, and `CONFIG_SAVE` have all
+succeeded. Failure preserves the previous mirror. Reconciliation status is
+written to the tmpfs `mount_control_status.json` file.
+
 ## PiFinder INDI Web Menu
 
 The PiFinder web UI now has a dedicated `INDI` top-level menu. This page links to INDI Web Manager and reads the active driver name from the running INDI profile. OnStepX-specific setup and control sections are shown only when that active driver is `LX200 OnStepX`.

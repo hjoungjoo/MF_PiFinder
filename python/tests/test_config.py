@@ -41,6 +41,40 @@ def test_set_option_persists(config_dir):
 
 
 @pytest.mark.unit
+def test_set_options_persists_batch_without_losing_other_changes(config_dir):
+    stale = config.Config()
+    config.Config().set_option("camera_exp", 123000)
+
+    stale.set_options(
+        {
+            "onstep_connection_type": "usb",
+            "onstep_serial_port": "/dev/serial/by-id/test",
+            "onstep_serial_baud": 115200,
+        }
+    )
+
+    saved = _on_disk(config_dir)
+    assert saved["camera_exp"] == 123000
+    assert saved["onstep_connection_type"] == "usb"
+    assert saved["onstep_serial_port"] == "/dev/serial/by-id/test"
+    assert saved["onstep_serial_baud"] == 115200
+
+
+@pytest.mark.unit
+def test_set_options_rejects_special_namespaces(config_dir):
+    cfg = config.Config()
+    with pytest.raises(ValueError, match="plain persistent options"):
+        cfg.set_options({"session.test": True})
+
+
+@pytest.mark.unit
+def test_get_stored_option_does_not_use_default_config(config_dir):
+    cfg = config.Config()
+    assert cfg.get_option("camera_exp") == "auto"
+    assert cfg.get_stored_option("camera_exp") is None
+
+
+@pytest.mark.unit
 def test_write_keeps_another_process_changes(config_dir):
     """The camera process saving an exposure must not revert LiveCam settings."""
     camera_cfg = config.Config()  # loaded at camera start

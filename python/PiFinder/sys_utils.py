@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional
 
@@ -669,6 +670,260 @@ def list_onstep_serial_ports() -> list[dict[str, str]]:
     return sorted(ports.values(), key=lambda item: item["path"])
 
 
+def normalize_onstep_connection_config(
+    values: dict[str, Any] | None,
+    source: str = "",
+) -> dict[str, Any] | None:
+    """Validate and normalize an OnStep USB/TCP transport description."""
+    if not isinstance(values, dict):
+        return None
+    connection_type = str(values.get("connection_type", "")).strip().lower()
+    if connection_type not in {ONSTEP_CONNECTION_USB, ONSTEP_CONNECTION_NETWORK}:
+        return None
+
+    serial_port = str(values.get("serial_port", "") or "").strip()
+    network_host = str(values.get("network_host", "") or "").strip()
+    if connection_type == ONSTEP_CONNECTION_USB:
+        if not serial_port.startswith("/dev/"):
+            return None
+        try:
+            serial_baud = int(
+                values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD)
+            )
+        except (TypeError, ValueError):
+            return None
+        if serial_baud not in ONSTEP_SERIAL_BAUD_RATES:
+            return None
+        try:
+            network_port = int(
+                values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT)
+            )
+        except (TypeError, ValueError):
+            network_port = DEFAULT_ONSTEP_NETWORK_PORT
+    else:
+        try:
+            network_port = int(
+                values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT)
+            )
+        except (TypeError, ValueError):
+            return None
+        if not network_host or not 1 <= network_port <= 65535:
+            return None
+        try:
+            serial_baud = int(
+                values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD)
+            )
+        except (TypeError, ValueError):
+            serial_baud = DEFAULT_ONSTEP_SERIAL_BAUD
+        if serial_baud not in ONSTEP_SERIAL_BAUD_RATES:
+            serial_baud = DEFAULT_ONSTEP_SERIAL_BAUD
+
+    return {
+        "connection_type": connection_type,
+        "serial_port": serial_port,
+        "serial_baud": serial_baud,
+        "network_host": network_host,
+        "network_port": network_port,
+        "source": source or str(values.get("source", "") or ""),
+        "verified": bool(values.get("verified", False)),
+    }
+
+
+def _onstep_property_value(
+    properties: dict[str, str], device_name: str, property_name: str
+) -> str:
+    return str(properties.get(f"{device_name}.{property_name}", "") or "").strip()
+
+
+def parse_indi_onstep_connection_properties(
+    properties: dict[str, str],
+    device_name: str | None = None,
+) -> dict[str, Any] | None:
+    """Read the effective OnStep transport from live INDI properties."""
+    device_name = resolve_indi_device_name(device_name)
+    serial_on = (
+        _onstep_property_value(
+            properties, device_name, "CONNECTION_MODE.CONNECTION_SERIAL"
+        ).lower()
+        == "on"
+    )
+    tcp_on = (
+        _onstep_property_value(
+            properties, device_name, "CONNECTION_MODE.CONNECTION_TCP"
+        ).lower()
+        == "on"
+    )
+    if serial_on == tcp_on:
+        return None
+
+    selected_baud: int | None = None
+    for candidate in ONSTEP_SERIAL_BAUD_RATES:
+        if (
+            _onstep_property_value(
+                properties, device_name, f"DEVICE_BAUD_RATE.{candidate}"
+            ).lower()
+            == "on"
+        ):
+            selected_baud = candidate
+            break
+    if serial_on and selected_baud is None:
+        return None
+
+    values = {
+        "connection_type": (
+            ONSTEP_CONNECTION_USB if serial_on else ONSTEP_CONNECTION_NETWORK
+        ),
+        "serial_port": _onstep_property_value(
+            properties, device_name, "DEVICE_PORT.PORT"
+        ),
+        "serial_baud": selected_baud or DEFAULT_ONSTEP_SERIAL_BAUD,
+        "network_host": _onstep_property_value(
+            properties, device_name, "DEVICE_ADDRESS.ADDRESS"
+        ),
+        "network_port": _onstep_property_value(
+            properties, device_name, "DEVICE_ADDRESS.PORT"
+        )
+        or DEFAULT_ONSTEP_NETWORK_PORT,
+        "verified": True,
+    }
+    return normalize_onstep_connection_config(values, source="indi_live")
+
+
+def _indi_xml_element_value(
+    root: ET.Element,
+    vector_name: str,
+    element_name: str,
+    device_name: str,
+) -> str:
+    for vector in root.iter():
+        if vector.attrib.get("name") != vector_name:
+            continue
+        vector_device = vector.attrib.get("device", "").strip()
+        if vector_device and vector_device != device_name:
+            continue
+        for element in vector:
+            if element.attrib.get("name") == element_name:
+                return (element.text or "").strip()
+    return ""
+
+
+def read_saved_indi_onstep_connection_config(
+    device_name: str | None = None,
+    config_path: Any = None,
+) -> dict[str, Any] | None:
+    """Read the OnStep transport persisted by INDI CONFIG_SAVE."""
+    device_name = resolve_indi_device_name(device_name)
+    if not device_name or "/" in device_name or "\\" in device_name:
+        return None
+    path = (
+        config_path
+        if config_path is not None
+        else utils.home_dir / ".indi" / f"{device_name}_config.xml"
+    )
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError):
+        return None
+    xml_devices = {
+        element.attrib.get("device", "").strip()
+        for element in root.iter()
+        if element.attrib.get("device", "").strip()
+    }
+    if xml_devices and device_name not in xml_devices:
+        return None
+
+    serial_on = (
+        _indi_xml_element_value(
+            root, "CONNECTION_MODE", "CONNECTION_SERIAL", device_name
+        ).lower()
+        == "on"
+    )
+    tcp_on = (
+        _indi_xml_element_value(
+            root, "CONNECTION_MODE", "CONNECTION_TCP", device_name
+        ).lower()
+        == "on"
+    )
+    if serial_on == tcp_on:
+        return None
+
+    selected_baud: int | None = None
+    for candidate in ONSTEP_SERIAL_BAUD_RATES:
+        if (
+            _indi_xml_element_value(
+                root, "DEVICE_BAUD_RATE", str(candidate), device_name
+            ).lower()
+            == "on"
+        ):
+            selected_baud = candidate
+            break
+    if serial_on and selected_baud is None:
+        return None
+
+    values = {
+        "connection_type": (
+            ONSTEP_CONNECTION_USB if serial_on else ONSTEP_CONNECTION_NETWORK
+        ),
+        "serial_port": _indi_xml_element_value(
+            root, "DEVICE_PORT", "PORT", device_name
+        ),
+        "serial_baud": selected_baud or DEFAULT_ONSTEP_SERIAL_BAUD,
+        "network_host": _indi_xml_element_value(
+            root, "DEVICE_ADDRESS", "ADDRESS", device_name
+        ),
+        "network_port": _indi_xml_element_value(
+            root, "DEVICE_ADDRESS", "PORT", device_name
+        )
+        or DEFAULT_ONSTEP_NETWORK_PORT,
+        "verified": True,
+    }
+    return normalize_onstep_connection_config(values, source="indi_xml")
+
+
+def onstep_connection_configs_match(
+    left: dict[str, Any] | None, right: dict[str, Any] | None
+) -> bool:
+    """Compare only the fields active for the selected transport."""
+    left_normalized = normalize_onstep_connection_config(left)
+    right_normalized = normalize_onstep_connection_config(right)
+    if left_normalized is None or right_normalized is None:
+        return False
+    if left_normalized["connection_type"] != right_normalized["connection_type"]:
+        return False
+    if left_normalized["connection_type"] == ONSTEP_CONNECTION_USB:
+        keys = ("serial_port", "serial_baud")
+    else:
+        keys = ("network_host", "network_port")
+    return all(left_normalized[key] == right_normalized[key] for key in keys)
+
+
+def onstep_connection_mirror_options(
+    connection: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the persistent PiFinder mirror keys for an effective transport."""
+    normalized = normalize_onstep_connection_config(connection)
+    if normalized is None:
+        raise ValueError("Invalid OnStep connection configuration")
+    options: dict[str, Any] = {
+        "onstep_connection_type": normalized["connection_type"]
+    }
+    if normalized["connection_type"] == ONSTEP_CONNECTION_USB:
+        options.update(
+            {
+                "onstep_serial_port": normalized["serial_port"],
+                "onstep_serial_baud": normalized["serial_baud"],
+            }
+        )
+    else:
+        options.update(
+            {
+                "onstep_network_host": normalized["network_host"],
+                "onstep_network_port": normalized["network_port"],
+            }
+        )
+    return options
+
+
 def _run_indi_command(
     args: list[str], timeout: float = 5.0
 ) -> subprocess.CompletedProcess:
@@ -851,13 +1106,42 @@ def apply_indi_onstep_connection(
             "properties": applied_properties,
         }
 
+    requested = normalize_onstep_connection_config(
+        {
+            "connection_type": connection_type,
+            "serial_port": serial_port,
+            "serial_baud": serial_baud,
+            "network_host": network_host,
+            "network_port": network_port,
+        }
+    )
+    live = parse_indi_onstep_connection_properties(
+        get_indi_onstep_properties(
+            server_host=server_host,
+            server_port=server_port,
+            device_name=device_name,
+        ),
+        device_name=device_name,
+    )
+    if not onstep_connection_configs_match(live, requested):
+        return {
+            "ok": False,
+            "returncode": 1,
+            "stdout": result.stdout,
+            "stderr": "INDI connection readback does not match applied settings",
+            "properties": applied_properties,
+        }
+
     save_result = _setprop([f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On"])
     applied_properties.append(f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On")
     if save_result.returncode != 0:
-        logger.warning(
-            "INDI CONFIG_SAVE failed after connect: %s",
-            save_result.stderr or save_result.stdout,
-        )
+        return {
+            "ok": False,
+            "returncode": save_result.returncode,
+            "stdout": save_result.stdout,
+            "stderr": save_result.stderr or "INDI CONFIG_SAVE failed after connect",
+            "properties": applied_properties,
+        }
 
     return {
         "ok": True,

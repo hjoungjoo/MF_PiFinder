@@ -524,6 +524,8 @@ class MountControlIndi(BacklashCalibrationMixin):
         # True from a successful GUIDE_RATE write until the user's slew rate
         # has been re-applied (keeps idle guide cycles from re-writing).
         self._slew_rate_polluted = False
+        self._connection_config_ready = True
+        self._connection_config_status: dict[str, Any] = {}
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -659,6 +661,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             payload["multipoint_align"] = self._multipoint_align
         if self._coordinate_sync is not None:
             payload["coordinate_sync"] = self._coordinate_sync
+        payload.update(self._connection_config_status)
         if self.device is not None:
             try:
                 payload["device"] = self.device.getDeviceName()
@@ -1402,6 +1405,171 @@ class MountControlIndi(BacklashCalibrationMixin):
                 logger.exception("Could not disconnect from INDI server")
         self.connected = False
         self._write_controller_status("stopped", "Mount-control process stopped")
+
+    def _stored_onstep_connection_config(
+        self, cfg: config.Config
+    ) -> Optional[dict[str, Any]]:
+        return sys_utils.normalize_onstep_connection_config(
+            {
+                "connection_type": cfg.get_stored_option(
+                    "onstep_connection_type", ""
+                ),
+                "serial_port": cfg.get_stored_option("onstep_serial_port", ""),
+                "serial_baud": cfg.get_stored_option(
+                    "onstep_serial_baud", sys_utils.DEFAULT_ONSTEP_SERIAL_BAUD
+                ),
+                "network_host": cfg.get_stored_option("onstep_network_host", ""),
+                "network_port": cfg.get_stored_option(
+                    "onstep_network_port", sys_utils.DEFAULT_ONSTEP_NETWORK_PORT
+                ),
+            },
+            source="pifinder",
+        )
+
+    def _connection_config_status_fields(
+        self,
+        connection: Optional[dict[str, Any]],
+        *,
+        valid: bool,
+        reconciled: bool = False,
+        error: str = "",
+    ) -> dict[str, Any]:
+        fields: dict[str, Any] = {
+            "connection_config_valid": valid,
+            "connection_config_reconciled": reconciled,
+        }
+        if connection is not None:
+            fields.update(
+                {
+                    "connection_config_source": connection.get("source", ""),
+                    "onstep_connection_type": connection["connection_type"],
+                }
+            )
+            if connection["connection_type"] == sys_utils.ONSTEP_CONNECTION_USB:
+                fields["onstep_serial_port"] = connection["serial_port"]
+                fields["onstep_serial_baud"] = connection["serial_baud"]
+            else:
+                fields["onstep_network_host"] = connection["network_host"]
+                fields["onstep_network_port"] = connection["network_port"]
+        if error:
+            fields["connection_config_error"] = error
+        return fields
+
+    def reconcile_onstep_connection_config(
+        self, allow_fallback_apply: bool = True
+    ) -> bool:
+        """Make PiFinder's transport mirror match the effective INDI settings."""
+        device_name = sys_utils.get_indi_profile_device_name()
+        if not sys_utils.is_onstep_family_device_name(device_name):
+            self._connection_config_status = {
+                "connection_config_valid": True,
+                "connection_config_source": "not_onstep",
+            }
+            self._connection_config_ready = True
+            return True
+
+        cfg = config.Config()
+        cfg.load_config()
+        mirror = self._stored_onstep_connection_config(cfg)
+        live_properties = sys_utils.get_indi_onstep_properties(
+            server_host=self.indi_host,
+            server_port=self.indi_port,
+            device_name=device_name,
+        )
+        live = sys_utils.parse_indi_onstep_connection_properties(
+            live_properties, device_name=device_name
+        )
+        saved = sys_utils.read_saved_indi_onstep_connection_config(
+            device_name=device_name
+        )
+        effective = live or saved
+
+        if effective is None and mirror is not None and allow_fallback_apply:
+            logger.warning(
+                "No valid INDI OnStep transport settings; applying the verified "
+                "PiFinder mirror once"
+            )
+            result = sys_utils.apply_indi_onstep_connection(
+                connection_type=mirror["connection_type"],
+                serial_port=mirror["serial_port"],
+                serial_baud=mirror["serial_baud"],
+                network_host=mirror["network_host"],
+                network_port=mirror["network_port"],
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+                device_name=device_name,
+            )
+            if result.get("ok"):
+                verified_properties = sys_utils.get_indi_onstep_properties(
+                    server_host=self.indi_host,
+                    server_port=self.indi_port,
+                    device_name=device_name,
+                )
+                verified = sys_utils.parse_indi_onstep_connection_properties(
+                    verified_properties, device_name=device_name
+                )
+                if sys_utils.onstep_connection_configs_match(verified, mirror):
+                    effective = verified
+
+        if effective is None:
+            error = "No complete INDI or PiFinder OnStep connection configuration"
+            logger.error(error)
+            self._connection_config_status = self._connection_config_status_fields(
+                mirror, valid=False, error=error
+            )
+            self._connection_config_ready = False
+            self._write_controller_status("config_invalid", error)
+            return False
+
+        mirror_options = sys_utils.onstep_connection_mirror_options(effective)
+        mirror_options.update(
+            {
+                "mount_control_indi_host": self.indi_host,
+                "mount_control_indi_port": self.indi_port,
+            }
+        )
+        changed_options = {
+            key: value
+            for key, value in mirror_options.items()
+            if cfg.get_stored_option(key) != value
+        }
+        if changed_options:
+            cfg.set_options(changed_options)
+            logger.info(
+                "Reconciled PiFinder OnStep connection mirror from %s",
+                effective.get("source", "INDI"),
+            )
+
+        self._connection_config_status = self._connection_config_status_fields(
+            effective,
+            valid=True,
+            reconciled=bool(changed_options),
+        )
+        self._connection_config_ready = True
+        return True
+
+    def update_connection_config(self, server_host: Any, server_port: Any) -> bool:
+        """Adopt Web-saved INDI endpoint values without restarting PiFinder."""
+        host = str(server_host or "localhost").strip() or "localhost"
+        try:
+            port = int(server_port)
+        except (TypeError, ValueError):
+            return False
+        if not 1 <= port <= 65535:
+            return False
+
+        endpoint_changed = host != self.indi_host or port != self.indi_port
+        if endpoint_changed and self.client is not None:
+            try:
+                self.client.disconnectServer()
+            except Exception:
+                logger.debug("Could not close old INDI endpoint", exc_info=True)
+            self.client = None
+            self.device = None
+            self.connected = False
+        self.indi_host = host
+        self.indi_port = port
+        return self.reconcile_onstep_connection_config(allow_fallback_apply=False)
 
     def _onstep_connection_config(self) -> dict[str, Any]:
         cfg = config.Config()
@@ -3569,6 +3737,10 @@ class MountControlIndi(BacklashCalibrationMixin):
             return False
         if command_type == "init":
             self.connect()
+        elif command_type == "connection_config_changed":
+            self.update_connection_config(
+                command.get("server_host"), command.get("server_port")
+            )
         elif command_type == "restart_driver":
             self.restart_driver()
         elif command_type == "reboot_mount":
@@ -3691,6 +3863,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             "idle",
             f"Mount-control process ready for {self.indi_host}:{self.indi_port}",
         )
+        self.reconcile_onstep_connection_config()
 
         running = True
         next_auto_connect_at = time.monotonic() + AUTO_CONNECT_START_DELAY
@@ -3715,7 +3888,11 @@ class MountControlIndi(BacklashCalibrationMixin):
                 self._check_slew_rate_reassert()
                 self._reassert_track_frequency()
                 now = time.monotonic()
-                if not self.connected and now >= next_auto_connect_at:
+                if (
+                    self._connection_config_ready
+                    and not self.connected
+                    and now >= next_auto_connect_at
+                ):
                     first_attempt = self._auto_connect_failures == 0
                     if first_attempt:
                         logger.info("Attempting automatic INDI mount connection")
