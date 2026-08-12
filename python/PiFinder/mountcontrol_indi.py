@@ -2085,11 +2085,13 @@ class MountControlIndi(BacklashCalibrationMixin):
         expected_connection: dict[str, Any],
     ) -> bool:
         """Verify the new driver session through callbacks or live INDI readback."""
-        client_ready = self.client is not None and self.device is not None
-        try:
-            client_ready = client_ready and bool(self.client.isServerConnected())
-        except Exception:
-            client_ready = False
+        client = self.client
+        client_ready = False
+        if client is not None and self.device is not None:
+            try:
+                client_ready = bool(client.isServerConnected())
+            except Exception:
+                client_ready = False
         if not client_ready:
             if not self.connect(
                 announce=False,

@@ -326,6 +326,17 @@ sudo systemctl restart cedar_detect pifinder
 
 - `python3 -m PiFinder.main -h`가 도움말을 출력한다.
 - `python3 -m pytest -m smoke`가 통과한다.
+- Python 소스 변경을 push하기 전에는 저장소 CI와 같은 전체 NOX 세션을 실행한다.
+
+  ```bash
+  cd "$PF_REPO/python"
+  nox -s lint format type_hints smoke_tests unit_tests ui_tests
+  ```
+
+  PiFinder 실장 환경의 Python 3.11 집중 시험만으로는 CI 기준인 Python 3.9의
+  annotation 문법·런타임 호환 실패를 찾을 수 없다. NOX가 Python 3.9를 사용할 수
+  있는 환경에서 실행되었는지 시작 로그도 확인하고, 원격 push 뒤 GitHub Actions의
+  동일 workflow가 성공할 때까지 완료로 판정하지 않는다.
 - `/boot/firmware/config.txt`에 PiFinder용 오버레이가 들어 있다.
 - `id pifinder`에 `input`, `video`, `render`, `dialout`, `gpio`, `i2c`, `spi`가 보인다.
 - `systemctl is-enabled pifinder cedar_detect pifinder_splash`가 `enabled`를 출력한다.

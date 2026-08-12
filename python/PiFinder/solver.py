@@ -23,6 +23,7 @@ import subprocess
 import threading
 from multiprocessing import shared_memory
 import grpc
+from typing import Optional
 
 from PiFinder import config as config_mod
 from PiFinder import state_utils
@@ -765,10 +766,10 @@ def _build_successful_solve(
     last_solve_success: float,
     centroid_count: int = 0,
     solve_path: str = "",
-    cedar_raw_centroids: int | None = None,
-    cedar_gated_centroids: int | None = None,
-    cedar_center_centroids: int | None = None,
-    sep_centroids: int | None = None,
+    cedar_raw_centroids: Optional[int] = None,
+    cedar_gated_centroids: Optional[int] = None,
+    cedar_center_centroids: Optional[int] = None,
+    sep_centroids: Optional[int] = None,
 ) -> SuccessfulSolve:
     """Fold a successful tetra3 ``solution`` dict into a
     :class:`SuccessfulSolve` message.
@@ -829,10 +830,10 @@ def _build_failed_solve(
     t_extract_ms: float,
     centroid_count: int = 0,
     solve_path: str = "",
-    cedar_raw_centroids: int | None = None,
-    cedar_gated_centroids: int | None = None,
-    cedar_center_centroids: int | None = None,
-    sep_centroids: int | None = None,
+    cedar_raw_centroids: Optional[int] = None,
+    cedar_gated_centroids: Optional[int] = None,
+    cedar_center_centroids: Optional[int] = None,
+    sep_centroids: Optional[int] = None,
 ) -> FailedSolve:
     """Build a :class:`FailedSolve` message for an attempt that produced
     no pointing. The integrator's long-lived estimate preserves the
@@ -1351,9 +1352,8 @@ def solver(
                             # coordinates are the last resort because edge
                             # distortion, horizon glow and obstructions are
                             # concentrated outside the centre square.
-                            if (
-                                not center_first_wanted
-                                and (not solution or solution.get("RA") is None)
+                            if not center_first_wanted and (
+                                not solution or solution.get("RA") is None
                             ):
                                 solution = _solve_cedar_fullframe(
                                     t3,
@@ -1477,9 +1477,7 @@ def solver(
                                 cedar_ff_geometry["rotation_deg"],
                                 cedar_ff_geometry["crop_width_px"],
                                 shared_state,
-                                target_sky_coord=_solver_args.get(
-                                    "target_sky_coord"
-                                ),
+                                target_sky_coord=_solver_args.get("target_sky_coord"),
                             )
 
                         def _sep_full_stage():

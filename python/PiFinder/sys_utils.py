@@ -813,7 +813,7 @@ def probe_onstep_serial_port(
 
     if serial_factory is None:
         try:
-            import serial  # type: ignore
+            import serial
         except ImportError as exc:
             raise RuntimeError("pyserial is not installed") from exc
         serial_factory = _serial_class_without_modem_control(serial.Serial)
@@ -1807,7 +1807,7 @@ def _send_onstep_lx200_serial_commands(
     baudrate: int = 9600,
 ) -> list[dict[str, str]]:
     try:
-        import serial  # type: ignore
+        import serial
     except ImportError as exc:
         raise RuntimeError("pyserial is not installed") from exc
 
