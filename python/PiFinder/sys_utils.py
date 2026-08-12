@@ -744,6 +744,47 @@ def _onstep_probe_payload(reply: bytes | str) -> str | None:
     return payload
 
 
+def _serial_class_without_modem_control(serial_class: Any) -> Any:
+    """Return a pySerial class that never drives the DTR or RTS output lines.
+
+    Disabling ``rtscts``/``dsrdtr`` only disables flow control. pySerial still
+    applies its default active DTR and RTS states whenever it opens a port. On
+    ESP32 OnStepX controllers those lines can be wired to EN and GPIO0, so even
+    a read-only probe could otherwise reset the MCU or select its bootloader.
+    """
+
+    class SerialWithoutModemControl(serial_class):
+        def _update_rts_state(self) -> None:
+            return None
+
+        def _update_dtr_state(self) -> None:
+            return None
+
+        def _reconfigure_port(self, *args: Any, **kwargs: Any) -> None:
+            super()._reconfigure_port(*args, **kwargs)
+            try:
+                import termios
+
+                settings = termios.tcgetattr(self.fd)
+                settings[0] &= ~(
+                    getattr(termios, "IXON", 0)
+                    | getattr(termios, "IXOFF", 0)
+                    | getattr(termios, "IXANY", 0)
+                )
+                settings[2] &= ~(
+                    getattr(termios, "CRTSCTS", 0) | getattr(termios, "HUPCL", 0)
+                )
+                settings[2] |= getattr(termios, "CLOCAL", 0)
+                termios.tcsetattr(self.fd, termios.TCSANOW, settings)
+            except (ImportError, AttributeError, OSError):
+                # Virtual and test serial backends may not expose POSIX termios.
+                # The DTR/RTS method suppression above remains effective.
+                pass
+
+    SerialWithoutModemControl.__name__ = "SerialWithoutModemControl"
+    return SerialWithoutModemControl
+
+
 def probe_onstep_serial_port(
     serial_port: str,
     baudrate: int,
@@ -775,7 +816,7 @@ def probe_onstep_serial_port(
             import serial  # type: ignore
         except ImportError as exc:
             raise RuntimeError("pyserial is not installed") from exc
-        serial_factory = serial.Serial
+        serial_factory = _serial_class_without_modem_control(serial.Serial)
 
     try:
         with serial_factory(
@@ -1771,7 +1812,8 @@ def _send_onstep_lx200_serial_commands(
         raise RuntimeError("pyserial is not installed") from exc
 
     responses = []
-    with serial.Serial(
+    serial_class = _serial_class_without_modem_control(serial.Serial)
+    with serial_class(
         serial_port, baudrate=baudrate, timeout=1, write_timeout=2
     ) as ser:
         for command in commands:

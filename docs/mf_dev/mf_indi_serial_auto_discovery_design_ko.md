@@ -10,6 +10,11 @@
 읽기 전용 probe, baud pass, Web 선택 UI, mount-control 단일 실행 transaction과
 실패 원복을 구현했다.
 
+2026-08-13 ESP32 기반 OnStepX의 EN/GPIO0가 USB-UART DTR/RTS에 연결되는
+하드웨어를 추가 검토했다. 이후 모든 PiFinder 직접 serial open은 흐름 제어를 끄는
+것에 더해 **DTR/RTS 출력 상태를 설정하는 ioctl 자체를 호출하지 않는 것**을 안전
+조건으로 사용한다.
+
 관련 문서:
 
 - [`mf_indi_serial_reconnect_design_ko.md`](mf_indi_serial_reconnect_design_ko.md)
@@ -153,6 +158,39 @@ OnStepX 공식 소스 `src/telescope/Telescope.command.cpp`에는 다음 읽기 
 
 현재 OnStepX 공식 소스의 firmware name은 `On-Step`이다. 자동 탐색은 이동이나
 설정 변경 명령이 아니라 `:GVP#`와 `:GVN#`만 사용한다.
+
+### 4.1 ESP32 DTR/RTS 안전 경계
+
+`rtscts=False`, `dsrdtr=False`는 흐름 제어만 끈다. pySerial 3.5는 이 상태에서도
+port open 직후 기본 active 상태인 DTR과 RTS를 각각 `TIOCMBIS`로 적용한다. ESP32
+OnStepX에서는 이 핀이 EN과 GPIO0에 연결될 수 있으므로 probe가 읽기 전용 명령만
+보내더라도 MCU reset 또는 bootloader 진입을 일으킬 수 있다.
+
+PiFinder 직접 serial 경로는 다음 규칙을 공통 적용한다.
+
+```text
+serial open
+→ pySerial의 _update_dtr_state() 억제
+→ pySerial의 _update_rts_state() 억제
+→ CRTSCTS, IXON, IXOFF, IXANY 해제
+→ HUPCL 해제(close 때 DTR hang-up 방지)
+→ CLOCAL 설정
+→ OnStep 읽기/쓰기
+→ close(DTR/RTS ioctl 없음)
+```
+
+적용 범위:
+
+- Auto port/baud의 `:GVP#`, `:GVN#` probe
+- INDI를 정지하고 실행하는 OnStep 위치·시간 직접 동기화
+- 같은 공통 함수로 수행하는 serial 명령 전송
+
+INDI v2.2.3.1의 Linux `tty_connect()`도 `CRTSCTS`, `HUPCL`, XON/XOFF를 해제하고
+DTR/RTS ioctl을 호출하지 않으므로 같은 정책이다. 단, Linux USB-UART driver가
+최초 `open()` 자체에서 만드는 순간 신호는 userspace가 완전히 통제할 수 없다.
+PiFinder 수정의 보장 범위는 애플리케이션이 DTR/RTS를 추가로 assert/deassert하거나
+close hang-up을 만들지 않는 것이다. 실제 ESP32 보드별 최종 합격은 reset reason
+또는 DTR/RTS 파형을 함께 확인한다.
 
 검증 등급 제안:
 

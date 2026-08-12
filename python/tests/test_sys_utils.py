@@ -218,6 +218,52 @@ try:
         assert result["version"] == "10.24c"
 
     @pytest.mark.unit
+    def test_serial_without_modem_control_suppresses_lines_and_hangup(monkeypatch):
+        import termios
+
+        calls = []
+        applied = []
+
+        class FakeSerial:
+            def __init__(self):
+                self.fd = 23
+
+            def _reconfigure_port(self, *_args, **_kwargs):
+                calls.append("configured")
+
+            def _update_dtr_state(self):
+                calls.append("dtr")
+
+            def _update_rts_state(self):
+                calls.append("rts")
+
+        initial_iflag = termios.IXON | termios.IXOFF | getattr(termios, "IXANY", 0)
+        initial_cflag = termios.HUPCL | getattr(termios, "CRTSCTS", 0)
+        monkeypatch.setattr(
+            termios,
+            "tcgetattr",
+            lambda _fd: [initial_iflag, 0, initial_cflag, 0, 0, 0, []],
+        )
+        monkeypatch.setattr(
+            termios,
+            "tcsetattr",
+            lambda fd, when, settings: applied.append((fd, when, settings)),
+        )
+
+        safe_serial = sys_utils._serial_class_without_modem_control(FakeSerial)()
+        safe_serial._update_dtr_state()
+        safe_serial._update_rts_state()
+        safe_serial._reconfigure_port()
+
+        assert calls == ["configured"]
+        assert len(applied) == 1
+        settings = applied[0][2]
+        assert settings[0] & (termios.IXON | termios.IXOFF) == 0
+        assert settings[2] & termios.HUPCL == 0
+        assert settings[2] & getattr(termios, "CRTSCTS", 0) == 0
+        assert settings[2] & termios.CLOCAL
+
+    @pytest.mark.unit
     def test_probe_onstep_serial_port_product_only_is_not_verified():
         class FakeSerial:
             def __init__(self, *_args, **_kwargs):

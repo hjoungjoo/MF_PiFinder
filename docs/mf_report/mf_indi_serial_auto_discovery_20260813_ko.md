@@ -9,6 +9,43 @@
 - [`mf_indi_serial_reconnect_design_ko.md`](../mf_dev/mf_indi_serial_reconnect_design_ko.md)
 - [`mf_indi_serial_port_dedup_20260813_ko.md`](mf_indi_serial_port_dedup_20260813_ko.md)
 
+## ESP32 DTR/RTS 안전 보완
+
+소스 감사에서 INDI Linux serial layer는 hardware/software flow control과 `HUPCL`을
+끄고 DTR/RTS를 직접 조작하지 않는 것을 확인했다. 반면 자동탐색과 직접 위치·시간
+동기화에서 사용한 pySerial 3.5는 `rtscts=False`, `dsrdtr=False`여도 open할 때
+DTR/RTS 기본 active 상태를 각각 적용했다.
+
+이를 다음과 같이 보완했다.
+
+- PiFinder 전용 pySerial subclass에서 `_update_dtr_state()`와
+  `_update_rts_state()`를 no-op 처리
+- termios의 `CRTSCTS`, `IXON`, `IXOFF`, `IXANY`, `HUPCL` 해제
+- `CLOCAL` 설정
+- 자동 port/baud probe와 위치·시간 직접 serial 명령 경로에 동일 클래스 적용
+- fake serial을 이용해 DTR/RTS hook 미호출과 termios flag를 자동 검증
+
+이 보완은 PiFinder가 modem-control ioctl을 발생시키는 문제를 제거한다. USB-UART
+kernel driver가 최초 `open()` 순간 자체적으로 만드는 신호까지 userspace에서
+보장하지는 않으므로 ESP32 실장 최종 시험에서는 MCU reset reason 또는 계측기
+파형 확인을 별도 항목으로 유지한다.
+
+보완 적용 후 집중 회귀 시험 결과:
+
+```text
+test_sys_utils.py + test_sys_utils_fake.py + test_config.py
++ test_mountcontrol_indi.py + test_web_theme_static.py: 201 passed
+ruff format/check: passed
+compileall: passed
+git diff --check: passed
+pifinder.service restart: active
+indiwebmanager.service: active
+local Web HTTP 응답: 정상
+```
+
+실장 포트의 Auto probe는 INDI 연결을 일시 중단하는 동작이므로 이번 적용 과정에서
+임의 실행하지 않았다. 다음 사용자 실행 시 새 DTR/RTS 억제 경로가 사용된다.
+
 ## 구현 범위
 
 Web UI의 다음 선택을 1회 자동탐색 명령으로 구현했다.
