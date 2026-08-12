@@ -1,6 +1,6 @@
 # INDI OnStepX Serial 재접속·통신 감시 설계안
 
-상태: **1.2 설정 불일치 해소 구현·실장 검증 완료 / 재접속·통신 감시는 검토 대기**
+상태: **1.2 설정 불일치 및 USB 재삽입 1회 복구 구현·실장 검증 완료 / 지속 통신 감시는 후속 과제**
 작성일: 2026-08-12
 
 ## 1. 목적과 변경 경계
@@ -374,6 +374,20 @@ flowchart TD
 
 ## 5. USB 재삽입 1회 복구 순서
 
+상태: **2026-08-12 구현 및 실제 케이블 분리·재삽입 검증 완료**
+
+2026-08-12 실장 시험에서 CH340은 재삽입 시 `/dev/ttyUSB0`에서
+`/dev/ttyUSB1`로 바뀌었지만 설정된 by-id 경로는 동일하게 복원됐다. 기존 코드는
+remove/add를 mount-control 상태에 반영하지 않아 60초 이상 stale
+`CONNECT=On`/`connected`와 정지 좌표를 유지했다.
+
+재삽입 후 INDI device에 `DISCONNECT`를 한 번 보내 stale state를 지우자 driver,
+indiserver, PiFinder 재시작 없이 약 3.3초에 `CONNECT=On`, 약 6.7초에 새 좌표가
+복원됐다. 따라서 1차 복구는 driver restart가 아니라 **같은 stable by-id의
+재등장 → device DISCONNECT/CONNECT 1회 → 새 telemetry 검증**으로 확정한다.
+상세 실측은
+[`mf_indi_usb_reinsert_field_test_20260812_ko.md`](../mf_report/mf_indi_usb_reinsert_field_test_20260812_ko.md)를 참조한다.
+
 ```mermaid
 sequenceDiagram
     participant U as USB monitor
@@ -385,8 +399,8 @@ sequenceDiagram
     M->>M: USB_ABSENT latch = true
     U->>M: same node present for 2 seconds
     M->>M: reconnect_used = true
-    M->>I: 기존 INDI client 세션 정리
-    M->>I: server/device 재접속 요청 1회
+    M->>I: CONNECTION.DISCONNECT 1회
+    M->>I: 새 client로 server/device 재접속
     I->>O: serial open + connect
     M->>I: CONNECTION과 새 상태 응답 확인
     alt 검증 성공
@@ -398,12 +412,30 @@ sequenceDiagram
     end
 ```
 
-재접속 시 보존할 값:
+현재 구현은 mount-control loop에서 설정된 serial 경로를 1초마다 확인한다.
+분리 시 park/tracking/slew-rate/track-frequency를 snapshot하고 `usb_absent`로
+전환해 기존 무기한 auto-connect를 억제한다. 같은 경로가 돌아와 2초간 유지되면
+`DISCONNECT`와 보존 모드 `connect()`를 한 번 실행한다. 이 연결에서는
+location/time sync, unpark, tracking-on을 강제하지 않으며, 연결 generation 이후의
+새 좌표와 새 `OnStep Status` callback이 모두 들어와야 성공으로 판정한다.
+
+성공 후 snapshot과 현재 park 상태가 다르면 안전을 위해 자동 park/unpark를 하지
+않고 실패로 남긴다. tracking과 slew rate는 명확하게 달라진 경우에만 원래 상태로
+복구한다. 예외 또는 fresh telemetry timeout은 `recovery_failed`로 latch되어 같은
+분리 주기에서 반복 재시도하지 않는다. 오래된 INDI client의 늦은 disconnect
+callback은 client generation으로 무시하고, 분리 직후 늦게 도착한 좌표 callback은
+내부 generation만 갱신할 뿐 `usb_absent` 상태를 `connected`로 덮어쓰지 않는다.
+
+실장 결과는 2초 debounce 뒤 device session reset을 정확히 한 번 수행했고, reset
+시작 후 약 1.7초 안에 새 좌표와 OnStep 상태가 확인됐다. PiFinder, indiserver,
+OnStepX driver PID는 모두 유지됐고 USB/by-id/115200 설정도 바뀌지 않았다.
+
+재접속 시 보존하는 값:
 
 - 장애 직전 park/unpark 상태
 - 장애 직전 tracking 상태
 - 사용자가 선택한 slew rate와 guide 관련 설정
-- 현재 위치의 출처(GPS, 수동 load/default)와 신뢰 상태
+- 위치·시간은 재전송하지 않으므로 GPS/수동 load/default 출처를 변경하지 않음
 
 안전 원칙:
 

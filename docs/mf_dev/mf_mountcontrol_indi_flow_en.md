@@ -123,6 +123,12 @@ coordinate_sync
 multipoint_align
 backlash_auto
 device
+connection_health
+serial_present
+serial_path
+serial_path_stable
+recovery_reason
+recovery_attempt
 ```
 
 ## Time Constants
@@ -134,6 +140,10 @@ POSITION_STATUS_MIN_INTERVAL = 0.5 sec
 STATUS_HEARTBEAT_INTERVAL = 2.0 sec
 AUTO_CONNECT_START_DELAY = 5.0 sec
 AUTO_CONNECT_RETRY_INTERVAL = 10.0 sec
+USB_SERIAL_MONITOR_INTERVAL_SECONDS = 1.0 sec
+USB_SERIAL_RETURN_DEBOUNCE_SECONDS = 2.0 sec
+USB_SERIAL_DISCONNECT_WAIT_SECONDS = 3.0 sec
+USB_SERIAL_FRESH_TELEMETRY_WAIT_SECONDS = 12.0 sec
 
 MANUAL_MOTION_LEASE_SECONDS = 1.2 sec
 MANUAL_MOTION_MIN_LEASE_SECONDS = 0.3 sec
@@ -163,7 +173,8 @@ GOTO_COMPLETE_FALLBACK_SECONDS = 180.0 sec
 flowchart TD
     A[run starts] --> B[state=idle]
     B --> C[loop]
-    C --> D[_check_manual_motion_deadline]
+    C --> U[_check_usb_serial_reinsert]
+    U --> D[_check_manual_motion_deadline]
     D --> E[_publish_manual_motion_progress]
     E --> F[_check_goto_motion]
     F --> G[_check_pending_goto_refine]
@@ -172,7 +183,7 @@ flowchart TD
     I -->|yes| J[handle_command]
     J --> C
     I -->|timeout| K{auto-connect time?}
-    K -->|yes| L[connect announce=false]
+    K -->|yes, USB recovery permits| L[connect announce=false]
     K -->|no| M[_write_status_heartbeat]
     L --> M
     M --> C
@@ -240,6 +251,41 @@ This event path supplies readback at ~1 Hz during GoTo and tracking — the
 pointing coordinate service's mount-motion detection depends on that cadence.
 Manual motion may still not produce timely updates, so manual motion also has
 explicit polling publication.
+
+## OnStepX USB Removal and Reinsertion Recovery
+
+Once the effective USB transport is reconciled, mount-control checks the
+configured serial path every second. A stable `/dev/serial/by-id/...` path is
+the operational key; a changing `/dev/ttyUSB*` number is not used as identity.
+
+```mermaid
+flowchart TD
+    A[healthy / configured path present] -->|path absent| B[usb_absent]
+    B --> C[snapshot park tracking slew rate track frequency]
+    C --> D[connected=false / suppress normal auto-connect]
+    D -->|same path returns| E[2-second return debounce]
+    E -->|path disappears| B
+    E -->|stable| F[CONNECTION.DISCONNECT once]
+    F --> G[state-preserving connect]
+    G --> H{fresh coordinates and OnStep Status?}
+    H -->|no| X[recovery_failed / no retry this cycle]
+    H -->|yes| I[verify park state is unchanged]
+    I --> J[restore only changed tracking slew frequency]
+    J --> K[healthy / recovery_attempt=1]
+```
+
+The recovery connect skips location/time sync, unpark, and forced tracking-on.
+Cached `CONNECTION=On` and an existing coordinate property are insufficient:
+both a coordinate callback and an `OnStep Status` callback newer than the
+connection generation must arrive. A park-state mismatch is never corrected
+with automatic motion; recovery fails safely. Manual, GoTo, and guide commands
+are neither saved nor replayed.
+
+Late disconnect callbacks from older INDI clients are ignored by client
+generation. A coordinate callback already in flight when USB disappears may
+update its telemetry generation, but cannot overwrite `usb_absent` with a
+top-level `connected` state. Recovery uses the existing tmpfs status/log paths
+and creates no dedicated SD-card log.
 
 ## Command Dispatch
 

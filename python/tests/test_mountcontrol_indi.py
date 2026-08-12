@@ -1441,6 +1441,274 @@ def test_connection_reconcile_uses_pifinder_only_when_indi_is_missing(
     assert mount._connection_config_status["connection_config_source"] == "indi_live"
 
 
+def test_usb_reinsert_recovers_once_after_stable_by_id_return(monkeypatch):
+    mount = DummyConnectedMount()
+    present = {"value": True}
+    monkeypatch.setattr(mci.os.path, "exists", lambda _path: present["value"])
+    monkeypatch.setattr(
+        mount,
+        "_capture_usb_recovery_snapshot",
+        lambda: {
+            "park_state": "Unparked",
+            "tracking_enabled": True,
+            "slew_rate": 5,
+            "track_freq_hz": None,
+        },
+    )
+    recovery_calls = []
+
+    def recover_once():
+        recovery_calls.append(True)
+        mount.connected = True
+        mount._usb_absent_latched = False
+        mount._usb_recovery_status["connection_health"] = "healthy"
+        return True
+
+    monkeypatch.setattr(mount, "_recover_usb_serial_once", recover_once)
+    mount._configure_usb_serial_monitor(
+        {
+            "connection_type": "usb",
+            "serial_port": "/dev/serial/by-id/onstep",
+        }
+    )
+
+    present["value"] = False
+    mount._check_usb_serial_reinsert(now=1.0)
+    assert mount.connected is False
+    assert mount._usb_recovery_status["connection_health"] == "usb_absent"
+    assert recovery_calls == []
+    assert not mount._usb_auto_connect_allowed()
+
+    present["value"] = True
+    mount._check_usb_serial_reinsert(now=2.0)
+    assert mount._usb_recovery_status["connection_health"] == "return_debounce"
+    mount._check_usb_serial_reinsert(now=3.0)
+    assert recovery_calls == []
+    mount._check_usb_serial_reinsert(now=4.0)
+    mount._check_usb_serial_reinsert(now=8.0)
+
+    assert recovery_calls == [True]
+    assert mount._usb_reconnect_used is True
+    assert mount._usb_auto_connect_allowed()
+
+
+def test_usb_monitor_initial_absent_allows_normal_connect_when_device_appears(
+    monkeypatch,
+):
+    mount = DummyConnectedMount()
+    present = {"value": False}
+    monkeypatch.setattr(mci.os.path, "exists", lambda _path: present["value"])
+    recovery_calls = []
+    monkeypatch.setattr(
+        mount,
+        "_recover_usb_serial_once",
+        lambda: recovery_calls.append(True) or True,
+    )
+
+    mount._configure_usb_serial_monitor(
+        {
+            "connection_type": "usb",
+            "serial_port": "/dev/serial/by-id/onstep",
+        }
+    )
+    assert not mount._usb_auto_connect_allowed()
+
+    present["value"] = True
+    mount._check_usb_serial_reinsert(now=1.0)
+
+    assert recovery_calls == []
+    assert mount._usb_recovery_status["connection_health"] == "healthy"
+    assert mount._usb_auto_connect_allowed()
+
+
+def test_usb_recovery_resets_device_session_once_without_driver_restart(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._usb_recovery_snapshot = {
+        "park_state": "Unparked",
+        "tracking_enabled": True,
+        "slew_rate": 5,
+        "track_freq_hz": None,
+    }
+    applied = []
+    connect_calls = []
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "apply_indi_onstep_properties",
+        lambda properties, **kwargs: applied.append((properties, kwargs))
+        or {"ok": True},
+    )
+    monkeypatch.setattr(mount, "_wait_for_indi_device_disconnected", lambda _t: True)
+
+    def connect(**kwargs):
+        connect_calls.append(kwargs)
+        mount.connected = True
+        return True
+
+    monkeypatch.setattr(mount, "connect", connect)
+    monkeypatch.setattr(mount, "_restore_usb_recovery_snapshot", lambda: True)
+
+    assert mount._recover_usb_serial_once()
+
+    assert applied[0][0] == ["LX200 OnStep.CONNECTION.DISCONNECT=On"]
+    assert connect_calls == [
+        {
+            "announce": False,
+            "sync_on_connect": False,
+            "preserve_mount_state": True,
+            "require_fresh_telemetry": True,
+            "publish_connected": False,
+        }
+    ]
+    assert mount._usb_recovery_status["connection_health"] == "healthy"
+    assert mount._usb_recovery_status["recovery_attempt"] == 1
+
+
+def test_usb_recovery_failure_does_not_fall_through_to_auto_connect(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._usb_serial_path = "/dev/serial/by-id/onstep"
+    mount._usb_serial_present = True
+    mount._usb_absent_latched = True
+    mount._usb_reconnect_used = True
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "apply_indi_onstep_properties",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+    monkeypatch.setattr(
+        mount, "_wait_for_indi_device_disconnected", lambda _timeout: False
+    )
+
+    assert not mount._recover_usb_serial_once()
+
+    assert mount._usb_recovery_status["connection_health"] == "recovery_failed"
+    assert not mount._usb_auto_connect_allowed()
+
+
+def test_usb_recovery_exception_is_latched_and_not_retried(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._usb_serial_path = "/dev/serial/by-id/onstep"
+    mount._usb_serial_present = True
+    mount._usb_absent_latched = True
+    mount._usb_reconnect_used = True
+
+    def raise_disconnect(*_args, **_kwargs):
+        raise RuntimeError("indi_setprop unavailable")
+
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "apply_indi_onstep_properties",
+        raise_disconnect,
+    )
+
+    assert not mount._recover_usb_serial_once()
+
+    assert mount._usb_recovery_status["connection_health"] == "recovery_failed"
+    assert "indi_setprop unavailable" in mount._usb_recovery_status["recovery_error"]
+    assert not mount._usb_auto_connect_allowed()
+
+
+def test_recovery_connect_skips_sync_unpark_tracking_and_requires_fresh_telemetry(
+    monkeypatch,
+):
+    class RecoveryDevice:
+        def getDeviceName(self):
+            return "LX200 OnStepX"
+
+        def isConnected(self):
+            return True
+
+    class RecoveryClient:
+        instances = []
+
+        def __init__(self, mount_control, generation=0):
+            self.mount_control = mount_control
+            self.generation = generation
+            self.device = RecoveryDevice()
+            self.unpark_calls = 0
+            self.tracking_calls = 0
+            self.__class__.instances.append(self)
+
+        def setServer(self, _host, _port):
+            return None
+
+        def connectServer(self):
+            return True
+
+        def get_telescope_device(self):
+            return self.device
+
+        def _wait_for_property(self, _device, _name, timeout=5.0):
+            return True
+
+        def isServerConnected(self):
+            return True
+
+        def unpark_mount(self, _device):
+            self.unpark_calls += 1
+            return True
+
+        def enable_tracking(self, _device):
+            self.tracking_calls += 1
+            return True
+
+    mount = DummyMountControl()
+    sync_calls = []
+    fresh_calls = []
+    monkeypatch.setattr(mci, "PyIndi", object())
+    monkeypatch.setattr(mci, "PiFinderIndiClient", RecoveryClient)
+    monkeypatch.setattr(mount, "_use_direct_onstep_location_time_sync", lambda: False)
+    monkeypatch.setattr(
+        mount, "sync_location_time", lambda **kwargs: sync_calls.append(kwargs) or True
+    )
+    monkeypatch.setattr(
+        mount,
+        "_wait_for_fresh_telemetry",
+        lambda position, status, timeout: fresh_calls.append(
+            (position, status, timeout)
+        )
+        or True,
+    )
+
+    assert mount.connect(
+        announce=False,
+        sync_on_connect=False,
+        preserve_mount_state=True,
+        require_fresh_telemetry=True,
+        publish_connected=False,
+    )
+
+    client = RecoveryClient.instances[-1]
+    assert sync_calls == []
+    assert client.unpark_calls == 0
+    assert client.tracking_calls == 0
+    assert fresh_calls == [(0, 0, mci.USB_SERIAL_FRESH_TELEMETRY_WAIT_SECONDS)]
+
+
+def test_stale_indi_client_disconnect_callback_is_ignored():
+    mount = DummyConnectedMount()
+    mount._client_generation = 5
+    status_count = len(mount.statuses)
+
+    mount.mark_disconnected("old callback", client_generation=4)
+
+    assert mount.connected is True
+    assert mount.device is not None
+    assert len(mount.statuses) == status_count
+
+
+def test_late_position_callback_does_not_overwrite_disconnected_status():
+    mount = DummyConnectedMount()
+    mount.connected = False
+    status_count = len(mount.statuses)
+
+    mount.receive_current_position(120.0, 45.0)
+
+    assert mount._position_update_generation == 1
+    assert mount.current_ra == 120.0
+    assert mount.current_dec == 45.0
+    assert len(mount.statuses) == status_count
+
+
 def test_goto_target_fails_when_indi_target_is_not_accepted():
     mount = DummyConnectedMount()
     mount.accept_goto_target = False

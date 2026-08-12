@@ -82,6 +82,10 @@ AUTO_CONNECT_DEVICE_WAIT_SECONDS = 20.0
 AUTO_CONNECT_PROPERTY_WAIT_SECONDS = 20.0
 AUTO_CONNECT_DEVICE_CONNECT_WAIT_SECONDS = 15.0
 AUTO_CONNECT_POSITION_WAIT_SECONDS = 10.0
+USB_SERIAL_MONITOR_INTERVAL_SECONDS = 1.0
+USB_SERIAL_RETURN_DEBOUNCE_SECONDS = 2.0
+USB_SERIAL_DISCONNECT_WAIT_SECONDS = 3.0
+USB_SERIAL_FRESH_TELEMETRY_WAIT_SECONDS = 12.0
 MANUAL_MOTION_LEASE_SECONDS = 1.2
 MANUAL_MOTION_MIN_LEASE_SECONDS = 0.3
 MANUAL_MOTION_MAX_LEASE_SECONDS = 5.0
@@ -213,10 +217,11 @@ if PyIndi is not None:
         # pifinder.log (SD-card writes) for as long as the mount is down.
         _DISCONNECT_LOG_INTERVAL_S = 60.0
 
-        def __init__(self, mount_control=None):
+        def __init__(self, mount_control=None, generation: int = 0):
             super().__init__()
             self.telescope_device = None
             self.mount_control = mount_control
+            self.generation = generation
             self.preferred_device_name = sys_utils.get_indi_profile_device_name()
             # Monotonic timestamp of the last disconnect WARNING we emitted,
             # so repeats within _DISCONNECT_LOG_INTERVAL_S drop to DEBUG.
@@ -386,7 +391,16 @@ if PyIndi is not None:
                 and ra_hours is not None
                 and dec_deg is not None
             ):
-                self.mount_control.set_current_position(ra_hours * 15.0, dec_deg)
+                self.mount_control.receive_current_position(
+                    ra_hours * 15.0, dec_deg
+                )
+
+        def newText(self, tvp):
+            if (
+                self.mount_control is not None
+                and getattr(tvp, "name", "") == "OnStep Status"
+            ):
+                self.mount_control.receive_onstep_status()
 
         def updateProperty(self, prop):
             # INDI 2.x replaced the typed 1.x callbacks (newNumber, ...) with
@@ -395,6 +409,11 @@ if PyIndi is not None:
             # advances on the 5 s status heartbeat — far too slow for the
             # pointing fusion to attribute slew motion to the mount.
             try:
+                if (
+                    prop.getName() == "OnStep Status"
+                    and self.mount_control is not None
+                ):
+                    self.mount_control.receive_onstep_status()
                 if prop.getType() != PyIndi.INDI_NUMBER:
                     return
                 if prop.getName() != "EQUATORIAL_EOD_COORD":
@@ -407,7 +426,7 @@ if PyIndi is not None:
                     and ra_widget is not None
                     and dec_widget is not None
                 ):
-                    self.mount_control.set_current_position(
+                    self.mount_control.receive_current_position(
                         ra_widget.getValue() * 15.0, dec_widget.getValue()
                     )
             except Exception:
@@ -436,7 +455,8 @@ if PyIndi is not None:
                 clientlogger.debug("Disconnected from INDI server: %s", code)
             if self.mount_control is not None:
                 self.mount_control.mark_disconnected(
-                    f"INDI server disconnected: {code}"
+                    f"INDI server disconnected: {code}",
+                    client_generation=self.generation,
                 )
 
 else:
@@ -464,6 +484,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         self.indi_host = indi_host
         self.indi_port = indi_port
         self.client: Optional[PiFinderIndiClient] = None
+        self._client_generation = 0
         self.device = None
         self.slew_rate = 5
         self.current_ra: Optional[float] = None
@@ -526,6 +547,22 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._slew_rate_polluted = False
         self._connection_config_ready = True
         self._connection_config_status: dict[str, Any] = {}
+        self._position_update_generation = 0
+        self._onstep_status_generation = 0
+        self._last_fresh_position_at = 0.0
+        self._last_fresh_onstep_status_at = 0.0
+        self._usb_serial_path = ""
+        self._usb_serial_present: Optional[bool] = None
+        self._usb_serial_last_check_at = 0.0
+        self._usb_absent_latched = False
+        self._usb_returned_at: Optional[float] = None
+        self._usb_reconnect_used = False
+        self._usb_recovery_snapshot: dict[str, Any] = {}
+        self._usb_recovery_status: dict[str, Any] = {
+            "connection_health": "not_monitored",
+            "serial_present": None,
+            "recovery_attempt": 0,
+        }
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -662,6 +699,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         if self._coordinate_sync is not None:
             payload["coordinate_sync"] = self._coordinate_sync
         payload.update(self._connection_config_status)
+        payload.update(self._usb_recovery_status)
         if self.device is not None:
             try:
                 payload["device"] = self.device.getDeviceName()
@@ -911,7 +949,27 @@ class MountControlIndi(BacklashCalibrationMixin):
                 self.slew_rate = driver_slew
             self._write_controller_status("connected", "INDI mount connected")
         elif not self.connected:
-            self._write_controller_status("idle", "INDI mount waiting")
+            health = self._usb_recovery_status.get("connection_health")
+            if health == "usb_absent":
+                self._write_controller_status(
+                    "usb_absent", "Configured USB serial device is absent"
+                )
+            elif health == "return_debounce":
+                self._write_controller_status(
+                    "usb_return_debounce",
+                    "USB serial returned; waiting for stable device node",
+                )
+            elif health == "recovery_failed":
+                self._write_controller_status(
+                    "usb_recovery_failed",
+                    str(
+                        self._usb_recovery_status.get(
+                            "recovery_error", "USB serial recovery failed"
+                        )
+                    ),
+                )
+            else:
+                self._write_controller_status("idle", "INDI mount waiting")
 
     def _apply_indi_properties(
         self,
@@ -959,7 +1017,24 @@ class MountControlIndi(BacklashCalibrationMixin):
         if write_status:
             self._write_position_status()
 
+    def receive_current_position(self, ra_deg: float, dec_deg: float) -> None:
+        """Record a coordinate pushed by INDI, distinct from a cached read."""
+        self._position_update_generation += 1
+        self._last_fresh_position_at = time.monotonic()
+        self.set_current_position(ra_deg, dec_deg)
+
+    def receive_onstep_status(self) -> None:
+        """Record a fresh OnStep Status callback for recovery verification."""
+        self._onstep_status_generation += 1
+        self._last_fresh_onstep_status_at = time.monotonic()
+
     def _write_position_status(self, force: bool = False) -> None:
+        # Coordinate callbacks can arrive just after a USB removal or while a
+        # recovery client is still proving fresh telemetry. They are useful
+        # for the generation counters, but must not overwrite usb_absent /
+        # recovering with a false top-level connected state.
+        if not self.connected:
+            return
         now = time.monotonic()
         if (
             not force
@@ -1134,7 +1209,30 @@ class MountControlIndi(BacklashCalibrationMixin):
             time.sleep(0.25)
         return None
 
-    def connect(self, announce: bool = True, sync_on_connect: bool = True) -> bool:
+    def _wait_for_fresh_telemetry(
+        self,
+        position_generation: int,
+        status_generation: int,
+        timeout: float,
+    ) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if (
+                self._position_update_generation > position_generation
+                and self._onstep_status_generation > status_generation
+            ):
+                return True
+            time.sleep(0.1)
+        return False
+
+    def connect(
+        self,
+        announce: bool = True,
+        sync_on_connect: bool = True,
+        preserve_mount_state: bool = False,
+        require_fresh_telemetry: bool = False,
+        publish_connected: bool = True,
+    ) -> bool:
         if (
             self.connected
             and self.device is not None
@@ -1159,6 +1257,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             self.sync_location_time(reconnect_after=False)
 
         if self.client is not None:
+            self._client_generation += 1
             try:
                 self.client.disconnectServer()
             except Exception:
@@ -1166,7 +1265,8 @@ class MountControlIndi(BacklashCalibrationMixin):
         self.client = None
         self.device = None
 
-        self.client = PiFinderIndiClient(self)
+        self._client_generation += 1
+        self.client = PiFinderIndiClient(self, generation=self._client_generation)
         self.client.setServer(self.indi_host, self.indi_port)
         self._write_controller_status(
             "connecting",
@@ -1236,30 +1336,62 @@ class MountControlIndi(BacklashCalibrationMixin):
                     self._console("INDI mount\nconnect failed")
                 return False
 
-        if sync_on_connect and not direct_sync_for_onstep:
-            self.sync_location_time()
-        self.client.unpark_mount(self.device)
-        self.client.enable_tracking(self.device)
-        if self._wait_for_current_position(AUTO_CONNECT_POSITION_WAIT_SECONDS) is None:
+        if not preserve_mount_state:
+            if sync_on_connect and not direct_sync_for_onstep:
+                self.sync_location_time()
+            self.client.unpark_mount(self.device)
+            self.client.enable_tracking(self.device)
+
+        telemetry_ok = True
+        if require_fresh_telemetry:
+            position_generation = self._position_update_generation
+            status_generation = self._onstep_status_generation
+            telemetry_ok = self._wait_for_fresh_telemetry(
+                position_generation,
+                status_generation,
+                USB_SERIAL_FRESH_TELEMETRY_WAIT_SECONDS,
+            )
+        else:
+            telemetry_ok = (
+                self._wait_for_current_position(AUTO_CONNECT_POSITION_WAIT_SECONDS)
+                is not None
+            )
+        if not telemetry_ok:
             self._write_controller_status(
                 "device_connect_failed",
-                f"{device_name} did not publish telescope coordinates",
+                (
+                    f"{device_name} did not publish fresh telemetry"
+                    if require_fresh_telemetry
+                    else f"{device_name} did not publish telescope coordinates"
+                ),
             )
             if announce:
                 self._console("INDI mount\nconnect failed")
             return False
         self.connected = True
         self._last_position_status_at = time.monotonic()
-        self._write_controller_status(
-            "connected",
-            f"Connected to {device_name}",
-            device=device_name,
-        )
-        if announce:
+        if publish_connected:
+            self._write_controller_status(
+                "connected",
+                f"Connected to {device_name}",
+                device=device_name,
+            )
+        if announce and publish_connected:
             self._console("INDI mount\nconnected")
         return True
 
-    def mark_disconnected(self, message: str) -> None:
+    def mark_disconnected(
+        self, message: str, client_generation: Optional[int] = None
+    ) -> None:
+        if (
+            client_generation is not None
+            and client_generation != self._client_generation
+        ):
+            logger.debug(
+                "Ignoring disconnect from stale INDI client generation %s",
+                client_generation,
+            )
+            return
         was_connected = self.connected
         self.connected = False
         self.device = None
@@ -1271,6 +1403,311 @@ class MountControlIndi(BacklashCalibrationMixin):
             # must not reset the counter or suppression never engages.)
             self._auto_connect_failures = 0
         self._write_controller_status("disconnected", message)
+
+    def _configure_usb_serial_monitor(
+        self, connection: Optional[dict[str, Any]]
+    ) -> None:
+        if (
+            connection is None
+            or connection.get("connection_type")
+            != sys_utils.ONSTEP_CONNECTION_USB
+        ):
+            self._usb_serial_path = ""
+            self._usb_serial_present = None
+            self._usb_absent_latched = False
+            self._usb_returned_at = None
+            self._usb_reconnect_used = False
+            self._usb_recovery_snapshot = {}
+            self._usb_recovery_status = {
+                "connection_health": "not_monitored",
+                "serial_present": None,
+                "recovery_attempt": 0,
+            }
+            return
+
+        serial_path = str(connection.get("serial_port", "") or "").strip()
+        if not serial_path or serial_path == self._usb_serial_path:
+            return
+
+        present = os.path.exists(serial_path)
+        self._usb_serial_path = serial_path
+        self._usb_serial_present = present
+        self._usb_serial_last_check_at = 0.0
+        self._usb_absent_latched = False
+        self._usb_returned_at = None
+        self._usb_reconnect_used = False
+        self._usb_recovery_snapshot = {}
+        self._usb_recovery_status = {
+            "connection_health": "healthy" if present else "usb_absent",
+            "serial_present": present,
+            "serial_path": serial_path,
+            "serial_path_stable": serial_path.startswith("/dev/serial/by-id/"),
+            "recovery_attempt": 0,
+            "recovery_reason": None,
+        }
+
+    def _cached_tracking_enabled(self) -> Optional[bool]:
+        track_on = self._device_switch_on("TELESCOPE_TRACK_STATE", "TRACK_ON")
+        track_off = self._device_switch_on("TELESCOPE_TRACK_STATE", "TRACK_OFF")
+        if track_on is not None:
+            return track_on
+        if track_off is not None:
+            return not track_off
+        tracking_text = self._device_text_value("OnStep Status", "Tracking")
+        tracking_lower = tracking_text.strip().lower()
+        if tracking_lower in {"on", "tracking", "active"}:
+            return True
+        if tracking_lower in {"off", "idle", "not tracking", "inactive"}:
+            return False
+        return None
+
+    def _cached_slew_rate(self) -> Optional[int]:
+        for rate in range(10):
+            if self._device_switch_on("TELESCOPE_SLEW_RATE", str(rate)) is True:
+                return rate
+        return None
+
+    def _capture_usb_recovery_snapshot(self) -> dict[str, Any]:
+        park_state = self._home_park_status_fields().get("park_state", "Unknown")
+        return {
+            "park_state": park_state,
+            "tracking_enabled": self._cached_tracking_enabled(),
+            "slew_rate": self.slew_rate,
+            "track_freq_hz": self._track_freq_target_hz,
+        }
+
+    def _usb_auto_connect_allowed(self) -> bool:
+        if not self._usb_serial_path:
+            return True
+        if self._usb_serial_present is not True:
+            return False
+        return self._usb_recovery_status.get("connection_health") not in {
+            "return_debounce",
+            "recovering",
+            "recovery_failed",
+        }
+
+    def _wait_for_indi_device_disconnected(self, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        device_name = self._indi_device_name()
+        while time.monotonic() < deadline:
+            properties = sys_utils.get_indi_onstep_properties(
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+                device_name=device_name,
+            )
+            if properties.get(f"{device_name}.CONNECTION.CONNECT") == "Off":
+                return True
+            time.sleep(0.1)
+        return False
+
+    def _restore_usb_recovery_snapshot(self) -> bool:
+        snapshot = self._usb_recovery_snapshot
+        expected_park = snapshot.get("park_state")
+        current_park = self._home_park_status_fields().get("park_state", "Unknown")
+        if (
+            expected_park in {"Parked", "Unparked"}
+            and current_park in {"Parked", "Unparked"}
+            and current_park != expected_park
+        ):
+            logger.error(
+                "USB recovery changed park state from %s to %s; refusing "
+                "automatic park movement",
+                expected_park,
+                current_park,
+            )
+            return False
+
+        expected_tracking = snapshot.get("tracking_enabled")
+        current_tracking = self._cached_tracking_enabled()
+        if (
+            expected_tracking is not None
+            and current_tracking is not None
+            and current_tracking != expected_tracking
+        ):
+            logger.warning(
+                "Restoring tracking state after USB recovery: %s",
+                "On" if expected_tracking else "Off",
+            )
+            if not self.set_tracking(bool(expected_tracking)):
+                return False
+
+        expected_slew_rate = snapshot.get("slew_rate")
+        current_slew_rate = self._cached_slew_rate()
+        if (
+            expected_slew_rate is not None
+            and current_slew_rate is not None
+            and current_slew_rate != expected_slew_rate
+        ):
+            if not self.set_slew_rate(int(expected_slew_rate)):
+                return False
+
+        track_freq_hz = snapshot.get("track_freq_hz")
+        if track_freq_hz is not None:
+            if not self._write_track_frequency(float(track_freq_hz)):
+                return False
+            self._track_freq_last_assert_at = time.monotonic()
+        return True
+
+    def _recover_usb_serial_once(self) -> bool:
+        self._usb_recovery_status.update(
+            {
+                "connection_health": "recovering",
+                "serial_present": True,
+                "recovery_reason": "usb_reinsert",
+                "recovery_attempt": 1,
+            }
+        )
+        self._write_controller_status(
+            "usb_recovering", "USB serial returned; reconnecting INDI device once"
+        )
+        logger.info("USB serial returned; resetting stale INDI device session once")
+
+        device_name = self._indi_device_name()
+        try:
+            result = sys_utils.apply_indi_onstep_properties(
+                [f"{device_name}.CONNECTION.DISCONNECT=On"],
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+            )
+        except Exception as exc:
+            error = f"INDI device disconnect request failed: {exc}"
+            self._usb_recovery_status["connection_health"] = "recovery_failed"
+            self._usb_recovery_status["recovery_error"] = error
+            self._write_controller_status("usb_recovery_failed", error)
+            logger.exception(error)
+            return False
+        if not result.get("ok") or not self._wait_for_indi_device_disconnected(
+            USB_SERIAL_DISCONNECT_WAIT_SECONDS
+        ):
+            error = (
+                result.get("stderr")
+                or result.get("stdout")
+                or "INDI device did not enter disconnected state"
+            )
+            self._usb_recovery_status["connection_health"] = "recovery_failed"
+            self._usb_recovery_status["recovery_error"] = error
+            self._write_controller_status("usb_recovery_failed", error)
+            logger.error("USB serial recovery failed before reconnect: %s", error)
+            return False
+
+        self.connected = False
+        try:
+            connect_ok = self.connect(
+                announce=False,
+                sync_on_connect=False,
+                preserve_mount_state=True,
+                require_fresh_telemetry=True,
+                publish_connected=False,
+            )
+        except Exception as exc:
+            error = f"INDI device reconnect raised an exception: {exc}"
+            self.connected = False
+            self._usb_recovery_status["connection_health"] = "recovery_failed"
+            self._usb_recovery_status["recovery_error"] = error
+            self._write_controller_status("usb_recovery_failed", error)
+            logger.exception(error)
+            return False
+        if not connect_ok:
+            error = "INDI device did not reconnect with fresh telemetry"
+            self._usb_recovery_status["connection_health"] = "recovery_failed"
+            self._usb_recovery_status["recovery_error"] = error
+            self._write_controller_status("usb_recovery_failed", error)
+            logger.error(error)
+            return False
+
+        try:
+            state_restored = self._restore_usb_recovery_snapshot()
+        except Exception:
+            logger.exception("Mount state restore after USB reconnect failed")
+            state_restored = False
+        if not state_restored:
+            error = "Mount state could not be preserved after USB reconnect"
+            self.connected = False
+            self._usb_recovery_status["connection_health"] = "recovery_failed"
+            self._usb_recovery_status["recovery_error"] = error
+            self._write_controller_status("usb_recovery_failed", error)
+            logger.error(error)
+            return False
+
+        self._usb_absent_latched = False
+        self._usb_recovery_status.pop("recovery_error", None)
+        self._usb_recovery_status["connection_health"] = "healthy"
+        self._write_controller_status(
+            "connected", "USB serial reconnected with fresh telemetry"
+        )
+        self._console("INDI USB\nreconnected")
+        logger.info("USB serial device session recovered with fresh telemetry")
+        return True
+
+    def _check_usb_serial_reinsert(self, now: Optional[float] = None) -> None:
+        if not self._usb_serial_path:
+            return
+        if now is None:
+            now = time.monotonic()
+        if now - self._usb_serial_last_check_at < USB_SERIAL_MONITOR_INTERVAL_SECONDS:
+            return
+        self._usb_serial_last_check_at = now
+
+        present = os.path.exists(self._usb_serial_path)
+        previous = self._usb_serial_present
+        self._usb_serial_present = present
+        self._usb_recovery_status["serial_present"] = present
+
+        if previous is True and not present:
+            self._usb_recovery_snapshot = self._capture_usb_recovery_snapshot()
+            self._usb_absent_latched = True
+            self._usb_returned_at = None
+            self._usb_reconnect_used = False
+            self.connected = False
+            self._coordinate_sync = None
+            self._auto_connect_failures = 0
+            self._usb_recovery_status.update(
+                {
+                    "connection_health": "usb_absent",
+                    "recovery_reason": "usb_reinsert",
+                    "recovery_attempt": 0,
+                }
+            )
+            self._usb_recovery_status.pop("recovery_error", None)
+            self._write_controller_status(
+                "usb_absent", "Configured USB serial device was removed"
+            )
+            logger.warning(
+                "Configured USB serial device removed: %s", self._usb_serial_path
+            )
+            return
+
+        if not present:
+            self._usb_returned_at = None
+            return
+
+        if previous is False and not self._usb_absent_latched:
+            self._usb_recovery_status["connection_health"] = "healthy"
+            logger.info("USB serial device is present: %s", self._usb_serial_path)
+            return
+
+        if not self._usb_absent_latched or self._usb_reconnect_used:
+            return
+
+        if self._usb_returned_at is None:
+            self._usb_returned_at = now
+            self._usb_recovery_status["connection_health"] = "return_debounce"
+            self._write_controller_status(
+                "usb_return_debounce",
+                "USB serial returned; waiting for stable device node",
+            )
+            logger.info(
+                "USB serial device returned; waiting %.1f s for stability",
+                USB_SERIAL_RETURN_DEBOUNCE_SECONDS,
+            )
+            return
+
+        if now - self._usb_returned_at < USB_SERIAL_RETURN_DEBOUNCE_SECONDS:
+            return
+
+        self._usb_reconnect_used = True
+        self._recover_usb_serial_once()
 
     @contextmanager
     def _quiet_retry_logging(self, quiet: bool):
@@ -1461,6 +1898,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         """Make PiFinder's transport mirror match the effective INDI settings."""
         device_name = sys_utils.get_indi_profile_device_name()
         if not sys_utils.is_onstep_family_device_name(device_name):
+            self._configure_usb_serial_monitor(None)
             self._connection_config_status = {
                 "connection_config_valid": True,
                 "connection_config_source": "not_onstep",
@@ -1518,6 +1956,7 @@ class MountControlIndi(BacklashCalibrationMixin):
                 mirror, valid=False, error=error
             )
             self._connection_config_ready = False
+            self._configure_usb_serial_monitor(mirror)
             self._write_controller_status("config_invalid", error)
             return False
 
@@ -1545,6 +1984,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             valid=True,
             reconciled=bool(changed_options),
         )
+        self._configure_usb_serial_monitor(effective)
         self._connection_config_ready = True
         return True
 
@@ -3868,6 +4308,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         running = True
         next_auto_connect_at = time.monotonic() + AUTO_CONNECT_START_DELAY
         while running:
+            self._check_usb_serial_reinsert()
             self._check_manual_motion_deadline()
             self._publish_manual_motion_progress()
             self._check_goto_motion()
@@ -3880,6 +4321,7 @@ class MountControlIndi(BacklashCalibrationMixin):
                 )
                 running = self.handle_command(command)
             except queue.Empty:
+                self._check_usb_serial_reinsert()
                 self._check_manual_motion_deadline()
                 self._publish_manual_motion_progress()
                 self._check_goto_motion()
@@ -3890,6 +4332,7 @@ class MountControlIndi(BacklashCalibrationMixin):
                 now = time.monotonic()
                 if (
                     self._connection_config_ready
+                    and self._usb_auto_connect_allowed()
                     and not self.connected
                     and now >= next_auto_connect_at
                 ):

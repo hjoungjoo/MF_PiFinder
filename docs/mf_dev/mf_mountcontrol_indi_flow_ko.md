@@ -82,6 +82,12 @@ backlash_auto
 multipoint_align
 coordinate_sync
 device
+connection_health
+serial_present
+serial_path
+serial_path_stable
+recovery_reason
+recovery_attempt
 ```
 
 ## 시간 상수
@@ -93,6 +99,10 @@ POSITION_STATUS_MIN_INTERVAL = 0.5 sec
 STATUS_HEARTBEAT_INTERVAL = 2.0 sec
 AUTO_CONNECT_START_DELAY = 5.0 sec
 AUTO_CONNECT_RETRY_INTERVAL = 10.0 sec
+USB_SERIAL_MONITOR_INTERVAL_SECONDS = 1.0 sec
+USB_SERIAL_RETURN_DEBOUNCE_SECONDS = 2.0 sec
+USB_SERIAL_DISCONNECT_WAIT_SECONDS = 3.0 sec
+USB_SERIAL_FRESH_TELEMETRY_WAIT_SECONDS = 12.0 sec
 
 MANUAL_MOTION_LEASE_SECONDS = 1.2 sec
 MANUAL_MOTION_MIN_LEASE_SECONDS = 0.3 sec
@@ -123,7 +133,8 @@ flowchart TD
     A[run 시작] --> B[state=idle 기록]
     B --> C[next_auto_connect_at 설정]
     C --> D[loop]
-    D --> E[_check_manual_motion_deadline]
+    D --> U[_check_usb_serial_reinsert]
+    U --> E[_check_manual_motion_deadline]
     E --> F[_publish_manual_motion_progress]
     F --> G[_check_goto_motion]
     G --> H[_check_pending_goto_refine]
@@ -134,7 +145,7 @@ flowchart TD
     L -->|yes| Z[disconnect 후 종료]
     L -->|no| D
     J -->|timeout| M{auto connect 시각?}
-    M -->|yes| N[connect announce=false]
+    M -->|yes, USB recovery 허용| N[connect announce=false]
     M -->|no| O[_write_status_heartbeat]
     N --> O
     O --> D
@@ -145,7 +156,10 @@ flowchart TD
 - 명령이 없어도 주기적으로 수동 이동 deadline, GoTo 완료, refine, guide correction을 확인한다.
 - 수동 이동 중이면 queue timeout이 짧아져 stop/deadman 처리가 빠르게 돈다.
 - 서비스 시작 후 5초 뒤 자동 연결을 시도하고, 실패하면 10초 간격으로 재시도한다.
-- 연결 후 heartbeat는 5초 간격으로 상태 파일을 갱신한다.
+- 연결 후 heartbeat는 명령 처리가 비어 있을 때 nominal 2초 간격으로 상태 파일을
+  갱신한다.
+- OnStepX USB 설정에서는 configured serial path를 1초마다 확인한다. 분리 및
+  재삽입 복구 중에는 일반 auto-connect를 억제한다.
 
 ## 상태 기록 흐름
 
@@ -256,6 +270,40 @@ flowchart TD
 의존한다. 수동 이동 중에는 INDI driver가 좌표를 즉시 발행하지 않거나
 PiFinder 루프가 소비하지 못할 수 있어, 현재 구현은 수동 이동 중 별도
 polling 발행도 수행한다.
+
+## OnStepX USB 분리·재삽입 복구
+
+USB transport의 effective 설정이 확정되면 mount-control은 설정된 serial path를
+감시한다. `/dev/ttyUSB*` 번호 변경을 피하기 위해 Web에서 저장된
+`/dev/serial/by-id/...` 경로를 사용하는 것이 기준이다.
+
+```mermaid
+flowchart TD
+    A[healthy / configured path present] -->|path absent| B[usb_absent]
+    B --> C[park tracking slew-rate track-frequency snapshot]
+    C --> D[connected=false / 일반 auto-connect 억제]
+    D -->|같은 path 재등장| E[return_debounce 2초]
+    E -->|다시 소실| B
+    E -->|2초 유지| F[CONNECTION.DISCONNECT 1회]
+    F --> G[보존 모드 connect]
+    G --> H{새 좌표 + 새 OnStep Status?}
+    H -->|아니오| X[recovery_failed / 같은 주기 retry 금지]
+    H -->|예| I[park 상태 불변 확인]
+    I --> J[필요한 tracking slew frequency만 복원]
+    J --> K[healthy / recovery_attempt=1]
+```
+
+보존 모드 `connect()`는 location/time sync, unpark, tracking-on을 실행하지 않는다.
+cached `CONNECTION=On`이나 기존 좌표 property 존재만으로는 성공하지 않으며,
+새 client generation 이후 좌표와 `OnStep Status` callback을 모두 확인한다.
+park 상태가 달라졌으면 자동 park/unpark 이동을 하지 않고 실패로 남긴다.
+tracking과 slew rate는 snapshot과 현재 상태가 명확하게 다를 때만 원래 값으로
+복원한다. 수동 이동·GoTo·guide 명령은 저장하거나 재전송하지 않는다.
+
+오래된 INDI client의 늦은 disconnect callback은 generation이 다르면 무시한다.
+USB 분리 뒤 늦게 도착한 좌표 callback도 `connected=false`인 동안 최상위 상태를
+`connected`로 덮어쓰지 않는다. 로그와 상태는 기존 tmpfs 경로만 사용하며 USB
+복구 전용 SD 로그를 만들지 않는다.
 
 ## 명령 분배
 

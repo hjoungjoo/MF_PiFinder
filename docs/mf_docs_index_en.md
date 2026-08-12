@@ -32,7 +32,7 @@ Last updated: 2026-08-04. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | [backlash_measurement_flow](mf_dev/mf_backlash_measurement_flow_en.md) | both | living | Auto-backlash `compass_goto_loop` (**canonical owner**; others summarize + cite). |
 | [mount_mode_compatibility](mf_dev/mf_mount_mode_compatibility_en.md) | both | plan (mostly built) | Alt/Az vs EQ SkySafari compatibility audit/checklist. |
 | [indi_mount_install](mf_dev/mf_indi_mount_install_en.md) | both | install | INDI mount install/usage guide. |
-| [indi_serial_reconnect_design](mf_dev/mf_indi_serial_reconnect_design_ko.md) | ko | **config reconciliation implemented / reconnect design** (2026-08-12) | INDI/PiFinder transport source priority and atomic mirror implementation, plus the follow-up USB reinsertion/communication-health design. |
+| [indi_serial_reconnect_design](mf_dev/mf_indi_serial_reconnect_design_ko.md) | ko | **config reconciliation / USB reinsertion implemented** (2026-08-12) | INDI/PiFinder reconciliation and stable-by-id one-shot reconnect; continuous communication health remains follow-up work. |
 
 ## Solving (core)
 
@@ -86,6 +86,7 @@ Last updated: 2026-08-04. The KO version (`mf_docs_index_ko.md`) is authoritativ
 | [solver_diagnostics_20260812](mf_report/mf_solver_diagnostics_20260812_ko.md) | ko | **one-time measurement** (2026-08-12) | Default-on four-tier full-frame path and per-stage Cedar/SEP diagnostics verification — live `cedar_ff_center` and `cedar_ff` successes. |
 | [solver_cascade_order_20260812](mf_report/mf_solver_cascade_order_20260812_ko.md) | ko | **change verification** (2026-08-12) | Globally centre-first cascade with call-order/live verification; path names clarified as `cedar_center`/`sep_center`/`cedar_full`/`sep_full`. |
 | [indi_connection_config_reconcile_20260812](mf_report/mf_indi_connection_config_reconcile_20260812_ko.md) | ko | **change/live-device verification** (2026-08-12) | Live/XML-first INDI reconciliation, atomic PiFinder mirror writes, and live USB/by-id/115200 migration plus connection verification. |
+| [indi_usb_reinsert_field_test_20260812](mf_report/mf_indi_usb_reinsert_field_test_20260812_ko.md) | ko | **implementation/live verification** (2026-08-12) | Actual OnStepX USB removal/reinsertion, one-shot device-session recovery, fresh telemetry, and mount-state preservation verification. |
 | [feature_test_session_20260805](mf_report/mf_feature_test_session_20260805_ko.md) | ko | **one-time** (2026-08-05) | Automated portion of the checklist re-test — static/suite/API/headless UI pass; three defects found & fixed (ungated Software RIGHT, update exception unwinding the UI, imu_fake signature); remaining manual items listed. |
 | [mono_sqm_colour_guard_20260805](mf_report/mf_mono_sqm_colour_guard_20260805_en.md) | both | **announcement** (2026-08-05) | Community share — how upstream #560's sky-colour SQM correction silently shifts a mislabeled mono imx462 by +0.74 mag, the `profile.mono` guard, and how to test your own module. |
 | [sqm_stack_port_plan](mf_dev/mf_sqm_stack_port_plan_ko.md) | ko | **port complete** (2026-07-30) | Analysis and plan for porting the upstream SQM stack (#532/#542/#543/#544), with per-phase outcomes. |
