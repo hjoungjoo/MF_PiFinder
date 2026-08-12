@@ -110,6 +110,19 @@ def test_indi_backlash_controls_are_present():
     assert '"repeats": repeats' in server_py
 
 
+def test_indi_serial_auto_discovery_controls_are_present():
+    indi_html = (VIEWS_DIR / "indi_mount.html").read_text()
+    server_py = SERVER_PATH.read_text()
+
+    assert 'value="__auto__"' in indi_html
+    assert "Auto (Find connected OnStep)" in indi_html
+    assert "Auto (Detect with port)" in indi_html
+    assert 'id="serial_discovery_status_value"' in indi_html
+    assert "updateSerialAutoControls" in indi_html
+    assert "updateSerialDiscovery" in indi_html
+    assert '"type": "discover_serial_connection"' in server_py
+
+
 def test_indi_multipoint_align_controls_are_present():
     indi_html = (VIEWS_DIR / "indi_mount.html").read_text()
     server_py = SERVER_PATH.read_text()

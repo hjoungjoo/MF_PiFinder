@@ -20,6 +20,7 @@ ONSTEP_SERIAL_BAUD_RATES = (9600, 19200, 38400, 57600, 115200, 230400, 460800)
 DEFAULT_ONSTEP_DEVICE_NAME = ONSTEPX_DEVICE_NAME
 ONSTEP_CONNECTION_USB = "usb"
 ONSTEP_CONNECTION_NETWORK = "network"
+ONSTEP_SERIAL_AUTO_VALUE = "__auto__"
 DEFAULT_ONSTEP_SERIAL_BAUD = 9600
 DEFAULT_ONSTEP_NETWORK_PORT = 9999
 
@@ -67,6 +68,29 @@ def list_onstep_serial_ports():
     return []
 
 
+def discover_onstep_serial(**_kwargs):
+    return {
+        "ok": False,
+        "state": "not_found",
+        "candidate_count": 0,
+        "verified_count": 0,
+        "selected": None,
+        "verified": [],
+        "probable": [],
+        "attempts": [],
+    }
+
+
+def is_local_indi_server_host(host):
+    return str(host or "").strip().lower() in {
+        "",
+        "localhost",
+        "localhost.localdomain",
+        "127.0.0.1",
+        "::1",
+    }
+
+
 def normalize_onstep_connection_config(values, source=""):
     if not isinstance(values, dict):
         return None
@@ -77,9 +101,7 @@ def normalize_onstep_connection_config(values, source=""):
     network_host = str(values.get("network_host", "") or "").strip()
     if connection_type == ONSTEP_CONNECTION_USB:
         try:
-            serial_baud = int(
-                values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD)
-            )
+            serial_baud = int(values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD))
         except (TypeError, ValueError):
             return None
         if (
@@ -88,24 +110,18 @@ def normalize_onstep_connection_config(values, source=""):
         ):
             return None
         try:
-            network_port = int(
-                values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT)
-            )
+            network_port = int(values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT))
         except (TypeError, ValueError):
             network_port = DEFAULT_ONSTEP_NETWORK_PORT
     else:
         try:
-            network_port = int(
-                values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT)
-            )
+            network_port = int(values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT))
         except (TypeError, ValueError):
             return None
         if not network_host or not 1 <= network_port <= 65535:
             return None
         try:
-            serial_baud = int(
-                values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD)
-            )
+            serial_baud = int(values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD))
         except (TypeError, ValueError):
             serial_baud = DEFAULT_ONSTEP_SERIAL_BAUD
         if serial_baud not in ONSTEP_SERIAL_BAUD_RATES:
@@ -181,6 +197,7 @@ def apply_indi_onstep_connection(
     server_host="localhost",
     server_port=7624,
     device_name=None,
+    save_config=True,
 ):
     device_name = resolve_indi_device_name(device_name)
     return {

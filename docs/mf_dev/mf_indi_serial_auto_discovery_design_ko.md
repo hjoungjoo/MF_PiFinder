@@ -1,13 +1,14 @@
 # INDI OnStepX USB Serial 포트 자동 탐색 설계안
 
-상태: **설계 완료 / 구현 전 검토 단계**
+상태: **구현 완료 / 자동·실장 검증 진행**
 작성일: 2026-08-13
 
 이 문서는 Web UI에서 OnStepX 연결 방식을 `USB Serial`로 설정하고 Serial Port를
 `Auto`로 선택했을 때, **현재 연결되어 있는 serial 장치 중 OnStepX port와 통신
 속도를 함께 찾아 적용하는 방법**을 정의한다. 자동 찾기는 장애 복구나 부팅 시 자동
-재탐색 기능이 아니다. 이 단계에서는 소스를 구현하지 않으며, 설정 동작과 안전
-경계를 먼저 확정한다.
+재탐색 기능이 아니다. 2026-08-13 이 문서의 안전 경계를 기준으로 후보 정규화,
+읽기 전용 probe, baud pass, Web 선택 UI, mount-control 단일 실행 transaction과
+실패 원복을 구현했다.
 
 관련 문서:
 
@@ -78,12 +79,15 @@
 이 dedup은 화면 목록과 향후 자동 탐색 후보 생성에 공통으로 사용하며, 기존
 저장 설정이나 INDI 연결을 변경하지 않는다.
 
-그 밖에 현재 함수는 다음 동작을 아직 하지 않는다.
+자동 탐색 구현으로 다음 동작도 추가됐다.
 
-- USB VID/PID, serial number, physical location 수집
-- GPS 등 이미 다른 용도로 설정된 포트 제외
-- 실제 OnStep/LX200 응답 확인
-- baud 자동 판별
+- configured GPS와 같은 실제 tty 제외
+- 실제 OnStep `:GVP#`/`:GVN#` 응답 확인
+- 마지막 검증값·9600·나머지 지원값 순서의 baud pass
+- 유일 verified 후보만 적용하고 0개/복수 후보는 기존 설정 원복
+
+USB VID/PID, serial number, physical location 표시는 후속 확장 항목이다. 현재
+선택 합격 기준은 metadata가 아니라 실제 OnStep protocol 응답이다.
 
 Web `INDI > LX200 OnStepX Driver Connection`은 사용자가 목록 또는 수동 경로와
 baud를 선택한 뒤 `apply_indi_onstep_connection()`을 호출한다. 이 함수는 INDI
@@ -445,10 +449,16 @@ Auto 탐색·적용 성공 조건:
 ```text
 INDI CONNECTION=On
 AND live DEVICE_PORT/baud가 선택값과 일치
-AND 새 좌표 callback 수신
-AND 새 OnStep Status callback 수신
+AND 새 좌표 callback + 새 OnStep Status callback 수신
+    OR reconnect된 동일 driver session에서 유효 좌표 + :GU# live readback 확인
 AND park 상태가 탐색 전과 동일
 ```
+
+실장 시험에서 OnStepX driver가 reconnect 직후 일부 동적 property를 정의하기 전에
+첫 vector를 보내 새 PyIndi client의 callback이 누락되는 경계가 확인됐다. 따라서
+기존 mount-control client를 유지하고 callback을 우선 사용하되, 누락 시에는 같은
+새 driver session의 CONNECT, concrete transport readback, 유효 RA/DEC와
+`OnStep Status.:GU# return`을 모두 확인해야만 fallback 검증을 통과한다.
 
 위 조건이 모두 맞은 뒤에만 `CONFIG_SAVE`와 PiFinder atomic mirror를 수행한다.
 location/time sync, unpark, tracking-on은 탐색 연결에서 강제하지 않는다.
@@ -514,7 +524,7 @@ stream을 기록하지 않는다. SD에 자동 진단 파일을 만들지 않으
 
 ## 13. 구현 위치 제안
 
-| 파일 | 예정 역할 |
+| 파일 | 구현 역할 |
 |---|---|
 | `python/PiFinder/sys_utils.py` | 후보 열거/정규화, GPS 제외, port/baud read-only probe와 baud pass 생성 |
 | `python/PiFinder/sys_utils_fake.py` | off-device fake API |
@@ -531,7 +541,7 @@ driver restart, controller reboot가 동시에 실행되지 않도록 discovery 
 
 ## 14. 단계별 구현안
 
-### Phase A — 후보와 protocol probe
+### Phase A — 후보와 protocol probe (**완료**)
 
 - USB metadata 수집과 alias 중복 제거
 - GPS port 제외
@@ -540,21 +550,21 @@ driver restart, controller reboot가 동시에 실행되지 않도록 discovery 
 - pseudo-terminal 기반 단위 테스트
 - 아직 INDI 설정 저장 없음
 
-### Phase B — Serial Port Auto 선택형 Web 탐색
+### Phase B — Serial Port Auto 선택형 Web 탐색 (**완료**)
 
 - `USB Serial + Auto + Apply`를 mount-control queue 기반 비동기 탐색으로 전달
 - 현재 연결 snapshot과 INDI disconnect
 - 유일 후보는 자동 적용 단계로 전달, 여러 개/없음은 기존 설정 원복
 - Cancel 시 기존 설정 reconnect
 
-### Phase C — 선택 적용과 원복
+### Phase C — 선택 적용과 원복 (**완료**)
 
 - port/baud 적용
 - live config와 fresh telemetry 검증
 - 성공 후에만 CONFIG_SAVE/mirror
 - 모든 실패 지점의 rollback 테스트
 
-### Phase D — 실제 장비 검증
+### Phase D — 실제 장비 검증 (**완료**)
 
 - CH340/OnStepX 실장 시간 측정
 - GPS와 동시 연결 시험

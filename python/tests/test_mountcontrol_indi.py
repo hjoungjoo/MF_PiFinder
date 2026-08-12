@@ -1354,9 +1354,7 @@ def test_connection_reconcile_imports_live_indi_into_pifinder_mirror(
         f"{device}.DEVICE_PORT.PORT": "/dev/serial/by-id/onstep",
         f"{device}.DEVICE_BAUD_RATE.115200": "On",
     }
-    monkeypatch.setattr(
-        mci.sys_utils, "get_indi_profile_device_name", lambda: device
-    )
+    monkeypatch.setattr(mci.sys_utils, "get_indi_profile_device_name", lambda: device)
     monkeypatch.setattr(
         mci.sys_utils,
         "get_indi_onstep_properties",
@@ -1413,9 +1411,7 @@ def test_connection_reconcile_uses_pifinder_only_when_indi_is_missing(
     }
     property_reads = iter(({}, verified_properties))
     apply_calls = []
-    monkeypatch.setattr(
-        mci.sys_utils, "get_indi_profile_device_name", lambda: device
-    )
+    monkeypatch.setattr(mci.sys_utils, "get_indi_profile_device_name", lambda: device)
     monkeypatch.setattr(
         mci.sys_utils,
         "get_indi_onstep_properties",
@@ -1439,6 +1435,253 @@ def test_connection_reconcile_uses_pifinder_only_when_indi_is_missing(
     assert apply_calls[0]["connection_type"] == "usb"
     assert apply_calls[0]["serial_baud"] == 115200
     assert mount._connection_config_status["connection_config_source"] == "indi_live"
+
+
+def test_serial_discovery_saves_unique_verified_port_after_fresh_telemetry(
+    monkeypatch, tmp_path
+):
+    data_dir = tmp_path / "PiFinder_data"
+    data_dir.mkdir()
+    (data_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "onstep_connection_type": "usb",
+                "onstep_serial_port": "/dev/serial/by-id/old",
+                "onstep_serial_baud": 9600,
+                "gps_port": "/dev/ttyAMA0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mci.config.utils, "data_dir", data_dir)
+    device = "LX200 OnStep"
+    live_properties = {
+        f"{device}.CONNECTION.CONNECT": "On",
+        f"{device}.CONNECTION_MODE.CONNECTION_SERIAL": "On",
+        f"{device}.CONNECTION_MODE.CONNECTION_TCP": "Off",
+        f"{device}.DEVICE_PORT.PORT": "/dev/serial/by-id/old",
+        f"{device}.DEVICE_BAUD_RATE.9600": "On",
+    }
+    events = []
+    mount = DummyConnectedMount()
+    monkeypatch.setattr(mci.sys_utils, "get_indi_profile_device_name", lambda: device)
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "get_indi_onstep_properties",
+        lambda **_kwargs: live_properties,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "read_saved_indi_onstep_connection_config",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "list_onstep_serial_ports",
+        lambda excluded_paths=None: [
+            {
+                "path": "/dev/serial/by-id/onstep",
+                "resolved": "/dev/ttyUSB0",
+                "label": "OnStep",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "discover_onstep_serial",
+        lambda **_kwargs: {
+            "ok": True,
+            "state": "found",
+            "candidate_count": 1,
+            "verified_count": 1,
+            "selected": {
+                "stable_path": "/dev/serial/by-id/onstep",
+                "baud": 115200,
+                "product": "On-Step",
+                "version": "10.24c",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        mount,
+        "_capture_usb_recovery_snapshot",
+        lambda: {
+            "park_state": "Unparked",
+            "tracking_enabled": True,
+            "slew_rate": 5,
+            "track_freq_hz": None,
+        },
+    )
+    monkeypatch.setattr(
+        mount,
+        "_disconnect_indi_device_for_serial_discovery",
+        lambda: events.append("disconnect") or True,
+    )
+
+    def apply_connection(**kwargs):
+        events.append(("apply", kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(mci.sys_utils, "apply_indi_onstep_connection", apply_connection)
+    monkeypatch.setattr(
+        mount,
+        "_verify_serial_discovery_telemetry",
+        lambda _baseline, _expected: events.append("fresh_telemetry") or True,
+    )
+    monkeypatch.setattr(
+        mount,
+        "_restore_mount_state_snapshot",
+        lambda _snapshot, _reason: events.append("restore_state") or True,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "apply_indi_onstep_properties",
+        lambda properties, **_kwargs: events.append(("save", list(properties)))
+        or {"ok": True},
+    )
+    monkeypatch.setattr(mci.os.path, "exists", lambda _path: True)
+
+    assert mount.discover_onstep_serial_connection()
+
+    apply_event = next(
+        event for event in events if isinstance(event, tuple) and event[0] == "apply"
+    )
+    assert apply_event[1]["serial_port"] == "/dev/serial/by-id/onstep"
+    assert apply_event[1]["serial_baud"] == 115200
+    assert apply_event[1]["save_config"] is False
+    assert events.index("fresh_telemetry") < events.index("restore_state")
+    save_index = next(
+        index
+        for index, event in enumerate(events)
+        if isinstance(event, tuple) and event[0] == "save"
+    )
+    assert events.index("restore_state") < save_index
+    saved = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+    assert saved["onstep_serial_port"] == "/dev/serial/by-id/onstep"
+    assert saved["onstep_serial_baud"] == 115200
+    assert mount._serial_discovery_status["serial_discovery_state"] == "success"
+
+
+def test_serial_discovery_ambiguous_result_rolls_back_without_saving(monkeypatch):
+    mount = DummyConnectedMount()
+    device = "LX200 OnStep"
+    live_properties = {
+        f"{device}.CONNECTION.CONNECT": "On",
+        f"{device}.CONNECTION_MODE.CONNECTION_SERIAL": "On",
+        f"{device}.CONNECTION_MODE.CONNECTION_TCP": "Off",
+        f"{device}.DEVICE_PORT.PORT": "/dev/serial/by-id/old",
+        f"{device}.DEVICE_BAUD_RATE.115200": "On",
+    }
+    monkeypatch.setattr(mci.sys_utils, "get_indi_profile_device_name", lambda: device)
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "get_indi_onstep_properties",
+        lambda **_kwargs: live_properties,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "read_saved_indi_onstep_connection_config",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "list_onstep_serial_ports",
+        lambda excluded_paths=None: [
+            {"path": "/dev/one", "resolved": "/dev/ttyUSB0"},
+            {"path": "/dev/two", "resolved": "/dev/ttyUSB1"},
+        ],
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "discover_onstep_serial",
+        lambda **_kwargs: {
+            "ok": False,
+            "state": "ambiguous",
+            "candidate_count": 2,
+            "verified_count": 2,
+        },
+    )
+    monkeypatch.setattr(
+        mount, "_capture_usb_recovery_snapshot", lambda: {"park_state": "Unparked"}
+    )
+    monkeypatch.setattr(
+        mount, "_disconnect_indi_device_for_serial_discovery", lambda: True
+    )
+    rollback_calls = []
+    monkeypatch.setattr(
+        mount,
+        "_rollback_serial_discovery",
+        lambda *args: rollback_calls.append(args) or True,
+    )
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "apply_indi_onstep_properties",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("ambiguous discovery must not save settings")
+        ),
+    )
+
+    assert not mount.discover_onstep_serial_connection()
+    assert len(rollback_calls) == 1
+    assert mount._serial_discovery_status["serial_discovery_state"] == "failed"
+    assert (
+        "Multiple verified" in mount._serial_discovery_status["serial_discovery_error"]
+    )
+
+
+def test_serial_discovery_refuses_to_interrupt_manual_movement(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._manual_motion_direction = "east"
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "list_onstep_serial_ports",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("busy discovery must stop before port enumeration")
+        ),
+    )
+
+    assert not mount.discover_onstep_serial_connection()
+    assert mount._serial_discovery_status["serial_discovery_state"] == "failed"
+    assert (
+        "Manual mount movement"
+        in mount._serial_discovery_status["serial_discovery_error"]
+    )
+
+
+def test_serial_discovery_live_readback_covers_missed_pyindi_callback(monkeypatch):
+    mount = DummyConnectedMount()
+    device = "LX200 OnStep"
+    expected = mci.sys_utils.normalize_onstep_connection_config(
+        {
+            "connection_type": "usb",
+            "serial_port": "/dev/serial/by-id/onstep",
+            "serial_baud": 115200,
+        }
+    )
+    properties = {
+        f"{device}.CONNECTION.CONNECT": "On",
+        f"{device}.CONNECTION_MODE.CONNECTION_SERIAL": "On",
+        f"{device}.CONNECTION_MODE.CONNECTION_TCP": "Off",
+        f"{device}.DEVICE_PORT.PORT": "/dev/serial/by-id/onstep",
+        f"{device}.DEVICE_BAUD_RATE.115200": "On",
+        f"{device}.EQUATORIAL_EOD_COORD.RA": "5.25",
+        f"{device}.EQUATORIAL_EOD_COORD.DEC": "52.18",
+        f"{device}.OnStep Status.:GU# return": "NpvAT190",
+    }
+    monkeypatch.setattr(mount, "_wait_for_device_connected", lambda _timeout: True)
+    monkeypatch.setattr(
+        mci.sys_utils,
+        "get_indi_onstep_properties",
+        lambda **_kwargs: properties,
+    )
+    mount.connected = False
+    baseline = (
+        mount._position_update_generation,
+        mount._onstep_status_generation,
+    )
+
+    assert mount._verify_serial_discovery_telemetry(baseline, expected)
+    assert mount.connected is True
 
 
 def test_usb_reinsert_recovers_once_after_stable_by_id_return(monkeypatch):

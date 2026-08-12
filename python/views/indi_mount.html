@@ -127,6 +127,7 @@
         <div class="row">
           <div class="input-field col s12 m8">
             <select id="serial_port" name="serial_port">
+              <option value="__auto__">{{ _('Auto (Find connected OnStep)') }}</option>
               <option value="__manual__">{{ _('Manual entry') }}</option>
               {% for port in serial_ports %}
               <option value="{{ port.path }}" {% if serial_port == port.path %}selected{% endif %}>{{ port.label }}</option>
@@ -139,6 +140,7 @@
           </div>
           <div class="input-field col s12 m4">
             <select id="serial_baud" name="serial_baud">
+              <option value="__auto__">{{ _('Auto (Detect with port)') }}</option>
               {% for baud in serial_baud_rates %}
               <option value="{{ baud }}" {% if serial_baud == baud %}selected{% endif %}>{{ baud }} baud</option>
               {% endfor %}
@@ -162,7 +164,14 @@
       </div>
 
       <div class="row">
-        <button type="submit" class="btn">{{ _('Apply to INDI') }}</button>
+        <div class="col s12 grey-text">
+          <b>{{ _('Serial Auto Discovery') }}:</b>
+          <span id="serial_discovery_status_value">{{ mount_control_status.get('serial_discovery_message') or _('Idle') }}</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <button type="submit" id="indi_mount_apply_button" class="btn">{{ _('Apply to INDI') }}</button>
       </div>
     </form>
   </div>
@@ -575,6 +584,10 @@ document.addEventListener('DOMContentLoaded', function() {
   M.FormSelect.init(selects);
 
   var connectionType = document.getElementById('connection_type');
+  var serialPort = document.getElementById('serial_port');
+  var serialBaud = document.getElementById('serial_baud');
+  var serialManual = document.getElementById('serial_manual');
+  var indiMountApplyButton = document.getElementById('indi_mount_apply_button');
   var managerLink = document.getElementById('indi_web_manager_link');
   var restartIndiButton = document.getElementById('restart_indi_button');
   var rebootIndiButton = document.getElementById('reboot_indi_button');
@@ -607,6 +620,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var onstepDeviceName = {{ onstep_device_name|default('', true)|tojson }};
   var pifinderMountType = {{ mount_type|default('', true)|tojson }};
   var serialBaudRates = {{ serial_baud_rates|list|tojson }};
+  var initialSerialBaud = {{ serial_baud|int|tojson }};
   var initialBacklashAuto = {{ mount_control_status.get('backlash_auto', {})|default({}, true)|tojson }};
   var backlashLabelText = {{ _('Backlash')|tojson }};
   var backlashStartLabel = {{ _('Start Motion Test')|tojson }};
@@ -659,6 +673,74 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     button.style.display = visible ? '' : 'none';
+  }
+
+  function serialDiscoveryRunning(state) {
+    return ['precheck', 'disconnecting', 'scanning', 'applying', 'verifying', 'rollback']
+      .indexOf(String(state || '').toLowerCase()) !== -1;
+  }
+
+  function selectConcreteSerialPort(path) {
+    if (!serialPort || !path) {
+      return;
+    }
+    var matchingOption = Array.prototype.some.call(serialPort.options, function(option) {
+      return option.value === path;
+    });
+    if (matchingOption) {
+      serialPort.value = path;
+    } else {
+      serialPort.value = '__manual__';
+      if (serialManual) {
+        serialManual.value = path;
+      }
+    }
+  }
+
+  function updateSerialDiscovery(discovery) {
+    discovery = discovery || {};
+    var state = String(discovery.serial_discovery_state || 'idle').toLowerCase();
+    var message = discovery.serial_discovery_message || state || '{{ _("Idle") }}';
+    if (state === 'scanning') {
+      var currentPort = discovery.serial_discovery_current_port || '';
+      var currentBaud = discovery.serial_discovery_current_baud || '';
+      if (currentPort || currentBaud) {
+        message += ' - ' + currentPort + (currentBaud ? ' @ ' + currentBaud : '');
+      }
+    }
+    setText('serial_discovery_status_value', message);
+    setButtonEnabled(indiMountApplyButton, !serialDiscoveryRunning(state));
+
+    if (state === 'success') {
+      selectConcreteSerialPort(discovery.serial_discovery_selected_port || '');
+      if (serialBaud && discovery.serial_discovery_selected_baud) {
+        serialBaud.disabled = false;
+        serialBaud.value = String(discovery.serial_discovery_selected_baud);
+      }
+      updateSerialAutoControls();
+      M.updateTextFields();
+    }
+  }
+
+  function updateSerialAutoControls() {
+    if (!serialPort || !serialBaud) {
+      return;
+    }
+    var isAuto = serialPort.value === '__auto__';
+    if (isAuto) {
+      serialBaud.value = '__auto__';
+      serialBaud.disabled = true;
+    } else {
+      serialBaud.disabled = false;
+      if (serialBaud.value === '__auto__') {
+        serialBaud.value = String(initialSerialBaud || 9600);
+      }
+    }
+    if (serialManual) {
+      serialManual.disabled = serialPort.value !== '__manual__';
+    }
+    M.FormSelect.init(serialBaud);
+    M.updateTextFields();
   }
 
   function updateBacklashButtons(autoInfo) {
@@ -1067,6 +1149,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setOnstepUtcBase(onstep[onstepKey('TIME_UTC.UTC')]);
     updateOnstepUtcDisplay();
     updateBacklashValues(payload.backlash_values || {}, payload.mount_control_status || {});
+    updateSerialDiscovery(payload.mount_control_status || {});
     updateMultipointAlign(payload.multipoint_align || {});
     updateGotoGuideStatus(payload.goto_guide_status || {});
     updatePointingCoordinateStatus(payload.pointing_coordinate_status || {});
@@ -1287,6 +1370,7 @@ document.addEventListener('DOMContentLoaded', function() {
       updatePointingCoordinateStatus(payload.pointing_coordinate_status || {});
       updateGotoGuideStatus(payload.goto_guide_status || {});
       var mcs = payload.mount_control_status || {};
+      updateSerialDiscovery(mcs);
       if (mcs.raw_mount_status) {
         setText('indi_raw_mount_status_value', textOrDash(mcs.raw_mount_status));
       }
@@ -1365,6 +1449,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (connectionType) {
     connectionType.addEventListener('change', updateConnectionSections);
+  }
+  if (serialPort) {
+    serialPort.addEventListener('change', updateSerialAutoControls);
   }
   if (networkHost) {
     networkHost.addEventListener('change', updateNetworkManual);
@@ -1657,6 +1744,8 @@ document.addEventListener('DOMContentLoaded', function() {
   setInterval(refreshPointingStatus, 1000);
   updateConnectionSections();
   updateNetworkManual();
+  updateSerialAutoControls();
+  updateSerialDiscovery({{ mount_control_status|tojson }});
 });
 </script>
 {% endblock %}

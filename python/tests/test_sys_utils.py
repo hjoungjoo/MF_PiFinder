@@ -85,6 +85,7 @@ try:
     def test_list_onstep_serial_ports_deduplicates_aliases_by_realpath(monkeypatch):
         paths_by_pattern = {
             "/dev/serial/by-id/*": ["/dev/serial/by-id/onstep"],
+            "/dev/serial/by-path/*": ["/dev/serial/by-path/onstep"],
             "/dev/ttyUSB*": ["/dev/ttyUSB0"],
             "/dev/ttyACM*": [],
         }
@@ -98,7 +99,12 @@ try:
             "realpath",
             lambda path: (
                 "/dev/ttyUSB0"
-                if path in {"/dev/serial/by-id/onstep", "/dev/ttyUSB0"}
+                if path
+                in {
+                    "/dev/serial/by-id/onstep",
+                    "/dev/serial/by-path/onstep",
+                    "/dev/ttyUSB0",
+                }
                 else path
             ),
         )
@@ -117,6 +123,7 @@ try:
     ):
         paths_by_pattern = {
             "/dev/serial/by-id/*": ["/dev/serial/by-id/onstep"],
+            "/dev/serial/by-path/*": [],
             "/dev/ttyUSB*": ["/dev/ttyUSB0", "/dev/ttyUSB1"],
             "/dev/ttyACM*": ["/dev/ttyACM0"],
         }
@@ -137,13 +144,166 @@ try:
             lambda path: resolved_paths.get(path, path),
         )
 
-        assert [
-            item["path"] for item in sys_utils.list_onstep_serial_ports()
-        ] == [
+        assert [item["path"] for item in sys_utils.list_onstep_serial_ports()] == [
             "/dev/serial/by-id/onstep",
             "/dev/ttyACM0",
             "/dev/ttyUSB1",
         ]
+
+    @pytest.mark.unit
+    def test_list_onstep_serial_ports_excludes_gps_alias_by_realpath(monkeypatch):
+        paths_by_pattern = {
+            "/dev/serial/by-id/*": [
+                "/dev/serial/by-id/gps",
+                "/dev/serial/by-id/onstep",
+            ],
+            "/dev/serial/by-path/*": [],
+            "/dev/ttyUSB*": ["/dev/ttyUSB0", "/dev/ttyUSB1"],
+            "/dev/ttyACM*": [],
+        }
+        resolved = {
+            "/dev/serial/by-id/gps": "/dev/ttyUSB0",
+            "/dev/serial/by-id/onstep": "/dev/ttyUSB1",
+        }
+        monkeypatch.setattr(
+            sys_utils.glob, "glob", lambda pattern: list(paths_by_pattern[pattern])
+        )
+        monkeypatch.setattr(
+            sys_utils.os.path, "realpath", lambda path: resolved.get(path, path)
+        )
+
+        ports = sys_utils.list_onstep_serial_ports(
+            excluded_paths=["/dev/serial/by-id/gps"]
+        )
+
+        assert [port["path"] for port in ports] == ["/dev/serial/by-id/onstep"]
+
+    @pytest.mark.unit
+    def test_probe_onstep_serial_port_requires_product_and_version():
+        class FakeSerial:
+            def __init__(self, *_args, **_kwargs):
+                self.replies = iter((b"On-Step#", b"10.24c#"))
+                self.writes = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def reset_input_buffer(self):
+                return None
+
+            def reset_output_buffer(self):
+                return None
+
+            def write(self, payload):
+                self.writes.append(payload)
+
+            def flush(self):
+                return None
+
+            def read_until(self, _terminator, _size):
+                return next(self.replies)
+
+        result = sys_utils.probe_onstep_serial_port(
+            "/dev/ttyUSB0",
+            115200,
+            settle_seconds=0,
+            serial_factory=FakeSerial,
+        )
+
+        assert result["status"] == "verified"
+        assert result["product"] == "On-Step"
+        assert result["version"] == "10.24c"
+
+    @pytest.mark.unit
+    def test_probe_onstep_serial_port_product_only_is_not_verified():
+        class FakeSerial:
+            def __init__(self, *_args, **_kwargs):
+                self.replies = iter((b"On-Step#", b"not-a-version#"))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def write(self, _payload):
+                return None
+
+            def flush(self):
+                return None
+
+            def read_until(self, _terminator, _size):
+                return next(self.replies)
+
+        result = sys_utils.probe_onstep_serial_port(
+            "/dev/ttyUSB0",
+            9600,
+            settle_seconds=0,
+            serial_factory=FakeSerial,
+        )
+
+        assert result["status"] == "probable"
+        assert result["error"] == "invalid_version"
+
+    @pytest.mark.unit
+    def test_discover_onstep_serial_uses_baud_pass_and_unique_verified_device():
+        calls = []
+        ports = [
+            {"path": "/dev/onstep", "resolved": "/dev/ttyUSB0"},
+            {"path": "/dev/other", "resolved": "/dev/ttyUSB1"},
+        ]
+
+        def fake_probe(path, baud):
+            calls.append((path, baud))
+            if path == "/dev/onstep" and baud == 115200:
+                return {
+                    "status": "verified",
+                    "path": path,
+                    "baud": baud,
+                    "product": "On-Step",
+                    "version": "10.24c",
+                }
+            return {"status": "rejected", "path": path, "baud": baud}
+
+        result = sys_utils.discover_onstep_serial(
+            preferred_bauds=[115200], ports=ports, probe=fake_probe
+        )
+
+        assert result["ok"] is True
+        assert result["selected"]["stable_path"] == "/dev/onstep"
+        assert result["selected"]["baud"] == 115200
+        assert calls[:2] == [
+            ("/dev/onstep", 115200),
+            ("/dev/other", 115200),
+        ]
+        assert calls.count(("/dev/onstep", 115200)) == 1
+        assert not any(path == "/dev/onstep" and baud != 115200 for path, baud in calls)
+
+    @pytest.mark.unit
+    def test_discover_onstep_serial_does_not_choose_multiple_verified_devices():
+        ports = [
+            {"path": "/dev/one", "resolved": "/dev/ttyUSB0"},
+            {"path": "/dev/two", "resolved": "/dev/ttyUSB1"},
+        ]
+
+        result = sys_utils.discover_onstep_serial(
+            preferred_bauds=[9600],
+            ports=ports,
+            probe=lambda path, baud: {
+                "status": "verified",
+                "path": path,
+                "baud": baud,
+                "product": "On-Step",
+                "version": "10.24c",
+            },
+        )
+
+        assert result["ok"] is False
+        assert result["state"] == "ambiguous"
+        assert result["verified_count"] == 2
 
     @pytest.mark.unit
     def test_apply_connection_does_not_save_mismatched_readback(monkeypatch):
@@ -336,6 +496,43 @@ try:
 
         assert result["ok"] is False
         assert result["stderr"] == "save failed"
+
+    @pytest.mark.unit
+    def test_apply_connection_can_defer_config_save_until_telemetry(monkeypatch):
+        calls = []
+
+        def fake_run(args, timeout=5.0):
+            calls.append(list(args))
+            if "indi_getprop" in args and any(
+                "CONNECTION_MODE" in item for item in args
+            ):
+                stdout = (
+                    "LX200 OnStepX.CONNECTION_MODE.CONNECTION_SERIAL=On\n"
+                    "LX200 OnStepX.CONNECTION_MODE.CONNECTION_TCP=Off\n"
+                    "LX200 OnStepX.DEVICE_PORT.PORT=/dev/ttyUSB0\n"
+                    "LX200 OnStepX.DEVICE_BAUD_RATE.115200=On\n"
+                )
+            elif "indi_getprop" in args:
+                stdout = "LX200 OnStepX.CONNECTION.CONNECT=On\n"
+            else:
+                stdout = ""
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(sys_utils, "_run_indi_command", fake_run)
+        monkeypatch.setattr(sys_utils.time, "sleep", lambda _seconds: None)
+
+        result = sys_utils.apply_indi_onstep_connection(
+            connection_type="usb",
+            serial_port="/dev/ttyUSB0",
+            serial_baud=115200,
+            device_name="LX200 OnStepX",
+            save_config=False,
+        )
+
+        assert result["ok"] is True
+        assert not any(
+            "CONFIG_PROCESS.CONFIG_SAVE" in item for call in calls for item in call
+        )
 
     @pytest.mark.unit
     def test_format_onstep_location_display_matches_onstep_web_sign():

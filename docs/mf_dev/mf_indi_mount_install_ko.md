@@ -115,12 +115,17 @@ Profile을 만들고 사용하는 마운트에 맞는 telescope driver를 선택
 INDI > LX200 OnStepX Driver Connection
 ```
 
-USB 연결은 감지된 `/dev/serial/by-id`, `/dev/ttyUSB*`, `/dev/ttyACM*`
+USB 연결은 감지된 `/dev/serial/by-id`, `/dev/serial/by-path`, `/dev/ttyUSB*`, `/dev/ttyACM*`
 목록에서 선택하거나 수동으로 포트 이름을 입력하고, Communication Speed에서
 `9600`/`19200`/`38400`/`57600`/`115200`/`230400`/`460800` baud를
 선택합니다.
 같은 실제 장치를 가리키는 by-id와 ttyUSB/ttyACM alias는 목록에서 한 항목으로
 합치며, 가능한 경우 재삽입에도 안정적인 `/dev/serial/by-id/...`를 표시합니다.
+Serial Port에서 `Auto (Find connected OnStep)`를 선택하면 Communication Speed도
+Auto로 전환됩니다. Apply 시에만 현재 local serial 후보를 configured GPS와
+중복 제거한 뒤, 읽기 전용 `:GVP#`/`:GVN#` 응답을 지원 baud별로 확인합니다.
+검증된 OnStep이 정확히 하나일 때만 concrete stable port와 실제 baud를 적용하며,
+후보가 없거나 둘 이상이면 기존 연결을 원복하고 설정을 저장하지 않습니다.
 적용 시 드라이버를 먼저 disconnect하고 `DEVICE_PORT`와 INDI 표준
 `DEVICE_BAUD_RATE`를 함께 쓴 다음 reconnect·readback 검증·`CONFIG_SAVE`를
 수행합니다. 속도 선택은 USB Serial일 때만 적용되며 기본값은 9600 baud입니다.

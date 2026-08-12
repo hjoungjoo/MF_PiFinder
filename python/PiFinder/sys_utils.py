@@ -88,8 +88,15 @@ DEFAULT_INDI_PROFILE_NAME = "MF_PiFinder"
 INDI_PROFILE_DB_PATH = utils.home_dir / ".indi" / "profiles.db"
 ONSTEP_CONNECTION_USB = "usb"
 ONSTEP_CONNECTION_NETWORK = "network"
+ONSTEP_SERIAL_AUTO_VALUE = "__auto__"
 ONSTEP_SERIAL_BAUD_RATES = (9600, 19200, 38400, 57600, 115200, 230400, 460800)
 DEFAULT_ONSTEP_SERIAL_BAUD = 9600
+ONSTEP_SERIAL_PROBE_SETTLE_SECONDS = 0.15
+ONSTEP_SERIAL_PROBE_REPLY_TIMEOUT_SECONDS = 0.8
+ONSTEP_SERIAL_DISCOVERY_TIMEOUT_SECONDS = 30.0
+ONSTEP_SERIAL_PROBE_MAX_REPLY_BYTES = 96
+ONSTEP_PRODUCT_NAMES = frozenset({"on-step", "onstep", "on-stepx", "onstepx"})
+ONSTEP_FIRMWARE_VERSION_RE = re.compile(r"^\d+(?:\.\d+)+(?:[A-Za-z0-9._+\-]*)$")
 ONSTEP_LOCATION_CACHE_FILE = utils.data_dir / "onstep_location_cache.json"
 # The LX200 OnStepX INDI driver may read site latitude/longitude back at minute
 # precision even when the device itself keeps seconds.
@@ -115,6 +122,8 @@ ONSTEP_DISPLAY_PROPERTIES = [
     "OnStep Status.Park",
     "OnStep Status.Tracking",
     "OnStep Status.:GU# return",
+    "EQUATORIAL_EOD_COORD.RA",
+    "EQUATORIAL_EOD_COORD.DEC",
     "TELESCOPE_TRACK_STATE.TRACK_ON",
     "TELESCOPE_TRACK_STATE.TRACK_OFF",
     "TELESCOPE_HOME.SET",
@@ -649,7 +658,9 @@ def build_indi_location_time_properties(
     return properties
 
 
-def list_onstep_serial_ports() -> list[dict[str, str]]:
+def list_onstep_serial_ports(
+    excluded_paths: Iterable[str] | None = None,
+) -> list[dict[str, str]]:
     """
     Return likely USB serial ports for an OnStep controller.
 
@@ -658,6 +669,11 @@ def list_onstep_serial_ports() -> list[dict[str, str]]:
     ttyACM fallbacks. The label includes the resolved target for clarity.
     """
     ports_by_target: dict[str, dict[str, str]] = {}
+    excluded_targets = {
+        os.path.realpath(str(path))
+        for path in (excluded_paths or ())
+        if str(path).strip()
+    }
 
     def path_priority(path: str) -> tuple[int, str]:
         if path.startswith("/dev/serial/by-id/"):
@@ -666,12 +682,19 @@ def list_onstep_serial_ports() -> list[dict[str, str]]:
             return (1, path)
         return (2, path)
 
-    for pattern in ["/dev/serial/by-id/*", "/dev/ttyUSB*", "/dev/ttyACM*"]:
+    for pattern in [
+        "/dev/serial/by-id/*",
+        "/dev/serial/by-path/*",
+        "/dev/ttyUSB*",
+        "/dev/ttyACM*",
+    ]:
         for path in sorted(glob.glob(pattern)):
             try:
                 resolved = os.path.realpath(path)
             except OSError:
                 resolved = path
+            if resolved in excluded_targets:
+                continue
             label = path
             if resolved != path:
                 label = f"{path} ({resolved})"
@@ -682,6 +705,227 @@ def list_onstep_serial_ports() -> list[dict[str, str]]:
             ):
                 ports_by_target[resolved] = candidate
     return sorted(ports_by_target.values(), key=lambda item: item["path"])
+
+
+def onstep_serial_baud_probe_order(
+    preferred_bauds: Iterable[Any] | None = None,
+) -> list[int]:
+    """Return a unique, deterministic baud order for OnStep discovery."""
+    ordered: list[int] = []
+    for value in [*(preferred_bauds or ()), DEFAULT_ONSTEP_SERIAL_BAUD]:
+        try:
+            baud = int(value)
+        except (TypeError, ValueError):
+            continue
+        if baud in ONSTEP_SERIAL_BAUD_RATES and baud not in ordered:
+            ordered.append(baud)
+    for baud in ONSTEP_SERIAL_BAUD_RATES:
+        if baud not in ordered:
+            ordered.append(baud)
+    return ordered
+
+
+def _sanitize_onstep_probe_reply(reply: bytes | str) -> str:
+    if isinstance(reply, bytes):
+        text = reply.decode("ascii", errors="replace")
+    else:
+        text = str(reply)
+    text = "".join(char for char in text if char == "#" or char.isprintable())
+    return text[:ONSTEP_SERIAL_PROBE_MAX_REPLY_BYTES]
+
+
+def _onstep_probe_payload(reply: bytes | str) -> str | None:
+    text = _sanitize_onstep_probe_reply(reply).strip()
+    if not text.endswith("#") or text.count("#") != 1:
+        return None
+    payload = text[:-1].strip()
+    if not payload or len(payload) > ONSTEP_SERIAL_PROBE_MAX_REPLY_BYTES - 1:
+        return None
+    return payload
+
+
+def probe_onstep_serial_port(
+    serial_port: str,
+    baudrate: int,
+    *,
+    settle_seconds: float = ONSTEP_SERIAL_PROBE_SETTLE_SECONDS,
+    reply_timeout: float = ONSTEP_SERIAL_PROBE_REPLY_TIMEOUT_SECONDS,
+    serial_factory: Any = None,
+) -> dict[str, Any]:
+    """Identify OnStep with read-only ``:GVP#`` and ``:GVN#`` queries."""
+    serial_port = str(serial_port or "").strip()
+    baudrate = int(baudrate)
+    result: dict[str, Any] = {
+        "status": "rejected",
+        "path": serial_port,
+        "baud": baudrate,
+        "product": "",
+        "version": "",
+        "error": "",
+    }
+    if not serial_port.startswith("/dev/"):
+        result["error"] = "invalid_port"
+        return result
+    if baudrate not in ONSTEP_SERIAL_BAUD_RATES:
+        result["error"] = "unsupported_baud"
+        return result
+
+    if serial_factory is None:
+        try:
+            import serial  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError("pyserial is not installed") from exc
+        serial_factory = serial.Serial
+
+    try:
+        with serial_factory(
+            serial_port,
+            baudrate=baudrate,
+            bytesize=8,
+            parity="N",
+            stopbits=1,
+            timeout=float(reply_timeout),
+            write_timeout=float(reply_timeout),
+            xonxoff=False,
+            rtscts=False,
+            dsrdtr=False,
+            exclusive=True,
+        ) as serial_device:
+            reset_input = getattr(serial_device, "reset_input_buffer", None)
+            if callable(reset_input):
+                reset_input()
+            reset_output = getattr(serial_device, "reset_output_buffer", None)
+            if callable(reset_output):
+                reset_output()
+            if settle_seconds > 0:
+                time.sleep(float(settle_seconds))
+
+            serial_device.write(b":GVP#")
+            serial_device.flush()
+            product_reply = serial_device.read_until(
+                b"#", ONSTEP_SERIAL_PROBE_MAX_REPLY_BYTES
+            )
+            product = _onstep_probe_payload(product_reply)
+            result["product_reply"] = _sanitize_onstep_probe_reply(product_reply)
+            if product is None or product.lower() not in ONSTEP_PRODUCT_NAMES:
+                result["error"] = "product_mismatch"
+                return result
+            result["product"] = product
+
+            serial_device.write(b":GVN#")
+            serial_device.flush()
+            version_reply = serial_device.read_until(
+                b"#", ONSTEP_SERIAL_PROBE_MAX_REPLY_BYTES
+            )
+            version = _onstep_probe_payload(version_reply)
+            result["version_reply"] = _sanitize_onstep_probe_reply(version_reply)
+            if version is None or ONSTEP_FIRMWARE_VERSION_RE.fullmatch(version) is None:
+                result["status"] = "probable"
+                result["error"] = "invalid_version"
+                return result
+            result["version"] = version
+            result["status"] = "verified"
+            return result
+    except (OSError, ValueError) as exc:
+        result["error"] = f"open_or_io_failed: {exc}"
+        return result
+
+
+def discover_onstep_serial(
+    *,
+    preferred_bauds: Iterable[Any] | None = None,
+    excluded_paths: Iterable[str] | None = None,
+    ports: list[dict[str, str]] | None = None,
+    timeout: float = ONSTEP_SERIAL_DISCOVERY_TIMEOUT_SECONDS,
+    status_callback: Any = None,
+    probe: Any = None,
+) -> dict[str, Any]:
+    """Probe attached USB serial devices and select only one verified OnStep."""
+    candidates = list(
+        ports if ports is not None else list_onstep_serial_ports(excluded_paths)
+    )
+    baud_order = onstep_serial_baud_probe_order(preferred_bauds)
+    probe = probe or probe_onstep_serial_port
+    started = time.monotonic()
+    deadline = started + max(0.1, float(timeout))
+    verified_by_target: dict[str, dict[str, Any]] = {}
+    probable: list[dict[str, Any]] = []
+    attempts: list[dict[str, Any]] = []
+    timed_out = False
+
+    for baud in baud_order:
+        for candidate in candidates:
+            target = str(candidate.get("resolved") or candidate.get("path") or "")
+            if not target or target in verified_by_target:
+                continue
+            if time.monotonic() >= deadline:
+                timed_out = True
+                break
+            path = str(candidate.get("path") or "")
+            if callable(status_callback):
+                status_callback(
+                    {
+                        "state": "scanning",
+                        "candidate_count": len(candidates),
+                        "verified_count": len(verified_by_target),
+                        "current_port": path,
+                        "current_baud": baud,
+                    }
+                )
+            try:
+                attempt = dict(probe(path, baud))
+            except Exception as exc:
+                attempt = {
+                    "status": "rejected",
+                    "path": path,
+                    "baud": baud,
+                    "error": f"probe_failed: {exc}",
+                }
+            attempt.setdefault("path", path)
+            attempt.setdefault("baud", baud)
+            attempt["resolved"] = target
+            attempts.append(attempt)
+            if attempt.get("status") == "verified":
+                attempt["stable_path"] = path
+                verified_by_target[target] = attempt
+            elif attempt.get("status") == "probable":
+                probable.append(attempt)
+        if timed_out:
+            break
+
+    verified = list(verified_by_target.values())
+    if timed_out:
+        state = "timeout"
+    elif len(verified) == 1:
+        state = "found"
+    elif len(verified) > 1:
+        state = "ambiguous"
+    else:
+        state = "not_found"
+    selected = verified[0] if state == "found" else None
+    return {
+        "ok": selected is not None,
+        "state": state,
+        "candidate_count": len(candidates),
+        "verified_count": len(verified),
+        "baud_order": baud_order,
+        "selected": selected,
+        "verified": verified,
+        "probable": probable,
+        "attempts": attempts,
+        "elapsed_seconds": max(0.0, time.monotonic() - started),
+    }
+
+
+def is_local_indi_server_host(host: str) -> bool:
+    """Return whether serial discovery can safely inspect this host's /dev."""
+    normalized = str(host or "").strip().lower().strip("[]")
+    if normalized in {"", "localhost", "localhost.localdomain"}:
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
 
 
 def normalize_onstep_connection_config(
@@ -701,32 +945,24 @@ def normalize_onstep_connection_config(
         if not serial_port.startswith("/dev/"):
             return None
         try:
-            serial_baud = int(
-                values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD)
-            )
+            serial_baud = int(values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD))
         except (TypeError, ValueError):
             return None
         if serial_baud not in ONSTEP_SERIAL_BAUD_RATES:
             return None
         try:
-            network_port = int(
-                values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT)
-            )
+            network_port = int(values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT))
         except (TypeError, ValueError):
             network_port = DEFAULT_ONSTEP_NETWORK_PORT
     else:
         try:
-            network_port = int(
-                values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT)
-            )
+            network_port = int(values.get("network_port", DEFAULT_ONSTEP_NETWORK_PORT))
         except (TypeError, ValueError):
             return None
         if not network_host or not 1 <= network_port <= 65535:
             return None
         try:
-            serial_baud = int(
-                values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD)
-            )
+            serial_baud = int(values.get("serial_baud", DEFAULT_ONSTEP_SERIAL_BAUD))
         except (TypeError, ValueError):
             serial_baud = DEFAULT_ONSTEP_SERIAL_BAUD
         if serial_baud not in ONSTEP_SERIAL_BAUD_RATES:
@@ -918,9 +1154,7 @@ def onstep_connection_mirror_options(
     normalized = normalize_onstep_connection_config(connection)
     if normalized is None:
         raise ValueError("Invalid OnStep connection configuration")
-    options: dict[str, Any] = {
-        "onstep_connection_type": normalized["connection_type"]
-    }
+    options: dict[str, Any] = {"onstep_connection_type": normalized["connection_type"]}
     if normalized["connection_type"] == ONSTEP_CONNECTION_USB:
         options.update(
             {
@@ -995,6 +1229,7 @@ def apply_indi_onstep_connection(
     server_host: str = DEFAULT_INDI_SERVER_HOST,
     server_port: int = DEFAULT_INDI_SERVER_PORT,
     device_name: str | None = None,
+    save_config: bool = True,
 ) -> dict[str, Any]:
     device_name = resolve_indi_device_name(device_name)
     connection_type = connection_type.strip().lower()
@@ -1146,16 +1381,17 @@ def apply_indi_onstep_connection(
             "properties": applied_properties,
         }
 
-    save_result = _setprop([f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On"])
-    applied_properties.append(f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On")
-    if save_result.returncode != 0:
-        return {
-            "ok": False,
-            "returncode": save_result.returncode,
-            "stdout": save_result.stdout,
-            "stderr": save_result.stderr or "INDI CONFIG_SAVE failed after connect",
-            "properties": applied_properties,
-        }
+    if save_config:
+        save_result = _setprop([f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On"])
+        applied_properties.append(f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On")
+        if save_result.returncode != 0:
+            return {
+                "ok": False,
+                "returncode": save_result.returncode,
+                "stdout": save_result.stdout,
+                "stderr": save_result.stderr or "INDI CONFIG_SAVE failed after connect",
+                "properties": applied_properties,
+            }
 
     return {
         "ok": True,

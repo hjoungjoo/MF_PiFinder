@@ -85,7 +85,10 @@ AUTO_CONNECT_POSITION_WAIT_SECONDS = 10.0
 USB_SERIAL_MONITOR_INTERVAL_SECONDS = 1.0
 USB_SERIAL_RETURN_DEBOUNCE_SECONDS = 2.0
 USB_SERIAL_DISCONNECT_WAIT_SECONDS = 3.0
-USB_SERIAL_FRESH_TELEMETRY_WAIT_SECONDS = 12.0
+# OnStep Status is published at about a 13-second cadence on the field unit.
+# A newly attached PyIndi client can miss the first vector while its properties
+# are still being defined, so allow the next complete position/status cycle.
+USB_SERIAL_FRESH_TELEMETRY_WAIT_SECONDS = 20.0
 MANUAL_MOTION_LEASE_SECONDS = 1.2
 MANUAL_MOTION_MIN_LEASE_SECONDS = 0.3
 MANUAL_MOTION_MAX_LEASE_SECONDS = 5.0
@@ -391,9 +394,7 @@ if PyIndi is not None:
                 and ra_hours is not None
                 and dec_deg is not None
             ):
-                self.mount_control.receive_current_position(
-                    ra_hours * 15.0, dec_deg
-                )
+                self.mount_control.receive_current_position(ra_hours * 15.0, dec_deg)
 
         def newText(self, tvp):
             if (
@@ -409,10 +410,7 @@ if PyIndi is not None:
             # advances on the 5 s status heartbeat — far too slow for the
             # pointing fusion to attribute slew motion to the mount.
             try:
-                if (
-                    prop.getName() == "OnStep Status"
-                    and self.mount_control is not None
-                ):
+                if prop.getName() == "OnStep Status" and self.mount_control is not None:
                     self.mount_control.receive_onstep_status()
                 if prop.getType() != PyIndi.INDI_NUMBER:
                     return
@@ -563,6 +561,10 @@ class MountControlIndi(BacklashCalibrationMixin):
             "serial_present": None,
             "recovery_attempt": 0,
         }
+        self._serial_discovery_active = False
+        self._serial_discovery_status: dict[str, Any] = {
+            "serial_discovery_state": "idle",
+        }
 
     def _console(self, message: str) -> None:
         self.console_queue.put(message)
@@ -700,6 +702,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             payload["coordinate_sync"] = self._coordinate_sync
         payload.update(self._connection_config_status)
         payload.update(self._usb_recovery_status)
+        payload.update(self._serial_discovery_status)
         if self.device is not None:
             try:
                 payload["device"] = self.device.getDeviceName()
@@ -1409,8 +1412,7 @@ class MountControlIndi(BacklashCalibrationMixin):
     ) -> None:
         if (
             connection is None
-            or connection.get("connection_type")
-            != sys_utils.ONSTEP_CONNECTION_USB
+            or connection.get("connection_type") != sys_utils.ONSTEP_CONNECTION_USB
         ):
             self._usb_serial_path = ""
             self._usb_serial_present = None
@@ -1501,8 +1503,9 @@ class MountControlIndi(BacklashCalibrationMixin):
             time.sleep(0.1)
         return False
 
-    def _restore_usb_recovery_snapshot(self) -> bool:
-        snapshot = self._usb_recovery_snapshot
+    def _restore_mount_state_snapshot(
+        self, snapshot: dict[str, Any], reason: str
+    ) -> bool:
         expected_park = snapshot.get("park_state")
         current_park = self._home_park_status_fields().get("park_state", "Unknown")
         if (
@@ -1511,8 +1514,9 @@ class MountControlIndi(BacklashCalibrationMixin):
             and current_park != expected_park
         ):
             logger.error(
-                "USB recovery changed park state from %s to %s; refusing "
+                "%s changed park state from %s to %s; refusing "
                 "automatic park movement",
+                reason,
                 expected_park,
                 current_park,
             )
@@ -1526,7 +1530,8 @@ class MountControlIndi(BacklashCalibrationMixin):
             and current_tracking != expected_tracking
         ):
             logger.warning(
-                "Restoring tracking state after USB recovery: %s",
+                "Restoring tracking state after %s: %s",
+                reason,
                 "On" if expected_tracking else "Off",
             )
             if not self.set_tracking(bool(expected_tracking)):
@@ -1548,6 +1553,11 @@ class MountControlIndi(BacklashCalibrationMixin):
                 return False
             self._track_freq_last_assert_at = time.monotonic()
         return True
+
+    def _restore_usb_recovery_snapshot(self) -> bool:
+        return self._restore_mount_state_snapshot(
+            self._usb_recovery_snapshot, "USB recovery"
+        )
 
     def _recover_usb_serial_once(self) -> bool:
         self._usb_recovery_status.update(
@@ -1848,9 +1858,7 @@ class MountControlIndi(BacklashCalibrationMixin):
     ) -> Optional[dict[str, Any]]:
         return sys_utils.normalize_onstep_connection_config(
             {
-                "connection_type": cfg.get_stored_option(
-                    "onstep_connection_type", ""
-                ),
+                "connection_type": cfg.get_stored_option("onstep_connection_type", ""),
                 "serial_port": cfg.get_stored_option("onstep_serial_port", ""),
                 "serial_baud": cfg.get_stored_option(
                     "onstep_serial_baud", sys_utils.DEFAULT_ONSTEP_SERIAL_BAUD
@@ -2010,6 +2018,422 @@ class MountControlIndi(BacklashCalibrationMixin):
         self.indi_host = host
         self.indi_port = port
         return self.reconcile_onstep_connection_config(allow_fallback_apply=False)
+
+    def _serial_discovery_busy_reason(self) -> str:
+        if self._serial_discovery_active:
+            return "Serial discovery is already running"
+        if self._manual_motion_direction is not None:
+            return "Manual mount movement is active"
+        if self._goto_motion is not None or self._pending_goto_refine is not None:
+            return "GoTo or GoTo refinement is active"
+        if self._guide_correction_enabled:
+            return "Tracking guide correction is active"
+        if self._backlash_auto is not None and str(
+            self._backlash_auto.get("state", "")
+        ).lower() not in {"", "idle", "complete", "failed", "stopped"}:
+            return "Backlash calibration is active"
+        if self._multipoint_align_controller.active_session() is not None:
+            return "Multi-point alignment is active"
+        if self._home_park_status_fields().get("park_state") == "Parking":
+            return "Mount parking is active"
+        if self._usb_recovery_status.get("connection_health") in {
+            "return_debounce",
+            "recovering",
+        }:
+            return "USB serial recovery is active"
+        return ""
+
+    def _publish_serial_discovery(self, state: str, message: str, **extra: Any) -> None:
+        status = {
+            "serial_discovery_state": state,
+            "serial_discovery_message": message,
+        }
+        for key, value in extra.items():
+            status[f"serial_discovery_{key}"] = value
+        self._serial_discovery_status = status
+        self._write_controller_status(f"serial_discovery_{state}", message)
+
+    def _serial_discovery_scan_status(self, scan_status: dict[str, Any]) -> None:
+        self._publish_serial_discovery(
+            "scanning",
+            "Searching attached serial devices for OnStep",
+            candidate_count=scan_status.get("candidate_count", 0),
+            verified_count=scan_status.get("verified_count", 0),
+            current_port=scan_status.get("current_port", ""),
+            current_baud=scan_status.get("current_baud", ""),
+        )
+
+    def _disconnect_indi_device_for_serial_discovery(self) -> bool:
+        device_name = self._indi_device_name()
+        result = sys_utils.apply_indi_onstep_properties(
+            [f"{device_name}.CONNECTION.DISCONNECT=On"],
+            server_host=self.indi_host,
+            server_port=self.indi_port,
+        )
+        if not result.get("ok"):
+            return False
+        if not self._wait_for_indi_device_disconnected(
+            USB_SERIAL_DISCONNECT_WAIT_SECONDS
+        ):
+            return False
+        self.connected = False
+        return True
+
+    def _verify_serial_discovery_telemetry(
+        self,
+        telemetry_baseline: tuple[int, int],
+        expected_connection: dict[str, Any],
+    ) -> bool:
+        """Verify the new driver session through callbacks or live INDI readback."""
+        client_ready = self.client is not None and self.device is not None
+        try:
+            client_ready = client_ready and bool(self.client.isServerConnected())
+        except Exception:
+            client_ready = False
+        if not client_ready:
+            if not self.connect(
+                announce=False,
+                sync_on_connect=False,
+                preserve_mount_state=True,
+                require_fresh_telemetry=False,
+                publish_connected=False,
+            ):
+                return False
+        if not self._wait_for_device_connected(
+            AUTO_CONNECT_DEVICE_CONNECT_WAIT_SECONDS
+        ):
+            return False
+        deadline = time.monotonic() + USB_SERIAL_FRESH_TELEMETRY_WAIT_SECONDS
+        device_name = self._indi_device_name()
+        while time.monotonic() < deadline:
+            if (
+                self._position_update_generation > telemetry_baseline[0]
+                and self._onstep_status_generation > telemetry_baseline[1]
+            ):
+                break
+
+            properties = sys_utils.get_indi_onstep_properties(
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+                device_name=device_name,
+            )
+            live_connection = sys_utils.parse_indi_onstep_connection_properties(
+                properties, device_name=device_name
+            )
+            ra = properties.get(f"{device_name}.EQUATORIAL_EOD_COORD.RA", "")
+            dec = properties.get(f"{device_name}.EQUATORIAL_EOD_COORD.DEC", "")
+            raw_status = properties.get(f"{device_name}.OnStep Status.:GU# return", "")
+            try:
+                position_valid = math.isfinite(float(ra)) and math.isfinite(float(dec))
+            except (TypeError, ValueError):
+                position_valid = False
+            if (
+                properties.get(f"{device_name}.CONNECTION.CONNECT") == "On"
+                and sys_utils.onstep_connection_configs_match(
+                    live_connection, expected_connection
+                )
+                and position_valid
+                and str(raw_status).strip()
+            ):
+                logger.info(
+                    "Verified serial discovery from live INDI readback; "
+                    "PyIndi callback generation was not available"
+                )
+                break
+            time.sleep(0.5)
+        else:
+            return False
+        self.connected = True
+        self._last_position_status_at = time.monotonic()
+        return True
+
+    def _rollback_serial_discovery(
+        self,
+        previous_connection: Optional[dict[str, Any]],
+        was_connected: bool,
+        mount_snapshot: dict[str, Any],
+    ) -> bool:
+        """Restore the pre-discovery live transport without changing saved XML."""
+        if previous_connection is None:
+            try:
+                self._disconnect_indi_device_for_serial_discovery()
+            except Exception:
+                logger.exception("Could not leave INDI disconnected after discovery")
+            self._configure_usb_serial_monitor(None)
+            return True
+
+        device_name = self._indi_device_name()
+        try:
+            telemetry_baseline = (
+                self._position_update_generation,
+                self._onstep_status_generation,
+            )
+            result = sys_utils.apply_indi_onstep_connection(
+                connection_type=previous_connection["connection_type"],
+                serial_port=previous_connection.get("serial_port", ""),
+                serial_baud=previous_connection.get(
+                    "serial_baud", sys_utils.DEFAULT_ONSTEP_SERIAL_BAUD
+                ),
+                network_host=previous_connection.get("network_host", ""),
+                network_port=previous_connection.get(
+                    "network_port", sys_utils.DEFAULT_ONSTEP_NETWORK_PORT
+                ),
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+                device_name=device_name,
+                save_config=False,
+            )
+            if not result.get("ok"):
+                return False
+
+            self.connected = False
+            if was_connected:
+                if not self._verify_serial_discovery_telemetry(
+                    telemetry_baseline, previous_connection
+                ):
+                    return False
+                if not self._restore_mount_state_snapshot(
+                    mount_snapshot, "serial discovery rollback"
+                ):
+                    return False
+            else:
+                disconnect_result = sys_utils.apply_indi_onstep_properties(
+                    [f"{device_name}.CONNECTION.DISCONNECT=On"],
+                    server_host=self.indi_host,
+                    server_port=self.indi_port,
+                )
+                if not disconnect_result.get("ok"):
+                    return False
+                self.connected = False
+
+            self._connection_config_status = self._connection_config_status_fields(
+                previous_connection, valid=True
+            )
+            self._configure_usb_serial_monitor(previous_connection)
+            self._connection_config_ready = True
+            return True
+        except Exception:
+            logger.exception("Could not restore pre-discovery INDI connection")
+            return False
+
+    def discover_onstep_serial_connection(self) -> bool:
+        """Find one local OnStep serial port/baud and persist it after verification."""
+        busy_reason = self._serial_discovery_busy_reason()
+        if busy_reason:
+            self._publish_serial_discovery("failed", busy_reason, error=busy_reason)
+            return False
+        if not sys_utils.is_local_indi_server_host(self.indi_host):
+            error = "Serial discovery requires a local INDI server"
+            self._publish_serial_discovery("failed", error, error=error)
+            return False
+        device_name = self._indi_device_name()
+        if not sys_utils.is_onstep_family_device_name(device_name):
+            error = "The active INDI driver is not an OnStep driver"
+            self._publish_serial_discovery("failed", error, error=error)
+            return False
+
+        cfg = config.Config()
+        cfg.load_config()
+        mirror = self._stored_onstep_connection_config(cfg)
+        live_properties = sys_utils.get_indi_onstep_properties(
+            server_host=self.indi_host,
+            server_port=self.indi_port,
+            device_name=device_name,
+        )
+        live = sys_utils.parse_indi_onstep_connection_properties(
+            live_properties, device_name=device_name
+        )
+        saved = sys_utils.read_saved_indi_onstep_connection_config(
+            device_name=device_name
+        )
+        previous_connection = live or saved or mirror
+        was_connected = (
+            live_properties.get(f"{device_name}.CONNECTION.CONNECT") == "On"
+            or self.connected
+        )
+        mount_snapshot = self._capture_usb_recovery_snapshot()
+
+        gps_port = str(
+            cfg.get_option("gps_port", getattr(sys_utils, "DEFAULT_GPSD_DEVICE", ""))
+            or ""
+        ).strip()
+        candidates = sys_utils.list_onstep_serial_ports(
+            excluded_paths=[gps_port] if gps_port else None
+        )
+        if not candidates:
+            error = "No eligible local USB serial ports were found"
+            self._publish_serial_discovery("failed", error, error=error)
+            return False
+
+        preferred_bauds = []
+        for connection in (live, saved, mirror):
+            if connection is not None:
+                preferred_bauds.append(connection.get("serial_baud"))
+
+        self._serial_discovery_active = True
+        self._publish_serial_discovery(
+            "precheck",
+            "Preparing one-time OnStep serial discovery",
+            candidate_count=len(candidates),
+        )
+        failure = ""
+        discovery: dict[str, Any] = {}
+        try:
+            self._publish_serial_discovery(
+                "disconnecting",
+                "Disconnecting the INDI device for exclusive serial probing",
+                candidate_count=len(candidates),
+            )
+            if not self._disconnect_indi_device_for_serial_discovery():
+                failure = "INDI device did not disconnect for serial discovery"
+                raise RuntimeError(failure)
+
+            discovery = sys_utils.discover_onstep_serial(
+                preferred_bauds=preferred_bauds,
+                ports=candidates,
+                status_callback=self._serial_discovery_scan_status,
+            )
+            if not discovery.get("ok"):
+                state = discovery.get("state", "not_found")
+                if state == "ambiguous":
+                    failure = "Multiple verified OnStep serial devices were found"
+                elif state == "timeout":
+                    failure = "OnStep serial discovery timed out"
+                else:
+                    failure = "No verified OnStep serial device was found"
+                raise RuntimeError(failure)
+
+            selected = discovery["selected"]
+            selected_port = str(selected["stable_path"])
+            selected_baud = int(selected["baud"])
+            telemetry_baseline = (
+                self._position_update_generation,
+                self._onstep_status_generation,
+            )
+            self._publish_serial_discovery(
+                "applying",
+                "Applying the verified OnStep serial connection",
+                selected_port=selected_port,
+                selected_baud=selected_baud,
+                product=selected.get("product", ""),
+                version=selected.get("version", ""),
+                candidate_count=discovery.get("candidate_count", 0),
+                verified_count=discovery.get("verified_count", 0),
+            )
+            apply_result = sys_utils.apply_indi_onstep_connection(
+                connection_type=sys_utils.ONSTEP_CONNECTION_USB,
+                serial_port=selected_port,
+                serial_baud=selected_baud,
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+                device_name=device_name,
+                save_config=False,
+            )
+            if not apply_result.get("ok"):
+                failure = (
+                    apply_result.get("stderr")
+                    or apply_result.get("stdout")
+                    or "Could not apply the discovered serial connection"
+                )
+                raise RuntimeError(failure)
+
+            selected_connection = sys_utils.normalize_onstep_connection_config(
+                {
+                    "connection_type": sys_utils.ONSTEP_CONNECTION_USB,
+                    "serial_port": selected_port,
+                    "serial_baud": selected_baud,
+                    "verified": True,
+                },
+                source="serial_discovery",
+            )
+            assert selected_connection is not None
+
+            self._publish_serial_discovery(
+                "verifying",
+                "Waiting for fresh OnStep position and status telemetry",
+                selected_port=selected_port,
+                selected_baud=selected_baud,
+                product=selected.get("product", ""),
+                version=selected.get("version", ""),
+            )
+            self.connected = False
+            if not self._verify_serial_discovery_telemetry(
+                telemetry_baseline, selected_connection
+            ):
+                failure = "Discovered OnStep did not publish fresh telemetry"
+                raise RuntimeError(failure)
+            if not self._restore_mount_state_snapshot(
+                mount_snapshot, "serial discovery"
+            ):
+                failure = "Mount state changed during serial discovery"
+                raise RuntimeError(failure)
+
+            save_result = sys_utils.apply_indi_onstep_properties(
+                [f"{device_name}.CONFIG_PROCESS.CONFIG_SAVE=On"],
+                server_host=self.indi_host,
+                server_port=self.indi_port,
+            )
+            if not save_result.get("ok"):
+                failure = (
+                    save_result.get("stderr")
+                    or save_result.get("stdout")
+                    or "INDI CONFIG_SAVE failed after discovery"
+                )
+                raise RuntimeError(failure)
+
+            mirror_options = sys_utils.onstep_connection_mirror_options(
+                selected_connection
+            )
+            mirror_options.update(
+                {
+                    "mount_control_indi_host": self.indi_host,
+                    "mount_control_indi_port": self.indi_port,
+                }
+            )
+            cfg.set_options(mirror_options)
+            self._connection_config_status = self._connection_config_status_fields(
+                selected_connection, valid=True, reconciled=True
+            )
+            self._configure_usb_serial_monitor(selected_connection)
+            self._connection_config_ready = True
+            self._publish_serial_discovery(
+                "success",
+                f"Found {selected_port} at {selected_baud} baud",
+                selected_port=selected_port,
+                selected_baud=selected_baud,
+                product=selected.get("product", ""),
+                version=selected.get("version", ""),
+                candidate_count=discovery.get("candidate_count", 0),
+                verified_count=discovery.get("verified_count", 0),
+            )
+            self._console("INDI serial\nfound")
+            logger.info(
+                "OnStep serial discovery selected %s at %s baud",
+                selected_port,
+                selected_baud,
+            )
+            return True
+        except Exception as exc:
+            if not failure:
+                failure = str(exc) or "OnStep serial discovery failed"
+            logger.warning("OnStep serial discovery failed: %s", failure)
+            rollback_ok = self._rollback_serial_discovery(
+                previous_connection, was_connected, mount_snapshot
+            )
+            if not rollback_ok:
+                failure = f"{failure}; previous connection rollback failed"
+            self._publish_serial_discovery(
+                "failed",
+                failure,
+                error=failure,
+                candidate_count=discovery.get("candidate_count", len(candidates)),
+                verified_count=discovery.get("verified_count", 0),
+                rollback_ok=rollback_ok,
+            )
+            self._console("INDI serial\nnot found")
+            return False
+        finally:
+            self._serial_discovery_active = False
 
     def _onstep_connection_config(self) -> dict[str, Any]:
         cfg = config.Config()
@@ -4181,6 +4605,8 @@ class MountControlIndi(BacklashCalibrationMixin):
             self.update_connection_config(
                 command.get("server_host"), command.get("server_port")
             )
+        elif command_type == "discover_serial_connection":
+            self.discover_onstep_serial_connection()
         elif command_type == "restart_driver":
             self.restart_driver()
         elif command_type == "reboot_mount":

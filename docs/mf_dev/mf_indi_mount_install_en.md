@@ -115,12 +115,18 @@ When the active INDI profile uses `LX200 OnStepX`, its connection settings can b
 INDI > LX200 OnStepX Driver Connection
 ```
 
-For USB connections, choose a detected `/dev/serial/by-id`, `/dev/ttyUSB*`,
-or `/dev/ttyACM*` port, or enter the serial port manually. Communication Speed
+For USB connections, choose a detected `/dev/serial/by-id`,
+`/dev/serial/by-path`, `/dev/ttyUSB*`, or `/dev/ttyACM*` port, or enter the
+serial port manually. Communication Speed
 offers `9600`, `19200`, `38400`, `57600`, `115200`, `230400`, and `460800`
 baud. Aliases that resolve to the same physical serial device are collapsed
 into one entry, preferring the stable `/dev/serial/by-id/...` path when
-available. Apply
+available. Selecting `Auto (Find connected OnStep)` also switches Communication
+Speed to Auto. Only when Apply is pressed, PiFinder removes the configured GPS
+and duplicate aliases from local candidates, then probes supported baud rates
+with the read-only `:GVP#`/`:GVN#` queries. A concrete stable port and detected
+baud are applied only when exactly one OnStep is verified; zero or multiple
+matches restore the previous connection without saving. Apply
 disconnects the driver, writes `DEVICE_PORT` and the standard INDI
 `DEVICE_BAUD_RATE`, reconnects and verifies the connection, then performs
 `CONFIG_SAVE`. Baud applies only to USB Serial and defaults to 9600. For

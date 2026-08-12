@@ -1776,11 +1776,59 @@ class Server:
                 network_host = network_manual
 
             try:
-                serial_baud = int(serial_baud_value)
                 network_port = int(request.form.get("network_port") or "9999")
                 server_port = int(request.form.get("server_port") or "7624")
                 indi_cfg = _indi_config_values()
                 _require_onstepx_driver(indi_cfg)
+
+                if (
+                    connection_type == sys_utils.ONSTEP_CONNECTION_USB
+                    and serial_port == sys_utils.ONSTEP_SERIAL_AUTO_VALUE
+                ):
+                    if not sys_utils.is_local_indi_server_host(server_host):
+                        raise ValueError(
+                            "Serial Auto discovery requires a local INDI server"
+                        )
+                    if server_host.strip().lower() != str(
+                        indi_cfg["server_host"]
+                    ).strip().lower() or server_port != int(indi_cfg["server_port"]):
+                        raise ValueError(
+                            "Apply the local INDI server endpoint before using Auto"
+                        )
+                    if self.mountcontrol_queue is None:
+                        raise RuntimeError("Mount-control process is not available")
+                    discovery_state = str(
+                        _mount_control_status().get("serial_discovery_state", "")
+                    ).lower()
+                    if discovery_state in {
+                        "precheck",
+                        "disconnecting",
+                        "scanning",
+                        "applying",
+                        "verifying",
+                        "rollback",
+                    }:
+                        raise RuntimeError("Serial discovery is already running")
+                    self.mountcontrol_queue.put({"type": "discover_serial_connection"})
+                    return _render_indi_page(
+                        _(
+                            "OnStep serial port and communication-speed discovery "
+                            "started"
+                        )
+                    )
+
+                if (
+                    connection_type == sys_utils.ONSTEP_CONNECTION_USB
+                    and serial_baud_value == sys_utils.ONSTEP_SERIAL_AUTO_VALUE
+                ):
+                    raise ValueError(
+                        "Select Auto for the serial port, or choose a concrete baud rate"
+                    )
+                serial_baud = (
+                    int(serial_baud_value)
+                    if connection_type == sys_utils.ONSTEP_CONNECTION_USB
+                    else sys_utils.DEFAULT_ONSTEP_SERIAL_BAUD
+                )
                 result = sys_utils.apply_indi_onstep_connection(
                     connection_type=connection_type,
                     serial_port=serial_port,
@@ -1803,10 +1851,8 @@ class Server:
                     server_port=server_port,
                     device_name=indi_cfg["device_name"],
                 )
-                verified_connection = (
-                    sys_utils.parse_indi_onstep_connection_properties(
-                        verified_props, device_name=indi_cfg["device_name"]
-                    )
+                verified_connection = sys_utils.parse_indi_onstep_connection_properties(
+                    verified_props, device_name=indi_cfg["device_name"]
                 )
                 requested_connection = sys_utils.normalize_onstep_connection_config(
                     {

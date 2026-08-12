@@ -5937,3 +5937,19 @@ msgstr ""
 
 #~ msgid "This will take effect immediately and can not be undone. Are you sure?"
 #~ msgstr "This will take effect immediately and can not be undone. Are you sure?"
+
+#: PiFinder/server.py views/indi_mount.html
+msgid "Auto (Find connected OnStep)"
+msgstr "자동 (연결된 OnStep 찾기)"
+
+#: views/indi_mount.html
+msgid "Auto (Detect with port)"
+msgstr "자동 (포트와 함께 속도 찾기)"
+
+#: views/indi_mount.html
+msgid "Serial Auto Discovery"
+msgstr "시리얼 자동찾기"
+
+#: PiFinder/server.py
+msgid "OnStep serial port and communication-speed discovery started"
+msgstr "OnStep 시리얼 포트와 통신속도 자동찾기를 시작했습니다"
