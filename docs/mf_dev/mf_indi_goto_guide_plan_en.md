@@ -1185,7 +1185,7 @@ Goal:
 
 Checklist:
 
-- `indi_goto_method` defaults to `indi_mount`.
+- `indi_goto_method` defaults to `pifinder`.
 - `indi_tracking_guide_enabled` defaults to `true` (changed 2026-07-19).
 - Web settings persist after page reload.
 - LCD settings persist after service restart.

@@ -1168,7 +1168,7 @@ class Server:
                 "indi_goto_refine_accuracy_arcmin": float(
                     cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
                 ),
-                "indi_goto_method": cfg.get_option("indi_goto_method", "indi_mount"),
+                "indi_goto_method": cfg.get_option("indi_goto_method", "pifinder"),
                 "indi_tracking_guide_enabled": bool(
                     cfg.get_option("indi_tracking_guide_enabled", True)
                 ),

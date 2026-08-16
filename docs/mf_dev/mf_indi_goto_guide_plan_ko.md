@@ -1092,7 +1092,7 @@ tracking_guide_manual_retarget    (신규) 마지막 재타겟 발생 여부/시
 
 체크리스트:
 
-- `indi_goto_method` 기본값이 `indi_mount`인가.
+- `indi_goto_method` 기본값이 `pifinder`인가.
 - `indi_tracking_guide_enabled` 기본값이 `true`인가(2026-07-19에 변경).
 - Web에서 설정 변경 후 재로딩해도 값이 유지되는가.
 - LCD에서 설정 변경 후 재시작해도 값이 유지되는가.

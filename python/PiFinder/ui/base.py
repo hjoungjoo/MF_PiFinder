@@ -836,7 +836,7 @@ class UIModule:
             # target (plain menus / status) the key is unused.
             if target is None:
                 return False
-            if self.config_object.get_option("indi_goto_method", "indi_mount") == "off":
+            if self.config_object.get_option("indi_goto_method", "pifinder") == "off":
                 self.message(_("GoTo Off"), 1)
                 return True
             command = {

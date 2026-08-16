@@ -849,7 +849,7 @@ def _queue_indi_goto_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> 
     elif not _goto_guide_enabled():
         return False
 
-    goto_method = str(_get_config_option("indi_goto_method", "indi_mount"))
+    goto_method = str(_get_config_option("indi_goto_method", "pifinder"))
     if goto_method == "off" and not multipoint_active:
         logger.info("SkySafari INDI GoTo skipped; GoTo Type is off")
         return False
@@ -1306,7 +1306,7 @@ def handle_sync_command(shared_state, _input_str: str):
     if _queue_multipoint_align_confirm_if_active(ra_deg, dec_deg):
         return "Coordinates matched."
 
-    goto_method = str(_get_config_option("indi_goto_method", "indi_mount"))
+    goto_method = str(_get_config_option("indi_goto_method", "pifinder"))
     has_solved_pointing = _has_solved_pointing(shared_state)
     pifinder_aligned = False
     imu_aligned = False

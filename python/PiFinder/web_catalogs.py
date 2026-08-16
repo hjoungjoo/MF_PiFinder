@@ -1363,7 +1363,7 @@ def _queue_mount_goto(
 
         cfg = pf_config.Config()
         mount_control = bool(cfg.get_option("mount_control", False))
-        goto_method = str(cfg.get_option("indi_goto_method", "indi_mount"))
+        goto_method = str(cfg.get_option("indi_goto_method", "pifinder"))
     except Exception:
         logger.exception("Could not load mount config for goto")
         return {"action": "none", "reason": "config unavailable"}

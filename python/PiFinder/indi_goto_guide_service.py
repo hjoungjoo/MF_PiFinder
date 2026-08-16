@@ -318,7 +318,7 @@ class IndiGotoGuideService:
             self.last_action = "goto rejected"
             return
 
-        if self.config_values.get("indi_goto_method", "indi_mount") == "off":
+        if self.config_values.get("indi_goto_method", "pifinder") == "off":
             self.service_state = "idle"
             self.phase = "idle"
             self.wait_reason = "goto disabled (GoTo Type off)"
@@ -351,7 +351,7 @@ class IndiGotoGuideService:
         self.manual_retarget_pending = False
         self._disable_pulse_align()
 
-        goto_method = self.config_values.get("indi_goto_method", "indi_mount")
+        goto_method = self.config_values.get("indi_goto_method", "pifinder")
 
         if goto_method == "indi_mount":
             # No refine_after_goto passthrough: post-GoTo refinement is this
@@ -835,7 +835,7 @@ class IndiGotoGuideService:
         # and its own tracking -- no pulses, no disturbance recovery, no
         # auto sync. The Tracking Guide setting only has effect in pifinder
         # mode.
-        goto_method = str(self.config_values.get("indi_goto_method", "indi_mount"))
+        goto_method = str(self.config_values.get("indi_goto_method", "pifinder"))
         if goto_method != "pifinder":
             self._disable_tracking_guide(f"tracking guide inactive: {goto_method} mode")
             self._reset_tracking_recovery()
@@ -1557,7 +1557,7 @@ class IndiGotoGuideService:
         cfg.load_config()
         self.config_values = {
             "mount_control": bool(cfg.get_option("mount_control", False)),
-            "indi_goto_method": str(cfg.get_option("indi_goto_method", "indi_mount")),
+            "indi_goto_method": str(cfg.get_option("indi_goto_method", "pifinder")),
             "indi_tracking_guide_enabled": bool(
                 cfg.get_option("indi_tracking_guide_enabled", True)
             ),
@@ -1646,7 +1646,7 @@ class IndiGotoGuideService:
             "tracking_guide_recovery_count": self.tracking_guide_recovery_count,
             "tracking_guide_manual_retarget_count": self.manual_retarget_count,
             "tracking_guide_settle_remaining": self.tracking_guide_settle_remaining,
-            "goto_method": self.config_values.get("indi_goto_method", "indi_mount"),
+            "goto_method": self.config_values.get("indi_goto_method", "pifinder"),
             "tracking_guide_enabled": self.config_values.get(
                 "indi_tracking_guide_enabled", True
             ),

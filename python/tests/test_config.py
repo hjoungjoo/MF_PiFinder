@@ -75,6 +75,14 @@ def test_get_stored_option_does_not_use_default_config(config_dir):
 
 
 @pytest.mark.unit
+def test_goto_method_defaults_to_pifinder(config_dir):
+    """New and legacy configs without the key use PiFinder GoTo."""
+    cfg = config.Config()
+    assert cfg.get_stored_option("indi_goto_method") is None
+    assert cfg.get_option("indi_goto_method") == "pifinder"
+
+
+@pytest.mark.unit
 def test_write_keeps_another_process_changes(config_dir):
     """The camera process saving an exposure must not revert LiveCam settings."""
     camera_cfg = config.Config()  # loaded at camera start
