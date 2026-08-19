@@ -118,7 +118,21 @@ def map_frame_pixel_to_target(
     return (c512 + (py - cy) * scale, c512 + (px - cx) * scale)
 
 
-def fov_estimate_deg(frame_width_px: int, crop_width_px: int) -> float:
-    """FOV across ``frame_width_px`` sensor pixels, from the production
-    calibration of SOLVER_FOV_DEG across the cropped square."""
-    return SOLVER_FOV_DEG * frame_width_px / float(crop_width_px)
+def fov_estimate_deg(
+    frame_width_px: int,
+    crop_width_px: int,
+    base_fov_degrees: float = SOLVER_FOV_DEG,
+) -> float:
+    """FOV across ``frame_width_px`` sensor pixels.
+
+    ``base_fov_degrees`` is the FOV of the production cropped square.  It
+    defaults to the established 12-degree calibration, so existing cedar and
+    SEP paths are bit-for-bit unchanged.  A later night-validated optical
+    train can pass its measured crop FOV without changing the pixel mapping
+    constants or the legacy default.
+    """
+    if crop_width_px <= 0:
+        raise ValueError("crop_width_px must be positive")
+    if base_fov_degrees <= 0:
+        raise ValueError("base_fov_degrees must be positive")
+    return base_fov_degrees * frame_width_px / float(crop_width_px)

@@ -21,6 +21,9 @@ FOV(field of view)는 센서만, 또는 렌즈만의 속성이 아니다. 실제
    fitted FOV의 렌즈 후보 판별을 계산하는 **독립 모듈**을 추가했다.
 3. Advanced > Lens 메뉴와 `camera_lens` 설정/shared state를 추가했다. 빈 값은
    `Automatic (not set)`이며, 사용자가 렌즈를 선언하지 않았음을 뜻한다.
+4. cedar/SEP full-frame FOV 계산 함수는 미래의 crop FOV를 인자로 받을 수 있게
+   준비했다. 인자를 주지 않으면 기존 `12.0°`를 그대로 쓰며, 아직 그 인자를
+   optical train에서 전달하지 않는다.
 
 아래 항목은 아직 연결하지 않았다. 따라서 이번 커밋만으로 기존 동작이나 현장
 표시값이 바뀌지 않는다.

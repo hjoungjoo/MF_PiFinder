@@ -960,6 +960,7 @@ def _solve_cedar_fullframe(
     crop_width_px: int,
     shared_state,
     target_sky_coord=None,
+    base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
 ) -> dict:
     """Solve full-frame cedar centroids at native FOV, in 512 semantics.
 
@@ -975,7 +976,9 @@ def _solve_cedar_fullframe(
         target_pixel = sfm.map_target_pixel_to_frame(
             shared_state.target_pixel(), canvas, crop_width_px
         )
-        fov = sfm.fov_estimate_deg(canvas[1], crop_width_px)
+        fov = sfm.fov_estimate_deg(
+            canvas[1], crop_width_px, base_fov_degrees=base_fov_degrees
+        )
         solution = t3.solve_from_centroids(
             cents,
             canvas,

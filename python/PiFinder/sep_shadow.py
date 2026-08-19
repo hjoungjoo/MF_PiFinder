@@ -106,12 +106,16 @@ class SepShadowRunner:
         saturation_level: Optional[float] = None,
         csv_path=None,
         warm_pixel_map: Optional[np.ndarray] = None,
+        base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
     ):
         self.shadow_enabled = shadow_enabled
         self.fallback_enabled = fallback_enabled
         self.sigma = sigma
         self.rotation_deg = rotation_deg
         self.crop_width_px = crop_width_px
+        # Default preserves the current production calibration.  The future
+        # optical-train integration will pass a night-validated crop FOV here.
+        self.base_fov_degrees = base_fov_degrees
         self.min_fallback_stars = min_fallback_stars
         self.saturation_level = saturation_level
         self.csv_path = csv_path or (utils.log_dir / "solver_shadow_log.csv")
@@ -299,7 +303,11 @@ class SepShadowRunner:
             target_pixel = sfm.map_target_pixel_to_frame(
                 shared_state.target_pixel(), canvas, self.crop_width_px
             )
-            fov = sfm.fov_estimate_deg(canvas[1], self.crop_width_px)
+            fov = sfm.fov_estimate_deg(
+                canvas[1],
+                self.crop_width_px,
+                base_fov_degrees=self.base_fov_degrees,
+            )
             solution = t3.solve_from_centroids(
                 cents,
                 canvas,

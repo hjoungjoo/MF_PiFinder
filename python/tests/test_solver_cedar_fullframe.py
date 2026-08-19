@@ -113,6 +113,26 @@ def test_solve_cedar_fullframe_swallows_solver_errors():
 
 
 @pytest.mark.unit
+def test_solve_cedar_fullframe_accepts_future_crop_fov_without_mapping_change():
+    fake = _FakeT3({"RA": 10.0, "y_target": 100.0, "x_target": 200.0})
+    solver._solve_cedar_fullframe(
+        fake,
+        [(540.0, 960.0)],
+        (FULL_H, FULL_W),
+        rotation_deg=90.0,
+        crop_width_px=CROP_W,
+        shared_state=_FakeSharedState(),
+        base_fov_degrees=10.38,
+    )
+    _, canvas = sfm.rotate_centroids(
+        np.asarray([(540.0, 960.0)]), (FULL_H, FULL_W), 90.0
+    )
+    assert fake.calls[0]["fov_estimate"] == pytest.approx(
+        sfm.fov_estimate_deg(canvas[1], CROP_W, base_fov_degrees=10.38)
+    )
+
+
+@pytest.mark.unit
 def test_center_square_subset_selects_max_centered_square():
     # 1920x1080 -> square side 1080, x in [420, 1500)
     pts = [
