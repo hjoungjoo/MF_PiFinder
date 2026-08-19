@@ -1350,6 +1350,34 @@ pifinder_menu = {
                             ],
                         },
                         {
+                            # This is a declaration only.  It is not consumed
+                            # by the solver until optical-train validation has
+                            # passed on real sky; see mf_optical_train_fov...
+                            "name": _("Lens"),
+                            "class": UITextMenu,
+                            "select": "single",
+                            "config_option": "camera_lens",
+                            "post_callback": callbacks.set_camera_lens,
+                            "items": [
+                                {
+                                    "name": _("Automatic (not set)"),
+                                    "value": "",
+                                },
+                                {
+                                    "name": _("12mm"),
+                                    "value": "12mm",
+                                },
+                                {
+                                    "name": _("16mm"),
+                                    "value": "16mm",
+                                },
+                                {
+                                    "name": _("25mm"),
+                                    "value": "25mm",
+                                },
+                            ],
+                        },
+                        {
                             "name": _("GPS Settings"),
                             "class": UITextMenu,
                             "select": "single",

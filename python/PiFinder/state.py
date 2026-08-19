@@ -307,6 +307,9 @@ class SharedStateObj:
         self.__arch = None
         self.__camera_align = False
         self.__camera_type = "imx296"  # Default, will be set by camera process
+        # Empty means no user statement: optics may use a safe profile default,
+        # but future FOV gating must keep the wider "assumed lens" policy.
+        self.__camera_lens = config.Config().get_option("camera_lens", "")
         self.__cam_raw = None
         # Uncropped raw sensor frame for the SEP full-frame detection path
         # (dict: {"frame": uint16 ndarray, "exposure_end": float}). Only
@@ -379,6 +382,12 @@ class SharedStateObj:
 
     def set_camera_type(self, v: str):
         self.__camera_type = v
+
+    def camera_lens(self) -> str:
+        return self.__camera_lens
+
+    def set_camera_lens(self, v: str):
+        self.__camera_lens = v
 
     def sats(self):
         return self.__sats

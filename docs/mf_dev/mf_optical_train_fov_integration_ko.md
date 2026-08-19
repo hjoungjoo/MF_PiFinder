@@ -4,7 +4,7 @@
 #625, #628)을 MF_PiFinder의 cedar+SEP 하이브리드 솔버와 SQM 보정값을 보존한
 채 받아들이기 위한 작업 기준이다.
 
-상태: **기반 구현됨 · 야간 검증 대기** (2026-08-19)
+상태: **기반·렌즈 선언 UI 구현됨 · 야간 검증 대기** (2026-08-19)
 
 ## 1. 범위와 안전 경계
 
@@ -12,13 +12,15 @@ FOV(field of view)는 센서만, 또는 렌즈만의 속성이 아니다. 실제
 센서의 유효 crop 폭과 렌즈의 **실효 초점거리**를 함께 써서 계산한다. 이를
 `optical train`이라고 부른다.
 
-이번 낮 시간 작업에서 적용한 것은 다음 두 가지뿐이다.
+이번 낮/악천후 시간 작업에서 적용한 것은 다음 세 가지뿐이다.
 
 1. `sqm/camera_profiles.py`에 센서 픽셀 피치, 기본 렌즈, 출하 렌즈 목록을
    메타데이터로 추가했다. mono/color 변형은 `replace()`로 이 정보를 그대로
    승계한다.
 2. `PiFinder/optics.py`에 FOV, plate scale, 향후 tetra3 FOV gate 후보값,
    fitted FOV의 렌즈 후보 판별을 계산하는 **독립 모듈**을 추가했다.
+3. Advanced > Lens 메뉴와 `camera_lens` 설정/shared state를 추가했다. 빈 값은
+   `Automatic (not set)`이며, 사용자가 렌즈를 선언하지 않았음을 뜻한다.
 
 아래 항목은 아직 연결하지 않았다. 따라서 이번 커밋만으로 기존 동작이나 현장
 표시값이 바뀌지 않는다.
@@ -29,7 +31,8 @@ FOV(field of view)는 센서만, 또는 렌즈만의 속성이 아니다. 실제
 | cedar/SEP full-frame FOV | 기존 frame-map 및 경로별 계산 | crop/resize 좌표계와 함께 검증 필요 |
 | radiometric SQM pixel area | 프로파일의 검증된 `radiometric_fov_degrees` | 값 변경은 SQM 절대값을 바꾸므로 기준계 비교 필요 |
 | Chart frustum / API FOV | 기존 상수와 solve 진단값 | 화면/API 소비자 호환성 확인 필요 |
-| Lens 메뉴·config·자동 보정 | 없음 | 잘못된 설정값을 자동으로 덮어쓰지 않기 위함 |
+| Lens 선언값의 FOV 소비 | 메뉴/config/shared state까지만 구현 | 선언값을 믿어 gate를 좁히기 전 현장 확인 필요 |
+| 자동 보정 | 없음 | 잘못된 설정값을 자동으로 덮어쓰지 않기 위함 |
 
 ## 2. 현재 기준값과 새 계산값
 
@@ -149,7 +152,7 @@ fitted FOV는 optical train 전체를 측정하므로, 센서가 알려진 상�
 각 단계는 아래처럼 독립 커밋으로 유지한다.
 
 1. 기반 모듈/문서 (현재 단계)
-2. Lens config/UI/API (동작 변경 없음 또는 명시적 메뉴만)
+2. Lens config/UI (현재 단계: 동작 변경 없는 명시적 메뉴)
 3. 일반 tetra3 gate
 4. cedar/SEP full-frame 매핑
 5. SQM 보정 전환

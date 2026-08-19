@@ -24,6 +24,7 @@ from PiFinder import timez
 from PiFinder import utils, calc_utils
 from PiFinder.boot_config import get_boot_config_path
 from PiFinder.locations import Location as SavedLocation
+from PiFinder.optics import LENSES
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.state import Location
 from PiFinder.ui.base import UIModule
@@ -500,6 +501,21 @@ def get_camera_type(ui_module: UIModule) -> list[str]:
         return [f"{cam_id}_{variant}"]
 
     return [cam_id]
+
+
+def set_camera_lens(ui_module: UIModule) -> None:
+    """Publish the lens statement saved by the Advanced > Lens menu.
+
+    This is intentionally configuration/state only.  No camera restart and no
+    solver message are sent here: the current solver and SQM paths still use
+    their established FOV values until the separate night-validated stage.
+    """
+    lens_key = ui_module.config_object.get_option("camera_lens", "")
+    if lens_key and lens_key not in LENSES:
+        logger.warning("Ignoring unsupported configured lens %r", lens_key)
+        lens_key = ""
+    ui_module.shared_state.set_camera_lens(lens_key)
+    logger.info("Camera lens statement updated: %s", lens_key or "automatic")
 
 
 def switch_language(ui_module: UIModule) -> None:
