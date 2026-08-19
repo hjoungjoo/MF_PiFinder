@@ -215,9 +215,9 @@ The Settings menu holds every user-configurable item.  See
 User Pref...
    Day-to-day interface preferences.
 
-    Key Bright
+   Key Bright
       Keypad backlight level, from -4 (dimmest) to +3.
-    Volume
+   Volume
        How loud the PiFinder's sounds are.  Values: Off, 1 (quietest) to 5.
        Selecting a level plays a sample tone at that level.  Only rev4 PiFinders
        have the buzzer.  See :ref:`user_guide:sounds`.
@@ -273,7 +273,7 @@ Advanced
    shows a brief "Options for DIY PiFinders" reminder, because on a fully built
    PiFinder these already match your hardware.
 
-    PiFinder Type
+   PiFinder Type
       Which physical configuration you have.  Values: Left, Right, Straight,
       Flat v3, Flat v2, AS Bloom, AS Heart, Rev4 Left, Rev4 Right, Rev4
       Straight.  Changing this restarts the PiFinder.
@@ -290,7 +290,7 @@ Advanced
       GPS Type
          Values: UBlox (the built-in receiver), GPSD (for a generic receiver).
          Changing this restarts the PiFinder.
-       GPS Baud Rate
+      GPS Baud Rate
          Serial speed for the receiver.  rev4 units carry a 10th-generation
          UBlox receiver and run at 115200; the older receiver in v3 and v2.5
          units runs at 9600.
