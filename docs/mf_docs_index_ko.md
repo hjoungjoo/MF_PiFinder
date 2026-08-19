@@ -40,6 +40,8 @@
 | [cedar_sep_hybrid_design](mf_dev/mf_cedar_sep_hybrid_design_ko.md) | 둘 다 | living ★ | cedar+SEP 하이브리드 솔빙 **설계 정본** — 프레임 공간/좌표 정합, 검출 게이트 6종, 웜픽셀 맵, 폴백·백오프 정책, 하이브리드 정렬, AE 연동, 방어선. 결정 근거는 ADR m0023, 실측 이력은 sep_fullframe_impl. |
 | [cedar_fullframe_primary_plan](mf_dev/mf_cedar_fullframe_primary_plan_ko.md) | ko | **구현·기본 활성화 완료**(2026-08-12) | cedar 풀프레임 1차 경로 전환 계획과 결정 기록 — `solver_cedar_fullframe`/게이트/중앙 우선 캐스케이드. 2026-08-12 풀프레임 4단 기본화. |
 | [optical_train_fov_integration](mf_dev/mf_optical_train_fov_integration_ko.md) | ko | **기반·렌즈 선언 UI 구현됨 · 야간 검증 대기**(2026-08-19) | 센서×렌즈 optical train의 FOV 계산 기반과 Lens 선언 UI, 현행 solver/SQM 보존 경계, tetra3·cedar/SEP·SQM 단계별 병합 및 야간 검증 절차. |
+| [wide_angle_solver_design](mf_dev/mf_wide_angle_solver_design_ko.md) | ko | **plan ★** | 4/6/8/10 mm 렌즈, 실측 왜곡 보정, 16 mm 등가 원본 크롭 타일, 중앙 포화 시 다중 타일 합의, LiveCam 기구 간섭 마스크의 상세 설계 정본. |
+| [wide_angle_solver_implementation_plan](mf_dev/mf_wide_angle_solver_implementation_plan_ko.md) | ko | **plan** | 광각 솔빙의 P0–P7 구현/커밋 경계, 자동·야간 검증, 배포·롤백 절차와 사용자 결정 항목. |
 
 ## 카탈로그 · 웹 UI
 
