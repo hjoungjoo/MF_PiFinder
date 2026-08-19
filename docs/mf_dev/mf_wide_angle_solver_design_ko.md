@@ -232,12 +232,20 @@ star가 가리키는 sky ray와 native RAW 좌표의 대응을 맞춘다. 여러
    유의하게 낮춰야 한다. 비정상 초점거리 변화, 유효 footprint 축소, 계수
    범위 초과도 거부 사유다.
 
-통과하면 calibrator는 새 `auto-<camera>-<lens>-<revision>` profile을 원자적으로
-저장하고 활성 calibration ID를 갱신한다. 적용 시점은 **현재 solve 중간이 아닌
-다음 RAW 프레임**이다. 이전 profile, fit 요약, 입력 frame ID, hold-out 결과와
-checksum을 함께 보존하므로 `rollback calibration` 한 번으로 즉시 되돌릴 수 있다.
-coverage 또는 hold-out을 통과하지 못하면 profile/config는 바꾸지 않고 LiveCam에
-부족한 반경 bin·거부 이유만 표시한다.
+통과하면 calibrator는 새 `auto-<camera>-<lens>-<revision>` profile과 활성
+calibration ID를 **영속 calibration store**에 원자적으로 저장한다. 적용 시점은
+현재 solve 중간이 아닌 **다음 RAW 프레임**이다. 이전 profile, fit 요약, 입력
+frame ID, hold-out 결과와 checksum을 함께 보존하므로 `rollback calibration` 한
+번으로 즉시 되돌릴 수 있다. coverage 또는 hold-out을 통과하지 못하면
+profile/config는 바꾸지 않고 LiveCam에 부족한 반경 bin·거부 이유만 표시한다.
+
+부팅 시 `CalibrationProfileStore`는 저장된 활성 profile을 읽고 camera type,
+lens key, raw size, production crop, pixel pitch, distortion-model version,
+checksum을 현재 optical train과 비교한다. 모두 일치하면 같은 `auto-*` profile을
+자동 복원해 첫 광각 solve 전부터 사용한다. 하나라도 다르면 그 profile을 다른
+장비 기록으로 보존하되 적용하지 않고 `none`/수동 선택 profile으로 안전하게
+시작하며 LiveCam에 불일치를 표시한다. 따라서 자동 보정의 **결과는 재부팅 뒤에도
+유지**되지만, 보정 수집 세션 자체는 재부팅 뒤 기본 off다.
 
 왜곡이 적은 렌즈는 fit된 `k1..p2`가 0 보정 대비 유의한 개선을 만들지 못한다.
 이 경우 calibrator는 계수를 억지로 갱신하지 않고, `model="none"`, 모든 계수 0,
@@ -512,6 +520,7 @@ sequenceDiagram
 | `wide_solver_calibration_id` | `none` | 명시한 실측 profile만 사용 |
 | `wide_solver_manual_tv_distortion` | 없음 | 렌즈별 TV distortion·기준 image height·방향을 저장하는 수동 provisional 입력 |
 | `wide_solver_auto_calibration_enabled` | `false` | 사용자가 시작한 수집 세션에서만 중앙+주변 solve로 profile 자동 갱신 |
+| `wide_solver_calibration_store_v1` | 빈 store | 자동/수동 profile, 활성 ID, fingerprint, revision, rollback 이력을 재부팅 뒤에도 보존 |
 | `wide_solver_mask_store_v1` | 빈 store | 렌즈별 native RAW 제외 영역 |
 | `wide_solver_max_regions` | 측정 후 확정 | 프레임당 tile 상한 |
 | `wide_solver_min_consensus_regions` | `2` | 주변부 발행 최소 tile 수; 정확히 2개면 인접 쌍 엄격 게이트 적용 |
@@ -528,7 +537,7 @@ tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시
 | 계층 | 필수 검증 |
 | --- | --- |
 | optics | 새 렌즈 키, provisional 표기, 16 mm 기준 타일 각폭, 기존 FOV 불변 |
-| calibration | TV distortion 기준 반지름/부호 검증·작은 센서 반경 환산, 0 보정 항등성, 왜곡/역왜곡 round trip, fingerprint 불일치 거부, 중앙/mid/edge coverage·hold-out 통과 시에만 자동 revision 적용 |
+| calibration | TV distortion 기준 반지름/부호 검증·작은 센서 반경 환산, 0 보정 항등성, 왜곡/역왜곡 round trip, fingerprint 불일치 거부, 중앙/mid/edge coverage·hold-out 통과 시에만 자동 revision 적용, 재부팅 뒤 일치 profile 복원/불일치 profile 미적용 |
 | tile planner | 16 mm 크롭, overlap, footprint 경계, mask 교차, tile→raw/512 좌표 왕복 |
 | solver | flag off 바이트 호환 경로, 중앙 성공 시 tile 미실행, 포화 시 주변 순서, tile timeout 격리 |
 | consensus | 인접 2-타일 엄격 일치 성공/불일치 거부, 3개 이상 분산 inlier·outlier 제거, RA 0/360·Roll wrap 처리 |
@@ -550,7 +559,7 @@ tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시
 6. 기구를 의도적으로 마스크한 A/B에서 제외 tile이 선택되지 않고, 남은 충분한
    방위의 타일만으로 통과하는지 확인한다.
 7. 최소 3개의 독립 밤·방향에서 안정성, Integrator 3회 확인, reboot 뒤 mask
-   복원을 확인한 후 `wide_solver_shadow=false`를 검토한다.
+   및 자동 보정 profile 복원을 확인한 후 `wide_solver_shadow=false`를 검토한다.
 
 중앙 기준보다 성공률, 위치 오차, solve 지연, 잘못된 update 중 하나라도 악화하면
 즉시 master flag를 끄고 기존 16 mm/풀프레임 경로로 돌아간다. profile·mask·문서
