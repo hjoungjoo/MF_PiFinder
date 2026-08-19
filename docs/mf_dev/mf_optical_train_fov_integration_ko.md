@@ -297,6 +297,28 @@ optical crop FOV를 Cedar/SEP의 내부 기준값으로 전달해도 기존 full
 배제하거나 불안정하게 만들지 않는다는 것을 확인한 것이다. 현재 `solver_optics_fullframe_fov=true`를 유지한다.
 
 추가로 현행 상태 API도 `cedar_center` 성공 solve, FOV 11.3959°, matches 37개와
-Radiometer SQM 값을 정상 반환했다. SQM 보정값 자체를 optical train으로 바꾸는
-작업과 chart/API에 optical FOV를 별도로 표시하는 작업은 아직 구현하지 않았으며,
-여러 맑은 밤의 기준 관측을 확보한 뒤 별도 단계로 진행한다.
+Radiometer SQM 값을 정상 반환했다.
+
+### 9. SQM 및 chart/API optical FOV 적용
+
+원작 upstream의 optical-train 변경(3fb1f6db)과 이후 렌즈 실측 보정(9d8bc4b5)을
+현재 MF 코드 구조에 맞춰 적용했다. 이 단계는 **렌즈 설정을 데이터 경로에
+연결**하는 작업이며, SQM의 절대 정확도를 새로 주장하는 보정 재측정은 아니다.
+
+| 소비자 | 적용 내용 |
+|---|---|
+| Radiometer SQM | 매 발행 시 live `camera_type` + `camera_lens`에서 계산한 FOV를 픽셀 solid angle에 사용 |
+| Sweep metadata | 실제 렌즈 키, 유효 초점거리, 계산 FOV를 함께 저장하여 후속 SQM refit의 오표기를 방지 |
+| Align chart | hard-coded 9.5° 대신 optical FOV frustum으로 음영 및 alignment-star 후보를 제한 |
+| `/api/visible_stars` | 동일 frustum을 요청별 렌더 인자로 전달; 공유 Starfield 객체에 가변 FOV를 저장하지 않아 동시 요청 간 간섭 없음 |
+
+현재 `imx462_color` + `16mm`의 radiometric FOV는 10.4028°다. 같은 렌즈에서
+기존 factory 값(10.38°)과의 차이는 약 0.02°이므로 기존 16mm 사용자의 SQM 값은
+사실상 연속적이다. 12mm 등 다른 렌즈를 선언하면 계산 폭과 sweep provenance가
+함께 변경되며, 그 경우 SQM 값 변화는 렌즈에 따른 실제 solid angle 차이를 반영한다.
+
+코드 검증은 소비자/solver 30개 및 기존 SQM·API·UI 회귀 422개(2 skip)를 통과했다.
+서비스 재시작 후 Radiometer SQM 갱신과 로그상 연결 오류가 없음을 확인했다. 다만
+재시작 직후 구름으로 새 solve가 없어 `/api/visible_stars`는 기존 규약대로 503을
+반환했다. 다음 맑은 성공 solve에서 20° chart 요청의 16mm frustum과 별 후보가
+정상적으로 제한되는지를 화면/API로 확인한다.

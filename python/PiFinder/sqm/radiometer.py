@@ -14,6 +14,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+from PiFinder.optics import optical_train_for_profile
+
 
 def extract_photometry_image(raw, profile) -> Optional[np.ndarray]:
     """Return linear mono or averaged Bayer-green pixels as ``float32``."""
@@ -172,24 +174,31 @@ def radiometric_sqm(
     profile,
     *,
     pedestal: Optional[float] = None,
+    field_width_degrees: Optional[float] = None,
 ) -> tuple[Optional[float], dict]:
-    """Convert one camera sample directly to SQM-L-equivalent brightness."""
+    """Convert one sample to SQM using its live optical-train field width.
+
+    Callers holding a configured lens pass its FOV.  Omitting it preserves
+    compatibility for offline callers by resolving the sensor's shipped lens.
+    """
     exposure_sec = float(sample["exposure_sec"])
     background = float(sample["background_per_pixel"])
     if pedestal is None:
         pedestal = float(profile.bias_offset)
+    if field_width_degrees is None:
+        field_width_degrees = optical_train_for_profile(profile).fov_degrees
     signal = background - pedestal
     details = {
         **sample,
         "pedestal": pedestal,
         "background_corrected": signal,
         "radiometric_zero_point": profile.radiometric_zero_point,
-        "radiometric_fov_degrees": profile.radiometric_fov_degrees,
+        "radiometric_fov_degrees": field_width_degrees,
     }
     if signal <= 1.0:
         details["failure_reason"] = "background_not_resolved_above_pedestal"
         return None, details
-    if not profile.radiometric_zero_point or not profile.radiometric_fov_degrees:
+    if not profile.radiometric_zero_point or not field_width_degrees:
         details["failure_reason"] = "radiometric_factory_calibration_unavailable"
         return None, details
 
@@ -214,9 +223,7 @@ def radiometric_sqm(
     details["radiometric_zero_point_effective"] = zero_point
 
     pixels_per_side = int(sample["pixels_per_side"])
-    arcsec_squared_per_pixel = (
-        profile.radiometric_fov_degrees * 3600.0
-    ) ** 2 / pixels_per_side**2
+    arcsec_squared_per_pixel = (field_width_degrees * 3600.0) ** 2 / pixels_per_side**2
     flux_density = signal / arcsec_squared_per_pixel
     value = zero_point + 2.5 * math.log10(exposure_sec) - 2.5 * math.log10(flux_density)
     details.update(
@@ -250,7 +257,13 @@ class RadiometerAccumulator:
         self._samples.append(dict(sample))
         return True
 
-    def estimate(self, profile, now: float, pedestal_for_exposure=None):
+    def estimate(
+        self,
+        profile,
+        now: float,
+        pedestal_for_exposure=None,
+        field_width_degrees: Optional[float] = None,
+    ):
         values = []
         accepted = []
         for sample in self._samples:
@@ -262,7 +275,12 @@ class RadiometerAccumulator:
                 if pedestal_for_exposure is not None
                 else None
             )
-            value, details = radiometric_sqm(sample, profile, pedestal=pedestal)
+            value, details = radiometric_sqm(
+                sample,
+                profile,
+                pedestal=pedestal,
+                field_width_degrees=field_width_degrees,
+            )
             if value is not None:
                 values.append(value)
                 accepted.append(details)

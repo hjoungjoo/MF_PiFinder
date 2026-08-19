@@ -26,6 +26,7 @@ from PIL import Image
 from PiFinder import utils
 from PiFinder import config
 from PiFinder import camera_controls
+from PiFinder.optics import OpticalTrainResolver
 from PiFinder.livecam_config import (
     default_settings_for_config,
     disabled_status,
@@ -35,6 +36,10 @@ from PiFinder.livecam_config import (
 )
 
 logger = logging.getLogger("PiFinderAPI")
+
+# Starfield instances are cached and may serve concurrent requests. Keep the
+# optical state outside them and pass it to each render.
+_API_OPTICAL_TRAIN = OpticalTrainResolver()
 
 
 def _json_response(data, status=200):
@@ -520,6 +525,10 @@ def register_api_routes(app, server_instance, require_auth=False):
                 fov=fov,
             )
 
+            camera_fov = _API_OPTICAL_TRAIN.resolve(
+                ss.camera_type(), ss.camera_lens()
+            ).fov_degrees
+
             # --------------------------------------------------
             # 5. Call PiFinder's native star chart rendering logic
             # --------------------------------------------------
@@ -529,6 +538,7 @@ def register_api_routes(app, server_instance, require_auth=False):
                 roll,
                 constellation_brightness,
                 shade_frustrum=shade_frustrum,
+                camera_fov=camera_fov,
             )
 
             # --------------------------------------------------

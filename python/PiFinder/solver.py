@@ -31,7 +31,7 @@ from PiFinder import utils
 from PiFinder import timez
 from PiFinder import horizon_mask, sep_detect
 from PiFinder import solver_frame_map as sfm
-from PiFinder.optics import build_optical_train
+from PiFinder.optics import OpticalTrainResolver, build_optical_train
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
 from PiFinder.sqm.camera_profiles import get_camera_profile
@@ -199,6 +199,7 @@ def update_radiometric_sqm(
     calculation_interval_seconds=1.0,
     now=None,
     black_level_tracker=None,
+    field_width_degrees=None,
 ):
     """Collect every frame and publish a solve-independent value at cadence."""
     from datetime import datetime
@@ -256,6 +257,7 @@ def update_radiometric_sqm(
         sqm_calculator.profile,
         current_time,
         pedestal_for_exposure=pedestal_for_exposure,
+        field_width_degrees=field_width_degrees,
     )
     if sqm_value is None:
         previous = shared_state.sqm_details()
@@ -1084,6 +1086,7 @@ def solver(
     sqm_cloud_estimator = None
     sqm_black_level = None
     sqm_radiometer = RadiometerAccumulator()
+    sqm_optical_train = OpticalTrainResolver()
     last_stellar_diagnostic = 0.0
 
     # SEP shadow/fallback runner (full-frame detection experiment). Needs
@@ -1219,6 +1222,13 @@ def solver(
                     )
                     sqm_black_level = BlackLevelTracker(profile.bias_offset)
                 if sqm_calculator is not None:
+                    try:
+                        lens_getter = getattr(shared_state, "camera_lens", lambda: None)
+                        radiometric_fov = sqm_optical_train.resolve(
+                            shared_state.camera_type(), lens_getter()
+                        ).fov_degrees
+                    except (BrokenPipeError, ConnectionResetError):
+                        radiometric_fov = None
                     update_radiometric_sqm(
                         shared_state,
                         sqm_calculator,
@@ -1226,6 +1236,7 @@ def solver(
                         radiometer_sample,
                         calculation_interval_seconds=SQM_CALCULATION_INTERVAL_SECONDS,
                         black_level_tracker=sqm_black_level,
+                        field_width_degrees=radiometric_fov,
                     )
 
                 try:

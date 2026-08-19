@@ -1,18 +1,21 @@
 """Pure optical-train calculations for PiFinder.
 
 An angular field of view belongs to the sensor *and* the lens.  This module is
-intentionally not connected to a runtime consumer yet: it provides one tested
-definition for the staged solver, SQM, chart and API integrations documented
-in ``docs/mf_dev/mf_optical_train_fov_integration_ko.md``.
+resolved by runtime consumers so a declared lens is not represented by
+separate, drifting constants.
 """
 
 from __future__ import annotations
 
 import math
+import logging
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 from PiFinder.sqm.camera_profiles import CameraProfile, get_camera_profile
+
+
+logger = logging.getLogger("Optics")
 
 
 # A stated lens can use a tight +/-15% tetra3 FOV gate.  This is a policy
@@ -20,6 +23,7 @@ from PiFinder.sqm.camera_profiles import CameraProfile, get_camera_profile
 FOV_GATE_MARGIN = 0.15
 LENS_IDENTIFY_TOLERANCE = 0.05
 SOLVER_IMAGE_PIXELS = 512
+FALLBACK_CAMERA_TYPE = "imx296"
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,19 @@ def resolve_lens(profile: CameraProfile, lens_key: Optional[str] = None) -> Lens
     if lens_is_stated(lens_key):
         return get_lens(str(lens_key))
     return get_lens(profile.default_lens_key)
+
+
+def resolve_camera_profile(camera_type: str) -> CameraProfile:
+    """Resolve a live camera type without allowing an invalid value to stop UI."""
+    try:
+        return get_camera_profile(camera_type)
+    except ValueError:
+        logger.warning(
+            "Unknown camera type %r; deriving optics from %s instead",
+            camera_type,
+            FALLBACK_CAMERA_TYPE,
+        )
+        return get_camera_profile(FALLBACK_CAMERA_TYPE)
 
 
 @dataclass(frozen=True)
@@ -125,6 +142,25 @@ def build_optical_train(
 ) -> OpticalTrain:
     """Build a train from the camera profile name used by current PiFinder."""
     return optical_train_for_profile(get_camera_profile(camera_type), lens_key)
+
+
+class OpticalTrainResolver:
+    """Cache a train and rebuild it only when camera or lens state changes."""
+
+    def __init__(self) -> None:
+        self._key: Optional[Tuple[str, Optional[str]]] = None
+        self._train: Optional[OpticalTrain] = None
+
+    def resolve(
+        self, camera_type: str, lens_key: Optional[str] = None
+    ) -> OpticalTrain:
+        key = (camera_type, lens_key)
+        if key != self._key or self._train is None:
+            self._train = optical_train_for_profile(
+                resolve_camera_profile(camera_type), lens_key
+            )
+            self._key = key
+        return self._train
 
 
 def identify_lens_from_fitted_fov(
