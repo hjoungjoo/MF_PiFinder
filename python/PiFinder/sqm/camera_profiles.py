@@ -39,6 +39,17 @@ class CameraProfile:
     # Bit depth of the sensor
     bit_depth: int = 10
 
+    # Physical pixel pitch at this readout mode, in micrometres.  This is
+    # sensor geometry only: a field of view still requires the fitted lens.
+    # The HQ profile uses 3.10 um because its configured mode is 2x2 binned.
+    pixel_pitch_um: float = 0.0
+
+    # Lens metadata is deliberately passive for now.  The current solver and
+    # SQM paths continue to use their existing values until night validation
+    # enables an optical-train consumer.
+    default_lens_key: str = ""
+    shipped_lens_keys: Tuple[str, ...] = ()
+
     # True when the sensor delivers plain luminance (no CFA), regardless of
     # what the driver's raw format label claims. The imx462 module ships a
     # SRGGB12 label but measures as true mono: Bayer phase means are
@@ -153,6 +164,15 @@ class CameraProfile:
     # or paired IR-cut-camera sessions.
     sqm_band_offset: float = 0.0
 
+    @property
+    def crop_size(self) -> Tuple[int, int]:
+        """Width and height of the image after normal production cropping."""
+        width = self.raw_size[0] - sum(self.crop_x)
+        height = self.raw_size[1] - sum(self.crop_y)
+        if self.rotation_90 % 2:
+            width, height = height, width
+        return (width, height)
+
     def crop_and_rotate(self, raw_array):
         """
         Apply camera-specific cropping and rotation to raw array.
@@ -235,6 +255,9 @@ CAMERA_PROFILES: Dict[str, CameraProfile] = {
         analog_gain=15.0,  # Maximum analog gain for this sensor
         digital_gain=1.0,  # TODO: find optimum value
         bit_depth=10,
+        pixel_pitch_um=3.45,
+        default_lens_key="16mm",
+        shipped_lens_keys=("16mm", "12mm"),
         mono=True,  # R10: genuinely mono, no CFA
         # Sony-standard black level (240 @ 12-bit -> 60 @ 10-bit); confirmed by
         # the 2025-10-31 on-sky sweep intercept (60.3). The old 32.0 was a
@@ -277,6 +300,9 @@ CAMERA_PROFILES: Dict[str, CameraProfile] = {
         analog_gain=30.0,
         digital_gain=1.0,  # TODO: find optimum value
         bit_depth=12,
+        pixel_pitch_um=2.90,
+        default_lens_key="16mm",
+        shipped_lens_keys=("16mm", "12mm"),
         mono=True,  # Measured true mono despite the SRGGB12 label (§6.4)
         bias_offset=238.0,  # Measured: dark-frame CAL 238.0 + on-sky sweep intercept 238.6 (raw green, gain 30)
         # Image cropping and orientation
@@ -325,6 +351,9 @@ CAMERA_PROFILES: Dict[str, CameraProfile] = {
         analog_gain=30.0,
         digital_gain=1.0,  # TODO: find optimum value
         bit_depth=12,
+        pixel_pitch_um=2.90,
+        default_lens_key="16mm",
+        shipped_lens_keys=("16mm", "12mm"),
         mono=True,  # Same module family as imx462 (measured mono, §6.4)
         bias_offset=238.0,  # Measured: dark-frame CAL 238.0 + on-sky sweep intercept 238.6 (raw green, gain 30)
         # Image cropping and orientation (same as imx462)
@@ -366,6 +395,9 @@ CAMERA_PROFILES: Dict[str, CameraProfile] = {
         analog_gain=22.0,  # Cedar uses this value
         digital_gain=13.0,  # Initial tests show higher values don't help much
         bit_depth=12,
+        pixel_pitch_um=3.10,
+        default_lens_key="25mm",
+        shipped_lens_keys=("25mm",),
         bias_offset=256.0,  # Measured with lens cap on
         # Image cropping and orientation
         crop_y=(0, 0),  # No vertical crop
