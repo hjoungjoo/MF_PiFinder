@@ -22,7 +22,7 @@
 | --- | --- | --- | --- |
 | P0 | 이 설계·계획 문서, 기존 테스트/좌표계 인벤토리 | 없음 | 사용자 승인 |
 | P1 | `4/6/8/10mm` Lens 선언, UI 메뉴, provisional 상태 표시·단위 시험 | 없음; 새 렌즈를 골라도 기존 solver | 기존 optics/UI/SQM 회귀 통과 |
-| P2 | `lens_calibration.py`, profile JSON schema, 오프라인 보정 CLI, 중앙+주변 solve 기반 자동 보정 수집/hold-out, 0 보정 map 시험 | 없음 | 반경 coverage·hold-out을 통과한 한 렌즈의 자동 revision 또는 검증된 0 보정 profile |
+| P2 | `lens_calibration.py`, TV distortion 수동 입력/작은 센서 반경 환산, profile JSON schema, 오프라인 보정 CLI, 중앙+주변 solve 기반 자동 보정 수집/hold-out, 0 보정 map 시험 | 없음 | TV manual profile 또는 반경 coverage·hold-out을 통과한 자동 revision/검증된 0 보정 profile |
 | P3 | rectified canvas·`TilePlanner`·원본 크롭/좌표 map, shadow 진단 | `wide_solver_enabled=false` | synthetic WCS와 16 mm 타일 좌표 왕복 시험 |
 | P4 | LiveCam tile 레이어·제외 폴리곤 UI/API/config 영속 | solver 선택에는 아직 미반영 | 재부팅 복원, invalid mask/revision 충돌/API 회귀 |
 | P5 | 타일 Cedar→SEP 실행, 중앙 포화 판단, consensus 모듈 | shadow only, Integrator 미갱신 | 타일별 timeout 격리·인접 2-타일 엄격 일치·3개 이상 outlier 제거 자동 시험 |
@@ -56,6 +56,7 @@ P1–P5는 각각 독립 커밋/PR 단위로 유지한다. P6의 야간 실측 �
 P2 전에 렌즈별로 다음을 기록한다.
 
 - 렌즈 제조사/모델/배럴 표기, 조리개, IR-cut 유무, 실제 장착 방향
+- 데이터시트 TV distortion(%), barrel/pincushion 방향, 기준 image height와 그 정의
 - camera type·raw size·crop·bit depth·노출·gain·camera rotation
 - 주간 ChArUco/체스보드 원본 20–40장과 보드 치수
 - 야간 RAW: 같은 프레임에서 중앙·중간·가장자리 타일 모두 솔빙 가능한 별 영역,
@@ -71,6 +72,7 @@ profile ID와 계수만 저장하며 RAW를 넣지 않는다.
 | --- | --- | --- |
 | 16 mm, flag off | 현재 solve path·좌표·지연 유지 | 광각 모듈이 실행/설정 변경 |
 | 4/6/8 mm, 미보정 | 기존 solver 또는 안전한 실패 | provisional 계수로 자동 보정/발행 |
+| TV distortion 사양 입력 | 센서 사용 반경으로 환산한 `manual-tv` provisional profile을 다음 프레임부터 사용 | 기준 image height/방향 없이 % 값을 `k1`로 직접 적용 |
 | 광각, 보정 수집 | 중앙+mid+edge 타일의 독립 solve와 hold-out 개선 뒤 다음 프레임부터 profile 자동 갱신 | 중앙 실패/2-타일 emergency 해/한 반경의 표본만으로 갱신 |
 | 광각, 중앙 정상 | 중앙 tile 해만 발행, 주변 tile 불필요 | 불필요한 다중 합의로 지연 증가 |
 | 광각, 중앙 달 포화/이동 | 인접 2개가 엄격 일치하거나, 3개 이상 주변 tile이 합의할 때만 발행 | 주변 하나의 해가 Integrator 갱신 |

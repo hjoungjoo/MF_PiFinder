@@ -143,6 +143,52 @@ fisheye 렌즈가 이 모델의 잔차 기준을 통과하지 못하면 `fisheye
 있으며, camera type, raw size, crop, 렌즈 키, 보정 생성 시각과 checksum을 함께
 갖는다.
 
+### 3.2.1 렌즈 사양 TV distortion 수동 기본값
+
+실측 자료가 아직 없더라도 렌즈 데이터시트에 **TV distortion**이 명시되어 있으면,
+Advanced > Lens와 LiveCam의 `Lens calibration` 패널에서 이를 수동 입력해 초기
+보정값으로 쓸 수 있다. 이 값은 광각 tile의 첫 shadow/보정 수집에서 사용할
+`manual-tv` provisional profile이며, 자동 보정의 시작값이다.
+
+수동 입력 항목은 아래처럼 값의 정의까지 함께 저장한다.
+
+| 입력 | 필수 | 이유 |
+| --- | --- | --- |
+| TV distortion (%) | 예 | 데이터시트의 왜곡 크기 |
+| 방향 (barrel / pincushion) | 예 | 제조사마다 부호 표기가 달라 내부 부호를 명확히 하기 위함 |
+| 기준 image height (mm) | 예 | TV distortion이 명시된 렌즈 설계 반경/높이 |
+| 기준의 뜻 (semi-height / full image-height / image-circle radius) | 예 | `%` 값이 적용되는 반경을 모르면 센서용 계수로 환산할 수 없음 |
+| 사양 출처/메모 | 권장 | 렌즈 모델·데이터시트 페이지·사용자 측정 구분 |
+| `Apply as provisional` | 예 | 사용자가 의도적으로 초기 rectification에만 쓰도록 확인 |
+
+PiFinder는 camera profile의 pixel pitch와 실제 production crop에서 **현재 센서가
+쓰는 물리 반지름** `r_sensor_mm`를 계산한다. 데이터시트 기준 반지름을
+`r_ref_mm`, TV distortion을 소수 비율 `d_ref`로 바꾸면, 1차 radial 근사에서는
+현재 센서 가장자리의 예상 왜곡을 다음처럼 먼저 축소한다.
+
+```text
+d_sensor = signed(d_ref) * (r_sensor_mm / r_ref_mm)^2
+k1_initial = d_sensor
+k2 = k3 = p1 = p2 = 0
+```
+
+이는 Brown–Conrady의 1차 radial 항만으로 만드는 **초기 추정**이다. 센서가
+렌즈의 설계 image circle보다 작으면 `r_sensor_mm < r_ref_mm`이므로, TV 사양을
+그대로 적용하는 것보다 실제 사용 영역에 맞는 작은 왜곡값을 얻는다. UI에는
+원 TV 값, 기준 반지름, 계산된 sensor-edge 예상값과 내부 `k1_initial`을 모두
+표시해 사용자가 확인할 수 있게 한다.
+
+제조사 TV distortion의 정의가 위의 radial/상대 왜곡과 다르거나 기준 image
+height가 없으면 자동 환산하지 않는다. 이 경우 입력을 저장은 할 수 있어도
+`Apply`는 막고 `reference geometry required`를 표시한다. `k2/k3/p1/p2`를
+임의로 채우지 않으며, 수동 TV 값이 좁은 FOV gate나 최종 좌표의 신뢰도 상향에
+쓰이는 일도 없다.
+
+수동 적용은 새 `manual-tv-<camera>-<lens>-<revision>` profile을 원자적으로
+저장해 **다음 RAW 프레임**부터 rectified canvas의 provisional 기준으로 사용한다.
+직전 profile은 보존하며 Reset/Rollback으로 복원할 수 있다. 수동 TV 입력은
+사용자 조작이 있어야만 변경되고, 정상 관측 중 자동으로 다시 적용되지 않는다.
+
 ### 3.3 실측 캘리브레이션 절차와 승인 기준
 
 1. 카메라·렌즈를 고정하고 주간에는 체스보드/ChArUco 보드 20–40장을 화면
@@ -163,7 +209,8 @@ fisheye 렌즈가 이 모델의 잔차 기준을 통과하지 못하면 `fisheye
 한 tile의 local plate 해만으로는 해당 tile 안의 왜곡을 흡수해 버릴 수 있으므로,
 반드시 중앙 해를 기준 자세(anchor)로 삼고 같은 RAW에서 주변 tile의 matched
 star가 가리키는 sky ray와 native RAW 좌표의 대응을 맞춘다. 여러 하늘 방향의
-프레임을 누적해 Brown–Conrady 계수를 robust fit한다.
+프레임을 누적해 Brown–Conrady 계수를 robust fit한다. 활성 `manual-tv` profile이
+있으면 그 `k1_initial`을 fit의 초기값으로 쓰되, 수동값에 고정하지 않는다.
 
 자동 갱신의 coverage 조건은 모두 필수다.
 
@@ -387,8 +434,10 @@ regions** 레이어를 추가한다.
 
 보정 수집 세션에서는 별도 `Auto calibration` 상태도 보인다. 중앙/mid/edge
 반경별 독립 frame 수와 matched star 수, hold-out 잔차, 현재/후보 profile,
-“업데이트 가능” 또는 부족/거부 이유를 표시한다. Update가 완료되면 revision과
-적용 예정 프레임을 표시하고, `Rollback calibration`으로 직전 profile을 복원한다.
+“업데이트 가능” 또는 부족/거부 이유를 표시한다. TV distortion 수동 입력을
+사용하면 원 사양·기준 image height·환산된 sensor-edge 값·`manual-tv` revision도
+함께 보여 준다. Update가 완료되면 revision과 적용 예정 프레임을 표시하고,
+`Rollback calibration`으로 직전 profile을 복원한다.
 
 사용자는 `Edit excluded areas`를 누른 뒤 이미지에서 다각형을 찍어 추가하고,
 꼭짓점 드래그/삭제, Undo, Reset profile, Save를 사용한다. 편집 중에는 솔버
@@ -461,6 +510,7 @@ sequenceDiagram
 | `wide_solver_shadow` | `true` (개발 단계) | 해/합의는 계산·로그만 하고 Integrator에 발행하지 않음 |
 | `wide_solver_lenses` | `4mm,6mm,8mm` | 활성 후보 allow-list |
 | `wide_solver_calibration_id` | `none` | 명시한 실측 profile만 사용 |
+| `wide_solver_manual_tv_distortion` | 없음 | 렌즈별 TV distortion·기준 image height·방향을 저장하는 수동 provisional 입력 |
 | `wide_solver_auto_calibration_enabled` | `false` | 사용자가 시작한 수집 세션에서만 중앙+주변 solve로 profile 자동 갱신 |
 | `wide_solver_mask_store_v1` | 빈 store | 렌즈별 native RAW 제외 영역 |
 | `wide_solver_max_regions` | 측정 후 확정 | 프레임당 tile 상한 |
@@ -478,7 +528,7 @@ tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시
 | 계층 | 필수 검증 |
 | --- | --- |
 | optics | 새 렌즈 키, provisional 표기, 16 mm 기준 타일 각폭, 기존 FOV 불변 |
-| calibration | JSON 스키마, 0 보정 항등성, 왜곡/역왜곡 round trip, fingerprint 불일치 거부, 중앙/mid/edge coverage·hold-out 통과 시에만 자동 revision 적용 |
+| calibration | TV distortion 기준 반지름/부호 검증·작은 센서 반경 환산, 0 보정 항등성, 왜곡/역왜곡 round trip, fingerprint 불일치 거부, 중앙/mid/edge coverage·hold-out 통과 시에만 자동 revision 적용 |
 | tile planner | 16 mm 크롭, overlap, footprint 경계, mask 교차, tile→raw/512 좌표 왕복 |
 | solver | flag off 바이트 호환 경로, 중앙 성공 시 tile 미실행, 포화 시 주변 순서, tile timeout 격리 |
 | consensus | 인접 2-타일 엄격 일치 성공/불일치 거부, 3개 이상 분산 inlier·outlier 제거, RA 0/360·Roll wrap 처리 |
@@ -488,9 +538,10 @@ tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시
 ### 9.2 현장 시험 순서
 
 1. 16 mm에서 모든 flag off 기준선(성공률·좌표·지연)을 수집한다.
-2. 각 4/6/8 mm 렌즈에서 왜곡 미보정 raw를 기록하고, 중앙과 주변 tile이 모두
-   solve되는 하늘 조건에서 자동 보정 수집을 실행한다. 중앙/mid/edge coverage와
-   hold-out을 통과한 profile만 자동 활성화되는지 확인한다.
+2. 각 4/6/8 mm 렌즈에서 왜곡 미보정 raw를 기록한다. TV distortion 사양이 있으면
+   기준 image height·방향을 수동 입력해 sensor-edge 환산값을 확인하고, 중앙과
+   주변 tile이 모두 solve되는 하늘 조건에서 자동 보정 수집을 실행한다.
+   중앙/mid/edge coverage와 hold-out을 통과한 profile만 자동 활성화되는지 확인한다.
 3. 보정 결과를 shadow mode로 타일화하여 tile 위치·LiveCam mask·좌표 왕복만
    확인한다. 이 단계는 하류 상태를 바꾸지 않는다.
 4. 달 없는 맑은 하늘에서 중앙 타일과 기존 16 mm 기준을 동시 비교한다.
