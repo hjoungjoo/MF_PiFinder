@@ -275,3 +275,28 @@ FOV를 만들 때 사용할 **crop 기준 FOV**만 optical train(16 mm: 10.4028�
 받도록 한다. 기본값은 `false`다. target pixel의 중심-스케일 변환, horizon mask,
 SQM, chart/API는 이 플래그가 바꾸지 않는다. 따라서 이 단계의 현장 판정은
 full-frame solve 성공률·fitted FOV·RA/Dec/Roll 연속성에만 한정한다.
+
+### 8.6 16 mm Cedar/SEP full-frame optical FOV A/B 결과
+
+`solver_cedar_fullframe=true`, `solver_optics_fullframe_fov=true`로 PiFinder를
+재시작하고 30초 동안 상태 API를 수집했다. 렌즈 선언은 `"16mm"`이며,
+full-frame solver에 전달한 crop 기준 FOV는 10.4028°다.
+
+| 항목 | 결과 |
+|---|---|
+| 성공 표본 | 수집한 모든 표본에서 성공 solve |
+| solve 경로 | 주로 `sep_center`, 일부 `cedar_center` |
+| fitted FOV | 11.385--11.395° |
+| matches | 12--26개 |
+| RMSE | 약 8.6--22 px |
+| 기준선 대비 | 이전 full-frame fitted FOV 약 11.388°와 연속적이며 성공률/timeout 저하 없음 |
+
+full-frame가 보고하는 fitted FOV는 512 crop solver의 10.40°와 다른 canvas/좌표
+정의의 결과이므로 두 수치를 직접 같아야 하는 값으로 비교하지 않는다. 이 시험은
+optical crop FOV를 Cedar/SEP의 내부 기준값으로 전달해도 기존 full-frame 해를
+배제하거나 불안정하게 만들지 않는다는 것을 확인한 것이다. 현재 `solver_optics_fullframe_fov=true`를 유지한다.
+
+추가로 현행 상태 API도 `cedar_center` 성공 solve, FOV 11.3959°, matches 37개와
+Radiometer SQM 값을 정상 반환했다. SQM 보정값 자체를 optical train으로 바꾸는
+작업과 chart/API에 optical FOV를 별도로 표시하는 작업은 아직 구현하지 않았으며,
+여러 맑은 밤의 기준 관측을 확보한 뒤 별도 단계로 진행한다.
