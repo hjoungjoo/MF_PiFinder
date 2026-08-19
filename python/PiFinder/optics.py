@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
+from PiFinder.mf_wide_lens import MF_WIDE_LENS_SPECS
 from PiFinder.sqm.camera_profiles import CameraProfile, get_camera_profile
 
 
@@ -34,6 +35,8 @@ class Lens:
     nominal_focal_length_mm: float
     effective_focal_length_mm: float
     f_number: float = 2.0
+    calibration_required: bool = False
+    default_calibration_id: str = "none"
 
     @property
     def menu_label(self) -> str:
@@ -47,6 +50,15 @@ LENSES: Dict[str, Lens] = {
     "12mm": Lens("12mm", 12.0, 13.04),
     "16mm": Lens("16mm", 16.0, 15.61),
     "25mm": Lens("25mm", 25.0, 26.0),
+    **{
+        spec.key: Lens(
+            spec.key,
+            spec.nominal_focal_length_mm,
+            spec.effective_focal_length_mm,
+            calibration_required=True,
+        )
+        for spec in MF_WIDE_LENS_SPECS
+    },
 }
 
 

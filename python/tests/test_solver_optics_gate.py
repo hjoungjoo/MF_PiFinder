@@ -51,3 +51,12 @@ def test_bad_fullframe_state_keeps_legacy_crop_fov():
     assert solver._optical_crop_fov(_State("not-a-camera", "16mm")) == pytest.approx(
         12.0
     )
+
+
+def test_fullframe_geometry_key_changes_when_lens_changes():
+    sixteen = solver._fullframe_optics_key(_State("imx462_color", "16mm"), 10.4028)
+    four = solver._fullframe_optics_key(_State("imx462_color", "4mm"), 39.12)
+    restored = solver._fullframe_optics_key(_State("imx462_color", "16mm"), 10.4028)
+
+    assert sixteen != four
+    assert restored == sixteen

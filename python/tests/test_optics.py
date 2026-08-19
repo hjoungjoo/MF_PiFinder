@@ -46,3 +46,11 @@ def test_lens_registry_rejects_unknown_key():
     assert LENSES["16mm"].menu_label == "16mm"
     with pytest.raises(ValueError):
         get_lens("not-a-lens")
+
+
+@pytest.mark.parametrize("lens_key", ("4mm", "6mm", "8mm", "10mm"))
+def test_mf_wide_lenses_are_provisional_and_wider_than_16mm(lens_key):
+    wide = build_optical_train("imx462", lens_key)
+    standard = build_optical_train("imx462", "16mm")
+    assert wide.lens.calibration_required is True
+    assert wide.fov_degrees > standard.fov_degrees

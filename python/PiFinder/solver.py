@@ -102,6 +102,30 @@ def _optical_crop_fov(shared_state) -> float:
         return sfm.SOLVER_FOV_DEG
 
 
+def _fullframe_optics_key(
+    shared_state, base_fov_degrees: float
+) -> tuple[str, str, float]:
+    """A lightweight identity for cached full-frame solver geometry.
+
+    The camera lens can be changed from the Advanced menu while the solver is
+    running.  Cedar/SEP geometry is cached for speed, so the cache must be
+    invalidated on the next frame rather than silently retaining the previous
+    lens FOV.  Bad shared-state reads are represented in the key and still
+    fall back to the established FOV path.
+    """
+
+    try:
+        camera_type = str(shared_state.camera_type() or "")
+    except Exception:
+        camera_type = ""
+    try:
+        lens_getter = getattr(shared_state, "camera_lens", None)
+        lens_key = str(lens_getter() or "") if callable(lens_getter) else ""
+    except Exception:
+        lens_key = ""
+    return camera_type, lens_key, round(float(base_fov_degrees), 8)
+
+
 def create_sqm_calculator(shared_state):
     """Create a new SQM calculator instance with current calibration.
 
@@ -1115,6 +1139,7 @@ def solver(
     # fallback below is unchanged; flag off = byte-identical 512 path.
     cedar_fullframe_wanted = bool(_sep_cfg.get_option("solver_cedar_fullframe"))
     cedar_ff_geometry = None  # context dict, resolved lazily
+    cedar_ff_geometry_key = None
     # Ground-light rejection for the FF path (docs field test 2026-08-04):
     # detection quality gates (edge/saturation/warm/cluster -- the SEP
     # fallback's filters applied to cedar centroids, default on) and the
@@ -1249,15 +1274,33 @@ def solver(
                     # actual image so the integrator can dedupe.
                     last_solve_attempt = last_image_metadata["exposure_end"]
 
+                    fullframe_base_fov = (
+                        _optical_crop_fov(shared_state)
+                        if optics_fullframe_fov_wanted
+                        else sfm.SOLVER_FOV_DEG
+                    )
+                    fullframe_geometry_key = _fullframe_optics_key(
+                        shared_state, fullframe_base_fov
+                    )
+                    if fullframe_geometry_key != cedar_ff_geometry_key:
+                        if cedar_ff_geometry_key is not None:
+                            logger.info(
+                                "Lens/optics changed; rebuilding full-frame solver geometry "
+                                "(%s -> %s)",
+                                cedar_ff_geometry_key,
+                                fullframe_geometry_key,
+                            )
+                        cedar_ff_geometry = None
+                        cedar_ff_geometry_key = fullframe_geometry_key
+                        # The runner has cached the old base FOV too.  It is
+                        # cheap and safe to recreate on the following use.
+                        sep_shadow = None
+
                     if cedar_fullframe_wanted and cedar_ff_geometry is None:
                         cedar_ff_geometry = _cedar_fullframe_geometry(
                             _sep_cfg,
                             shared_state.camera_type(),
-                            (
-                                _optical_crop_fov(shared_state)
-                                if optics_fullframe_fov_wanted
-                                else sfm.SOLVER_FOV_DEG
-                            ),
+                            fullframe_base_fov,
                         )
 
                     t0 = precision_timestamp()
@@ -1294,11 +1337,7 @@ def solver(
                             sep_shadow = SepShadowRunner.create_if_enabled(
                                 _sep_cfg,
                                 shared_state.camera_type(),
-                                (
-                                    _optical_crop_fov(shared_state)
-                                    if optics_fullframe_fov_wanted
-                                    else sfm.SOLVER_FOV_DEG
-                                ),
+                                fullframe_base_fov,
                             )
                         if (
                             center_first_wanted
@@ -1482,11 +1521,7 @@ def solver(
                         sep_shadow = SepShadowRunner.create_if_enabled(
                             _sep_cfg,
                             shared_state.camera_type(),
-                            (
-                                _optical_crop_fov(shared_state)
-                                if optics_fullframe_fov_wanted
-                                else sfm.SOLVER_FOV_DEG
-                            ),
+                            fullframe_base_fov,
                         )
                     sep_run = None
                     sep_fallback_used = False

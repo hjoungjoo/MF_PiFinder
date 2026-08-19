@@ -51,7 +51,16 @@ def test_lens_menu_is_a_single_config_declaration():
     menu = _lens_menu()
     assert menu["config_option"] == "camera_lens"
     assert menu["post_callback"] is callbacks.set_camera_lens
-    assert [item["value"] for item in menu["items"]] == ["", "12mm", "16mm", "25mm"]
+    assert [item["value"] for item in menu["items"]] == [
+        "",
+        "4mm",
+        "6mm",
+        "8mm",
+        "10mm",
+        "12mm",
+        "16mm",
+        "25mm",
+    ]
 
 
 def test_set_camera_lens_publishes_valid_lens_without_restart():
