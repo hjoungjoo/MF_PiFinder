@@ -13,6 +13,12 @@ jobs:
   nox:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the project's compatibility baseline; 3.11 is the Python
+        # version supplied by Raspberry Pi OS Bookworm on deployment devices.
+        python-version: ["3.9", "3.11"]
     defaults:
       run:
         working-directory: ./python
@@ -20,7 +26,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: wntrblm/nox@2024.04.15
+      - uses: actions/setup-python@v6
         with:
-          python-versions: "3.9"
-      - run: nox -s lint format type_hints smoke_tests unit_tests ui_tests
+          # Do not rely on the runner's preinstalled Python: its version can
+          # change independently of this workflow.
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            python/requirements.txt
+            python/requirements_dev.txt
+      - name: Install pinned Nox
+        run: python -m pip install --disable-pip-version-check nox==2024.4.15
+      - name: Run Nox on Python ${{ matrix.python-version }}
+        env:
+          NOX_PYTHON: ${{ matrix.python-version }}
+        # `reuse_venv=True` is useful locally, but a 3.9 environment must
+        # never be reused for the 3.11 matrix job (or vice versa).
+        run: >-
+          python -m nox --error-on-missing-interpreters
+          --envdir .nox-${{ matrix.python-version }}
+          -s lint format type_hints smoke_tests unit_tests ui_tests

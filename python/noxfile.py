@@ -1,14 +1,21 @@
+import os
 import shutil
+import sys
 
 import nox
 
 nox.options.sessions = ["lint", "format", "type_hints", "smoke_tests"]
 
-# Upstream targets Python 3.9, but deployment devices (Raspberry Pi OS
-# Bookworm) only ship newer interpreters. Use 3.9 when it exists, otherwise
-# fall back to the interpreter running nox so sessions don't all fail with
-# "Python interpreter 3.9 not found".
-_PYTHON = "3.9" if shutil.which("python3.9") else None
+# CI selects the interpreter explicitly through NOX_PYTHON.  This makes a
+# Python-version regression reproducible instead of depending on whichever
+# interpreter happens to be first on a GitHub runner's PATH.  Locally, retain
+# the 3.9 compatibility check when it is installed; Raspberry Pi OS Bookworm
+# then uses the Python interpreter that launched nox (normally 3.11).
+_PYTHON = os.environ.get("NOX_PYTHON") or (
+    "3.9"
+    if shutil.which("python3.9")
+    else f"{sys.version_info.major}.{sys.version_info.minor}"
+)
 
 
 @nox.session(reuse_venv=True, python=_PYTHON)
