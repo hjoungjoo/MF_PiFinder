@@ -28,8 +28,9 @@
    포화로 남은 별 영역이 인접 두 타일뿐인 경우도 지원하되, 이 경우에는 더
    엄격한 2-타일 일치 게이트를 적용한다.
 5. 렌즈 배럴 표기만으로 왜곡 계수를 추정하지 않는다. 새 렌즈의 기본값은
-   `보정 없음(k=0)`이며, 실측 캘리브레이션을 완료하고 명시적으로 활성화하기
-   전에는 왜곡 보정·좁은 FOV gate·광각 자동 활성화를 하지 않는다.
+   `보정 없음(k=0)`이며, 중앙과 주변부의 충분한 실측 solve로 자동 보정 계산이
+   완료·검증된 경우에만 새 profile을 다음 프레임부터 활성화한다. 왜곡이
+   통계적으로 0과 구별되지 않는 렌즈는 검증된 `0 보정` profile을 유지한다.
 
 적용 대상은 **명시적으로 선택된 4/6/8 mm 렌즈**다. 요구사항의 “<10 mm”를
 엄격히 적용하므로 10 mm는 렌즈 목록과 실측 보정 대상에는 포함하지만 기본적으로
@@ -59,6 +60,9 @@ flowchart LR
     legacy --> integrator["Integrator / 정렬 / Push-to"]
     plan --> overlay["LiveCam 타일·제외 영역 오버레이"]
     tiles --> overlay
+    center --> autocal["AutoDistortionCalibrator\n중앙+주변 대응점/hold-out"]
+    tiles --> autocal
+    autocal -->|"coverage·개선 통과\n다음 프레임부터"| cal
 ```
 
 ### 2.1 새 모듈의 책임
@@ -146,15 +150,55 @@ fisheye 렌즈가 이 모델의 잔차 기준을 통과하지 못하면 `fisheye
    같아야 한다.
 2. 오프라인 도구가 코너 검출, outlier 제거, Brown–Conrady fit, 재투영 RMS,
    유효 반지름을 산출한다. 원본·결과·명령·프로파일 JSON은 테스트 자료로 보관한다.
-3. 야간에는 서로 다른 하늘 방향에서 타일별 fitted FOV·RA/Dec/Roll 잔차를
-   검증한다. 보정 전후를 같은 조건에서 비교한다.
+3. 야간에는 중앙 및 서로 다른 반경의 주변 타일에서 fitted FOV·RA/Dec/Roll
+   잔차를 검증한다. 보정 전후를 같은 조건에서 비교한다.
 4. RMS, 가장자리 잔차, 야간 타일 간 자세 불일치가 프로젝트의 사전 승인
    기준을 모두 통과할 때만 profile을 `enabled`로 승격한다. 수치 기준은 첫
    시험 코퍼스의 중앙값/분산을 본 뒤 문서와 테스트에 함께 고정한다.
 
-보정 도구는 `--write`가 없는 한 config를 쓰지 않는다. `--write`도 새
-프로파일을 pending으로만 저장하며, 사용자가 UI 또는 config에서 그 ID를 선택한
-후에만 사용한다. 성공 solve가 렌즈 초점거리나 왜곡 계수를 자동 변경하지 않는다.
+#### 3.3.1 하늘 solve 기반 자동 왜곡 갱신
+
+`wide_solver_auto_calibration_enabled`를 사용자가 켠 보정 수집 세션에서는
+`AutoDistortionCalibrator`가 성공 solve의 **matched star 좌표와 WCS**를 모은다.
+한 tile의 local plate 해만으로는 해당 tile 안의 왜곡을 흡수해 버릴 수 있으므로,
+반드시 중앙 해를 기준 자세(anchor)로 삼고 같은 RAW에서 주변 tile의 matched
+star가 가리키는 sky ray와 native RAW 좌표의 대응을 맞춘다. 여러 하늘 방향의
+프레임을 누적해 Brown–Conrady 계수를 robust fit한다.
+
+자동 갱신의 coverage 조건은 모두 필수다.
+
+1. 각 수집 프레임에서 중앙 16 mm tile과 주변 tile이 모두 독립적인 품질
+   조건으로 solve되어야 한다. 중앙이 포화·실패했거나 2-타일 emergency
+   consensus만 가능한 프레임은 포인팅에는 쓸 수 있어도 **보정 학습에는 쓰지
+   않는다**.
+2. 대응점은 `central`, `mid`, `edge`의 세 반경 bin에 고르게 있어야 한다.
+   `edge`는 rectified 유효 반지름의 바깥 구간이며, 주변부 왜곡을 실제 별로
+   측정했다는 증거가 된다. 같은 인접 두 tile의 별만 반복해서 모아서는 완료가
+   될 수 없다.
+3. 여러 독립 프레임/하늘 방향에서 얻은 점만 사용한다. 같은 RAW의 많은 별은
+   표본 수는 늘리지만 독립 관측 횟수를 늘리지 않는다.
+4. 각 원천 tile의 match 수, tetra3 residual, 포화율, 마스크 비율, FOV와
+   calibration fingerprint가 기록된다. 품질 미달·마스크 안·포화 성분 근처의
+   점은 fit 전에 버린다.
+5. fit은 robust loss와 hold-out 검증을 쓴다. 새 계수가 기존/0 보정보다 중앙
+   잔차를 악화시키지 않고, 주변부 hold-out 잔차와 tile 간 중심 자세 불일치를
+   유의하게 낮춰야 한다. 비정상 초점거리 변화, 유효 footprint 축소, 계수
+   범위 초과도 거부 사유다.
+
+통과하면 calibrator는 새 `auto-<camera>-<lens>-<revision>` profile을 원자적으로
+저장하고 활성 calibration ID를 갱신한다. 적용 시점은 **현재 solve 중간이 아닌
+다음 RAW 프레임**이다. 이전 profile, fit 요약, 입력 frame ID, hold-out 결과와
+checksum을 함께 보존하므로 `rollback calibration` 한 번으로 즉시 되돌릴 수 있다.
+coverage 또는 hold-out을 통과하지 못하면 profile/config는 바꾸지 않고 LiveCam에
+부족한 반경 bin·거부 이유만 표시한다.
+
+왜곡이 적은 렌즈는 fit된 `k1..p2`가 0 보정 대비 유의한 개선을 만들지 못한다.
+이 경우 calibrator는 계수를 억지로 갱신하지 않고, `model="none"`, 모든 계수 0,
+`verified_from_sky=true`인 새 검증 profile을 활성화한다. 따라서 불필요한 remap
+보간으로 중심·주변 별상을 악화시키지 않는다.
+
+자동 갱신은 보정 수집 세션에서만 실행한다. 정상 관측 중에는 수집 결과가 있어도
+렌즈 초점거리/왜곡 계수를 자동으로 바꾸지 않는다.
 
 ## 4. 좌표계와 16 mm 등가 타일
 
@@ -341,6 +385,11 @@ regions** 레이어를 추가한다.
 - 빨강: 타일 해가 합의에서 제외된 outlier
 - 반투명 다각형: 사용자가 지정한 기구/차광 간섭 영역
 
+보정 수집 세션에서는 별도 `Auto calibration` 상태도 보인다. 중앙/mid/edge
+반경별 독립 frame 수와 matched star 수, hold-out 잔차, 현재/후보 profile,
+“업데이트 가능” 또는 부족/거부 이유를 표시한다. Update가 완료되면 revision과
+적용 예정 프레임을 표시하고, `Rollback calibration`으로 직전 profile을 복원한다.
+
 사용자는 `Edit excluded areas`를 누른 뒤 이미지에서 다각형을 찍어 추가하고,
 꼭짓점 드래그/삭제, Undo, Reset profile, Save를 사용한다. 편집 중에는 솔버
 마스크를 바꾸지 않는다. Save가 성공하면 다음 새 프레임부터 적용한다. 페이지
@@ -412,6 +461,7 @@ sequenceDiagram
 | `wide_solver_shadow` | `true` (개발 단계) | 해/합의는 계산·로그만 하고 Integrator에 발행하지 않음 |
 | `wide_solver_lenses` | `4mm,6mm,8mm` | 활성 후보 allow-list |
 | `wide_solver_calibration_id` | `none` | 명시한 실측 profile만 사용 |
+| `wide_solver_auto_calibration_enabled` | `false` | 사용자가 시작한 수집 세션에서만 중앙+주변 solve로 profile 자동 갱신 |
 | `wide_solver_mask_store_v1` | 빈 store | 렌즈별 native RAW 제외 영역 |
 | `wide_solver_max_regions` | 측정 후 확정 | 프레임당 tile 상한 |
 | `wide_solver_min_consensus_regions` | `2` | 주변부 발행 최소 tile 수; 정확히 2개면 인접 쌍 엄격 게이트 적용 |
@@ -428,7 +478,7 @@ tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시
 | 계층 | 필수 검증 |
 | --- | --- |
 | optics | 새 렌즈 키, provisional 표기, 16 mm 기준 타일 각폭, 기존 FOV 불변 |
-| calibration | JSON 스키마, 0 보정 항등성, 왜곡/역왜곡 round trip, fingerprint 불일치 거부 |
+| calibration | JSON 스키마, 0 보정 항등성, 왜곡/역왜곡 round trip, fingerprint 불일치 거부, 중앙/mid/edge coverage·hold-out 통과 시에만 자동 revision 적용 |
 | tile planner | 16 mm 크롭, overlap, footprint 경계, mask 교차, tile→raw/512 좌표 왕복 |
 | solver | flag off 바이트 호환 경로, 중앙 성공 시 tile 미실행, 포화 시 주변 순서, tile timeout 격리 |
 | consensus | 인접 2-타일 엄격 일치 성공/불일치 거부, 3개 이상 분산 inlier·outlier 제거, RA 0/360·Roll wrap 처리 |
@@ -438,7 +488,9 @@ tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시
 ### 9.2 현장 시험 순서
 
 1. 16 mm에서 모든 flag off 기준선(성공률·좌표·지연)을 수집한다.
-2. 각 4/6/8 mm 렌즈에서 왜곡 미보정 raw를 기록하고 실측 profile을 생성한다.
+2. 각 4/6/8 mm 렌즈에서 왜곡 미보정 raw를 기록하고, 중앙과 주변 tile이 모두
+   solve되는 하늘 조건에서 자동 보정 수집을 실행한다. 중앙/mid/edge coverage와
+   hold-out을 통과한 profile만 자동 활성화되는지 확인한다.
 3. 보정 결과를 shadow mode로 타일화하여 tile 위치·LiveCam mask·좌표 왕복만
    확인한다. 이 단계는 하류 상태를 바꾸지 않는다.
 4. 달 없는 맑은 하늘에서 중앙 타일과 기존 16 mm 기준을 동시 비교한다.
@@ -451,7 +503,8 @@ tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시
 
 중앙 기준보다 성공률, 위치 오차, solve 지연, 잘못된 update 중 하나라도 악화하면
 즉시 master flag를 끄고 기존 16 mm/풀프레임 경로로 돌아간다. profile·mask·문서
-데이터는 남기되, 자동 수정이나 무단 활성화는 하지 않는다.
+데이터는 남기되, 보정 수집 세션의 coverage·hold-out을 통과하지 않은 자동 수정이나
+무단 활성화는 하지 않는다.
 
 ## 10. 미결정 항목
 

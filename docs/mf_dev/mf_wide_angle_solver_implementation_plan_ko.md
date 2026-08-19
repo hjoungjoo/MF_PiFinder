@@ -12,7 +12,7 @@
 이번 프로젝트에서 하지 않는 일은 다음과 같다.
 
 - 기존 16 mm solver, 정렬, SQM 보정값을 광각 구현과 함께 재조정하는 일
-- 렌즈/FOV/왜곡 계수의 자동 추정·자동 config 덮어쓰기
+- 일반 관측 중 렌즈/FOV/왜곡 계수의 자동 추정·자동 config 덮어쓰기
 - 단일 주변부 타일 해로 포인팅·정렬을 갱신하는 일
 - 전체 광각 RAW를 축소하여 한 번에 솔브하는 일
 
@@ -22,7 +22,7 @@
 | --- | --- | --- | --- |
 | P0 | 이 설계·계획 문서, 기존 테스트/좌표계 인벤토리 | 없음 | 사용자 승인 |
 | P1 | `4/6/8/10mm` Lens 선언, UI 메뉴, provisional 상태 표시·단위 시험 | 없음; 새 렌즈를 골라도 기존 solver | 기존 optics/UI/SQM 회귀 통과 |
-| P2 | `lens_calibration.py`, profile JSON schema, 오프라인 보정 CLI, 0 보정 map 시험 | 없음 | round-trip/RMS 리포트 및 한 렌즈의 pending profile |
+| P2 | `lens_calibration.py`, profile JSON schema, 오프라인 보정 CLI, 중앙+주변 solve 기반 자동 보정 수집/hold-out, 0 보정 map 시험 | 없음 | 반경 coverage·hold-out을 통과한 한 렌즈의 자동 revision 또는 검증된 0 보정 profile |
 | P3 | rectified canvas·`TilePlanner`·원본 크롭/좌표 map, shadow 진단 | `wide_solver_enabled=false` | synthetic WCS와 16 mm 타일 좌표 왕복 시험 |
 | P4 | LiveCam tile 레이어·제외 폴리곤 UI/API/config 영속 | solver 선택에는 아직 미반영 | 재부팅 복원, invalid mask/revision 충돌/API 회귀 |
 | P5 | 타일 Cedar→SEP 실행, 중앙 포화 판단, consensus 모듈 | shadow only, Integrator 미갱신 | 타일별 timeout 격리·인접 2-타일 엄격 일치·3개 이상 outlier 제거 자동 시험 |
@@ -58,7 +58,8 @@ P2 전에 렌즈별로 다음을 기록한다.
 - 렌즈 제조사/모델/배럴 표기, 조리개, IR-cut 유무, 실제 장착 방향
 - camera type·raw size·crop·bit depth·노출·gain·camera rotation
 - 주간 ChArUco/체스보드 원본 20–40장과 보드 치수
-- 야간 RAW: 중앙/가장자리 별, 달이 중앙/주변에 있는 경우, 지평선·기구 간섭
+- 야간 RAW: 같은 프레임에서 중앙·중간·가장자리 타일 모두 솔빙 가능한 별 영역,
+  달이 중앙/주변에 있는 경우, 지평선·기구 간섭
 - 기존 16 mm의 동일 장소·조건 정상 solve 기준선
 
 수집 원본과 보정 결과는 별도 실측 리포트에 저장한다. config에는 승인된 작은
@@ -70,6 +71,7 @@ profile ID와 계수만 저장하며 RAW를 넣지 않는다.
 | --- | --- | --- |
 | 16 mm, flag off | 현재 solve path·좌표·지연 유지 | 광각 모듈이 실행/설정 변경 |
 | 4/6/8 mm, 미보정 | 기존 solver 또는 안전한 실패 | provisional 계수로 자동 보정/발행 |
+| 광각, 보정 수집 | 중앙+mid+edge 타일의 독립 solve와 hold-out 개선 뒤 다음 프레임부터 profile 자동 갱신 | 중앙 실패/2-타일 emergency 해/한 반경의 표본만으로 갱신 |
 | 광각, 중앙 정상 | 중앙 tile 해만 발행, 주변 tile 불필요 | 불필요한 다중 합의로 지연 증가 |
 | 광각, 중앙 달 포화/이동 | 인접 2개가 엄격 일치하거나, 3개 이상 주변 tile이 합의할 때만 발행 | 주변 하나의 해가 Integrator 갱신 |
 | 광각, 기구 간섭 | 선택 mask tile/centroid 제외, 저장 후 reboot 복원 | 다른 렌즈 profile까지 마스크 오염 |
@@ -79,7 +81,8 @@ profile ID와 계수만 저장하며 RAW를 넣지 않는다.
 
 1. 개발 장비에서 `wide_solver_enabled=false` 상태로 P1–P5 테스트를 통과한다.
 2. 특정 camera+lens+calibration ID에만 shadow를 켜고 status/LiveCam overlay를
-   기록한다.
+   기록한다. 왜곡 갱신은 사용자가 시작한 auto-calibration 수집 세션에서만
+   허용하며, 중앙·mid·edge coverage 및 hold-out 검증 완료 후 다음 프레임에 적용한다.
 3. 실측 리포트 검토 후 사용자 승인이 있을 때만 `wide_solver_shadow=false`와
    해당 렌즈 allow-list를 켠다.
 4. 문제 시 먼저 `wide_solver_enabled=false`로 서비스 재시작 없이 새 시도를
