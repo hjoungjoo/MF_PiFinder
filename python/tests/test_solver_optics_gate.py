@@ -37,3 +37,17 @@ def test_bad_camera_keeps_the_legacy_gate():
         12.0,
         4.0,
     )
+
+
+@pytest.mark.unit
+def test_stated_sixteen_mm_crop_fov_is_used_by_fullframe_stage():
+    assert solver._optical_crop_fov(_State("imx462_color", "16mm")) == pytest.approx(
+        10.4028, abs=0.001
+    )
+
+
+@pytest.mark.unit
+def test_bad_fullframe_state_keeps_legacy_crop_fov():
+    assert solver._optical_crop_fov(_State("not-a-camera", "16mm")) == pytest.approx(
+        12.0
+    )

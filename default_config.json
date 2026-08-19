@@ -51,6 +51,7 @@
     "onstep_network_port": 9999,
     "solver_debug": 0,
     "solver_optics_fov_gate": false,
+    "solver_optics_fullframe_fov": false,
     "solver_shadow_detect": false,
     "solver_sep_fallback": true,
     "solver_sep_sigma": 4.0,

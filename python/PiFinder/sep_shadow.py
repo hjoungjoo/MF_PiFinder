@@ -142,7 +142,12 @@ class SepShadowRunner:
         )
 
     @classmethod
-    def create_if_enabled(cls, cfg, camera_type: Optional[str]):
+    def create_if_enabled(
+        cls,
+        cfg,
+        camera_type: Optional[str],
+        base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
+    ):
         """Build a runner from config, or None when the path is disabled
         or the camera profile (crop geometry) is not resolvable yet."""
         try:
@@ -179,6 +184,7 @@ class SepShadowRunner:
                 crop_width_px=crop_width,
                 saturation_level=float(2**profile.bit_depth - 1),
                 warm_pixel_map=warm_map,
+                base_fov_degrees=base_fov_degrees,
             )
         except Exception:
             logger.exception("SEP shadow runner init failed; disabled")

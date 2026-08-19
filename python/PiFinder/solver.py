@@ -91,6 +91,17 @@ def _optical_fov_gate_params(shared_state) -> tuple[float, float]:
         return (12.0, 4.0)
 
 
+def _optical_crop_fov(shared_state) -> float:
+    """Return one train's crop FOV, or legacy 12 degrees on bad state."""
+    try:
+        lens_getter = getattr(shared_state, "camera_lens", None)
+        lens_key = lens_getter() if callable(lens_getter) else None
+        return build_optical_train(shared_state.camera_type(), lens_key).fov_degrees
+    except Exception:
+        logger.exception("Optical crop FOV unavailable; using legacy FOV")
+        return sfm.SOLVER_FOV_DEG
+
+
 def create_sqm_calculator(shared_state):
     """Create a new SQM calculator instance with current calibration.
 
@@ -876,7 +887,9 @@ def _build_failed_solve(
     )
 
 
-def _cedar_fullframe_geometry(cfg, camera_type):
+def _cedar_fullframe_geometry(
+    cfg, camera_type, base_fov_degrees: float = sfm.SOLVER_FOV_DEG
+):
     """Context for the full-frame cedar path, or None until resolvable.
 
     Same sources as SepShadowRunner.create_if_enabled: the camera profile
@@ -906,6 +919,7 @@ def _cedar_fullframe_geometry(cfg, camera_type):
             "saturation_level": float(2**profile.bit_depth - 1),
             "warm_map": warm_map,
             "screen_direction": cfg.get_option("screen_direction"),
+            "base_fov_degrees": base_fov_degrees,
         }
     except Exception:
         logger.exception("cedar full-frame geometry unavailable")
@@ -1087,6 +1101,11 @@ def solver(
     optics_fov_gate_wanted = bool(_sep_cfg.get_option("solver_optics_fov_gate"))
     if optics_fov_gate_wanted:
         logger.info("Optical-train FOV gate enabled for the 512 solver path")
+    optics_fullframe_fov_wanted = bool(
+        _sep_cfg.get_option("solver_optics_fullframe_fov")
+    )
+    if optics_fullframe_fov_wanted:
+        logger.info("Optical-train FOV enabled for cedar/SEP full-frame paths")
     # Full-frame cedar primary path (mf_cedar_fullframe_primary_plan_ko.md):
     # feed cedar the uncropped 12-bit raw (>>4, detection is invariant to the
     # affine stretch) and solve at native FOV via solver_frame_map. The SEP
@@ -1221,7 +1240,13 @@ def solver(
 
                     if cedar_fullframe_wanted and cedar_ff_geometry is None:
                         cedar_ff_geometry = _cedar_fullframe_geometry(
-                            _sep_cfg, shared_state.camera_type()
+                            _sep_cfg,
+                            shared_state.camera_type(),
+                            (
+                                _optical_crop_fov(shared_state)
+                                if optics_fullframe_fov_wanted
+                                else sfm.SOLVER_FOV_DEG
+                            ),
                         )
 
                     t0 = precision_timestamp()
@@ -1256,7 +1281,13 @@ def solver(
                             and sep_shadow_wanted
                         ):
                             sep_shadow = SepShadowRunner.create_if_enabled(
-                                _sep_cfg, shared_state.camera_type()
+                                _sep_cfg,
+                                shared_state.camera_type(),
+                                (
+                                    _optical_crop_fov(shared_state)
+                                    if optics_fullframe_fov_wanted
+                                    else sfm.SOLVER_FOV_DEG
+                                ),
                             )
                         if (
                             center_first_wanted
@@ -1371,6 +1402,9 @@ def solver(
                                         target_sky_coord=_solver_args.get(
                                             "target_sky_coord"
                                         ),
+                                        base_fov_degrees=cedar_ff_geometry[
+                                            "base_fov_degrees"
+                                        ],
                                     )
                                     ff_center_solved = bool(
                                         solution and solution.get("RA") is not None
@@ -1393,6 +1427,9 @@ def solver(
                                     target_sky_coord=_solver_args.get(
                                         "target_sky_coord"
                                     ),
+                                    base_fov_degrees=cedar_ff_geometry[
+                                        "base_fov_degrees"
+                                    ],
                                 )
                         else:
                             fov_estimate, fov_max_error = (
@@ -1432,7 +1469,13 @@ def solver(
                     # from the SEP centroids (sep_shadow module docstring).
                     if sep_shadow is None and sep_shadow_wanted:
                         sep_shadow = SepShadowRunner.create_if_enabled(
-                            _sep_cfg, shared_state.camera_type()
+                            _sep_cfg,
+                            shared_state.camera_type(),
+                            (
+                                _optical_crop_fov(shared_state)
+                                if optics_fullframe_fov_wanted
+                                else sfm.SOLVER_FOV_DEG
+                            ),
                         )
                     sep_run = None
                     sep_fallback_used = False
@@ -1511,6 +1554,9 @@ def solver(
                                 cedar_ff_geometry["crop_width_px"],
                                 shared_state,
                                 target_sky_coord=_solver_args.get("target_sky_coord"),
+                                base_fov_degrees=cedar_ff_geometry[
+                                    "base_fov_degrees"
+                                ],
                             )
 
                         def _sep_full_stage():

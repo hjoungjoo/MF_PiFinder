@@ -267,3 +267,11 @@ gate는 실제 fitted FOV를 충분히 포함했고, A/B에서 solve를 막지 �
 full-frame 성공값(약 11.39°)은 512 crop FOV와 같은 좌표 정의가 아니므로 이
 단계의 10.40° gate 판정에 섞지 않는다. Cedar/SEP full-frame optical FOV 전환은
 frame-map·horizon mask·target pixel 좌표를 포함한 다음 단계의 별도 A/B로 남긴다.
+
+### 8.5 Cedar/SEP full-frame A/B 준비
+
+`solver_optics_fullframe_fov` opt-in 플래그는 cedar와 SEP가 full-frame canvas의
+FOV를 만들 때 사용할 **crop 기준 FOV**만 optical train(16 mm: 10.4028°)에서
+받도록 한다. 기본값은 `false`다. target pixel의 중심-스케일 변환, horizon mask,
+SQM, chart/API는 이 플래그가 바꾸지 않는다. 따라서 이 단계의 현장 판정은
+full-frame solve 성공률·fitted FOV·RA/Dec/Roll 연속성에만 한정한다.
