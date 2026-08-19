@@ -25,7 +25,7 @@
 | P2 | `lens_calibration.py`, profile JSON schema, 오프라인 보정 CLI, 0 보정 map 시험 | 없음 | round-trip/RMS 리포트 및 한 렌즈의 pending profile |
 | P3 | rectified canvas·`TilePlanner`·원본 크롭/좌표 map, shadow 진단 | `wide_solver_enabled=false` | synthetic WCS와 16 mm 타일 좌표 왕복 시험 |
 | P4 | LiveCam tile 레이어·제외 폴리곤 UI/API/config 영속 | solver 선택에는 아직 미반영 | 재부팅 복원, invalid mask/revision 충돌/API 회귀 |
-| P5 | 타일 Cedar→SEP 실행, 중앙 포화 판단, consensus 모듈 | shadow only, Integrator 미갱신 | 타일별 timeout 격리·outlier/인접 3타일 거부 자동 시험 |
+| P5 | 타일 Cedar→SEP 실행, 중앙 포화 판단, consensus 모듈 | shadow only, Integrator 미갱신 | 타일별 timeout 격리·인접 2-타일 엄격 일치·3개 이상 outlier 제거 자동 시험 |
 | P6 | 야간 shadow 관측, 수치 확정, 선택 렌즈의 opt-in activation | 활성 렌즈만 변경 | 3개 독립 밤·중앙/달/마스크 시나리오 통과 |
 | P7 | 문서·사용자 가이드·릴리스 노트, 필요 시 default 정책 검토 | 명시적 승인 전 기본 off | 롤백·운영 절차 검토 완료 |
 
@@ -71,7 +71,7 @@ profile ID와 계수만 저장하며 RAW를 넣지 않는다.
 | 16 mm, flag off | 현재 solve path·좌표·지연 유지 | 광각 모듈이 실행/설정 변경 |
 | 4/6/8 mm, 미보정 | 기존 solver 또는 안전한 실패 | provisional 계수로 자동 보정/발행 |
 | 광각, 중앙 정상 | 중앙 tile 해만 발행, 주변 tile 불필요 | 불필요한 다중 합의로 지연 증가 |
-| 광각, 중앙 달 포화 | 분산된 3개 이상 주변 tile 합의 시만 발행 | 주변 하나의 해가 Integrator 갱신 |
+| 광각, 중앙 달 포화/이동 | 인접 2개가 엄격 일치하거나, 3개 이상 주변 tile이 합의할 때만 발행 | 주변 하나의 해가 Integrator 갱신 |
 | 광각, 기구 간섭 | 선택 mask tile/centroid 제외, 저장 후 reboot 복원 | 다른 렌즈 profile까지 마스크 오염 |
 | tile 해 상호 불일치 | `FailedSolve`, 마지막 좋은 추정 유지 | 평균낸 잘못된 좌표 발행 |
 

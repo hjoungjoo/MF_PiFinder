@@ -23,8 +23,10 @@
 3. 중앙 타일 해가 정상 품질이면 기존과 같은 단일 해를 우선한다. 중앙 포화·실패
    때에만 주변 타일 해들을 수집하며, 단일 주변 해는 절대로 포인팅을 갱신하지
    않는다.
-4. 주변 폴백은 서로 떨어진 다수 타일의 해를 동일한 카메라 중심 기준 자세로
-   환산한 뒤 합의(consensus)한 경우에만 `Integrator`에 하나의 결과를 낸다.
+4. 주변 폴백은 두 개 이상 타일의 해를 동일한 카메라 중심 기준 자세로 환산한
+   뒤 합의(consensus)한 경우에만 `Integrator`에 하나의 결과를 낸다. 이동·달
+   포화로 남은 별 영역이 인접 두 타일뿐인 경우도 지원하되, 이 경우에는 더
+   엄격한 2-타일 일치 게이트를 적용한다.
 5. 렌즈 배럴 표기만으로 왜곡 계수를 추정하지 않는다. 새 렌즈의 기본값은
    `보정 없음(k=0)`이며, 실측 캘리브레이션을 완료하고 명시적으로 활성화하기
    전에는 왜곡 보정·좁은 FOV gate·광각 자동 활성화를 하지 않는다.
@@ -228,7 +230,7 @@ flowchart TD
     sat -->|아니오| legacyfallback["현행 full-frame 폴백\n(설정 플래그에 따름)"]
     sat -->|예| candidates["활성 주변 타일 모두 시도\nCedar/SEP, 시간 예산 내"]
     candidates --> quality["타일 해 품질·WCS 환산\n중심 자세 후보 집합"]
-    quality --> vote{"독립 타일 N개 이상\n강건 합의 통과?"}
+    quality --> vote{"인접 2개 이상 또는\n3개 이상 강건 합의 통과?"}
     vote -->|예| publish2["합의 SolveResult 1개 발행\nsolve_path=wide_consensus"]
     vote -->|아니오| failed["FailedSolve: 추정값 유지\n원인·타일 진단 발행"]
     publish --> downstream["Integrator/정렬/SQM"]
@@ -292,27 +294,37 @@ AttitudeCandidate = {
 중앙이 포화/실패한 주변 폴백은 다음을 모두 만족해야 한다.
 
 1. 같은 RAW `frame_id`, 같은 lens/calibration fingerprint에서 나온 후보만 묶는다.
-2. 최소 `N=3`개의 성공 타일을 요구한다. 동일 행/열 또는 인접한 한 모서리에
-   몰린 타일만으로는 통과할 수 없도록, 후보들의 중심 간 최소 각분리와 방위
-   분산을 요구한다.
-3. match 수, tetra3 residual, 마스크/포화 비율, optical center와의 거리를
+2. 최소 두 개의 성공 타일을 요구한다. 서로 변을 공유하거나 계획 overlap이 있는
+   **인접 2-타일 쌍**은, 망원경 이동·달 포화·기구 간섭 때문에 다른 타일이
+   포화 또는 별 부족으로 판정된 때에도 발행 후보가 될 수 있다. 단일 타일은
+   언제나 거부한다.
+3. 정확히 두 타일이면 RANSAC/다수결을 할 수 없으므로, 두 해가 같은 `frame_id`,
+   calibration fingerprint에서 나왔고 각 해의 품질을 통과하며, optical center로
+   환산한 위치와 Roll의 **2-타일 전용 엄격 잔차 한계** 안에서 일치해야 한다.
+   이 한계는 3개 이상 합의의 outlier 한계보다 작게 두고 첫 야간 코퍼스에서
+   고정한다. 두 해 중 하나라도 불량·불일치면 `wide_pair_disagree`로 실패한다.
+4. 세 개 이상이면 후보들의 중심 간 최소 각분리와 방위 분산을 요구한다. match
+   수, tetra3 residual, 마스크/포화 비율, optical center와의 거리를
    가중치로 사용한다. 가중치 상한을 두어 한 tile이 다수를 압도하지 못하게 한다.
-4. 구면 RA/Dec 거리와 Roll 잔차에 robust median/RANSAC으로 outlier를 제거한 뒤,
+5. 세 개 이상 후보에서는 구면 RA/Dec 거리와 Roll 잔차에 robust median/RANSAC으로 outlier를 제거한 뒤,
    남은 후보의 가중 평균 또는 quaternion 평균으로 중심 자세를 계산한다.
-5. 사전 고정된 위치·Roll 잔차 한계 안에 있는 inlier가 최소 수를 만족해야 한다.
+6. 사전 고정된 위치·Roll 잔차 한계 안에 있는 inlier가 최소 수를 만족해야 한다.
    아니면 `wide_consensus_disagree`로 실패하며, 마지막 좋은 포인팅은 유지한다.
-6. 합의로 발행한 해에는 `solve_path="wide_consensus"`, 참여/제외 tile ID,
+7. 합의로 발행한 해에는 `solve_path="wide_consensus"`, 참여/제외 tile ID,
    inlier 수, 최대 잔차, calibration ID를 진단으로 붙인다.
 
-최소 3은 시작 안전값이다. 야간 코퍼스에서 잔차·지연을 확인한 뒤에만 완화할 수
-있다. 중앙 정상 해는 이 다중 합의 규칙을 강제하지 않아 기존 반응성을 보존한다.
+최소 2는 중앙 포화 뒤 보이는 별 영역이 인접 구역으로 좁아지는 실제 운용 조건을
+반영한다. 2-타일 쌍은 엄격한 직접 일치, 3개 이상은 강건 outlier 제거라는 서로
+다른 정책을 적용한다. 중앙 정상 해는 이 다중 합의 규칙을 강제하지 않아 기존
+반응성을 보존한다.
 
 ### 6.3 Integrator와 성공 확인
 
-`Integrator`는 타일별 중간 결과를 보지 않는다. 합의 결과 하나가 기존
-`SolveResult` 계약으로 들어가며, 기존의 연속 성공 확인(3회)도 그 최종 결과에만
-적용한다. 즉, 한 프레임의 tile 3개 성공은 “3회 solve 성공”이 아니다. 시간적으로
-독립된 3개 프레임에서 `wide_consensus`가 재현되어야 정상 solve로 승격된다.
+`Integrator`는 타일별 중간 결과를 보지 않는다. 2-타일 쌍 또는 다중 타일 합의의
+결과 하나가 기존 `SolveResult` 계약으로 들어가며, 기존의 연속 성공 확인(3회)도
+그 최종 결과에만 적용한다. 즉, 한 프레임의 tile 2개나 3개 성공은 “2회/3회 solve
+성공”이 아니다. 시간적으로 독립된 3개 프레임에서 `wide_consensus`가 재현되어야
+정상 solve로 승격된다.
 
 이 분리는 빠른 오인식, 타일 간 상관된 잘못된 패턴, 달 주변의 불안정한 해가
 정렬/추적 상태를 덮는 것을 막는다.
@@ -402,7 +414,7 @@ sequenceDiagram
 | `wide_solver_calibration_id` | `none` | 명시한 실측 profile만 사용 |
 | `wide_solver_mask_store_v1` | 빈 store | 렌즈별 native RAW 제외 영역 |
 | `wide_solver_max_regions` | 측정 후 확정 | 프레임당 tile 상한 |
-| `wide_solver_min_consensus_regions` | `3` | 주변부 발행 최소 inlier 수 |
+| `wide_solver_min_consensus_regions` | `2` | 주변부 발행 최소 tile 수; 정확히 2개면 인접 쌍 엄격 게이트 적용 |
 
 상태/API/로그에는 최소한 아래를 낸다: `wide_mode`, calibration fingerprint,
 tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시간, 중앙 포화
@@ -419,7 +431,7 @@ tile plan ID, 활성/제외 tile 수, tile별 detector·solve 결과·실행 시
 | calibration | JSON 스키마, 0 보정 항등성, 왜곡/역왜곡 round trip, fingerprint 불일치 거부 |
 | tile planner | 16 mm 크롭, overlap, footprint 경계, mask 교차, tile→raw/512 좌표 왕복 |
 | solver | flag off 바이트 호환 경로, 중앙 성공 시 tile 미실행, 포화 시 주변 순서, tile timeout 격리 |
-| consensus | 3개 분산 inlier 성공, 단일/인접 후보 거부, outlier 제거, RA 0/360·Roll wrap 처리 |
+| consensus | 인접 2-타일 엄격 일치 성공/불일치 거부, 3개 이상 분산 inlier·outlier 제거, RA 0/360·Roll wrap 처리 |
 | LiveCam/API | mask validation·재부팅 복원·revision 충돌, frame_id 일치 오버레이, 기존 SEP overlay 회귀 |
 | integration | 합의 결과만 Integrator로 들어가며 3개 tile이 3회 성공으로 세지지 않음 |
 
