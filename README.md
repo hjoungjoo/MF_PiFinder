@@ -1,4 +1,81 @@
-# PiFinder™
+# MF PiFinder
+
+[English](./README.md) | [한국어](./README_ko.md)
+
+MF PiFinder is based on the original [PiFinder™](https://github.com/brickbots/PiFinder)
+and supports Raspberry Pi OS Bookworm 64-bit on Pi 4, Pi 5, and CM5. It adds
+practical features including web catalogs, optional INDI mount control, and
+operational documentation. The original creator's project description and
+basic references remain below under **Original PiFinder Project**.
+
+## Quick start
+
+### 1. Install
+
+For a first installation, the original project's prebuilt release image is the
+simplest option. For a source-based Bookworm installation or Pi 4/Pi 5/CM5
+setup, start with these references:
+
+- [Original software setup](https://pifinder.readthedocs.io/en/release/software.html)
+- [Bookworm 64-bit setup (한국어)](./docs/mf_dev/mf_bookworm_install_ko.md)
+- [Pi 4/Pi 5/CM5 compatibility (한국어)](./docs/mf_dev/mf_pifinder_rpi4_pi5_compatibility_ko.md)
+- [AP+STA Wi-Fi (한국어)](./docs/mf_dev/mf_wifi_apsta_ko.md)
+
+After installation, connect a phone, tablet, or computer to the same network as
+PiFinder and open `http://pifinder.local`. In AP mode, use
+`http://10.10.10.1` if the hostname does not resolve.
+
+### 2. Download offline caches
+
+While internet access is available, pre-download the star/catalog runtime caches
+and survey images for faster offline catalog browsing and detail pages.
+
+```bash
+cd /home/pifinder/PiFinder
+python3 scripts/warm_pifinder_caches.py
+```
+
+To download only the POSS images used by the web catalog:
+
+```bash
+python3 scripts/warm_pifinder_caches.py --images poss
+```
+
+[Offline cache guide](./docs/mf_dev/mf_cache_download_en.md) |
+[한국어](./docs/mf_dev/mf_cache_download_ko.md)
+
+### 3. Configure an INDI mount
+
+INDI is optional and disabled by default. First verify the connection, GoTo, and
+Sync using Telescope Simulator before using a physical mount.
+
+- [INDI mount installation and setup](./docs/mf_dev/mf_indi_mount_install_en.md) |
+  [한국어](./docs/mf_dev/mf_indi_mount_install_ko.md)
+- [Mount-mode compatibility (한국어)](./docs/mf_dev/mf_mount_mode_compatibility_ko.md)
+
+### 4. Keypad and keyboard controls
+
+Use these references for global LCD controls, page-specific controls, and
+USB/Bluetooth keyboard mapping:
+
+- [Input controls](./docs/mf_dev/mf_input_controls_en.md) |
+  [한국어](./docs/mf_dev/mf_input_controls_ko.md)
+- [Keyboard mapping](./docs/mf_dev/mf_keyboard_mapping_en.md) |
+  [한국어](./docs/mf_dev/mf_keyboard_mapping_ko.md)
+
+### 5. MF feature documentation
+
+The [MF additional-features index](./docs/mf_dev/mf_additional_features_en.md)
+groups documentation for web catalogs, location catalogs, LiveCam, automatic
+exposure, Cedar/SEP solving, SQM, and IMU calibration. Its Korean equivalent is
+[available here](./docs/mf_dev/mf_additional_features_ko.md). For current test
+status and history, see the [feature review checklist](./docs/mf_dev/mf_feature_review_checklist_en.md)
+and [Korean change history](./docs/mf_dev/mf_change_history_ko.md).
+
+---
+
+# Original PiFinder™ Project
+
 A plate solving telescope finder based around a Raspberry PI, imx296 camera, and custom UI 'hat'
 
 For an overview of what the PiFinder™ is and how it came to be visit the official project website at [PiFinder.io](https://www.pifinder.io/build-yours) 
@@ -59,4 +136,3 @@ If you'd like to learn more about how it works, and potentially build your own, 
 
 ## Discord
 Join the  [PiFinder™ Discord server](https://discord.gg/Nk5fHcAtWD) for support with your build, usage questions, and suggestions for improvement.
-
