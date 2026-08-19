@@ -318,7 +318,20 @@ Radiometer SQM 값을 정상 반환했다.
 함께 변경되며, 그 경우 SQM 값 변화는 렌즈에 따른 실제 solid angle 차이를 반영한다.
 
 코드 검증은 소비자/solver 30개 및 기존 SQM·API·UI 회귀 422개(2 skip)를 통과했다.
-서비스 재시작 후 Radiometer SQM 갱신과 로그상 연결 오류가 없음을 확인했다. 다만
-재시작 직후 구름으로 새 solve가 없어 `/api/visible_stars`는 기존 규약대로 503을
-반환했다. 다음 맑은 성공 solve에서 20° chart 요청의 16mm frustum과 별 후보가
-정상적으로 제한되는지를 화면/API로 확인한다.
+서비스 재시작 후 Radiometer SQM 갱신과 로그상 연결 오류가 없음을 확인했다.
+
+### 9.1 16 mm live chart/API 확인
+
+구름이 옅어진 뒤 새 성공 solve에서 20° chart 요청을 다시 시험했다.
+
+| 항목 | 결과 |
+|---|---|
+| solve 경로 | `cedar_center` |
+| fitted FOV | 11.3920° |
+| matches / RMSE | 17개 / 16.5 px |
+| Radiometer SQM | 16.54 mag/arcsec²로 정상 갱신 |
+| `/api/visible_stars` | 이미지 미포함·포함 요청 모두 HTTP 200 |
+
+따라서 live optical-train FOV를 전달한 chart/API 경로는 정상 solve 상태에서 렌더에
+성공했다. 20° chart에서는 16 mm의 10.4028° frustum이 적용되어, Align의 후보
+별과 API의 visible-star 집합이 실제 카메라 field에 맞춰 제한된다.
