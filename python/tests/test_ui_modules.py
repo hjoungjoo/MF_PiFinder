@@ -61,6 +61,7 @@ import types
 from typing import Iterator, cast
 from unittest import mock
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -88,6 +89,8 @@ from PiFinder.ui.menu_manager import MenuManager
 
 # Dynamic-only module classes (pushed at runtime, never as static tree nodes).
 from PiFinder.ui.object_details import UIObjectDetails
+from PiFinder.ui.object_list import SortOrder, UIObjectList
+from PiFinder.nearby import NEAREST_LIST_CAP
 from PiFinder.ui.log import UILog
 from PiFinder.ui.dateentry import UIDateEntry
 from PiFinder.ui.sqm_calibration import UISQMCalibration
@@ -654,6 +657,179 @@ def test_dynamic_ui_module(
     if item_definition["class"].__name__ in _HIP_REQUIRED and not hip_main_available:
         pytest.skip("hip_main.dat unavailable (needed by chart/align)")
     _build_and_exercise(item_definition, state, display, camera_image, catalogs)
+
+
+@pytest.mark.integration
+def test_object_details_tracks_target(display, camera_image, catalogs):
+    """UIObjectDetails mirrors the viewed object into ui_state.target().
+
+    The chart's target cross reads ui_state.target(); UIObjectDetails is the
+    single writer, setting it in update_object_info() so it tracks the
+    last-viewed object on both open and scroll (see the "Target" term in
+    docs/ax/ui/CONTEXT.md).
+    """
+    cfg = Config()
+    shared_state = _make_shared_state("warm")
+    command_queues = _make_command_queues()
+    catalog_filter = CatalogFilter(shared_state=shared_state)
+    catalog_filter.load_from_config(cfg)
+    catalogs.set_catalog_filter(catalog_filter)
+
+    # Two catalog objects with distinct object_ids (scroll_object indexes by
+    # equality, which is object_id-based).
+    objs = catalogs.get_objects(only_selected=False, filtered=False)
+    obj_a = objs[0]
+    obj_b = next((o for o in objs if o.object_id != obj_a.object_id), None)
+    if obj_b is None:
+        pytest.skip("need two distinct catalog objects for the scroll assertion")
+
+    item_definition = {
+        "name": getattr(obj_a, "display_name", "Object"),
+        "class": UIObjectDetails,
+        "object": obj_a,
+        "object_list": [obj_a, obj_b],
+        "label": "object_details",
+    }
+    module = UIObjectDetails(
+        display,
+        camera_image,
+        shared_state,
+        command_queues,
+        cfg,
+        catalogs,
+        item_definition=item_definition,
+    )
+
+    # Set on open (update_object_info runs in __init__)...
+    assert shared_state.ui_state().target() is obj_a
+    # ...and updated on scroll.
+    module.scroll_object(1)
+    assert shared_state.ui_state().target() is obj_b
+
+
+@pytest.mark.integration
+def test_nearby_sort_navigation_bounded_by_ranked_window(
+    display, camera_image, catalogs
+):
+    """Navigation stays inside the Nearby window, which is shorter than the catalog.
+
+    The Nearby sort ranks at most ``NEAREST_LIST_CAP`` objects, so the list the
+    carousel draws is far shorter than the filtered catalog behind it. Long-DOWN
+    scrolls to the last row and RIGHT opens it, so both must be bounded by the
+    ranked window rather than by the source list -- otherwise the cursor lands
+    on rows that do not exist and opening one raises IndexError.
+    """
+    cfg = Config()
+    shared_state = _make_shared_state("warm")
+    command_queues = _make_command_queues()
+    catalog_filter = CatalogFilter(shared_state=shared_state)
+    catalog_filter.load_from_config(cfg)
+    catalogs.set_catalog_filter(catalog_filter)
+
+    module = UIObjectList(
+        display,
+        camera_image,
+        shared_state,
+        command_queues,
+        cfg,
+        catalogs,
+        item_definition={
+            "name": "All Filtered",
+            "class": UIObjectList,
+            "objects": "catalogs.filtered",
+        },
+        add_to_stack=lambda item_definition: None,
+    )
+
+    module.current_sort = SortOrder.NEAREST
+    module.sort()
+    assert module.current_sort == SortOrder.NEAREST, "warm state should have a solve"
+
+    ranked = len(module._menu_items_sorted)
+    assert ranked <= NEAREST_LIST_CAP
+    # The point of the test: the source list is longer than the ranked window.
+    assert len(module._menu_items) > ranked
+
+    # The header still advertises the catalog behind the screen, not the window.
+    assert module.catalog_info_1 == str(len(module._menu_items))
+
+    module.key_long_down()
+    assert module._current_item_index == ranked - 1
+
+    # Opening the last row must not index past the ranked window.
+    module.key_right()
+    module.update()
+
+    state = module.serialize_ui_state()
+    assert "error" not in state
+    assert state["total_items"] == ranked
+    assert (
+        state["current_item"]
+        == module._menu_items_sorted[module._current_item_index].display_name
+    )
+
+
+@pytest.mark.integration
+def test_object_details_serialises_from_a_nearby_sorted_list(
+    display, camera_image, catalogs
+):
+    """Object details opened from a Nearby list serialise as state, not an error.
+
+    The Nearby sort hands ``show_object_details`` the NumPy object array
+    ``get_closest_objects`` returns, not a Python list. Anything in
+    ``serialize_ui_state`` that tests that array for truthiness raises
+    ("truth value of an array with more than one element is ambiguous"), and
+    the raise is swallowed by the method's own except clause -- so the whole
+    remote state degrades to {"error": ...} for every object reached this way.
+    """
+    cfg = Config()
+    shared_state = _make_shared_state("warm")
+    command_queues = _make_command_queues()
+    catalog_filter = CatalogFilter(shared_state=shared_state)
+    catalog_filter.load_from_config(cfg)
+    catalogs.set_catalog_filter(catalog_filter)
+
+    object_list = UIObjectList(
+        display,
+        camera_image,
+        shared_state,
+        command_queues,
+        cfg,
+        catalogs,
+        item_definition={
+            "name": "All Filtered",
+            "class": UIObjectList,
+            "objects": "catalogs.filtered",
+        },
+        add_to_stack=lambda item_definition: None,
+    )
+    object_list.current_sort = SortOrder.NEAREST
+    object_list.sort()
+
+    ranked = object_list._menu_items_sorted
+    # The precondition the bug needs: a multi-element array, not a list.
+    assert isinstance(ranked, np.ndarray)
+    assert len(ranked) > 1
+
+    details = UIObjectDetails(
+        display,
+        camera_image,
+        shared_state,
+        command_queues,
+        cfg,
+        catalogs,
+        item_definition={
+            "name": ranked[0].display_name,
+            "class": UIObjectDetails,
+            "object": ranked[0],
+            "object_list": ranked,
+            "label": "object_details",
+        },
+    )
+
+    state = details.serialize_ui_state()
+    assert "error" not in state, state.get("error")
+    assert state["object_list_length"] == len(ranked)
 
 
 @pytest.mark.integration
