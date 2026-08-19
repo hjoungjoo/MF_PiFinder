@@ -31,6 +31,7 @@ from PiFinder import utils
 from PiFinder import timez
 from PiFinder import horizon_mask, sep_detect
 from PiFinder import solver_frame_map as sfm
+from PiFinder.optics import build_optical_train
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
 from PiFinder.sqm.camera_profiles import get_camera_profile
@@ -70,6 +71,24 @@ SQM_STELLAR_DIAGNOSTIC_INTERVAL_SECONDS = 10.0
 # timeout dropped the attempt rate to 0.4 Hz and starved the SEP rescue tier
 # (LP ascent test 2026-08-03, plan doc section 9-1).
 CEDAR_FF_SOLVE_TIMEOUT_MS = 300
+
+
+def _optical_fov_gate_params(shared_state) -> tuple[float, float]:
+    """Return the stated/assumed optical-train gate, or legacy values safely.
+
+    This helper is only consumed when ``solver_optics_fov_gate`` is enabled.
+    A malformed camera or lens value must never turn a recoverable solve into
+    a solver restart loop, so preserve the established 12 +/- 4 degree gate
+    on any resolution error.
+    """
+    try:
+        lens_getter = getattr(shared_state, "camera_lens", None)
+        lens_key = lens_getter() if callable(lens_getter) else None
+        train = build_optical_train(shared_state.camera_type(), lens_key)
+        return train.solver_fov_params()
+    except Exception:
+        logger.exception("Optical FOV gate unavailable; using legacy gate")
+        return (12.0, 4.0)
 
 
 def create_sqm_calculator(shared_state):
@@ -1062,6 +1081,12 @@ def solver(
         _sep_cfg.get_option("solver_shadow_detect")
         or _sep_cfg.get_option("solver_sep_fallback")
     )
+    # Optical-train FOV gating is deliberately opt-in for the first field
+    # phase. It applies only to the ordinary 512 path below; full-frame
+    # cedar/SEP have their own crop/canvas validation stage.
+    optics_fov_gate_wanted = bool(_sep_cfg.get_option("solver_optics_fov_gate"))
+    if optics_fov_gate_wanted:
+        logger.info("Optical-train FOV gate enabled for the 512 solver path")
     # Full-frame cedar primary path (mf_cedar_fullframe_primary_plan_ko.md):
     # feed cedar the uncropped 12-bit raw (>>4, detection is invariant to the
     # affine stretch) and solve at native FOV via solver_frame_map. The SEP
@@ -1370,11 +1395,16 @@ def solver(
                                     ),
                                 )
                         else:
+                            fov_estimate, fov_max_error = (
+                                _optical_fov_gate_params(shared_state)
+                                if optics_fov_gate_wanted
+                                else (12.0, 4.0)
+                            )
                             solution = t3.solve_from_centroids(
                                 centroids,
                                 (512, 512),
-                                fov_estimate=12.0,
-                                fov_max_error=4.0,
+                                fov_estimate=fov_estimate,
+                                fov_max_error=fov_max_error,
                                 match_max_error=0.005,
                                 return_matches=True,  # Required for SQM calculation
                                 target_pixel=shared_state.target_pixel(),
