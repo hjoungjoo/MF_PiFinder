@@ -1,5 +1,7 @@
 # PiFinder 오프라인 캐시 다운로드 가이드
 
+[English](mf_cache_download_en.md) | [한국어](mf_cache_download_ko.md)
+
 ## 목적과 범위
 
 `scripts/warm_pifinder_caches.py`는 인터넷 연결이 가능한 때 PiFinder의
@@ -93,6 +95,9 @@ find ~/PiFinder_data/catalog_images -name '*_SDSS.jpg' | wc -l
 네트워크가 끊기거나 작업을 멈춰야 하면 `Ctrl-C`로 종료한 뒤, 인터넷이
 가능해졌을 때 같은 명령을 다시 실행한다. 이미 완성된 이미지 파일은
 `gen_images`가 건너뛰고, 유효한 런타임 캐시는 다시 사용한다.
+
+캐시 명령은 종료 전에 임시 행성·혜성 갱신 타이머를 중지한다. 따라서
+`Cache warm-up complete`가 보이면 셸 프롬프트가 바로 돌아와야 한다.
 
 강제 전원 차단처럼 파일 쓰기 도중 비정상 종료한 경우에는 마지막에 쓰던
 이미지 파일이 손상될 수 있다. 특정 천체 사진만 계속 보이지 않으면 해당

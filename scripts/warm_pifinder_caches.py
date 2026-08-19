@@ -69,7 +69,18 @@ def warm_runtime_caches() -> None:
 
     print("[runtime] Building composite catalog cache...", flush=True)
     builder = CatalogBuilder()
-    builder.build(SharedStateObj())
+    catalogs = builder.build(SharedStateObj())
+
+    # CatalogBuilder also adds dynamic planet and comet catalogs. Their
+    # TimerMixin timers are useful in the long-running PiFinder service, but
+    # a cache-warmup command must not leave their non-daemon Timer threads
+    # alive after static catalog generation has finished.
+    for catalog_code in ("PL", "CM"):
+        dynamic_catalog = catalogs.get_catalog_by_code(catalog_code)
+        timer = getattr(dynamic_catalog, "_timer", None)
+        if timer is not None:
+            timer.stop()
+
     loader = getattr(builder, "_background_loader", None)
     worker = getattr(loader, "_thread", None)
     if worker is not None:
