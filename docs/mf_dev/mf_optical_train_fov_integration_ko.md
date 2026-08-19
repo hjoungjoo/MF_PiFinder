@@ -174,3 +174,19 @@ fitted FOV는 optical train 전체를 측정하므로, 센서가 알려진 상�
 
 이 표와 실패 로그를 바탕으로 다음 단계(일반 tetra3 gate 연결)를 승인한다. 결과가
 불충분하면 현재 기반 커밋에서 멈추며, 실행 경로에는 아무 변화가 없으므로 안전하다.
+
+## 8. 2026-08-19 야간 1차 실행 기록
+
+| 항목 | 결과 |
+|---|---|
+| 정적 검사 | `compileall` 및 optical/lens/solver-frame/SQM/SEP 관련 170개 통과 |
+| UI·nearby 회귀 | 298개 통과, 2개 skip |
+| 실행 서비스 | `pifinder`, `cedar_detect` active 확인 후 PiFinder만 재시작하여 새 소스 반영 |
+| 현장 조건 | `imx462_color`, 0.8 s, gain 30. 구름 사이 별은 보였으나 안정적인 solve 조건은 아님 |
+| 기준선 수집 | 재시작 전후 약 1분의 상태 API 표본에서 새 성공 solve 0회 |
+| 검출 관찰 | Cedar gated centroid 0--1개, SEP detection 23--40개. fitted FOV는 성공 solve가 없어 없음 |
+| 판정 | optical-train FOV gate를 **활성화하지 않음**. 맑은 간격에서 연속 성공 10회 이상을 다시 수집할 것 |
+
+이 결과는 FOV 코드 실패가 아니라 실측 기준선이 부족하다는 판정이다. 현재 실행
+경로는 기존 FOV 설정을 계속 사용하며, 다음 시험은 성공 solve가 안정적으로 생긴
+시점에 §4 B부터 재개한다.
