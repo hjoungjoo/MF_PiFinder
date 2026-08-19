@@ -1565,9 +1565,7 @@ def solver(
                                 cedar_ff_geometry["crop_width_px"],
                                 shared_state,
                                 target_sky_coord=_solver_args.get("target_sky_coord"),
-                                base_fov_degrees=cedar_ff_geometry[
-                                    "base_fov_degrees"
-                                ],
+                                base_fov_degrees=cedar_ff_geometry["base_fov_degrees"],
                             )
 
                         def _sep_full_stage():

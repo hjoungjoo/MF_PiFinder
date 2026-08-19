@@ -31,9 +31,7 @@ def test_radiometer_uses_the_passed_optical_train_width():
     }
     default, default_details = radiometric_sqm(sample, profile)
     wide_fov = build_optical_train("imx462", "12mm").fov_degrees
-    wide, wide_details = radiometric_sqm(
-        sample, profile, field_width_degrees=wide_fov
-    )
+    wide, wide_details = radiometric_sqm(sample, profile, field_width_degrees=wide_fov)
 
     assert default is not None and wide is not None
     assert default_details["radiometric_fov_degrees"] == pytest.approx(

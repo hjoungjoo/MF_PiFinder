@@ -173,6 +173,7 @@ class ClosestObjectsFinder:
         obj_ind = self._objects_balltree.query_radius(query, r=np.deg2rad(radius_deg))
         return list(self._objects[obj_ind[0]])
 
+
 def deduplicate_objects(
     unfiltered_objects: list[CompositeObject],
 ) -> list[CompositeObject]:

@@ -134,7 +134,9 @@ def optical_train_for_profile(
     profile: CameraProfile, lens_key: Optional[str] = None
 ) -> OpticalTrain:
     """Build a train from a loaded profile and an optional config value."""
-    return OpticalTrain(profile, resolve_lens(profile, lens_key), lens_is_stated(lens_key))
+    return OpticalTrain(
+        profile, resolve_lens(profile, lens_key), lens_is_stated(lens_key)
+    )
 
 
 def build_optical_train(
@@ -151,9 +153,7 @@ class OpticalTrainResolver:
         self._key: Optional[Tuple[str, Optional[str]]] = None
         self._train: Optional[OpticalTrain] = None
 
-    def resolve(
-        self, camera_type: str, lens_key: Optional[str] = None
-    ) -> OpticalTrain:
+    def resolve(self, camera_type: str, lens_key: Optional[str] = None) -> OpticalTrain:
         key = (camera_type, lens_key)
         if key != self._key or self._train is None:
             self._train = optical_train_for_profile(
