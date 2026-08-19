@@ -244,3 +244,26 @@ FOV와의 차이가 ±15% gate 경계보다도 커질 수 있어 활성화하지
 이 플래그와 `solver_cedar_fullframe=false`를 함께 켜서 10.4028° ±15% gate를
 기존 512 기준선과 비교한다. Cedar/SEP full-frame 및 SQM은 이 단계의 대상이
 아니다.
+
+### 8.4 16 mm 일반 512 gate A/B 결과
+
+16 mm 확인 후 `solver_cedar_fullframe=false`,
+`solver_optics_fov_gate=true`로 재시작해 일반 512 경로를 시험했다. 초반 구름
+구간(centroid 0--4)은 어느 gate에서도 solve할 수 없는 입력이었고, 별이 다시
+보인 구간에서는 Cedar 512 성공 solve가 연속으로 발생했다.
+
+| 항목 | 기존 512 기준선 | 16 mm optical gate |
+|---|---:|---:|
+| tetra3 입력 gate | 12.0° ±4.0° | 10.4028° ±1.5604° |
+| fitted FOV | 10.33--10.34° | 10.329--10.338° |
+| 성공 경로 | `cedar_512` | `cedar_512` (연속 성공) |
+| 판정 | 기준 | **성공률 저하·timeout 증가 없음** |
+
+gate는 실제 fitted FOV를 충분히 포함했고, A/B에서 solve를 막지 않았다. 시험 후
+`solver_cedar_fullframe=true`로 원복했고, 검증한 `solver_optics_fov_gate=true`는
+유지했다. 따라서 일반 512 fallback이 선택되는 경우에는 16 mm optical gate가
+사용되며, 기본 full-frame cedar/SEP 경로는 아직 기존 FOV 매핑을 사용한다.
+
+full-frame 성공값(약 11.39°)은 512 crop FOV와 같은 좌표 정의가 아니므로 이
+단계의 10.40° gate 판정에 섞지 않는다. Cedar/SEP full-frame optical FOV 전환은
+frame-map·horizon mask·target pixel 좌표를 포함한 다음 단계의 별도 A/B로 남긴다.
