@@ -16,9 +16,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.9 is the project's compatibility baseline; 3.11 is the Python
-        # version supplied by Raspberry Pi OS Bookworm on deployment devices.
-        python-version: ["3.9", "3.11"]
+        # Raspberry Pi OS Bookworm deployment devices use Python 3.11.
+        # Older Python compatibility targets are not supported.
+        python-version: ["3.11"]
     defaults:
       run:
         working-directory: ./python
@@ -40,8 +40,8 @@ jobs:
       - name: Run Nox on Python ${{ matrix.python-version }}
         env:
           NOX_PYTHON: ${{ matrix.python-version }}
-        # `reuse_venv=True` is useful locally, but a 3.9 environment must
-        # never be reused for the 3.11 matrix job (or vice versa).
+        # Keep the interpreter-specific environment directory explicit so a
+        # runner image update cannot reuse an incompatible virtual environment.
         run: >-
           python -m nox --error-on-missing-interpreters
           --envdir .nox-${{ matrix.python-version }}
