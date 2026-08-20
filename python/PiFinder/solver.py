@@ -32,6 +32,15 @@ from PiFinder import timez
 from PiFinder import horizon_mask, sep_detect
 from PiFinder import solver_frame_map as sfm
 from PiFinder.mf_manual_lens import manual_focal_from_state
+from PiFinder.mf_wide_calibration import CalibrationProfileStore
+from PiFinder.mf_wide_distortion import active_coefficients, undistort_global_centroids
+from PiFinder.mf_wide_solver import (
+    TILE_SOLVE_TIMEOUT_MS,
+    build_plan_for_optics,
+    configured_excluded_tiles,
+    solve_wide_tiles,
+    wide_solver_eligible,
+)
 from PiFinder.optics import OpticalTrainResolver, build_optical_train
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
@@ -1148,6 +1157,9 @@ def solver(
     # affine stretch) and solve at native FOV via solver_frame_map. The SEP
     # fallback below is unchanged; flag off = byte-identical 512 path.
     cedar_fullframe_wanted = bool(_sep_cfg.get_option("solver_cedar_fullframe"))
+    # MF wide tiles are a separately opt-in rescue tier.  The false default
+    # leaves every established Cedar/SEP path byte-for-byte in control.
+    wide_solver_wanted = bool(_sep_cfg.get_option("wide_solver_enabled"))
     cedar_ff_geometry = None  # context dict, resolved lazily
     cedar_ff_geometry_key = None
     # Ground-light rejection for the FF path (docs field test 2026-08-04):
@@ -1537,6 +1549,7 @@ def solver(
                         )
                     sep_run = None
                     sep_fallback_used = False
+                    wide_result = None
                     sep_can_solve = False
                     if sep_shadow is not None:
                         if sep_thread is not None:
@@ -1561,6 +1574,145 @@ def solver(
                                 len(sep_run.detection.centroids)
                             )
                         )
+
+                    # Wide angle recovery is intentionally placed after the
+                    # existing centre-first attempt but before Cedar/SEP are
+                    # allowed to use a distortion-prone whole frame.  It is
+                    # disabled during an alignment command because an
+                    # off-centre tile cannot reliably return the alignment
+                    # target's pixel inside its own crop.
+                    if (
+                        wide_solver_wanted
+                        and used_fullframe
+                        and (not solution or solution.get("RA") is None)
+                        and align_ra == 0
+                        and align_dec == 0
+                        and wide_solver_eligible(
+                            True,
+                            getattr(shared_state, "camera_lens", lambda: "")(),
+                            manual_focal_from_state(shared_state),
+                        )
+                    ):
+                        try:
+                            lens_key = getattr(
+                                shared_state, "camera_lens", lambda: ""
+                            )()
+                            manual_focal = manual_focal_from_state(shared_state)
+                            wide_base_fov = _optical_crop_fov(shared_state)
+                            sixteen_fov = build_optical_train(
+                                shared_state.camera_type(), "16mm"
+                            ).fov_degrees
+                            wide_plan = build_plan_for_optics(
+                                ff_frame_hw, wide_base_fov, sixteen_fov
+                            )
+                            wide_excluded = configured_excluded_tiles(
+                                _sep_cfg.get_option(
+                                    "mf_wide_excluded_tiles_by_optics", {}
+                                ),
+                                shared_state.camera_type(),
+                                lens_key,
+                                manual_focal,
+                            )
+                            calibration = CalibrationProfileStore(_sep_cfg).load_active(
+                                shared_state.camera_type(),
+                                lens_key,
+                                get_camera_profile(shared_state.camera_type()),
+                            )
+                            wide_coefficients = active_coefficients(calibration)
+
+                            def _wide_rectify_centroids(tile, local_centroids):
+                                if wide_coefficients is None:
+                                    return local_centroids
+                                global_centroids = np.asarray(
+                                    local_centroids, dtype=np.float64
+                                )
+                                global_centroids = global_centroids + np.asarray(
+                                    [tile.rect.y, tile.rect.x], dtype=np.float64
+                                )
+                                corrected = undistort_global_centroids(
+                                    global_centroids, ff_frame_hw, wide_coefficients
+                                )
+                                return corrected - np.asarray(
+                                    [tile.rect.y, tile.rect.x], dtype=np.float64
+                                )
+
+                            def _wide_cedar_detect(tile_frame):
+                                try:
+                                    if cedar_detect is None:
+                                        return ()
+                                    return cedar_detect.extract_centroids(
+                                        (np.asarray(tile_frame) >> 4).astype(np.uint8),
+                                        sigma=8,
+                                        max_size=10,
+                                        use_binned=True,
+                                    )
+                                except Exception:
+                                    logger.exception("Wide Cedar tile detection failed")
+                                    return ()
+
+                            def _wide_sep_detect(tile_frame):
+                                detection = sep_detect.detect_stars(
+                                    np.asarray(tile_frame),
+                                    sigma=float(
+                                        _sep_cfg.get_option("solver_sep_sigma") or 4.0
+                                    ),
+                                    saturation_level=cedar_ff_geometry[
+                                        "saturation_level"
+                                    ],
+                                    warm_pixel_map=cedar_ff_geometry["warm_map"],
+                                )
+                                return () if detection is None else detection.centroids
+
+                            def _wide_tetra_solve(cents, size, target, fov):
+                                return t3.solve_from_centroids(
+                                    cents,
+                                    size,
+                                    fov_estimate=fov,
+                                    fov_max_error=fov / 3.0,
+                                    match_max_error=0.005,
+                                    return_matches=True,
+                                    target_pixel=target,
+                                    solve_timeout=TILE_SOLVE_TIMEOUT_MS,
+                                )
+
+                            tile_fov = sfm.fov_estimate_deg(
+                                512, cedar_ff_geometry["crop_width_px"], wide_base_fov
+                            )
+                            wide_result = solve_wide_tiles(
+                                frame=ff_frame,
+                                plan=wide_plan,
+                                excluded_tile_ids=wide_excluded,
+                                saturation_level=cedar_ff_geometry["saturation_level"],
+                                rotation_deg=cedar_ff_geometry["rotation_deg"],
+                                crop_width_px=cedar_ff_geometry["crop_width_px"],
+                                production_target_yx=shared_state.target_pixel(),
+                                tile_fov_degrees=tile_fov,
+                                detect_primary=_wide_cedar_detect,
+                                detect_fallback=_wide_sep_detect,
+                                solve=_wide_tetra_solve,
+                                rectify_centroids=_wide_rectify_centroids,
+                            )
+                            if wide_result.solution is not None:
+                                solution = wide_result.solution
+                                solve_path = wide_result.solve_path
+                                logger.info(
+                                    "Wide tile solve success via %s (%s)",
+                                    wide_result.solve_path,
+                                    ",".join(wide_result.consensus_tile_ids),
+                                )
+                            else:
+                                logger.info(
+                                    "Wide tile solve held: %s (candidates=%s)",
+                                    wide_result.reason,
+                                    ",".join(wide_result.candidate_tile_ids),
+                                )
+                        except Exception:
+                            # A malformed lens/profile/exclusion must be no
+                            # worse than a disabled experimental tier.
+                            logger.exception(
+                                "Wide tile solver unavailable; continuing legacy cascade"
+                            )
+                            wide_result = None
 
                     if center_first_wanted and (
                         not solution or solution.get("RA") is None
@@ -1677,6 +1829,13 @@ def solver(
                             len(centroids),
                             solution.get("RMSE") or -1.0,
                         )
+                    elif wide_result is not None and wide_result.solution is not None:
+                        # Tile-local matches are not in the 512 production
+                        # coordinate system, so never leak them into SQM or
+                        # the regular matched-star overlay path.
+                        solution.pop("matched_centroids", None)
+                        solution.pop("matched_stars", None)
+                        solution.pop("matched_catID", None)
                     elif used_fullframe and solution and solution.get("RA") is not None:
                         # Cedar full-frame coordinates share the SEP canvas;
                         # retain matches only for the overlay, then strip them
@@ -1761,9 +1920,14 @@ def solver(
                                 len(sep_run.detection.centroids)
                                 if sep_fallback_used and sep_run is not None
                                 else (
-                                    ff_in_crop_count
-                                    if used_fullframe
-                                    else len(centroids)
+                                    wide_result.centroid_count
+                                    if wide_result is not None
+                                    and wide_result.solution is not None
+                                    else (
+                                        ff_in_crop_count
+                                        if used_fullframe
+                                        else len(centroids)
+                                    )
                                 )
                             ),
                             solve_path=solve_path,

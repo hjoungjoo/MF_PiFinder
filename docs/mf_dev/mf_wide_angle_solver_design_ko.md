@@ -1,6 +1,7 @@
 # 광각 렌즈 다중 구역 솔빙 및 왜곡 보정 — 상세 설계
 
-> 상태: **plan / 설계 정본** — 이 문서는 아직 런타임 동작을 바꾸지 않는다.
+> 상태: **구현본 / 야간 실측 대기** — 기존 경로 보호를 위해
+> `wide_solver_enabled=false`가 기본이며, 자동 실측 계수의 최종 승인만 남았다.
 > 작성일: 2026-08-20.
 > 선행 문서: [optical-train FOV 통합](mf_optical_train_fov_integration_ko.md),
 > [cedar+SEP 하이브리드 솔빙 설계](mf_cedar_sep_hybrid_design_ko.md),
@@ -257,9 +258,11 @@ checksum을 현재 optical train과 비교한다. 모두 일치하면 같은 `au
 
 ## 4. 좌표계와 16 mm 등가 타일
 
-> 현재 구현된 LiveCam 타일 표시·제외 기능의 사용 방법과 한계는
+> LiveCam 타일 표시·제외 기능의 사용 방법은
 > [광각 타일 LiveCam 운영 가이드](mf_wide_tiles_livecam_ko.md)를 따른다.
-> 이 절의 왜곡 보정·타일 솔빙·좌표 환산은 아직 후속 단계다.
+> 현재 구현은 원본 crop에서 Cedar/SEP 검출 후 Brown--Conrady를 centroid 좌표에
+> 적용한다. 따라서 타일 영상을 축소하거나 업스케일하지 않는다. 실제 렌즈별
+> 계수의 자동 승격 기준은 야간 실측에서 확정한다.
 
 현재의 512 공간, 무회전 풀프레임, 회전 풀프레임은 그대로 유지한다. 여기에 두
 공간을 더한다.

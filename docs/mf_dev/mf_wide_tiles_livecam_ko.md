@@ -2,10 +2,10 @@
 
 최종 업데이트: 2026-08-20
 
-이 문서는 현재 구현된 광각 타일 **표시·선택·영속 저장** 기능의 운영 기준이다.
-타일을 실제로 plate solve 하거나 제외 타일을 솔버에 적용하는 단계는 아직 구현되지
-않았다. 따라서 이 기능은 현재 LiveCam 진단/설정 준비용이며 기존 솔빙 경로를 바꾸지
-않는다.
+이 문서는 현재 구현된 광각 타일 **표시·선택·영속 저장·opt-in 솔빙** 기능의 운영
+기준이다. 기본값 `wide_solver_enabled=false`에서는 기존 솔빙 경로를 바꾸지 않는다.
+4/6/8 mm에서 명시적으로 켠 뒤 서비스를 재시작한 경우에만 제외 타일과 실제 native
+512×512 crop 계획이 솔버에 적용된다.
 
 상세 장기 설계는 [광각 렌즈 다중 구역 솔빙 및 왜곡 보정 설계](mf_wide_angle_solver_design_ko.md)를,
 후속 구현 순서는 [단계별 구현 계획](mf_wide_angle_solver_implementation_plan_ko.md)을 참고한다.
@@ -63,14 +63,19 @@ train으로 전파되지 않는다. 재부팅 뒤에도 같은 optical train이�
 | --- | --- |
 | `GET /api/camera/wide-tiles` | 현재 광학 조합의 타일, 실제 crop footprint, overlap, 제외 상태 반환 |
 | `POST /api/camera/wide-tiles` | `excluded_tile_ids` 목록을 유효한 현재 tile ID로 검증 후 영속 저장 |
+| `GET /api/camera/wide-solver` | 광각 솔버 flag, 현재 eligibility, 활성 calibration profile 반환 |
+| `POST /api/camera/wide-solver` | `enabled` 변경 또는 `manual_tv` 기본 왜곡 profile 저장 |
 
-## 5. 현재 제한과 후속 단계
+## 5. 솔빙 동작과 현재 제한
 
-- 화면은 현재 LiveCam source frame 기준이다. 왜곡 보정/rectified canvas는 아직
-  연결되지 않았다.
-- 제외 설정은 저장/표시만 하며 현재 production solver에는 적용되지 않는다.
-- 광각 타일 솔버를 연결할 때는 원본 tile 해상도에서 검출하고 tetra3에 실제 입력
-  크기와 tile별 FOV를 전달해야 한다. 512×512 production 경로로 단순 업스케일해서는
-  안 된다.
-- 다각형 기구 간섭 마스크와 tile별 solve/consensus/Integrator 좌표 발행은 후속
-  검증 단계에서 추가한다.
+- 중앙 C tile이 정상 solve되면 단일 해를 발행한다. 중앙이 포화되거나 실패하면
+  제외되지 않은 주변 tile을 모두 시도하고, **엄격하게 일치하는 인접 2개** 또는
+  **3개 이상 강건 합의**가 있어야만 하나의 좌표를 발행한다. 단일 주변 tile 해는
+  절대 발행하지 않는다.
+- 저장된 Brown--Conrady profile은 원본 crop에서 검출한 centroid에만 적용한다.
+  따라서 solver 입력 tile을 축소/업스케일하지 않는다. TV 값과 자동 실측 계수의
+  정확도 평가는 야간 검증이 필요하다.
+- 10 mm는 표시·제외 편집은 가능하지만, 요구사항의 `<10 mm` 경계를 지켜 기존
+  production solver를 유지한다.
+- 다각형 기구 간섭 마스크 및 자동 실측 계수의 최종 승인/승격은 후속 야간 검증
+  단계다.

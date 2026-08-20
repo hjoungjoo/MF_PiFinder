@@ -32,7 +32,13 @@ from PiFinder.mf_livecam_tiles import (
     overlay_payload as wide_tile_overlay_payload,
 )
 from PiFinder.mf_manual_lens import manual_focal_from_state
+from PiFinder.mf_wide_calibration import (
+    CalibrationProfileStore,
+    ManualTvDistortion,
+)
+from PiFinder.mf_wide_solver import wide_solver_eligible
 from PiFinder.optics import OpticalTrainResolver
+from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.livecam_config import (
     default_settings_for_config,
     disabled_status,
@@ -940,9 +946,9 @@ def register_api_routes(app, server_instance, require_auth=False):
     def api_camera_wide_tiles():
         """Expose editable solver-tile guides for lenses of 10 mm or less.
 
-        The endpoint is deliberately display/configuration only.  Tile
-        exclusions are retained for the later wide solver and cannot affect
-        today's single-frame solve path.
+        Exclusions are stored by optical train and are consumed by the
+        opt-in (<10 mm) wide solver.  The display control remains available
+        for 10 mm too, even though its production solver path is unchanged.
         """
 
         try:
@@ -997,6 +1003,75 @@ def register_api_routes(app, server_instance, require_auth=False):
             return _json_response(data)
         except Exception as e:
             logger.error("api/camera/wide-tiles error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    @app.route("/api/camera/wide-solver", methods=["GET", "POST"])
+    def api_camera_wide_solver():
+        """Report/alter the explicit wide solver flag and TV baseline.
+
+        A calibration write is intentionally separated from the enable flag:
+        entering a vendor value never starts experimental solves by itself.
+        The camera process reads the flag at start-up in order to publish the
+        full RAW frame, therefore enabling it reports that a restart is
+        required before the solver can use the new path.
+        """
+
+        try:
+            cfg = config.Config()
+            lens_key = str(cfg.get_option("camera_lens", "") or "")
+            manual_focal = cfg.get_option("camera_lens_focal_length_mm")
+            camera_type = _camera_type()
+            if request.method == "POST":
+                body = request.get_json(silent=True) or {}
+                if "enabled" in body:
+                    cfg.set_option("wide_solver_enabled", bool(body["enabled"]))
+                if "manual_tv" in body:
+                    if not lens_key:
+                        return _json_response(
+                            {
+                                "error": "Select a named lens before saving TV distortion"
+                            },
+                            400,
+                        )
+                    tv_input = body["manual_tv"]
+                    if not isinstance(tv_input, dict):
+                        return _json_response(
+                            {"error": "manual_tv must be an object"}, 400
+                        )
+                    tv = ManualTvDistortion(
+                        tv_distortion_percent=float(tv_input.get("distortion_percent")),
+                        direction=str(tv_input.get("direction", "")),
+                        reference_image_height_mm=float(
+                            tv_input.get("reference_image_height_mm")
+                        ),
+                        reference_kind=str(tv_input.get("reference_kind", "")),
+                        source_note=str(tv_input.get("source_note", "")),
+                    )
+                    CalibrationProfileStore(cfg).save_manual_tv(
+                        camera_type, lens_key, get_camera_profile(camera_type), tv
+                    )
+
+            profile = get_camera_profile(camera_type)
+            active = (
+                CalibrationProfileStore(cfg).load_active(camera_type, lens_key, profile)
+                if lens_key
+                else None
+            )
+            enabled = bool(cfg.get_option("wide_solver_enabled"))
+            return _json_response(
+                {
+                    "enabled": enabled,
+                    "eligible": wide_solver_eligible(enabled, lens_key, manual_focal),
+                    "lens_key": lens_key,
+                    "manual_focal_length_mm": manual_focal,
+                    "active_calibration": active,
+                    "restart_required_after_enable": enabled,
+                }
+            )
+        except (TypeError, ValueError) as e:
+            return _json_response({"error": str(e)}, 400)
+        except Exception as e:
+            logger.error("api/camera/wide-solver error: %s", e)
             return _json_response({"error": str(e)}, 500)
 
     @app.route("/api/camera/raw-stack/image")

@@ -358,15 +358,19 @@ class CameraInterface:
             if hasattr(shared_state, "set_livecam_settings"):
                 shared_state.set_livecam_settings(settings_from_config(cfg))
 
-            # SEP full-frame detection path (shadow logging / fallback solve)
-            # needs the uncropped raw published per frame. Read once at start;
+            # Full-frame Cedar/SEP and the opt-in MF wide-tile rescue need
+            # the uncropped raw published per frame. Read once at start;
             # changing these keys requires an app restart.
             self._publish_solver_raw = bool(
                 cfg.get_option("solver_shadow_detect")
                 or cfg.get_option("solver_sep_fallback")
+                or cfg.get_option("solver_cedar_fullframe")
+                or cfg.get_option("wide_solver_enabled")
             )
             if self._publish_solver_raw:
-                logger.info("Publishing full-frame solver_raw (SEP path enabled)")
+                logger.info(
+                    "Publishing full-frame solver_raw (full-frame solver path enabled)"
+                )
             self._auto_dump_enabled = bool(cfg.get_option("camera_auto_dump"))
             if self._auto_dump_enabled:
                 logger.info("Automatic stage dumps on solve-failure streaks")

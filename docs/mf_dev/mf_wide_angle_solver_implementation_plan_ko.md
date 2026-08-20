@@ -1,8 +1,10 @@
 # 광각 렌즈 솔빙 — 단계별 구현 및 병합 계획
 
-> 상태: **부분 구현**. P1(렌즈/수동 초점거리), P3의 순수 512² tile planner,
-> P4의 기본 LiveCam tile 표시·타일 단위 제외 저장까지 구현됐다. 왜곡 rectification,
-> 다각형 마스크, 타일 솔빙/좌표 발행은 아직 plan이다. 상세 구조의 정본은
+> 상태: **구현 완료, 야간 실측 대기**. P1(렌즈/수동 초점거리), P2의 TV 기본
+> profile 영속 저장과 centroid-space Brown--Conrady 보정, P3의 순수 512² tile
+> planner, P4의 LiveCam tile 표시·타일 단위 제외 저장, P5의 중앙→주변 타일
+> 실행·광학중심 좌표 환산·합의까지 구현됐다. 다각형 마스크와 자동 실측 계수의
+> 최종 승격은 야간 실측/디버깅 단계(P6)에서 확정한다. 상세 구조의 정본은
 > [광각 렌즈 다중 구역 솔빙 및 왜곡 보정 설계](mf_wide_angle_solver_design_ko.md)다.
 > 이 문서는 구현 순서·커밋 경계·승인 조건만 소유한다.
 
@@ -24,10 +26,10 @@
 | --- | --- | --- | --- |
 | P0 | 이 설계·계획 문서, 기존 테스트/좌표계 인벤토리 | 없음 | 사용자 승인 |
 | P1 | `4/6/8/10mm` Lens 선언, UI 메뉴, provisional 상태 표시·단위 시험 | 없음; 새 렌즈를 골라도 기존 solver | 기존 optics/UI/SQM 회귀 통과 |
-| P2 | `lens_calibration.py`, TV distortion 수동 입력/작은 센서 반경 환산, 영속 profile store/부팅 fingerprint 검증, 오프라인 보정 CLI, 중앙+주변 solve 기반 자동 보정 수집/hold-out, 0 보정 map 시험 | 없음 | TV manual profile 또는 반경 coverage·hold-out을 통과하고 재부팅 후 복원된 자동 revision/검증된 0 보정 profile |
+| P2 | `mf_wide_calibration.py`, TV distortion 수동 입력/작은 센서 반경 환산, 영속 profile store/fingerprint 검증, native centroid-space Brown--Conrady 보정, REST 설정/상태 API | `wide_solver_enabled=false`일 때 없음 | 수동 TV profile 재부팅 복원·실측 자료로 자동 revision/검증된 0 보정 profile 확정 |
 | P3 | rectified canvas·`TilePlanner`·최소 512² 원본 정사각 크롭/좌표 map, shadow 진단 | `wide_solver_enabled=false` | synthetic WCS와 tile 좌표 왕복 시험 |
 | P4 | LiveCam tile 레이어·타일 단위 제외 UI/API/config 영속(다각형 편집은 후속) | solver 선택에는 아직 미반영 | 재부팅 복원, invalid tile/API 회귀 |
-| P5 | 타일 Cedar→SEP 실행, 중앙 포화 판단, consensus 모듈 | shadow only, Integrator 미갱신 | 타일별 timeout 격리·인접 2-타일 엄격 일치·3개 이상 outlier 제거 자동 시험 |
+| P5 | 타일 Cedar→SEP 실행, 중앙 포화 판단, consensus 모듈 | opt-in 시 기존 `SuccessfulSolve` 하나로 어댑트 | 타일별 timeout 격리·인접 2-타일 엄격 일치·3개 이상 outlier 제거 자동 시험 |
 | P6 | 야간 shadow 관측, 수치 확정, 선택 렌즈의 opt-in activation | 활성 렌즈만 변경 | 3개 독립 밤·중앙/달/마스크 시나리오 통과 |
 | P7 | 문서·사용자 가이드·릴리스 노트, 필요 시 default 정책 검토 | 명시적 승인 전 기본 off | 롤백·운영 절차 검토 완료 |
 
@@ -85,10 +87,11 @@ profile ID와 계수만 저장하며 RAW를 넣지 않는다.
 
 ## 6. 배포/운영 절차
 
-1. 개발 장비에서 `wide_solver_enabled=false` 상태로 P1–P5 테스트를 통과한다.
-2. 특정 camera+lens+calibration ID에만 shadow를 켜고 status/LiveCam overlay를
-   기록한다. 왜곡 갱신은 사용자가 시작한 auto-calibration 수집 세션에서만
-   허용하며, 중앙·mid·edge coverage 및 hold-out 검증 완료 후 다음 프레임에 적용한다.
+1. 개발 장비에서 `wide_solver_enabled=false` 상태로 P1–P5 회귀 테스트를 통과한다.
+2. `/api/camera/wide-solver`에 TV 기본 profile을 저장하고, 특정 4/6/8 mm
+   camera+lens 조합에서만 flag를 켠 뒤 **서비스를 재시작**한다. LiveCam 제외
+   타일·로그·좌표를 기록한다. 자동 실측 계수 갱신은 중앙·mid·edge coverage와
+   hold-out 검증이 끝날 때까지 활성화하지 않는다.
 3. 실측 리포트 검토 후 사용자 승인이 있을 때만 `wide_solver_shadow=false`와
    해당 렌즈 allow-list를 켠다.
 4. 문제 시 먼저 `wide_solver_enabled=false`로 서비스 재시작 없이 새 시도를
