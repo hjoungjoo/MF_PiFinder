@@ -24,6 +24,7 @@ from PiFinder import timez
 from PiFinder import utils, calc_utils
 from PiFinder.boot_config import get_boot_config_path
 from PiFinder.locations import Location as SavedLocation
+from PiFinder.mf_manual_lens import normalise_manual_focal_length
 from PiFinder.optics import LENSES
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.state import Location
@@ -516,6 +517,45 @@ def set_camera_lens(ui_module: UIModule) -> None:
         lens_key = ""
     ui_module.shared_state.set_camera_lens(lens_key)
     logger.info("Camera lens statement updated: %s", lens_key or "automatic")
+
+
+def edit_manual_lens_focal_length(ui_module: UIModule) -> None:
+    """Open a one-decimal millimetre focal-length override entry."""
+
+    current = ui_module.config_object.get_option("camera_lens_focal_length_mm")
+    initial = "" if current is None else f"{float(current):.1f}"
+
+    def _save(value: str) -> None:
+        try:
+            focal_length = normalise_manual_focal_length(value)
+        except ValueError as exc:
+            ui_module.message(str(exc), 3)
+            return
+        ui_module.config_object.set_option("camera_lens_focal_length_mm", focal_length)
+        ui_module.shared_state.set_camera_lens_focal_length_mm(focal_length)
+        message = (
+            _("Manual lens cleared")
+            if focal_length is None
+            else _("Manual lens: {value:.1f} mm").format(value=focal_length)
+        )
+        ui_module.message(message, 2)
+
+    ui_module.add_to_stack(
+        {
+            "name": _("Manual Lens (mm)"),
+            "class": UITextEntry,
+            "mode": "text_entry",
+            "initial_text": initial,
+            "max_length": 4,
+            "callback": _save,
+        }
+    )
+
+
+def clear_manual_lens_focal_length(ui_module: UIModule) -> None:
+    ui_module.config_object.set_option("camera_lens_focal_length_mm", None)
+    ui_module.shared_state.set_camera_lens_focal_length_mm(None)
+    ui_module.message(_("Manual lens cleared"), 2)
 
 
 def switch_language(ui_module: UIModule) -> None:

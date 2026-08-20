@@ -31,6 +31,7 @@ from PiFinder import utils
 from PiFinder import timez
 from PiFinder import horizon_mask, sep_detect
 from PiFinder import solver_frame_map as sfm
+from PiFinder.mf_manual_lens import manual_focal_from_state
 from PiFinder.optics import OpticalTrainResolver, build_optical_train
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
@@ -84,7 +85,9 @@ def _optical_fov_gate_params(shared_state) -> tuple[float, float]:
     try:
         lens_getter = getattr(shared_state, "camera_lens", None)
         lens_key = lens_getter() if callable(lens_getter) else None
-        train = build_optical_train(shared_state.camera_type(), lens_key)
+        train = build_optical_train(
+            shared_state.camera_type(), lens_key, manual_focal_from_state(shared_state)
+        )
         return train.solver_fov_params()
     except Exception:
         logger.exception("Optical FOV gate unavailable; using legacy gate")
@@ -96,7 +99,9 @@ def _optical_crop_fov(shared_state) -> float:
     try:
         lens_getter = getattr(shared_state, "camera_lens", None)
         lens_key = lens_getter() if callable(lens_getter) else None
-        return build_optical_train(shared_state.camera_type(), lens_key).fov_degrees
+        return build_optical_train(
+            shared_state.camera_type(), lens_key, manual_focal_from_state(shared_state)
+        ).fov_degrees
     except Exception:
         logger.exception("Optical crop FOV unavailable; using legacy FOV")
         return sfm.SOLVER_FOV_DEG
@@ -123,7 +128,12 @@ def _fullframe_optics_key(
         lens_key = str(lens_getter() or "") if callable(lens_getter) else ""
     except Exception:
         lens_key = ""
-    return camera_type, lens_key, round(float(base_fov_degrees), 8)
+    manual_focal = manual_focal_from_state(shared_state)
+    return (
+        camera_type,
+        f"{lens_key}:{manual_focal or ''}",
+        round(float(base_fov_degrees), 8),
+    )
 
 
 def create_sqm_calculator(shared_state):
@@ -1250,7 +1260,9 @@ def solver(
                     try:
                         lens_getter = getattr(shared_state, "camera_lens", lambda: None)
                         radiometric_fov = sqm_optical_train.resolve(
-                            shared_state.camera_type(), lens_getter()
+                            shared_state.camera_type(),
+                            lens_getter(),
+                            manual_focal_from_state(shared_state),
                         ).fov_degrees
                     except (BrokenPipeError, ConnectionResetError):
                         radiometric_fov = None

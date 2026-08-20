@@ -5,6 +5,7 @@
     "camera_gain": 20,
     "camera_variant": "mono",
     "camera_lens": "",
+    "camera_lens_focal_length_mm": null,
     "wide_solver_enabled": false,
     "wide_solver_auto_calibration_enabled": false,
     "wide_solver_calibration_store_v1": {},

@@ -1394,6 +1394,14 @@ pifinder_menu = {
                             ],
                         },
                         {
+                            "name": _("Manual Lens (mm)"),
+                            "callback": callbacks.edit_manual_lens_focal_length,
+                        },
+                        {
+                            "name": _("Clear Manual Lens"),
+                            "callback": callbacks.clear_manual_lens_focal_length,
+                        },
+                        {
                             "name": _("GPS Settings"),
                             "class": UITextMenu,
                             "select": "single",

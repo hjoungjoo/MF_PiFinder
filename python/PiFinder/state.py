@@ -310,6 +310,9 @@ class SharedStateObj:
         # Empty means no user statement: optics may use a safe profile default,
         # but future FOV gating must keep the wider "assumed lens" policy.
         self.__camera_lens = config.Config().get_option("camera_lens", "")
+        self.__camera_lens_focal_length_mm = config.Config().get_option(
+            "camera_lens_focal_length_mm", None
+        )
         self.__cam_raw = None
         # Uncropped raw sensor frame for the SEP full-frame detection path
         # (dict: {"frame": uint16 ndarray, "exposure_end": float}). Only
@@ -388,6 +391,12 @@ class SharedStateObj:
 
     def set_camera_lens(self, v: str):
         self.__camera_lens = v
+
+    def camera_lens_focal_length_mm(self):
+        return self.__camera_lens_focal_length_mm
+
+    def set_camera_lens_focal_length_mm(self, v):
+        self.__camera_lens_focal_length_mm = v
 
     def sats(self):
         return self.__sats

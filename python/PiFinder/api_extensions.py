@@ -26,6 +26,7 @@ from PIL import Image
 from PiFinder import utils
 from PiFinder import config
 from PiFinder import camera_controls
+from PiFinder.mf_manual_lens import manual_focal_from_state
 from PiFinder.optics import OpticalTrainResolver
 from PiFinder.livecam_config import (
     default_settings_for_config,
@@ -526,7 +527,7 @@ def register_api_routes(app, server_instance, require_auth=False):
             )
 
             camera_fov = _API_OPTICAL_TRAIN.resolve(
-                ss.camera_type(), ss.camera_lens()
+                ss.camera_type(), ss.camera_lens(), manual_focal_from_state(ss)
             ).fov_degrees
 
             # --------------------------------------------------

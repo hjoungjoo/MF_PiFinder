@@ -9,12 +9,20 @@ pytestmark = pytest.mark.unit
 
 
 class _Config:
-    def __init__(self, lens=""):
+    def __init__(self, lens="", focal_length=None):
         self.lens = lens
+        self.focal_length = focal_length
+        self.saved = {}
 
     def get_option(self, option, default=None):
-        assert option == "camera_lens"
-        return self.lens if self.lens is not None else default
+        if option == "camera_lens":
+            return self.lens if self.lens is not None else default
+        if option == "camera_lens_focal_length_mm":
+            return self.focal_length if self.focal_length is not None else default
+        raise AssertionError(option)
+
+    def set_option(self, option, value):
+        self.saved[option] = value
 
 
 class _State:
@@ -24,11 +32,22 @@ class _State:
     def set_camera_lens(self, lens):
         self.lens = lens
 
+    def set_camera_lens_focal_length_mm(self, focal_length):
+        self.focal_length = focal_length
+
 
 class _UI:
     def __init__(self, lens=""):
         self.config_object = _Config(lens)
         self.shared_state = _State()
+        self.pushed = None
+        self.messages = []
+
+    def add_to_stack(self, item):
+        self.pushed = item
+
+    def message(self, message, timeout):
+        self.messages.append((message, timeout))
 
 
 def _lens_menu():
@@ -73,3 +92,14 @@ def test_set_camera_lens_rejects_unrecognised_config_value():
     ui = _UI("bad-lens")
     callbacks.set_camera_lens(ui)
     assert ui.shared_state.lens == ""
+
+
+def test_manual_lens_menu_opens_one_decimal_entry_and_publishes_value():
+    ui = _UI()
+    callbacks.edit_manual_lens_focal_length(ui)
+    assert ui.pushed["max_length"] == 4
+    assert ui.pushed["initial_text"] == ""
+
+    ui.pushed["callback"]("7.64")
+    assert ui.config_object.saved["camera_lens_focal_length_mm"] == 7.6
+    assert ui.shared_state.focal_length == 7.6

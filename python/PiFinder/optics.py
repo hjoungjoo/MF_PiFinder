@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
+from PiFinder.mf_manual_lens import MANUAL_LENS_KEY, normalise_manual_focal_length
 from PiFinder.mf_wide_lens import MF_WIDE_LENS_SPECS
 from PiFinder.sqm.camera_profiles import CameraProfile, get_camera_profile
 
@@ -75,8 +76,20 @@ def lens_is_stated(lens_key: Optional[str]) -> bool:
     return bool(lens_key) and lens_key in LENSES
 
 
-def resolve_lens(profile: CameraProfile, lens_key: Optional[str] = None) -> Lens:
+def resolve_lens(
+    profile: CameraProfile,
+    lens_key: Optional[str] = None,
+    manual_focal_length_mm: Optional[float] = None,
+) -> Lens:
     """Use the configured lens if valid, otherwise the profile's safe default."""
+    manual_focal = normalise_manual_focal_length(manual_focal_length_mm)
+    if manual_focal is not None:
+        return Lens(
+            MANUAL_LENS_KEY,
+            manual_focal,
+            manual_focal,
+            calibration_required=True,
+        )
     if lens_is_stated(lens_key):
         return get_lens(str(lens_key))
     return get_lens(profile.default_lens_key)
@@ -143,33 +156,48 @@ class OpticalTrain:
 
 
 def optical_train_for_profile(
-    profile: CameraProfile, lens_key: Optional[str] = None
+    profile: CameraProfile,
+    lens_key: Optional[str] = None,
+    manual_focal_length_mm: Optional[float] = None,
 ) -> OpticalTrain:
     """Build a train from a loaded profile and an optional config value."""
     return OpticalTrain(
-        profile, resolve_lens(profile, lens_key), lens_is_stated(lens_key)
+        profile,
+        resolve_lens(profile, lens_key, manual_focal_length_mm),
+        lens_is_stated(lens_key)
+        or normalise_manual_focal_length(manual_focal_length_mm) is not None,
     )
 
 
 def build_optical_train(
-    camera_type: str, lens_key: Optional[str] = None
+    camera_type: str,
+    lens_key: Optional[str] = None,
+    manual_focal_length_mm: Optional[float] = None,
 ) -> OpticalTrain:
     """Build a train from the camera profile name used by current PiFinder."""
-    return optical_train_for_profile(get_camera_profile(camera_type), lens_key)
+    return optical_train_for_profile(
+        get_camera_profile(camera_type), lens_key, manual_focal_length_mm
+    )
 
 
 class OpticalTrainResolver:
     """Cache a train and rebuild it only when camera or lens state changes."""
 
     def __init__(self) -> None:
-        self._key: Optional[Tuple[str, Optional[str]]] = None
+        self._key: Optional[Tuple[str, Optional[str], Optional[float]]] = None
         self._train: Optional[OpticalTrain] = None
 
-    def resolve(self, camera_type: str, lens_key: Optional[str] = None) -> OpticalTrain:
-        key = (camera_type, lens_key)
+    def resolve(
+        self,
+        camera_type: str,
+        lens_key: Optional[str] = None,
+        manual_focal_length_mm: Optional[float] = None,
+    ) -> OpticalTrain:
+        manual_focal = normalise_manual_focal_length(manual_focal_length_mm)
+        key = (camera_type, lens_key, manual_focal)
         if key != self._key or self._train is None:
             self._train = optical_train_for_profile(
-                resolve_camera_profile(camera_type), lens_key
+                resolve_camera_profile(camera_type), lens_key, manual_focal
             )
             self._key = key
         return self._train

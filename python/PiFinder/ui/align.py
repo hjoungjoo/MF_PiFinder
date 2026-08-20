@@ -13,6 +13,7 @@ from PIL import ImageChops
 
 from PiFinder.ui.marking_menus import MarkingMenuOption, MarkingMenu
 from PiFinder import plot
+from PiFinder.mf_manual_lens import manual_focal_from_state
 from PiFinder.optics import OpticalTrainResolver
 from PiFinder.types.positioning import AlignCancel, AlignOnRaDec, AlignedResult
 from PiFinder.ui.base import UIModule
@@ -227,7 +228,9 @@ class UIAlign(UIModule):
                 )
                 chart_rot_angle = orientation.rot_deg if orientation else None
                 camera_fov = self._optical_train.resolve(
-                    self.shared_state.camera_type(), self.shared_state.camera_lens()
+                    self.shared_state.camera_type(),
+                    self.shared_state.camera_lens(),
+                    manual_focal_from_state(self.shared_state),
                 ).fov_degrees
                 # This needs to be called first to set RA/DEC/chart_rot_angle
                 image_obj, self.visible_stars = self.starfield.plot_starfield(
