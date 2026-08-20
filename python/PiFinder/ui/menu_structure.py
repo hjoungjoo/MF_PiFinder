@@ -1391,15 +1391,17 @@ pifinder_menu = {
                                     "name": _("25mm"),
                                     "value": "25mm",
                                 },
+                                {
+                                    "name": _("Manual (mm)"),
+                                    # UITextMenu needs a value on every item
+                                    # in a configured single-select list.  The
+                                    # callback opens the entry before this is
+                                    # ever treated as a selected lens value.
+                                    "value": None,
+                                    "callback": callbacks.edit_manual_lens_focal_length,
+                                    "name_suffix_callback": callbacks.manual_lens_focal_length_suffix,
+                                },
                             ],
-                        },
-                        {
-                            "name": _("Manual Lens (mm)"),
-                            "callback": callbacks.edit_manual_lens_focal_length,
-                        },
-                        {
-                            "name": _("Clear Manual Lens"),
-                            "callback": callbacks.clear_manual_lens_focal_length,
                         },
                         {
                             "name": _("GPS Settings"),

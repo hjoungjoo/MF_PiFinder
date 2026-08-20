@@ -1,6 +1,8 @@
 # 광각 렌즈 솔빙 — 단계별 구현 및 병합 계획
 
-> 상태: **plan** (코드 변경 전). 상세 구조의 정본은
+> 상태: **부분 구현**. P1(렌즈/수동 초점거리), P3의 순수 512² tile planner,
+> P4의 기본 LiveCam tile 표시·타일 단위 제외 저장까지 구현됐다. 왜곡 rectification,
+> 다각형 마스크, 타일 솔빙/좌표 발행은 아직 plan이다. 상세 구조의 정본은
 > [광각 렌즈 다중 구역 솔빙 및 왜곡 보정 설계](mf_wide_angle_solver_design_ko.md)다.
 > 이 문서는 구현 순서·커밋 경계·승인 조건만 소유한다.
 
@@ -23,8 +25,8 @@
 | P0 | 이 설계·계획 문서, 기존 테스트/좌표계 인벤토리 | 없음 | 사용자 승인 |
 | P1 | `4/6/8/10mm` Lens 선언, UI 메뉴, provisional 상태 표시·단위 시험 | 없음; 새 렌즈를 골라도 기존 solver | 기존 optics/UI/SQM 회귀 통과 |
 | P2 | `lens_calibration.py`, TV distortion 수동 입력/작은 센서 반경 환산, 영속 profile store/부팅 fingerprint 검증, 오프라인 보정 CLI, 중앙+주변 solve 기반 자동 보정 수집/hold-out, 0 보정 map 시험 | 없음 | TV manual profile 또는 반경 coverage·hold-out을 통과하고 재부팅 후 복원된 자동 revision/검증된 0 보정 profile |
-| P3 | rectified canvas·`TilePlanner`·원본 크롭/좌표 map, shadow 진단 | `wide_solver_enabled=false` | synthetic WCS와 16 mm 타일 좌표 왕복 시험 |
-| P4 | LiveCam tile 레이어·제외 폴리곤 UI/API/config 영속 | solver 선택에는 아직 미반영 | 재부팅 복원, invalid mask/revision 충돌/API 회귀 |
+| P3 | rectified canvas·`TilePlanner`·최소 512² 원본 정사각 크롭/좌표 map, shadow 진단 | `wide_solver_enabled=false` | synthetic WCS와 tile 좌표 왕복 시험 |
+| P4 | LiveCam tile 레이어·타일 단위 제외 UI/API/config 영속(다각형 편집은 후속) | solver 선택에는 아직 미반영 | 재부팅 복원, invalid tile/API 회귀 |
 | P5 | 타일 Cedar→SEP 실행, 중앙 포화 판단, consensus 모듈 | shadow only, Integrator 미갱신 | 타일별 timeout 격리·인접 2-타일 엄격 일치·3개 이상 outlier 제거 자동 시험 |
 | P6 | 야간 shadow 관측, 수치 확정, 선택 렌즈의 opt-in activation | 활성 렌즈만 변경 | 3개 독립 밤·중앙/달/마스크 시나리오 통과 |
 | P7 | 문서·사용자 가이드·릴리스 노트, 필요 시 default 정책 검토 | 명시적 승인 전 기본 off | 롤백·운영 절차 검토 완료 |
@@ -39,8 +41,9 @@ P1–P5는 각각 독립 커밋/PR 단위로 유지한다. P6의 야간 실측 �
 | --- | --- | --- | --- | --- |
 | `python/PiFinder/optics.py` | 렌즈·상태 메타데이터 | calibrated focal FOV 해석 | - | policy 조회만 |
 | `python/PiFinder/lens_calibration.py` | - | 신규: 모델/profile/remap/fingerprint | - | 좌표 변환 제공 |
-| `python/PiFinder/wide_field_tiles.py` | - | 신규: 타일·mask 교차·crop map | tile plan 직렬화 | solver 입력 |
-| `python/PiFinder/wide_field_consensus.py` | - | - | - | 신규: 후보 합의 |
+| `python/PiFinder/mf_wide_tiles.py` | - | 신규: 512² tile plan·crop map | tile plan 직렬화 | solver 입력 |
+| `python/PiFinder/mf_wide_consensus.py` | - | - | - | 신규: 후보 합의 |
+| `python/PiFinder/mf_livecam_tiles.py` | - | LiveCam용 논리 셀/overlap payload | tile 제외 profile 직렬화 | solver가 제외 정보 소비 |
 | `python/PiFinder/solver.py` | flag/config 읽기만 | shadow geometry | 상태 진단 게시 | 중앙→주변 상태기계 |
 | `python/PiFinder/state.py` | - | tile diagnostics 저장소 | mask revision/overlay | consensus 진단 |
 | `python/PiFinder/livecam_config.py` | - | - | mask schema/normalizer | - |

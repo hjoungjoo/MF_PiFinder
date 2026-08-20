@@ -257,6 +257,10 @@ checksum을 현재 optical train과 비교한다. 모두 일치하면 같은 `au
 
 ## 4. 좌표계와 16 mm 등가 타일
 
+> 현재 구현된 LiveCam 타일 표시·제외 기능의 사용 방법과 한계는
+> [광각 타일 LiveCam 운영 가이드](mf_wide_tiles_livecam_ko.md)를 따른다.
+> 이 절의 왜곡 보정·타일 솔빙·좌표 환산은 아직 후속 단계다.
+
 현재의 512 공간, 무회전 풀프레임, 회전 풀프레임은 그대로 유지한다. 여기에 두
 공간을 더한다.
 
@@ -267,11 +271,12 @@ checksum을 현재 optical train과 비교한다. 모두 일치하면 같은 `au
 | tile | rectified canvas 내부 16 mm 등가 창 | cedar/SEP 검출·tetra3 솔브 |
 | 512 production | 기존 회전된 512 | `target_pixel`, 정렬·하류 호환 |
 
-`TilePlanner`는 선택된 렌즈의 rectified canvas에서 **현재 센서의 검증된 16 mm
-crop FOV**를 타일의 기준 각폭으로 사용한다. 예를 들어 IMX462는 16 mm의
-10.4028° FOV를 기준으로 한다. 큰 광각 프레임을 512로 줄이는 대신, 이 크기의
-사각 창을 15–25% 겹치게 배치한다. 타일 수와 위치는 명목 FOV가 아니라 보정
-프로파일의 intrinsic matrix·유효 footprint에서 계산한다.
+`TilePlanner`는 큰 광각 프레임을 512로 줄이지 않는다. 타일의 원본 크기는 렌즈
+FOV와 무관하게 **최소 512×512 정사각 pixel**로 고정한다. 프레임을 모두 덮는 데
+필요한 행·열 수는 홀수로 올려 중앙 `C` 타일의 중심이 optical center와 정확히
+일치하게 하고, 인접 타일은 기본 20%를 목표로 중첩한다. 가장자리까지 덮기 위해
+실제 중첩률은 그보다 클 수 있다. 16 mm FOV는 타일 크기를 정하는 값이 아니라,
+타일별 WCS/FOV 진단·검증에 쓰는 광학 메타데이터다.
 
 ```mermaid
 flowchart TB
@@ -298,6 +303,14 @@ flowchart TB
 설정에는 사람이 읽는 `C`, `N`, `NE` 등의 안정된 논리 ID와 함께, 정확한
 rectified bounds·native footprint를 저장한다.
 
+LiveCam은 실제 512px 타일 footprint가 서로 겹쳐 편집하기 어려워지는 것을 막기
+위해, 클릭용 비중첩 논리 셀을 별도로 그린다. 각 셀은 하나의 실제 타일 ID에
+연결된다. 실제 타일이 둘 이상 겹치는 영역은 **점선**으로 표시하며, 타일 이름은
+각 클릭 셀 중앙에 둔다. 제외를 선택하면 논리 셀이 아니라 그 선택이 영향을 주는
+실제 512×512 footprint를 반투명으로 표시한다. 중앙 `C`의 실제 512×512 footprint는
+굵은 점선으로 항상 최상단에 강조한다. 이 레이어는 10 mm 이하에서만 노출되고 기본
+표시는 Off다.
+
 ### 4.1 “크롭, 축소 금지” 규칙
 
 타일의 solver frame은 rectified canvas에서 자른 원본 pixel grid다. 다음은
@@ -307,9 +320,11 @@ rectified bounds·native footprint를 저장한다.
 - 서로 다른 타일의 centroid를 한 화면에 재투영하여 하나의 가짜 전체 프레임으로
   솔브하는 것
 - 타일의 WCS를 512 공간으로 단순 비율 확대/축소하는 것
+- 512px보다 작은 원본 타일을 512×512로 업스케일한 뒤 솔브하는 것
 
-SEP의 2×2 binning, LiveCam 표시 resize는 검출/표시 전용이며 반드시 정확한
-원본 tile 좌표로 역변환한다. tile solution의 `target_pixel`은
+타일 검출·솔브는 512px 이상 원본 정사각 좌표에서 수행하고, tetra3에는 실제
+tile 입력 크기와 그 타일의 FOV를 전달한다. SEP의 2×2 binning, LiveCam 표시
+resize는 검출/표시 전용이며 반드시 정확한 원본 tile 좌표로 역변환한다. tile solution의 `target_pixel`은
 `TileCoordinateMap`을 통해 원래 카메라 optical center와 기존 512 정렬점의
 의미로 변환한다.
 

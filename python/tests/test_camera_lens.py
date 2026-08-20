@@ -79,7 +79,14 @@ def test_lens_menu_is_a_single_config_declaration():
         "12mm",
         "16mm",
         "25mm",
+        None,
     ]
+    manual_item = menu["items"][-1]
+    assert manual_item["name"] == "Manual (mm)"
+    assert manual_item["callback"] is callbacks.edit_manual_lens_focal_length
+    assert (
+        manual_item["name_suffix_callback"] is callbacks.manual_lens_focal_length_suffix
+    )
 
 
 def test_set_camera_lens_publishes_valid_lens_without_restart():
@@ -103,3 +110,9 @@ def test_manual_lens_menu_opens_one_decimal_entry_and_publishes_value():
     ui.pushed["callback"]("7.64")
     assert ui.config_object.saved["camera_lens_focal_length_mm"] == 7.6
     assert ui.shared_state.focal_length == 7.6
+
+
+def test_manual_lens_menu_displays_the_active_focal_length():
+    ui = _UI()
+    ui.config_object.focal_length = 7.6
+    assert callbacks.manual_lens_focal_length_suffix(ui) == "  7.6"

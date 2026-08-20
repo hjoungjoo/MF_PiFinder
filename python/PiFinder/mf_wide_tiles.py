@@ -1,10 +1,9 @@
-"""Pure 16-mm-equivalent crop planning for MF wide-angle lenses.
+"""Pure centred planning for native, overlapping square wide-angle tiles.
 
-The planner never resizes a frame.  It describes square, overlapping crops in
-the supplied rectified/native canvas; the caller retains ownership of the
-actual distortion remap and detector invocation.  Keeping it pure makes lens
-changes easy to test and prevents this experimental path from altering the
-current production crop.
+Every tile is at least 512x512 source pixels, independent of the lens FOV.
+Tiles are centred as an odd grid so the central crop remains on the optical
+centre.  The planner never resizes a frame; overlap preserves edge coverage
+and is exposed separately for the LiveCam display.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ import math
 from typing import Final
 
 
+MIN_TILE_SIZE_PX: Final[int] = 512
 DEFAULT_OVERLAP: Final[float] = 0.20
 
 
@@ -61,37 +61,22 @@ class MFWideTilePlan:
         return next(tile for tile in self.tiles if tile.is_central)
 
 
-def _tile_pixels(
-    frame_width_px: int, full_fov_degrees: float, tile_fov_degrees: float
-) -> int:
-    if frame_width_px <= 0:
-        raise ValueError("frame width must be positive")
-    if not 0 < tile_fov_degrees <= full_fov_degrees < 180:
-        raise ValueError("FOVs must satisfy 0 < tile <= full < 180")
-    # Gnomonic/tangent scaling rather than linear angle scaling preserves the
-    # requested central 16-mm-equivalent angular extent for a rectilinear map.
-    ratio = math.tan(math.radians(tile_fov_degrees) / 2.0) / math.tan(
-        math.radians(full_fov_degrees) / 2.0
-    )
-    return max(1, min(frame_width_px, round(frame_width_px * ratio)))
+def _centred_axis_starts(
+    length: int, tile_size: int, overlap: float
+) -> tuple[int, ...]:
+    """Return an odd, edge-covering, centre-symmetric series of tile starts."""
 
-
-def _axis_starts(length: int, tile: int, overlap: float) -> tuple[int, ...]:
-    if tile > length:
-        raise ValueError("tile cannot exceed the frame axis")
+    if length < tile_size:
+        raise ValueError("frame is smaller than the minimum native tile size")
     if not 0 <= overlap < 0.5:
         raise ValueError("overlap must be in [0, 0.5)")
-    if tile == length:
+    if length == tile_size:
         return (0,)
-    stride = max(1, round(tile * (1.0 - overlap)))
-    starts = list(range(0, length - tile + 1, stride))
-    final = length - tile
-    if starts[-1] != final:
-        starts.append(final)
-    centred = round((length - tile) / 2.0)
-    if centred not in starts:
-        starts.append(centred)
-    return tuple(sorted(set(starts)))
+    preferred_stride = max(1, round(tile_size * (1.0 - overlap)))
+    required = math.ceil((length - tile_size) / preferred_stride) + 1
+    count = required if required % 2 else required + 1
+    span = length - tile_size
+    return tuple(round(index * span / (count - 1)) for index in range(count))
 
 
 def _tile_id(row: int, column: int, central_row: int, central_column: int) -> str:
@@ -112,32 +97,25 @@ def plan_wide_tiles(
     *,
     overlap: float = DEFAULT_OVERLAP,
 ) -> MFWideTilePlan:
-    """Return original-resolution crops covering a wide rectified canvas.
+    """Return centred, native square tiles covering the full canvas.
 
-    ``sixteen_mm_fov_degrees`` is the current sensor's measured 16-mm crop
-    FOV, not the historical fixed 12-degree production solver value.
+    ``full_fov_degrees`` and ``sixteen_mm_fov_degrees`` are retained as
+    diagnostic metadata for the eventual per-tile WCS calculation.  They do
+    not control native tile size: every tile is ``MIN_TILE_SIZE_PX`` square.
     """
 
     height, width = (int(frame_hw[0]), int(frame_hw[1]))
-    tile_width = _tile_pixels(width, full_fov_degrees, sixteen_mm_fov_degrees)
-    # The production 16-mm crop is square.  Keep that angular unit square in
-    # the native/rectified pixel grid and refuse a lens/frame that cannot fit
-    # it rather than resize its height.
-    tile_side = min(tile_width, height)
-    if tile_side <= 0:
-        raise ValueError("frame dimensions must be positive")
-    ys = _axis_starts(height, tile_side, overlap)
-    xs = _axis_starts(width, tile_side, overlap)
-    central_y = min(
-        range(len(ys)), key=lambda index: abs(ys[index] + tile_side / 2 - height / 2)
-    )
-    central_x = min(
-        range(len(xs)), key=lambda index: abs(xs[index] + tile_side / 2 - width / 2)
-    )
+    if not 0 < sixteen_mm_fov_degrees <= full_fov_degrees < 180:
+        raise ValueError("FOVs must satisfy 0 < tile <= full < 180")
+    tile_size = MIN_TILE_SIZE_PX
+    ys = _centred_axis_starts(height, tile_size, overlap)
+    xs = _centred_axis_starts(width, tile_size, overlap)
+    central_y = len(ys) // 2
+    central_x = len(xs) // 2
     tiles = tuple(
         MFWideTile(
             _tile_id(row, column, central_y, central_x),
-            MFRect(y, x, tile_side, tile_side),
+            MFRect(y, x, tile_size, tile_size),
             row,
             column,
             row == central_y and column == central_x,

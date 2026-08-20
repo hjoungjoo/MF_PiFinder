@@ -26,6 +26,11 @@ from PIL import Image
 from PiFinder import utils
 from PiFinder import config
 from PiFinder import camera_controls
+from PiFinder.mf_livecam_tiles import (
+    EXCLUDED_TILES_CONFIG_KEY,
+    excluded_tile_ids,
+    overlay_payload as wide_tile_overlay_payload,
+)
 from PiFinder.mf_manual_lens import manual_focal_from_state
 from PiFinder.optics import OpticalTrainResolver
 from PiFinder.livecam_config import (
@@ -929,6 +934,69 @@ def register_api_routes(app, server_instance, require_auth=False):
             return _json_response(data)
         except Exception as e:
             logger.error("api/camera/raw-stack/status error: %s", e)
+            return _json_response({"error": str(e)}, 500)
+
+    @app.route("/api/camera/wide-tiles", methods=["GET", "POST"])
+    def api_camera_wide_tiles():
+        """Expose editable solver-tile guides for lenses of 10 mm or less.
+
+        The endpoint is deliberately display/configuration only.  Tile
+        exclusions are retained for the later wide solver and cannot affect
+        today's single-frame solve path.
+        """
+
+        try:
+            cfg = config.Config()
+            lens_key = cfg.get_option("camera_lens", "")
+            manual_focal = cfg.get_option("camera_lens_focal_length_mm")
+            camera_type = _camera_type()
+            info = None
+            if hasattr(server_instance.shared_state, "raw_live_frame_info"):
+                info = server_instance.shared_state.raw_live_frame_info()
+            frame_shape = (info or {}).get("shape")
+            frame_hw = (
+                (int(frame_shape[0]), int(frame_shape[1]))
+                if isinstance(frame_shape, (list, tuple)) and len(frame_shape) == 2
+                else None
+            )
+            saved = cfg.get_option(EXCLUDED_TILES_CONFIG_KEY, {})
+            saved = saved if isinstance(saved, dict) else {}
+
+            def payload_for_current_optics():
+                probe = wide_tile_overlay_payload(
+                    camera_type=camera_type,
+                    lens_key=lens_key,
+                    manual_focal_length_mm=manual_focal,
+                    frame_hw=frame_hw,
+                )
+                return wide_tile_overlay_payload(
+                    camera_type=camera_type,
+                    lens_key=lens_key,
+                    manual_focal_length_mm=manual_focal,
+                    frame_hw=frame_hw,
+                    excluded_ids=saved.get(probe["optics_key"], []),
+                )
+
+            data = payload_for_current_optics()
+            if request.method == "POST":
+                if not data["enabled"]:
+                    return _json_response(
+                        {
+                            "error": "Wide tile controls require a lens of 10.0 mm or less"
+                        },
+                        400,
+                    )
+                requested = excluded_tile_ids(
+                    (request.get_json(silent=True) or {}).get("excluded_tile_ids")
+                )
+                valid_ids = {tile["id"] for tile in data["tiles"]}
+                saved = dict(saved)
+                saved[data["optics_key"]] = sorted(requested & valid_ids)
+                cfg.set_option(EXCLUDED_TILES_CONFIG_KEY, saved)
+                data = payload_for_current_optics()
+            return _json_response(data)
+        except Exception as e:
+            logger.error("api/camera/wide-tiles error: %s", e)
             return _json_response({"error": str(e)}, 500)
 
     @app.route("/api/camera/raw-stack/image")

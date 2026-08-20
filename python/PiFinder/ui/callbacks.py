@@ -552,10 +552,16 @@ def edit_manual_lens_focal_length(ui_module: UIModule) -> None:
     )
 
 
-def clear_manual_lens_focal_length(ui_module: UIModule) -> None:
-    ui_module.config_object.set_option("camera_lens_focal_length_mm", None)
-    ui_module.shared_state.set_camera_lens_focal_length_mm(None)
-    ui_module.message(_("Manual lens cleared"), 2)
+def manual_lens_focal_length_suffix(ui_module: UIModule) -> str:
+    """Show the active manual value beside the Lens-menu entry."""
+
+    focal_length = ui_module.config_object.get_option("camera_lens_focal_length_mm")
+    if focal_length is None:
+        return ""
+    try:
+        return f"  {float(focal_length):.1f}"
+    except (TypeError, ValueError):
+        return ""
 
 
 def switch_language(ui_module: UIModule) -> None:
