@@ -97,9 +97,10 @@ def overlay_payload(
         from PiFinder.optics import resolve_camera_profile
 
         profile = resolve_camera_profile(camera_type or "")
-        full_train = optical_train_for_profile(
-            profile, lens_key, manual_focal_length_mm
-        )
+        # Pass the validated numeric override, not the API/config-shaped
+        # input object.  Besides matching the resolver contract this keeps
+        # equivalent values such as "6.0" and 6.0 on the same optical path.
+        full_train = optical_train_for_profile(profile, lens_key, focal_length)
         sixteen_train = optical_train_for_profile(profile, "16mm")
         plan = plan_wide_tiles(
             (height, width), full_train.fov_degrees, sixteen_train.fov_degrees
