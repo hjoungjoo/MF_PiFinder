@@ -1364,19 +1364,19 @@ pifinder_menu = {
                                     "value": "",
                                 },
                                 {
-                                    "name": _("4mm (calibration required)"),
+                                    "name": _("4mm"),
                                     "value": "4mm",
                                 },
                                 {
-                                    "name": _("6mm (calibration required)"),
+                                    "name": _("6mm"),
                                     "value": "6mm",
                                 },
                                 {
-                                    "name": _("8mm (calibration required)"),
+                                    "name": _("8mm"),
                                     "value": "8mm",
                                 },
                                 {
-                                    "name": _("10mm (calibration required)"),
+                                    "name": _("10mm"),
                                     "value": "10mm",
                                 },
                                 {
