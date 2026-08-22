@@ -36,7 +36,7 @@ from PiFinder.mf_wide_calibration import (
     CalibrationProfileStore,
     ManualTvDistortion,
 )
-from PiFinder.mf_wide_solver import wide_solver_eligible
+from PiFinder.mf_wide_solver import tile_solver_eligible
 from PiFinder.optics import OpticalTrainResolver
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.livecam_config import (
@@ -145,6 +145,13 @@ def _solution_to_dict(sol) -> dict:
         "CedarGatedCentroids": getattr(diag, "CedarGatedCentroids", None),
         "CedarCenterCentroids": getattr(diag, "CedarCenterCentroids", None),
         "SepCentroids": getattr(diag, "SepCentroids", None),
+        "tile_recovery": {
+            "attempted": list(getattr(diag, "TileAttempted", ()) or ()),
+            "candidates": list(getattr(diag, "TileCandidates", ()) or ()),
+            "accepted": list(getattr(diag, "TileAccepted", ()) or ()),
+            "reason": getattr(diag, "TileReason", ""),
+            "scores": list(getattr(diag, "TileScores", ()) or ()),
+        },
     }
 
 
@@ -944,11 +951,11 @@ def register_api_routes(app, server_instance, require_auth=False):
 
     @app.route("/api/camera/wide-tiles", methods=["GET", "POST"])
     def api_camera_wide_tiles():
-        """Expose editable solver-tile guides for lenses of 10 mm or less.
+        """Expose editable solver-tile guides for every stated lens.
 
         Exclusions are stored by optical train and are consumed by the
-        opt-in (<10 mm) wide solver.  The display control remains available
-        for 10 mm too, even though its production solver path is unchanged.
+        opt-in tile recovery solver.  Lenses below 10 mm use the wide grid;
+        10 mm and above use a central-crop-sized 3x3 recovery grid.
         """
 
         try:
@@ -965,6 +972,7 @@ def register_api_routes(app, server_instance, require_auth=False):
                 if isinstance(frame_shape, (list, tuple)) and len(frame_shape) == 2
                 else None
             )
+            display_rotation_degrees = (info or {}).get("display_rotation_degrees", 0)
             saved = cfg.get_option(EXCLUDED_TILES_CONFIG_KEY, {})
             saved = saved if isinstance(saved, dict) else {}
 
@@ -974,6 +982,7 @@ def register_api_routes(app, server_instance, require_auth=False):
                     lens_key=lens_key,
                     manual_focal_length_mm=manual_focal,
                     frame_hw=frame_hw,
+                    display_rotation_degrees=display_rotation_degrees,
                 )
                 return wide_tile_overlay_payload(
                     camera_type=camera_type,
@@ -981,15 +990,14 @@ def register_api_routes(app, server_instance, require_auth=False):
                     manual_focal_length_mm=manual_focal,
                     frame_hw=frame_hw,
                     excluded_ids=saved.get(probe["optics_key"], []),
+                    display_rotation_degrees=display_rotation_degrees,
                 )
 
             data = payload_for_current_optics()
             if request.method == "POST":
                 if not data["enabled"]:
                     return _json_response(
-                        {
-                            "error": "Wide tile controls require a lens of 10.0 mm or less"
-                        },
+                        {"error": "Tile controls require a selected lens"},
                         400,
                     )
                 requested = excluded_tile_ids(
@@ -1007,7 +1015,7 @@ def register_api_routes(app, server_instance, require_auth=False):
 
     @app.route("/api/camera/wide-solver", methods=["GET", "POST"])
     def api_camera_wide_solver():
-        """Report/alter the explicit wide solver flag and TV baseline.
+        """Report/alter the explicit tile recovery flag and TV baseline.
 
         A calibration write is intentionally separated from the enable flag:
         entering a vendor value never starts experimental solves by itself.
@@ -1061,7 +1069,7 @@ def register_api_routes(app, server_instance, require_auth=False):
             return _json_response(
                 {
                     "enabled": enabled,
-                    "eligible": wide_solver_eligible(enabled, lens_key, manual_focal),
+                    "eligible": tile_solver_eligible(enabled, lens_key, manual_focal),
                     "lens_key": lens_key,
                     "manual_focal_length_mm": manual_focal,
                     "active_calibration": active,

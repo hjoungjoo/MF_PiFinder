@@ -32,6 +32,7 @@ from PiFinder import timez
 from PiFinder import horizon_mask, sep_detect
 from PiFinder import solver_frame_map as sfm
 from PiFinder.mf_manual_lens import manual_focal_from_state
+from PiFinder.mf_livecam_tiles import active_focal_length_mm
 from PiFinder.mf_wide_calibration import CalibrationProfileStore
 from PiFinder.mf_wide_distortion import active_coefficients, undistort_global_centroids
 from PiFinder.mf_wide_solver import (
@@ -39,8 +40,9 @@ from PiFinder.mf_wide_solver import (
     build_plan_for_optics,
     configured_excluded_tiles,
     solve_wide_tiles,
-    wide_solver_eligible,
+    tile_solver_eligible,
 )
+from PiFinder.mf_wide_tiles import migrate_legacy_tile_ids
 from PiFinder.optics import OpticalTrainResolver, build_optical_train
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
 from PiFinder.sqm import SQM as SQMCalculator
@@ -845,6 +847,11 @@ def _build_successful_solve(
     cedar_gated_centroids: Optional[int] = None,
     cedar_center_centroids: Optional[int] = None,
     sep_centroids: Optional[int] = None,
+    tile_attempted: tuple[str, ...] = (),
+    tile_candidates: tuple[str, ...] = (),
+    tile_accepted: tuple[str, ...] = (),
+    tile_reason: str = "",
+    tile_scores: tuple[dict[str, object], ...] = (),
 ) -> SuccessfulSolve:
     """Fold a successful tetra3 ``solution`` dict into a
     :class:`SuccessfulSolve` message.
@@ -888,6 +895,11 @@ def _build_successful_solve(
             CedarGatedCentroids=cedar_gated_centroids,
             CedarCenterCentroids=cedar_center_centroids,
             SepCentroids=sep_centroids,
+            TileAttempted=tile_attempted,
+            TileCandidates=tile_candidates,
+            TileAccepted=tile_accepted,
+            TileReason=tile_reason,
+            TileScores=tile_scores,
         ),
         alignment=AlignmentResult(
             x_target=solution.get("x_target"),
@@ -909,6 +921,11 @@ def _build_failed_solve(
     cedar_gated_centroids: Optional[int] = None,
     cedar_center_centroids: Optional[int] = None,
     sep_centroids: Optional[int] = None,
+    tile_attempted: tuple[str, ...] = (),
+    tile_candidates: tuple[str, ...] = (),
+    tile_accepted: tuple[str, ...] = (),
+    tile_reason: str = "",
+    tile_scores: tuple[dict[str, object], ...] = (),
 ) -> FailedSolve:
     """Build a :class:`FailedSolve` message for an attempt that produced
     no pointing. The integrator's long-lived estimate preserves the
@@ -928,6 +945,11 @@ def _build_failed_solve(
             CedarGatedCentroids=cedar_gated_centroids,
             CedarCenterCentroids=cedar_center_centroids,
             SepCentroids=sep_centroids,
+            TileAttempted=tile_attempted,
+            TileCandidates=tile_candidates,
+            TileAccepted=tile_accepted,
+            TileReason=tile_reason,
+            TileScores=tile_scores,
         ),
     )
 
@@ -1157,8 +1179,9 @@ def solver(
     # affine stretch) and solve at native FOV via solver_frame_map. The SEP
     # fallback below is unchanged; flag off = byte-identical 512 path.
     cedar_fullframe_wanted = bool(_sep_cfg.get_option("solver_cedar_fullframe"))
-    # MF wide tiles are a separately opt-in rescue tier.  The false default
-    # leaves every established Cedar/SEP path byte-for-byte in control.
+    # MF tiles are a separately opt-in rescue tier.  Below 10 mm it uses the
+    # wide grid; at/above 10 mm it uses the 3x3 recovery grid.  The
+    # false default leaves every established Cedar/SEP path in control.
     wide_solver_wanted = bool(_sep_cfg.get_option("wide_solver_enabled"))
     cedar_ff_geometry = None  # context dict, resolved lazily
     cedar_ff_geometry_key = None
@@ -1575,7 +1598,7 @@ def solver(
                             )
                         )
 
-                    # Wide angle recovery is intentionally placed after the
+                    # Tile recovery is intentionally placed after the
                     # existing centre-first attempt but before Cedar/SEP are
                     # allowed to use a distortion-prone whole frame.  It is
                     # disabled during an alignment command because an
@@ -1587,7 +1610,7 @@ def solver(
                         and (not solution or solution.get("RA") is None)
                         and align_ra == 0
                         and align_dec == 0
-                        and wide_solver_eligible(
+                        and tile_solver_eligible(
                             True,
                             getattr(shared_state, "camera_lens", lambda: "")(),
                             manual_focal_from_state(shared_state),
@@ -1598,12 +1621,24 @@ def solver(
                                 shared_state, "camera_lens", lambda: ""
                             )()
                             manual_focal = manual_focal_from_state(shared_state)
+                            focal_length = active_focal_length_mm(
+                                lens_key, manual_focal
+                            )
+                            if focal_length is None:
+                                raise ValueError("tile solver requires a focal length")
                             wide_base_fov = _optical_crop_fov(shared_state)
                             sixteen_fov = build_optical_train(
                                 shared_state.camera_type(), "16mm"
                             ).fov_degrees
                             wide_plan = build_plan_for_optics(
-                                ff_frame_hw, wide_base_fov, sixteen_fov
+                                ff_frame_hw,
+                                wide_base_fov,
+                                sixteen_fov,
+                                focal_length,
+                                cedar_ff_geometry["crop_width_px"],
+                                display_rotation_degrees=cedar_ff_geometry[
+                                    "rotation_deg"
+                                ],
                             )
                             wide_excluded = configured_excluded_tiles(
                                 _sep_cfg.get_option(
@@ -1612,6 +1647,9 @@ def solver(
                                 shared_state.camera_type(),
                                 lens_key,
                                 manual_focal,
+                            )
+                            wide_excluded = migrate_legacy_tile_ids(
+                                wide_excluded, wide_plan
                             )
                             calibration = CalibrationProfileStore(_sep_cfg).load_active(
                                 shared_state.camera_type(),
@@ -1676,7 +1714,9 @@ def solver(
                                 )
 
                             tile_fov = sfm.fov_estimate_deg(
-                                512, cedar_ff_geometry["crop_width_px"], wide_base_fov
+                                wide_plan.central_tile.rect.width,
+                                cedar_ff_geometry["crop_width_px"],
+                                wide_base_fov,
                             )
                             wide_result = solve_wide_tiles(
                                 frame=ff_frame,
@@ -1696,13 +1736,13 @@ def solver(
                                 solution = wide_result.solution
                                 solve_path = wide_result.solve_path
                                 logger.info(
-                                    "Wide tile solve success via %s (%s)",
+                                    "Tile recovery solve success via %s (%s)",
                                     wide_result.solve_path,
                                     ",".join(wide_result.consensus_tile_ids),
                                 )
                             else:
                                 logger.info(
-                                    "Wide tile solve held: %s (candidates=%s)",
+                                    "Tile recovery held: %s (candidates=%s)",
                                     wide_result.reason,
                                     ",".join(wide_result.candidate_tile_ids),
                                 )
@@ -1710,7 +1750,7 @@ def solver(
                             # A malformed lens/profile/exclusion must be no
                             # worse than a disabled experimental tier.
                             logger.exception(
-                                "Wide tile solver unavailable; continuing legacy cascade"
+                                "Tile recovery unavailable; continuing legacy cascade"
                             )
                             wide_result = None
 
@@ -1935,6 +1975,32 @@ def solver(
                             cedar_gated_centroids=cedar_gated_count,
                             cedar_center_centroids=cedar_center_count,
                             sep_centroids=sep_count,
+                            tile_attempted=(
+                                wide_result.attempted_tile_ids
+                                if wide_result is not None
+                                else ()
+                            ),
+                            tile_candidates=(
+                                wide_result.candidate_tile_ids
+                                if wide_result is not None
+                                else ()
+                            ),
+                            tile_accepted=(
+                                wide_result.consensus_tile_ids
+                                if wide_result is not None
+                                else ()
+                            ),
+                            tile_reason=(
+                                wide_result.reason if wide_result is not None else ""
+                            ),
+                            tile_scores=(
+                                tuple(
+                                    score.as_diagnostic()
+                                    for score in wide_result.tile_scores
+                                )
+                                if wide_result is not None
+                                else ()
+                            ),
                         )
                         # Popped only now: _build_successful_solve above needs
                         # it for the Gaia-G reference band.
@@ -1997,6 +2063,34 @@ def solver(
                                 cedar_gated_centroids=cedar_gated_count,
                                 cedar_center_centroids=cedar_center_count,
                                 sep_centroids=sep_count,
+                                tile_attempted=(
+                                    wide_result.attempted_tile_ids
+                                    if wide_result is not None
+                                    else ()
+                                ),
+                                tile_candidates=(
+                                    wide_result.candidate_tile_ids
+                                    if wide_result is not None
+                                    else ()
+                                ),
+                                tile_accepted=(
+                                    wide_result.consensus_tile_ids
+                                    if wide_result is not None
+                                    else ()
+                                ),
+                                tile_reason=(
+                                    wide_result.reason
+                                    if wide_result is not None
+                                    else ""
+                                ),
+                                tile_scores=(
+                                    tuple(
+                                        score.as_diagnostic()
+                                        for score in wide_result.tile_scores
+                                    )
+                                    if wide_result is not None
+                                    else ()
+                                ),
                             )
                         )
 

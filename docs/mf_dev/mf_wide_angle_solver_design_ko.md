@@ -288,23 +288,26 @@ flowchart TB
     end
     subgraph rect["rectified canvas — 타일 계획 공간"]
       direction TB
-      nw["NW"] --- n["N"] --- ne["NE"]
-      w["W"] --- c["C: 중앙 16mm"] --- e["E"]
-      sw["SW"] --- s["S"] --- se["SE"]
+      ul["UL"] --- u["U"] --- ur["UR"]
+      l["L"] --- c["C: 중앙 16mm"] --- r["R"]
+      dl["DL"] --- d["D"] --- dr["DR"]
     end
     native -->|"왜곡 역변환"| rect
     mask -. "교차 비율 계산" .-> rect
     c -->|"1차, 기존 우선"| solve["Cedar/SEP tile solve"]
-    n --> solve
-    e --> solve
-    s --> solve
-    w --> solve
+    u --> solve
+    r --> solve
+    d --> solve
+    l --> solve
 ```
 
 타일은 고정 3×3이 아니다. 필요한 행·열을 계산해 생성하고, rectified footprint
 밖이거나 사용자 마스크에 크게 가려진 타일은 `excluded`로 표시한다. 진단과
-설정에는 사람이 읽는 `C`, `N`, `NE` 등의 안정된 논리 ID와 함께, 정확한
-rectified bounds·native footprint를 저장한다.
+설정과 진단에는 사람이 읽는 `C`, `U`, `UR` 등의 **영상 기준** 논리 ID와 함께,
+정확한 rectified bounds·native footprint를 저장한다. `U/D/L/R`은 천구 방위가
+아니라 LiveCam 영상의 위/아래/왼쪽/오른쪽이다. 원본 RAW 좌표는 crop bounds로만
+보관하고 별도의 방향 ID를 만들지 않아, 화면 선택·제외 설정·솔빙 점수가 하나의
+ID를 공유한다.
 
 LiveCam은 실제 512px 타일 footprint가 서로 겹쳐 편집하기 어려워지는 것을 막기
 위해, 클릭용 비중첩 논리 셀을 별도로 그린다. 각 셀은 하나의 실제 타일 ID에

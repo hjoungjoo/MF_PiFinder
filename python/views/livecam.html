@@ -70,6 +70,14 @@
     vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
+  .wide-tile-overlay .tile-recovery-footprint {
+    fill: none;
+    stroke: var(--pf-text-muted);
+    stroke-width: 2;
+    stroke-dasharray: 8 5;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
   .wide-tile-overlay .tile-excluded-footprint {
     fill: var(--pf-text);
     fill-opacity: 0.28;
@@ -523,6 +531,21 @@ function renderWideTiles(data) {
     footprint.setAttribute('height', String(tile.crop_height * 1000));
     wideTileSvg.appendChild(footprint);
   });
+  // Wide grids can contain many crops, so their centre footprint is the
+  // only persistent outline. The normal-lens recovery grid has nine fixed
+  // squares; show its peripheral footprints so their corner coverage and
+  // equal native size are unambiguous.
+  if (data.strategy === 'recovery_grid') {
+    (data.tiles || []).filter((tile) => !tile.central).forEach((tile) => {
+      const footprint = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      footprint.setAttribute('class', 'tile-recovery-footprint');
+      footprint.setAttribute('x', String(tile.crop_x * 1000));
+      footprint.setAttribute('y', String(tile.crop_y * 1000));
+      footprint.setAttribute('width', String(tile.crop_width * 1000));
+      footprint.setAttribute('height', String(tile.crop_height * 1000));
+      wideTileSvg.appendChild(footprint);
+    });
+  }
   let centralTile = null;
   (data.tiles || []).forEach((tile) => {
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');

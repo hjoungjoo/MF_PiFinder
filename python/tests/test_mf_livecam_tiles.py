@@ -14,11 +14,11 @@ from PiFinder.mf_livecam_tiles import (
 pytestmark = pytest.mark.unit
 
 
-def test_only_lenses_at_or_below_ten_mm_enable_livecam_tiles():
+def test_every_stated_lens_enables_its_livecam_tile_plan():
     assert wide_tiles_enabled("10mm")
     assert wide_tiles_enabled("16mm", 8.5)
-    assert not wide_tiles_enabled("12mm")
-    assert not wide_tiles_enabled("12mm", 10.1)
+    assert wide_tiles_enabled("12mm")
+    assert wide_tiles_enabled("12mm", 10.1)
     assert not wide_tiles_enabled("")
     assert active_focal_length_mm("16mm", 7.64) == 7.6
 
@@ -29,7 +29,7 @@ def test_overlay_payload_is_normalized_and_keeps_exclusions():
         lens_key="8mm",
         manual_focal_length_mm=None,
         frame_hw=(1080, 1920),
-        excluded_ids=["C", "NE", 3],
+        excluded_ids=["C", "UR", 3],
     )
 
     assert payload["enabled"]
@@ -61,15 +61,29 @@ def test_overlay_payload_is_normalized_and_keeps_exclusions():
     assert all(0 < overlap["width"] <= 1 for overlap in payload["overlaps"])
 
 
-def test_nonwide_or_missing_frame_never_emits_tiles():
-    assert (
-        overlay_payload(
-            camera_type="imx296",
-            lens_key="12mm",
-            manual_focal_length_mm=None,
-            frame_hw=(1080, 1920),
-        )["tiles"]
-        == []
+def test_normal_lens_overlay_uses_recovery_grid_and_missing_frame_emits_none():
+    normal = overlay_payload(
+        camera_type="imx296",
+        lens_key="12mm",
+        manual_focal_length_mm=None,
+        frame_hw=(1200, 1600),
+    )
+    assert normal["strategy"] == "recovery_grid"
+    assert len(normal["tiles"]) == 9
+    assert {tile["id"] for tile in normal["tiles"]} == {
+        "UL",
+        "U",
+        "UR",
+        "L",
+        "C",
+        "R",
+        "DL",
+        "D",
+        "DR",
+    }
+    assert all(
+        tile["crop_width"] * 1600 == pytest.approx(tile["crop_height"] * 1200)
+        for tile in normal["tiles"]
     )
     assert (
         overlay_payload(
@@ -82,7 +96,58 @@ def test_nonwide_or_missing_frame_never_emits_tiles():
     )
 
 
+def test_selected_calibrated_lens_keeps_its_effective_focal_length_for_tile_size():
+    # The 12mm shipped lens is calibrated to 13.04mm effective focal length;
+    # it must not be replaced by its 12.0mm nominal label in the LiveCam plan.
+    payload = overlay_payload(
+        camera_type="imx462_color",
+        lens_key="12mm",
+        manual_focal_length_mm=None,
+        frame_hw=(1080, 1920),
+    )
+
+    assert {round(tile["crop_width"] * 1920) for tile in payload["tiles"]} == {914}
+
+
+def test_display_rotation_names_native_solver_crops_in_video_coordinates():
+    """A 90-degree Preview names every crop by its visible UDLR location."""
+
+    # LiveCam rotates this IMX462 frame counter-clockwise after the solver
+    # receives its native 1080x1920 image. The raw E crop is therefore the
+    # visible U crop, while raw SW is visible at DR.
+    payload = overlay_payload(
+        camera_type="imx462_color",
+        lens_key="16mm",
+        manual_focal_length_mm=None,
+        frame_hw=(1920, 1080),
+        display_rotation_degrees=90,
+    )
+
+    assert payload["display_rotation_degrees"] == 90
+    up = next(tile for tile in payload["tiles"] if tile["id"] == "U")
+    down_right = next(tile for tile in payload["tiles"] if tile["id"] == "DR")
+
+    assert payload["tile_id_coordinate_system"] == "video_udlr"
+    assert up["crop_x"] == pytest.approx(50 / 1080)
+    assert up["crop_y"] == pytest.approx(0)
+    assert up["crop_width"] == pytest.approx(980 / 1080)
+    assert up["crop_height"] == pytest.approx(980 / 1920)
+    assert down_right["crop_x"] == pytest.approx(100 / 1080)
+    assert down_right["crop_y"] == pytest.approx(940 / 1920)
+
+    # Old raw-coordinate exclusions migrate to the same physical crop.
+    migrated = overlay_payload(
+        camera_type="imx462_color",
+        lens_key="16mm",
+        manual_focal_length_mm=None,
+        frame_hw=(1920, 1080),
+        display_rotation_degrees=90,
+        excluded_ids=["E"],
+    )
+    assert next(tile for tile in migrated["tiles"] if tile["id"] == "U")["excluded"]
+
+
 def test_persistent_exclusions_are_scoped_to_optical_train():
     assert optics_key("imx296", "8mm") != optics_key("imx296", "10mm")
     assert optics_key("imx296", "16mm", 8.0) != optics_key("imx296", "8mm")
-    assert excluded_tile_ids(["C", "NE", "", 4]) == {"C", "NE"}
+    assert excluded_tile_ids(["C", "UR", "", 4]) == {"C", "UR"}

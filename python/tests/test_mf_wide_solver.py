@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from PiFinder.mf_wide_solver import solve_wide_tiles, wide_solver_eligible
-from PiFinder.mf_wide_tiles import plan_wide_tiles
+from PiFinder.mf_wide_solver import solve_wide_tiles, tile_solver_eligible
+from PiFinder.mf_wide_tiles import plan_vertical_recovery_tiles, plan_wide_tiles
 
 
 pytestmark = pytest.mark.unit
@@ -84,7 +84,7 @@ def test_saturated_centre_requires_and_accepts_an_adjacent_pair():
 
     assert result.central_saturated is True
     assert result.solve_path == "wide_adjacent_pair"
-    assert set(result.consensus_tile_ids) == {"W", "E"}
+    assert set(result.consensus_tile_ids) == {"L", "R"}
     assert result.solution["RA"] == 42.0
 
 
@@ -120,7 +120,91 @@ def test_single_peripheral_solution_is_held_not_published():
 
     assert result.solution is None
     assert result.solve_path == "wide_no_consensus"
-    assert result.candidate_tile_ids == ("W",)
+    assert result.candidate_tile_ids == ("L",)
+
+
+def test_recovery_grid_publishes_a_valid_peripheral_tile_target():
+    plan = plan_vertical_recovery_tiles((1080, 1920), 12.0, tile_size_px=980)
+    calls = 0
+    solve_sizes = []
+
+    def top_only_detector(_frame):
+        nonlocal calls
+        calls += 1
+        return _four_stars(_frame) if calls == 1 else ()
+
+    def solve(_centroids, size, _target, _fov):
+        solve_sizes.append(size)
+        return {
+            "RA": 42.0,
+            "Dec": -12.0,
+            "RA_target": 42.5,
+            "Dec_target": -12.5,
+            "Roll": 9.0,
+            "Matches": 9,
+            "RMSE": 0.5,
+        }
+
+    result = solve_wide_tiles(
+        frame=np.zeros((1080, 1920), dtype=np.uint16),
+        plan=plan,
+        excluded_tile_ids=set(),
+        saturation_level=4095,
+        rotation_deg=0.0,
+        crop_width_px=980,
+        production_target_yx=(256.0, 256.0),
+        tile_fov_degrees=8.0,
+        detect_primary=top_only_detector,
+        detect_fallback=None,
+        solve=solve,
+    )
+
+    assert result.solve_path == "recovery_ul"
+    assert result.attempted_tile_ids == ("UL", "U", "UR", "L", "R", "DL", "D", "DR")
+    assert result.consensus_tile_ids == ("UL",)
+    assert result.solution["RA"] == 42.5
+    assert solve_sizes == [(980, 980)]
+    assert result.tile_scores[0].as_diagnostic() == {
+        "id": "UL",
+        "centroids": 4,
+        "solved": True,
+        "matches": 9,
+        "rmse": 0.5,
+        "reason": "",
+    }
+    assert all(
+        score.reason == "fewer_than_four_centroids" for score in result.tile_scores[1:]
+    )
+
+
+def test_recovery_grid_accepts_numpy_centroids_from_sep_fallback():
+    plan = plan_vertical_recovery_tiles((1080, 1920), 12.0, tile_size_px=980)
+
+    result = solve_wide_tiles(
+        frame=np.zeros((1080, 1920), dtype=np.uint16),
+        plan=plan,
+        excluded_tile_ids=set(),
+        saturation_level=4095,
+        rotation_deg=0.0,
+        crop_width_px=980,
+        production_target_yx=(256.0, 256.0),
+        tile_fov_degrees=10.0,
+        detect_primary=lambda _frame: (),
+        # SEP returns an ndarray. Its truth value is intentionally undefined.
+        detect_fallback=lambda _frame: np.asarray(_four_stars(_frame)),
+        solve=lambda *_args: {
+            "RA": 42.0,
+            "Dec": -12.0,
+            "RA_target": 42.5,
+            "Dec_target": -12.5,
+            "Roll": 9.0,
+            "Matches": 9,
+            "RMSE": 0.5,
+        },
+    )
+
+    assert result.solve_path == "recovery_ul"
+    assert result.consensus_tile_ids == ("UL",)
 
 
 @pytest.mark.parametrize(
@@ -128,11 +212,12 @@ def test_single_peripheral_solution_is_held_not_published():
     [
         (False, "6mm", None, False),
         (True, "6mm", None, True),
-        (True, "10mm", None, False),
+        (True, "10mm", None, True),
+        (True, "16mm", None, True),
         (True, "manual", 6.0, True),
     ],
 )
-def test_wide_solver_eligibility_is_explicit_and_strictly_below_ten_mm(
+def test_tile_solver_eligibility_requires_an_explicit_lens_and_opt_in_flag(
     enabled, lens, manual, expected
 ):
-    assert wide_solver_eligible(enabled, lens, manual) is expected
+    assert tile_solver_eligible(enabled, lens, manual) is expected

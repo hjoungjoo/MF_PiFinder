@@ -1,4 +1,4 @@
-"""Isolated execution policy for the opt-in MF wide-angle tile solver.
+"""Isolated execution policy for the opt-in MF tile recovery solver.
 
 The module deliberately has no process loop or shared-state writes.  The
 legacy solver supplies one fresh, profile-rotated RAW frame plus detector and
@@ -25,20 +25,39 @@ from PiFinder.mf_wide_tiles import (
     MFWideTile,
     MFWideTilePlan,
     crop_tile,
-    plan_wide_tiles,
+    plan_tiles_for_focal,
     tiles_are_adjacent,
 )
 
 
-# This is intentionally below 10.0 mm: 10 mm remains display/edit capable,
-# but follows the well-tested production solver until its own field approval.
-WIDE_SOLVER_MAX_FOCAL_MM = 10.0
 TILE_SOLVE_TIMEOUT_MS = 350
 CENTRAL_SATURATED_PIXELS = 64
 PAIR_POSITION_LIMIT_DEG = 0.08
 PAIR_ROLL_LIMIT_DEG = 0.15
 MULTI_POSITION_LIMIT_DEG = 0.25
 MULTI_ROLL_LIMIT_DEG = 0.40
+
+
+@dataclass(frozen=True)
+class MFWideTileScore:
+    """Per-tile evidence retained even when that tile cannot solve."""
+
+    tile_id: str
+    centroid_count: int
+    solved: bool
+    matches: int = 0
+    rmse: float | None = None
+    reason: str = ""
+
+    def as_diagnostic(self) -> dict[str, Any]:
+        return {
+            "id": self.tile_id,
+            "centroids": self.centroid_count,
+            "solved": self.solved,
+            "matches": self.matches,
+            "rmse": self.rmse,
+            "reason": self.reason,
+        }
 
 
 @dataclass(frozen=True)
@@ -53,6 +72,7 @@ class MFWideSolveResult:
     consensus_tile_ids: tuple[str, ...]
     centroid_count: int
     reason: str = ""
+    tile_scores: tuple[MFWideTileScore, ...] = ()
 
 
 Detector = Callable[[np.ndarray], Iterable[tuple[float, float]]]
@@ -62,13 +82,21 @@ Solve = Callable[
 CentroidRectifier = Callable[[MFWideTile, np.ndarray], np.ndarray]
 
 
+def tile_solver_eligible(
+    enabled: object, lens_key: str | None, manual_focal_length_mm: object
+) -> bool:
+    """True for an explicit optical selection and the opt-in recovery flag."""
+
+    focal = active_focal_length_mm(lens_key, manual_focal_length_mm)
+    return bool(enabled) and focal is not None and focal > 0
+
+
 def wide_solver_eligible(
     enabled: object, lens_key: str | None, manual_focal_length_mm: object
 ) -> bool:
-    """True only for an explicit <10 mm optical selection and opt-in flag."""
+    """Compatibility name for callers predating the non-wide recovery tier."""
 
-    focal = active_focal_length_mm(lens_key, manual_focal_length_mm)
-    return bool(enabled) and focal is not None and focal < WIDE_SOLVER_MAX_FOCAL_MM
+    return tile_solver_eligible(enabled, lens_key, manual_focal_length_mm)
 
 
 def configured_excluded_tiles(
@@ -131,10 +159,12 @@ def _tile_target_pixel(
 
 
 def _rotated_local_centroids(
-    centroids: Iterable[tuple[float, float]], rotation_deg: float
+    centroids: Iterable[tuple[float, float]],
+    tile_hw: tuple[int, int],
+    rotation_deg: float,
 ) -> np.ndarray:
     points = np.asarray(list(centroids), dtype=np.float64).reshape(-1, 2)
-    rotated, _ = sfm.rotate_centroids(points, (512, 512), rotation_deg)
+    rotated, _ = sfm.rotate_centroids(points, tile_hw, rotation_deg)
     return rotated
 
 
@@ -181,26 +211,49 @@ def solve_wide_tiles(
     solve: Solve,
     rectify_centroids: CentroidRectifier | None = None,
 ) -> MFWideSolveResult:
-    """Try C first, then all usable peripheral tiles and guarded consensus.
+    """Solve native tile crops after the normal solver cascade has failed.
 
-    The caller invokes this only after the existing centred tier did not
-    yield a solution.  A normal C tile result is still valid on its own.  A
-    saturated/failed C tile makes every non-excluded peripheral tile eligible;
-    one peripheral result never leaves this function as a position.
+    The wide-grid strategy tries C first, then requires consensus among its
+    peripheral tiles. The 10-mm-and-longer recovery grid is used after the
+    production centre and full-frame paths have failed; it skips C and each
+    peripheral tile reports the common camera optical-centre target.
     """
 
     arr = np.asarray(frame)
     central = plan.central_tile
-    central_saturated = central_is_saturated(arr, central, saturation_level)
+    recovery_grid = plan.strategy == "recovery_grid"
+    central_saturated = (
+        central_is_saturated(arr, central, saturation_level)
+        if not recovery_grid
+        else False
+    )
     attempted: list[str] = []
     candidate_solutions: list[tuple[MFWideTile, dict[str, Any], int]] = []
+    tile_scores: list[MFWideTileScore] = []
+
+    def detected_centroids(detector: Detector | None, tile_frame) -> list[Any]:
+        """Normalise list/tuple/NumPy detector output without truth testing it."""
+
+        if detector is None:
+            return []
+        detected = detector(tile_frame)
+        return [] if detected is None else list(detected)
 
     def run_tile(tile: MFWideTile) -> tuple[dict[str, Any] | None, int]:
         attempted.append(tile.tile_id)
-        raw_centroids = list(detect_primary(crop_tile(arr, tile)) or ())
+        tile_frame = crop_tile(arr, tile)
+        raw_centroids = detected_centroids(detect_primary, tile_frame)
         if len(raw_centroids) < 4 and detect_fallback is not None:
-            raw_centroids = list(detect_fallback(crop_tile(arr, tile)) or ())
+            raw_centroids = detected_centroids(detect_fallback, tile_frame)
         if len(raw_centroids) < 4:
+            tile_scores.append(
+                MFWideTileScore(
+                    tile.tile_id,
+                    len(raw_centroids),
+                    False,
+                    reason="fewer_than_four_centroids",
+                )
+            )
             return None, len(raw_centroids)
         target = _tile_target_pixel(
             tile,
@@ -216,22 +269,61 @@ def solve_wide_tiles(
             ).reshape(-1, 2)
         result = (
             solve(
-                _rotated_local_centroids(local_centroids, rotation_deg),
-                (512, 512),
+                _rotated_local_centroids(
+                    local_centroids,
+                    (tile.rect.height, tile.rect.width),
+                    rotation_deg,
+                ),
+                (tile.rect.height, tile.rect.width),
                 target,
                 tile_fov_degrees,
             )
             or {}
         )
         if result.get("RA") is None:
+            tile_scores.append(
+                MFWideTileScore(
+                    tile.tile_id,
+                    len(raw_centroids),
+                    False,
+                    int(result.get("Matches") or 0),
+                    (float(result["RMSE"]) if result.get("RMSE") is not None else None),
+                    "tetra_no_solution",
+                )
+            )
             return None, len(raw_centroids)
-        return _normalise_centre_solution(result), len(raw_centroids)
+        normalised = _normalise_centre_solution(result)
+        tile_scores.append(
+            MFWideTileScore(
+                tile.tile_id,
+                len(raw_centroids),
+                True,
+                int(normalised.get("Matches") or 0),
+                (
+                    float(normalised["RMSE"])
+                    if normalised.get("RMSE") is not None
+                    else None
+                ),
+            )
+        )
+        return normalised, len(raw_centroids)
 
-    if central.tile_id not in excluded_tile_ids and not central_saturated:
+    if (
+        not recovery_grid
+        and central.tile_id not in excluded_tile_ids
+        and not central_saturated
+    ):
         solution, count = run_tile(central)
         if solution is not None:
             return MFWideSolveResult(
-                solution, "wide_central", False, tuple(attempted), ("C",), ("C",), count
+                solution,
+                "wide_central",
+                False,
+                tuple(attempted),
+                ("C",),
+                ("C",),
+                count,
+                tile_scores=tuple(tile_scores),
             )
 
     # A central exclusion is treated like an unusable centre: it is a user
@@ -248,6 +340,42 @@ def solve_wide_tiles(
         for tile, solution, _count in candidate_solutions
         if (candidate := _candidate(tile, solution)) is not None
     ]
+    if recovery_grid:
+        if not candidate_solutions:
+            return MFWideSolveResult(
+                None,
+                "recovery_no_solution",
+                False,
+                tuple(attempted),
+                (),
+                (),
+                0,
+                "no_usable_peripheral_tile",
+                tuple(tile_scores),
+            )
+        # These normal/telephoto crops recover an obstructed or saturated
+        # centre. A valid peripheral tetra solution already reports the
+        # common optical-centre target. If several solve, prefer the lower
+        # residual rather than averaging their different native fields.
+        best_tile, best_solution, best_count = min(
+            candidate_solutions,
+            key=lambda item: (
+                float(item[1].get("RMSE") or float("inf")),
+                -int(item[1].get("Matches") or 0),
+            ),
+        )
+        return MFWideSolveResult(
+            best_solution,
+            f"recovery_{best_tile.tile_id.lower()}",
+            False,
+            tuple(attempted),
+            tuple(candidate.tile_id for candidate in candidates),
+            (best_tile.tile_id,),
+            best_count,
+            "single_peripheral_recovery",
+            tuple(tile_scores),
+        )
+
     tile_by_id = {tile.tile_id: tile for tile in plan.tiles}
     consensus = build_consensus(
         candidates,
@@ -269,6 +397,7 @@ def solve_wide_tiles(
             (),
             sum(count for _tile, _solution, count in candidate_solutions),
             "need_adjacent_pair_or_three_tile_consensus",
+            tuple(tile_scores),
         )
 
     # Preserve normal tetra diagnostics from the best residual candidate,
@@ -300,12 +429,25 @@ def solve_wide_tiles(
         tuple(candidate.tile_id for candidate in candidates),
         consensus.tile_ids,
         sum(count for _tile, _solution, count in candidate_solutions),
+        tile_scores=tuple(tile_scores),
     )
 
 
 def build_plan_for_optics(
-    frame_hw: tuple[int, int], full_fov_degrees: float, sixteen_mm_fov_degrees: float
+    frame_hw: tuple[int, int],
+    full_fov_degrees: float,
+    sixteen_mm_fov_degrees: float,
+    focal_length_mm: float = 4.0,
+    central_tile_size_px: int | None = None,
+    display_rotation_degrees: int = 0,
 ) -> MFWideTilePlan:
-    """Named seam for the solver; keeps the source geometry testable."""
+    """Build geometry with IDs named in the user-visible video direction."""
 
-    return plan_wide_tiles(frame_hw, full_fov_degrees, sixteen_mm_fov_degrees)
+    return plan_tiles_for_focal(
+        frame_hw,
+        full_fov_degrees,
+        sixteen_mm_fov_degrees,
+        focal_length_mm,
+        central_tile_size_px=central_tile_size_px,
+        display_rotation_degrees=display_rotation_degrees,
+    )

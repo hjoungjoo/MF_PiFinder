@@ -35,9 +35,8 @@ MF_WIDE_LENS_SPECS: Final[tuple[MFWideLensSpec, ...]] = (
 MF_WIDE_LENS_KEYS: Final[frozenset[str]] = frozenset(
     spec.key for spec in MF_WIDE_LENS_SPECS
 )
-# The wide tile solver is deliberately limited to <10 mm.  10 mm remains a
-# calibrated lens selection, but retains the production solver until it has
-# its own explicit field validation.
+# The wide-grid solver uses this <10 mm subset.  Lenses at/above 10 mm use
+# the separate central-crop-sized 3x3 recovery geometry in ``mf_wide_tiles``.
 MF_WIDE_TILE_LENS_KEYS: Final[frozenset[str]] = frozenset({"4mm", "6mm", "8mm"})
 
 
