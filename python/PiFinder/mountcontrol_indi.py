@@ -2578,6 +2578,9 @@ class MountControlIndi(BacklashCalibrationMixin):
         self,
         reconnect_after: bool = True,
         include_default_location: bool = False,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        elevation: Optional[float] = None,
     ) -> bool:
         try:
             # A4 clock-trust gate, softened (2026-08-08): an untrusted clock
@@ -2604,9 +2607,21 @@ class MountControlIndi(BacklashCalibrationMixin):
                     "trusted"
                 )
 
-            latitude, longitude, elevation, dt = self._shared_location_time_values(
-                include_default_location=include_default_location
+            shared_latitude, shared_longitude, shared_elevation, dt = (
+                self._shared_location_time_values(
+                    include_default_location=include_default_location
+                )
             )
+            # A web Location "Load" is an explicit observer action. Its GPS
+            # queue update reaches shared_state asynchronously, so accept the
+            # selected coordinates with this command rather than re-sending
+            # the previous location or waiting for the GPS jitter debounce.
+            if latitude is None:
+                latitude = shared_latitude
+            if longitude is None:
+                longitude = shared_longitude
+            if elevation is None:
+                elevation = shared_elevation
             if self._use_direct_onstep_location_time_sync():
                 if latitude is None or longitude is None:
                     self._write_controller_status(
@@ -4716,9 +4731,10 @@ class MountControlIndi(BacklashCalibrationMixin):
             self.clear_multipoint_align_target()
         elif command_type == "sync_location_time":
             self.sync_location_time(
-                include_default_location=bool(
-                    command.get("include_default_location", False)
-                )
+                include_default_location=bool(command.get("include_default_location", False)),
+                latitude=command.get("latitude"),
+                longitude=command.get("longitude"),
+                elevation=command.get("elevation"),
             )
         elif command_type == "park_action":
             self.park_action(str(command.get("action", "")))

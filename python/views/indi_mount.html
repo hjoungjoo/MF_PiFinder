@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if location_time_sync_status.state == 'running' %}
+{# The POST response deliberately avoids a blocking INDI read.  Refresh once
+   shortly afterwards so even browsers that suspend background fetch timers
+   render the completed driver readback without user action. #}
+<meta http-equiv="refresh" content="2;url=/indi">
+{% endif %}
 {% set onstep_device = onstep_device_name or '' %}
 {% set mount_type_text = mount_type|string %}
 {% set is_altaz_mount = 'eq' not in mount_type_text|lower and 'equatorial' not in mount_type_text|lower %}
@@ -213,6 +219,7 @@
         <button type="button" id="reload_location_values" class="btn">{{ _('Reload Current Values') }}</button>
         <button type="submit" class="btn">{{ _('Send Location and Time') }}</button>
       </div>
+      <p id="location_time_sync_status" class="grey-text">{{ location_time_sync_status.message }}</p>
     </form>
   </div>
 </div>
@@ -617,6 +624,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var activeMotionPointer = null;
   var activeMotionDirection = null;
   var motionKeepaliveTimer = null;
+  var lastLocationTimeSyncState = null;
   var onstepDeviceName = {{ onstep_device_name|default('', true)|tojson }};
   var pifinderMountType = {{ mount_type|default('', true)|tojson }};
   var serialBaudRates = {{ serial_baud_rates|list|tojson }};
@@ -1109,6 +1117,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function updateLocationValues(payload) {
     var pifinder = payload.pifinder_location_time || {};
     var onstep = payload.onstep_props || {};
+    var locationTimeSync = payload.location_time_sync_status || {};
     var clockWarning = document.getElementById('clock_trust_warning');
     if (clockWarning) {
       clockWarning.style.display = payload.clock_trusted === false ? '' : 'none';
@@ -1127,6 +1136,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setServerUtcBase(pifinder.utc_time);
 
     setText('pifinder_location_source_value', pifinder.source || '');
+    setText('location_time_sync_status', locationTimeSync.message || '');
     setText('pifinder_location_lock_value', pifinder.lock_status || '');
     setText(
       'pifinder_location_value',
@@ -1182,6 +1192,31 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     M.updateTextFields();
+  }
+
+  function updateLocationTimeSyncStatus(status) {
+    setText('location_time_sync_status', (status || {}).message || '');
+  }
+
+  function refreshLocationTimeSyncStatus() {
+    return fetch('/indi/location_time/status', {
+      headers: {'X-Requested-With': 'XMLHttpRequest'}
+    }).then(function(response) {
+      return response.json();
+    }).then(function(payload) {
+      if (!payload || !payload.ok) {
+        return;
+      }
+      var status = payload.location_time_sync_status || {};
+      updateLocationTimeSyncStatus(status);
+      // On completion, immediately fetch the readback the worker placed in
+      // the cache; users should never need to reload this page.
+      if ((status.state === 'succeeded' || status.state === 'failed') &&
+          status.state !== lastLocationTimeSyncState) {
+        refreshIndiState(false);
+      }
+      lastLocationTimeSyncState = status.state || null;
+    }).catch(function() { /* transient status errors are ignored */ });
   }
 
   function formatBacklashEstimateDetails(autoInfo) {
@@ -1369,6 +1404,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       updatePointingCoordinateStatus(payload.pointing_coordinate_status || {});
       updateGotoGuideStatus(payload.goto_guide_status || {});
+      updateLocationTimeSyncStatus(payload.location_time_sync_status || {});
       var mcs = payload.mount_control_status || {};
       updateSerialDiscovery(mcs);
       if (mcs.raw_mount_status) {
@@ -1742,6 +1778,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }, 5000);
   refreshPointingStatus();
   setInterval(refreshPointingStatus, 1000);
+  refreshLocationTimeSyncStatus();
+  setInterval(refreshLocationTimeSyncStatus, 1000);
   updateConnectionSections();
   updateNetworkManual();
   updateSerialAutoControls();

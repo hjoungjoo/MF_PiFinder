@@ -164,6 +164,20 @@ class Server:
         self.lon = None
         self.altitude = None
         self.gps_locked = False
+        # Location/time sync uses PyIndi and can wait for a slow mount or a
+        # missing property.  Never let that wait consume a Waitress worker.
+        self._indi_location_time_sync_lock = threading.Lock()
+        self._indi_location_time_sync_status = {
+            "state": "idle",
+            "message": "",
+            "updated_at": None,
+        }
+        # Property reads are used by page rendering and the live-value poll.
+        # Keep them out of Waitress workers as well; a stalled indiserver must
+        # not make the entire web UI unavailable.
+        self._indi_properties_lock = threading.Lock()
+        self._indi_properties_cache = {}
+        self._indi_properties_refresh_running = False
 
         self.button_dict = {
             "PLUS": self.ki.PLUS,
@@ -617,6 +631,18 @@ class Server:
                 cfg.save_locations()
                 # Notify main process to reload config
                 self.ui_queue.put("reload_config")
+                # A deliberate default-site change should take effect now,
+                # not wait for the GPS movement debounce.
+                gps_lock(location.latitude, location.longitude, location.height)
+                if self.mountcontrol_queue is not None:
+                    self.mountcontrol_queue.put(
+                        {
+                            "type": "sync_location_time",
+                            "latitude": location.latitude,
+                            "longitude": location.longitude,
+                            "elevation": location.height,
+                        }
+                    )
             return redirect("/locations")
 
         @app.route("/locations/load/<int:location_id>")
@@ -627,6 +653,15 @@ class Server:
             if 0 <= location_id < len(cfg.locations.locations):
                 location = cfg.locations.locations[location_id]
                 gps_lock(location.latitude, location.longitude, location.height)
+                if self.mountcontrol_queue is not None:
+                    self.mountcontrol_queue.put(
+                        {
+                            "type": "sync_location_time",
+                            "latitude": location.latitude,
+                            "longitude": location.longitude,
+                            "elevation": location.height,
+                        }
+                    )
             return redirect("/locations")
 
         @app.route("/network/add", methods=["POST"])
@@ -1372,12 +1407,42 @@ class Server:
                 tolerance_degrees=tolerance,
             )
 
-        def _get_indi_onstep_properties(indi_cfg):
+        def _read_indi_onstep_properties(indi_cfg):
             return sys_utils.get_indi_onstep_properties(
                 server_host=indi_cfg["server_host"],
                 server_port=indi_cfg["server_port"],
                 device_name=indi_cfg["device_name"],
             )
+
+        def _refresh_indi_onstep_properties(indi_cfg):
+            with self._indi_properties_lock:
+                if self._indi_properties_refresh_running:
+                    return
+                self._indi_properties_refresh_running = True
+
+            def refresh():
+                try:
+                    properties = _read_indi_onstep_properties(indi_cfg)
+                    # A failed/empty read must not erase the last known-good
+                    # display values while INDI is reconnecting.
+                    if properties:
+                        with self._indi_properties_lock:
+                            self._indi_properties_cache = properties
+                except Exception:
+                    logger.exception("Could not refresh INDI properties")
+                finally:
+                    with self._indi_properties_lock:
+                        self._indi_properties_refresh_running = False
+
+            threading.Thread(
+                target=refresh, name="IndiPropertyRefresh", daemon=True
+            ).start()
+
+        def _get_indi_onstep_properties(indi_cfg):
+            """Return cached properties immediately and refresh them in background."""
+            _refresh_indi_onstep_properties(indi_cfg)
+            with self._indi_properties_lock:
+                return dict(self._indi_properties_cache)
 
         def _mount_control_status():
             try:
@@ -1547,7 +1612,7 @@ class Server:
             deadline = time.monotonic() + timeout
             onstep_props = {}
             while True:
-                onstep_props = _get_indi_onstep_properties(indi_cfg)
+                onstep_props = _read_indi_onstep_properties(indi_cfg)
                 if _onstep_location_matches(
                     onstep_props,
                     latitude,
@@ -1558,6 +1623,70 @@ class Server:
                 if time.monotonic() >= deadline:
                     return onstep_props
                 time.sleep(0.5)
+
+        def _indi_location_time_sync_status():
+            with self._indi_location_time_sync_lock:
+                return dict(self._indi_location_time_sync_status)
+
+        def _start_indi_location_time_sync(lat, lon, elev, utc_time, indi_cfg):
+            """Start one bounded location/time sync without blocking HTTP."""
+            running_message = _("Location and UTC time sync is running")
+            success_message = _("Location and UTC time sent via INDI")
+            readback_message = _("Location/time sent; reading back mount values")
+            with self._indi_location_time_sync_lock:
+                if self._indi_location_time_sync_status["state"] == "running":
+                    return False
+                self._indi_location_time_sync_status = {
+                    "state": "running",
+                    "message": running_message,
+                    "updated_at": time.time(),
+                }
+
+            def sync():
+                try:
+                    result = sys_utils.apply_indi_onstep_location_time(
+                        latitude=lat,
+                        longitude=lon,
+                        elevation=elev,
+                        utc_datetime=utc_time,
+                        server_host=indi_cfg["server_host"],
+                        server_port=indi_cfg["server_port"],
+                        device_name=indi_cfg["device_name"],
+                    )
+                    if not result.get("ok"):
+                        raise RuntimeError(
+                            result.get("stderr")
+                            or result.get("stdout")
+                            or "INDI location/time sync failed"
+                        )
+                    with self._indi_location_time_sync_lock:
+                        self._indi_location_time_sync_status["message"] = readback_message
+                        self._indi_location_time_sync_status["updated_at"] = time.time()
+                    onstep_props = _wait_for_onstep_location_match(
+                        indi_cfg, lat, lon, timeout=8.0
+                    )
+                    # The readback belongs to this sync, so publish it directly
+                    # instead of waiting for a later five-second cache refresh.
+                    if onstep_props:
+                        with self._indi_properties_lock:
+                            self._indi_properties_cache = dict(onstep_props)
+                    sys_utils.write_onstep_location_cache(lat, lon, elev, utc_time)
+                    state, message = "succeeded", success_message
+                except Exception as exc:
+                    logger.exception("INDI location/time sync failed")
+                    state, message = "failed", str(exc)
+                with self._indi_location_time_sync_lock:
+                    self._indi_location_time_sync_status = {
+                        "state": state,
+                        "message": message,
+                        "updated_at": time.time(),
+                    }
+
+            worker = threading.Thread(
+                target=sync, name="IndiLocationTimeSync", daemon=True
+            )
+            worker.start()
+            return True
 
         def _render_indi_page(status_message="", error_message="", onstep_props=None):
             indi_cfg = _indi_config_values(resolve_transport=True)
@@ -1586,6 +1715,7 @@ class Server:
                 onstep_effective_location=_onstep_effective_location(onstep_props),
                 onstep_mount_state=_onstep_mount_state(onstep_props, indi_cfg),
                 pifinder_location_time=_pifinder_location_time_values(),
+                location_time_sync_status=_indi_location_time_sync_status(),
                 backlash_values=backlash_values,
                 align_stars=BRIGHT_ALIGN_STARS,
                 multipoint_align=_multipoint_align_status(),
@@ -1633,6 +1763,7 @@ class Server:
                     "onstep_device_name": indi_cfg["device_name"],
                     "is_onstepx_driver": indi_cfg["is_onstepx_driver"],
                     "pifinder_location_time": _pifinder_location_time_values(),
+                    "location_time_sync_status": _indi_location_time_sync_status(),
                     "onstep_props": onstep_props,
                     "onstep_location_display": _onstep_location_display(onstep_props),
                     "onstep_effective_location": _onstep_effective_location(
@@ -1665,6 +1796,18 @@ class Server:
                     "pointing_coordinate_status": _pointing_coordinate_status(),
                     "mount_control_status": _mount_control_status(),
                     "goto_guide_status": _goto_guide_status(),
+                    "location_time_sync_status": _indi_location_time_sync_status(),
+                }
+            )
+
+        @app.route("/indi/location_time/status")
+        @auth_required
+        def indi_location_time_status():
+            """Cheap completion poll, independent of INDI property reads."""
+            return jsonify(
+                {
+                    "ok": True,
+                    "location_time_sync_status": _indi_location_time_sync_status(),
                 }
             )
 
@@ -2124,49 +2267,15 @@ class Server:
                 utc_time = _current_pifinder_utc_datetime()
                 indi_cfg = _indi_config_values()
                 _require_onstepx_driver(indi_cfg)
-                sync_result = sys_utils.apply_indi_onstep_location_time(
-                    latitude=lat,
-                    longitude=lon,
-                    elevation=elev,
-                    utc_datetime=utc_time,
-                    server_host=indi_cfg["server_host"],
-                    server_port=indi_cfg["server_port"],
-                    device_name=indi_cfg["device_name"],
-                )
-                if not sync_result.get("ok"):
-                    raise RuntimeError(
-                        "INDI OnStep location/time sync failed: "
-                        + (
-                            sync_result.get("stderr")
-                            or sync_result.get("stdout")
-                            or "unknown error"
-                        )
+                if not _start_indi_location_time_sync(lat, lon, elev, utc_time, indi_cfg):
+                    return _render_indi_page(
+                        error_message=_("Location and UTC time sync is already running")
                     )
-
-                onstep_props = _wait_for_onstep_location_match(
-                    indi_cfg,
-                    lat,
-                    lon,
-                    timeout=8.0,
-                )
-                if not _onstep_location_matches(
-                    onstep_props,
-                    lat,
-                    lon,
-                    indi_cfg=indi_cfg,
-                ):
-                    logger.warning(
-                        "Direct LX200 OnStep sync completed, but INDI readback "
-                        "does not match requested location: lat=%s lon=%s props=%s",
-                        lat,
-                        lon,
-                        onstep_props,
-                    )
-                sys_utils.write_onstep_location_cache(lat, lon, elev, utc_time)
-
                 return _render_indi_page(
-                    _("Location and UTC time sent via INDI"),
-                    onstep_props=onstep_props,
+                    _("Location and UTC time sync started"),
+                    # The background worker owns INDI traffic.  Do not start a
+                    # second blocking property read just to render this reply.
+                    onstep_props={},
                 )
             except (RuntimeError, ValueError) as e:
                 return _render_indi_page(error_message=str(e))
