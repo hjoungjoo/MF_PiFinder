@@ -22,7 +22,24 @@ The first integrated scope includes:
 
 Automatic target refinement, drift compensation, and alignment-subsystem management from the older reference branch are not enabled in this first modular port.
 
-## Install INDI Support (Source Build)
+## Install INDI Support
+
+The default installation path is the **shared Pi 4/Pi 5 binary archive**. The
+Bookworm 64-bit/aarch64 archive shipped with PiFinder installs the validated
+INDI core, third-party drivers, PyIndi, and PiFinder OnStepX patch set together.
+Use the full source install and build below only when modifying the source or
+changing/testing driver patches.
+
+```bash
+cd ~/PiFinder
+bash scripts/install_indi_mount_archive.sh \
+  dist/mf-pifinder-indi-bookworm-arm64-v2.2.3.1-current.tar.gz
+```
+
+During a full `pifinder_setup.sh` install, this archive path is selected
+automatically when an archive is in `dist/` or `PIFINDER_INDI_ARCHIVE` is set.
+
+### For changes: full source install and build
 
 Run the dedicated installer from the PiFinder checkout:
 
@@ -51,9 +68,11 @@ The script checks out INDI `v2.2.3.1` under `~/indi-latest`, builds it, and auto
 INDI_PATCH_DIR=none bash scripts/install_indi_mount_OnstepX.sh
 ```
 
-### Pi 4/Pi 5 Shared Binary Archive Install
+### Default installation: Pi 4/Pi 5 shared binary archive
 
-Instead of building from source, you can install a prebuilt Bookworm 64-bit/aarch64 archive:
+For normal installs, use the prebuilt Bookworm 64-bit/aarch64 archive. Switch to
+the full source build in the preceding section only when source modifications or
+new patch validation are required:
 
 ```bash
 cd ~/PiFinder

@@ -13,7 +13,8 @@
 | Backspace | `MINUS` |
 | `=` / Keypad `+` | `PLUS` |
 | `-` / Keypad `-` | `MINUS` |
-| 숫자 `0-9` / Keypad 숫자 | 숫자 `0-9` |
+| 숫자 `1-9` / Keypad 숫자 | 숫자 press/release |
+| `0` / Keypad `0` | 현재 이벤트가 전달되지 않음 |
 | Space | 공백 문자 |
 | `a-z` | 영문 소문자 |
 | `Shift + a-z` | 영문 대문자 |
@@ -57,10 +58,16 @@
 GPIO 키패드는 `SQUARE`를 누른 상태에서 방향키, `+`, `-`, `0`을 누르면
 해당 `ALT_*` 입력으로 처리된다.
 
+GPIO 키패드의 `0`은 릴리스 때 단발 숫자 입력으로 전달되지만, USB/Bluetooth
+키보드의 `0`은 내부에서 "입력 없음" 값과 겹쳐 큐에 전달되지 않는다. 따라서 HID
+키보드에서는 `0`에 배정된 화면 동작(예: 마운트 정지)을 사용할 수 없다.
+
 ## INDI 마운트 제어
 
-INDI 마운트 제어는 선택 기능이다. `scripts/install_indi_mount_OnstepX.sh`로 INDI
-지원을 설치하고 PiFinder UI에서 다음 설정을 켠 경우에만 동작한다.
+INDI 마운트 제어는 선택 기능이다. 기본 설치는 PiFinder 배포본의 INDI 바이너리
+아카이브(`scripts/install_indi_mount_archive.sh`)를 사용한다. INDI 소스나 PiFinder
+OnStepX 패치를 수정해야 할 때만 `scripts/install_indi_mount_OnstepX.sh`로 전체 소스
+설치·빌드를 수행한다. 설치 후 PiFinder UI에서 다음 설정을 켠 경우에만 동작한다.
 
 ```text
 Settings > Experimental > Mount Control > On
@@ -68,14 +75,14 @@ Settings > Experimental > Mount Control > On
 
 Mount Control이 켜져 있으면 숫자 키는 Object Details 화면, 일반 메뉴, 상태
 화면에서 아래 마운트 동작을 보낸다(하나의 공통 맵 — `docs/mf_dev/mf_input_keymap_ko.md`
-참고). USB/Bluetooth 키보드의 숫자 키와 keypad 숫자 키, GPIO 숫자 키가 같은 방식으로
-동작한다. 연속 방향 조그는 키보드 문자에도 있고, 전용 INDI Guide 화면도 같은 공통
+참고). `1-9`는 USB/Bluetooth 키보드·키패드·GPIO 키패드에서 같은 방식으로
+동작하지만, USB/Bluetooth 키보드의 `0`은 위 제한 때문에 동작하지 않는다. 연속 방향 조그는 키보드 문자에도 있고, 전용 INDI Guide 화면도 같은 공통
 맵을 쓴다(숫자 키 대각 조그는 제거 — 대각은 키보드 문자로 유지). 객체 리스트에서는
 숫자 키가 대신 카탈로그 시퀀스 점프를 입력하고, 문자는 Name Search를 연다.
 
 | 키 | INDI 마운트 동작 |
 | --- | --- |
-| `0` | 마운트 정지 |
+| `0` | 마운트 정지 (GPIO 키패드/개발 키보드만; HID 키보드에서는 미전달) |
 | `2` | South 이동 — 키를 누르는 동안 |
 | `4` | West 이동 — 키를 누르는 동안 |
 | `5` | GoTo — Object Details(선택 객체)에서만 |

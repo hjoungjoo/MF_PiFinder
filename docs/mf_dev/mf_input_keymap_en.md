@@ -76,17 +76,36 @@ guide) and clears its target so it will not immediately re-correct; a later `5`
 content meaning. Continuous jog is also on the keyboard letters
 (`q w e / a s d / z x c`, `s` = stop).
 
-## Page groups
+## Page groups and shared-map tree
 
-| Group | Purpose | Screens |
-| --- | --- | --- |
-| **G1 Menus & Navigation** | menu trees, settings, equipment, obs/location lists | `UITextMenu`, `UIObsList`, `UILocationList`, `UIEquipment` |
-| **G2 Objects** (selection + details) | find/select an object and act on it | `UIObjectList`, `UIObjectDetails` |
-| **G3 Text / Name Search** | on-device text and catalog-name search | `UITextEntry` |
-| **G4 Numeric / Coordinate Input** | digit/coordinate/value entry | `UIDateEntry`, `UILocationEntry`, `UIIndiBacklash` |
-| **G5 INDI Manual Control** | dedicated manual mount driving | `UIIndiGuide`, `UIIndiInit`, `UIIndiMultiPointAlign` (ADJUST) |
-| **G6 Alignment Wizards** | plate/daytime/polar alignment | `UIAlign`, `UIAlignDaytime`, `UIPolarAlign` |
-| **G7 Info / Passive** | chart, preview, status, console, log | `UIChart`, `UIPreview`, `UIConsole`, `UILog`, `UIGPSStatus`, `UIGPSTimeSyncStatus`, `UIIndiStatus` |
+The groups in this document are not lists of pages that handle every key the
+same way. Some pages, such as part of G1/G7, use the `GuideKeyMixin` shared map;
+even within the same group, a page such as Object List can override number/text
+keys with a page-specific map. `mf_input_controls_en.md` §3 is authoritative for
+the current implementation's exact scope.
+
+```text
+PiFinder LCD pages
+├─ G1 Menus & Navigation
+│  ├─ Shared number/text map: UITextMenu, UIObsList, UILocationList, UIEquipment
+│  │  └─ Mount Control ON → shared mount map / OFF → no-op
+│  └─ arrows, SQUARE, +/- → each menu's own navigation behavior
+├─ G2 Objects
+│  ├─ UIObjectList → exception: numbers=sequence jump, letters=name search
+│  └─ UIObjectDetails → own mount map + FOV/description scrolling
+├─ G3 Text/Name Search → UITextEntry text-entry map
+├─ G4 Numeric/Coordinate Entry → UIRADecEntry, UIDateEntry, UITimeEntry,
+│                                UILocationEntry, UIIndiBacklash value-entry maps
+├─ G5 INDI Manual Control → UIIndiInit / UIIndiGuide / MultiPoint stage maps
+├─ G6 Alignment Wizards → UIAlign / UIAlignDaytime / UIPolarAlign own maps
+└─ G7 Info/Passive
+   ├─ Shared number/text map: UIPreview, UIStatus, GPS/INDI Status
+   └─ Page-content maps: UIChart, UISQM, UILog, UIConsole, etc.
+```
+
+The **shared number/text map** in the tree means this document's "Number keys
+that drive the mount — one shared map." Arrows, `SQUARE`, `+`, and `-` are not
+part of that shared map and always follow the active LCD page's definition.
 
 **Object selection is its own group (G2), separated from generic navigation
 (G1).** Finding a star is a distinct interaction (browse / jump / search / open
@@ -186,16 +205,17 @@ The dedicated manual-driving screens. `UIIndiGuide` and `UIIndiMultiPointAlign`
 (ADJUST) now follow the **same number map as everywhere else** (diagonal jog on
 the number keys was removed 2026-07-13; diagonals remain available on the
 keyboard letters). They keep their visual keypad overlay, keepalive motion and
-screen-specific `0`/`5` commands:
+screen-specific `0` command remains; `5` currently has no Guide-screen action:
 
 | Key | Action |
 | --- | --- |
 | `2` `4` `6` `8` | Cardinal jog (press-hold; release stops) |
 | `9` / `3` | Slew rate up / down |
-| `0` / `5` | Screen-specific (guide: toggle guide correction / refine; ADJUST: `0` cancels) |
+| `0` | Guide: toggle guide correction; ADJUST: cancel |
+| `5` | no-op |
 | `1` `7` | unused |
 | letters (kbd) | INDI directional jog incl. diagonals (`q w e / a s d / z x c`, `s` = stop) |
-| `+` / `-` | unused (was slew rate; moved to `9`/`3`) |
+| `+` / `-` | In POINTS, alignment-point count +/−; no-op in other stages |
 | `SQUARE` | Sync / align to current solve (guide) / confirm (ADJUST) |
 
 `UIIndiInit` keeps its own discrete INDI panel (Init/Park/Home on digits) for
@@ -236,7 +256,7 @@ Letters ignored; numbers are wizard-specific.
 | G2 Object details | shared mount map (hold-to-move + 0/5/7 + 9/3 speed) | continuous jog | yes |
 | G3 Text/Search | T9 / multi-tap text | English text input | no |
 | G4 Numeric input | digits | ignored | no |
-| G5 INDI Manual | shared mount map (cardinals + 9/3 speed) + screen-specific 0/5 | directional jog | yes |
+| G5 INDI Manual | cardinals + 9/3 speed + screen-specific 0 (`5` no-op) | directional jog | yes |
 | G6 Alignment | wizard-specific | ignored | no |
 | G7 Info/Passive | ratings / dev / none (status: shared mount map) | ignored (status: jog) | status only |
 

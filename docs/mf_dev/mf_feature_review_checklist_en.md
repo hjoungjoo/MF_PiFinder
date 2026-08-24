@@ -446,7 +446,8 @@ Key files:
 Review points:
 
 - [ ] Base PiFinder install does not require INDI
-- [ ] INDI install script works on Pi4 and Pi5
+- [ ] Default `install_indi_mount_archive.sh` archive install works on Pi4 and Pi5
+- [ ] Full `install_indi_mount_OnstepX.sh` source-build path works when source or patch changes are required
 - [ ] OnStepX does not overwrite original LX200 OnStep driver
 - [ ] OnStepX-only UI appears only for active OnStepX driver
 - [ ] USB serial list appears

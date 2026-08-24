@@ -1,4 +1,9 @@
 # dev requirements
+# Keep a standalone developer install runnable as well as testable.  Nox also
+# installs this file after the runtime requirements; pip safely de-duplicates
+# the entries in that case.
+-r requirements.txt
+
 luma.emulator==1.5.0
 PyHotKey==1.5.2
 ruff==0.4.8

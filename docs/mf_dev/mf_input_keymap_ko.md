@@ -68,17 +68,35 @@ Init/Sync 없음**(제거 — 기동 시 자동 init/sync되며, 실수로 `1`�
 `+`/`-`는 각 화면 고유의 콘텐츠 동작을 유지합니다. 연속 조그는 키보드 문자
 (`q w e / a s d / z x c`, `s` = 정지)에도 있습니다.
 
-## 페이지 그룹
+## 페이지 그룹과 공통 맵 적용 트리
 
-| 그룹 | 목적 | 화면 |
-| --- | --- | --- |
-| **G1 메뉴 & 내비게이션** | 메뉴 트리, 설정, 장비, 관측/위치 리스트 | `UITextMenu`, `UIObsList`, `UILocationList`, `UIEquipment` |
-| **G2 객체**(선택 + 상세) | 객체 찾기/선택하고 동작 | `UIObjectList`, `UIObjectDetails` |
-| **G3 텍스트 / 이름 검색** | 기기 텍스트·카탈로그 이름 검색 | `UITextEntry` |
-| **G4 숫자 / 좌표 입력** | 숫자·좌표·값 입력 | `UIDateEntry`, `UILocationEntry`, `UIIndiBacklash` |
-| **G5 INDI 수동 조작** | 전용 마운트 수동 구동 | `UIIndiGuide`, `UIIndiInit`, `UIIndiMultiPointAlign`(ADJUST) |
-| **G6 정렬 마법사** | 플레이트/주간/극축 정렬 | `UIAlign`, `UIAlignDaytime`, `UIPolarAlign` |
-| **G7 정보 / 수동표시** | 차트, 프리뷰, 상태, 콘솔, 로그 | `UIChart`, `UIPreview`, `UIConsole`, `UILog`, `UIGPSStatus`, `UIGPSTimeSyncStatus`, `UIIndiStatus` |
+이 문서의 그룹은 키를 똑같이 처리하는 화면의 목록이 아닙니다. G1/G7 일부처럼
+`GuideKeyMixin` 공통 맵을 쓰는 페이지가 있고, 같은 그룹 안에서도 Object List처럼
+화면 고유 맵으로 숫자·문자를 재정의하는 페이지가 있습니다. 현재 구현의 정확한
+적용 범위는 `mf_input_controls_ko.md` §3을 우선합니다.
+
+```text
+PiFinder LCD 페이지
+├─ G1 메뉴·내비게이션
+│  ├─ 공통 숫자·문자 맵: UITextMenu, UIObsList, UILocationList, UIEquipment
+│  │  └─ Mount Control ON → 공통 마운트 맵 / OFF → 무효
+│  └─ 화살표·SQUARE·+/- → 각 메뉴의 고유 내비게이션 동작
+├─ G2 객체
+│  ├─ UIObjectList → 예외: 숫자=순번 점프, 문자=이름 검색
+│  └─ UIObjectDetails → 자체 마운트 맵 + FOV/설명 스크롤
+├─ G3 텍스트/이름 검색 → UITextEntry의 텍스트 입력 맵
+├─ G4 숫자/좌표 입력 → UIRADecEntry, UIDateEntry, UITimeEntry,
+│                       UILocationEntry, UIIndiBacklash 등의 값 입력 맵
+├─ G5 INDI 수동 조작 → UIIndiInit / UIIndiGuide / MultiPoint 단계별 맵
+├─ G6 정렬 마법사 → UIAlign / UIAlignDaytime / UIPolarAlign 고유 맵
+└─ G7 정보·수동표시
+   ├─ 공통 숫자·문자 맵: UIPreview, UIStatus, GPS/INDI Status
+   └─ 고유 콘텐츠 맵: UIChart, UISQM, UILog, UIConsole 등
+```
+
+트리의 **공통 숫자·문자 맵**은 이 문서의 "마운트를 구동하는 숫자 키 — 공통 맵"을
+뜻합니다. 화살표, `SQUARE`, `+`, `-`는 그 공통 맵에 포함되지 않으며 항상 각 LCD
+페이지의 정의를 따릅니다.
 
 **객체 선택은 일반 내비게이션(G1)에서 분리된 독립 그룹(G2)입니다.** 별을 찾는 것은
 탐색/점프/검색/상세 열기/마운트 구동이 얽힌 별개의 상호작용이라 자체 규칙을 가짐.
@@ -172,16 +190,17 @@ Init/Sync 없음**(제거 — 기동 시 자동 init/sync되며, 실수로 `1`�
 전용 수동 구동 화면. `UIIndiGuide`와 `UIIndiMultiPointAlign`(ADJUST)도 이제
 **다른 화면과 동일한 숫자 맵**을 따릅니다(2026-07-13에 숫자 키 대각 조그 제거 —
 대각 이동은 키보드 문자로 유지). 시각적 키패드 오버레이, keepalive 이동, 화면별
-`0`/`5` 명령은 그대로:
+화면별 `0` 명령은 그대로이며, `5`는 현재 가이드 화면에서 동작하지 않는다:
 
 | 키 | 동작 |
 | --- | --- |
 | `2` `4` `6` `8` | 기본 방향 조그(press-hold, 떼면 정지) |
 | `9` / `3` | 슬루 속도 증가 / 감소 |
-| `0` / `5` | 화면별(가이드: 가이드 보정 / 정밀보정 토글; ADJUST: `0` 취소) |
+| `0` | 가이드: 가이드 보정 토글; ADJUST: 취소 |
+| `5` | 무효 |
 | `1` `7` | 미사용 |
 | 문자(키보드) | INDI 방향 조그 — 대각 포함(`q w e / a s d / z x c`, `s` = 정지) |
-| `+` / `-` | 미사용(슬루 속도였음; `9`/`3`으로 이동) |
+| `+` / `-` | POINTS 단계에서 정렬점 수 +/−; 그 외 단계에서는 무효 |
 | `SQUARE` | 현재 solve로 Sync / 정렬(가이드) / 확정(ADJUST) |
 
 `UIIndiInit`은 연결 관리용 개별 INDI 패널(숫자로 Init/Park/Home 등)을 유지하며
@@ -220,7 +239,7 @@ Init/Sync 없음**(제거 — 기동 시 자동 init/sync되며, 실수로 `1`�
 | G2 객체 상세 | 공통 마운트 맵(누른 동안 이동 + 0/5/7 + 9/3 속도) | 연속 조그 | 예 |
 | G3 텍스트/검색 | T9 / 멀티탭 텍스트 | 영문 텍스트 입력 | 아니오 |
 | G4 숫자 입력 | 숫자 | 무시 | 아니오 |
-| G5 INDI 수동 | 공통 마운트 맵(방향키 + 9/3 속도) + 화면별 0/5 | 방향 조그 | 예 |
+| G5 INDI 수동 | 방향키 + 9/3 속도 + 화면별 0 (`5` 무효) | 방향 조그 | 예 |
 | G6 정렬 | 마법사 전용 | 무시 | 아니오 |
 | G7 정보/표시 | 평점 / 개발 / 없음 (상태: 공통 마운트 맵) | 무시(상태: 조그) | 상태만 |
 

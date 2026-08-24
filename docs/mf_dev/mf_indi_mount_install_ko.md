@@ -22,7 +22,23 @@ INDI 마운트 제어는 실험 기능입니다. 먼저 INDI Telescope Simulator
 
 구버전 참고 브랜치에 있던 자동 target refinement, drift compensation, INDI alignment subsystem 관리 기능은 이번 1차 모듈화 포트에는 포함하지 않았습니다.
 
-## INDI 지원 설치 (소스 빌드)
+## INDI 지원 설치
+
+기본 설치 방식은 **Pi 4/Pi 5 공용 바이너리 아카이브**입니다. PiFinder 배포본에
+포함된 Bookworm 64-bit/aarch64 아카이브를 설치하면 검증된 INDI core, third-party
+드라이버, PyIndi와 PiFinder의 OnStepX 패치 구성이 그대로 설치됩니다. 소스 수정이나
+드라이버 패치 변경이 필요할 때만 아래의 전체 소스 설치·빌드 방식을 사용하세요.
+
+```bash
+cd ~/PiFinder
+bash scripts/install_indi_mount_archive.sh \
+  dist/mf-pifinder-indi-bookworm-arm64-v2.2.3.1-current.tar.gz
+```
+
+전체 `pifinder_setup.sh` 설치에서는 아카이브가 `dist/`에 있거나
+`PIFINDER_INDI_ARCHIVE`로 지정되면 이 방식을 자동으로 사용합니다.
+
+### 수정용: 전체 소스 설치·빌드
 
 PiFinder 체크아웃에서 전용 설치 스크립트를 실행합니다.
 
@@ -51,9 +67,10 @@ Pi 4에서는 메모리 여유를 위해 기본 `JOBS=2`를 권장합니다. Pi 
 INDI_PATCH_DIR=none bash scripts/install_indi_mount_OnstepX.sh
 ```
 
-### Pi 4/Pi 5 공용 바이너리 아카이브 설치
+### 기본 설치: Pi 4/Pi 5 공용 바이너리 아카이브
 
-소스 빌드 대신 미리 만든 Bookworm 64-bit/aarch64 아카이브를 사용할 수 있습니다.
+일반 설치에는 미리 만든 Bookworm 64-bit/aarch64 아카이브를 사용합니다. 소스
+수정이나 새 패치 검증이 필요한 경우에만 앞 절의 전체 소스 빌드로 전환합니다.
 
 ```bash
 cd ~/PiFinder

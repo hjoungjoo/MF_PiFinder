@@ -13,7 +13,8 @@ the `mf_pifinder` branch.
 | Backspace | `MINUS` |
 | `=` / Keypad `+` | `PLUS` |
 | `-` / Keypad `-` | `MINUS` |
-| Number `0-9` / Keypad numbers | Number `0-9` |
+| Number `1-9` / Keypad numbers | Number press/release |
+| `0` / Keypad `0` | No event currently reaches PiFinder |
 | Space | Space character |
 | `a-z` | Lowercase text input |
 | `Shift + a-z` | Uppercase text input |
@@ -57,10 +58,18 @@ For compatibility, pressing `Shift` or `Ctrl` with `Left`, `Up`, `Down`,
 On the GPIO keypad, holding `SQUARE` while pressing a direction key, `+`, `-`,
 or `0` sends the matching `ALT_*` input.
 
+On the GPIO keypad, `0` is delivered as a plain number on release. On a
+USB/Bluetooth keyboard, however, its internal value collides with "no input" and
+is dropped before it reaches the queue. Therefore actions assigned to `0` (such
+as mount stop) are unavailable from a HID keyboard.
+
 ## INDI Mount Control
 
-INDI mount control is optional. It is available only after installing INDI
-support with `scripts/install_indi_mount_OnstepX.sh` and enabling this PiFinder setting:
+INDI mount control is optional. The default install uses PiFinder's INDI binary
+archive (`scripts/install_indi_mount_archive.sh`). Use
+`scripts/install_indi_mount_OnstepX.sh` for a full source install and build only
+when changing INDI source or the PiFinder OnStepX patches. After installation,
+enable this PiFinder setting:
 
 ```text
 Settings > Experimental > Mount Control > On
@@ -68,8 +77,9 @@ Settings > Experimental > Mount Control > On
 
 When Mount Control is enabled, the number keys send these mount-control actions on
 the Object Details screen, on ordinary menus, and on the status screens (the one
-shared map — see `docs/mf_dev/mf_input_keymap_en.md`). USB/Bluetooth number keys, keypad
-number keys, and GPIO number keys behave the same way. Continuous directional jog
+shared map — see `docs/mf_dev/mf_input_keymap_en.md`). Keys `1-9` behave the same
+from USB/Bluetooth keyboards, keypads, and GPIO keypads; `0` from a USB/Bluetooth
+keyboard is unavailable for the reason above. Continuous directional jog
 is also on the keyboard letters; the dedicated INDI Guide screen uses the same
 map (its number-key diagonal jog was removed — diagonals stay on the letters).
 On the object list the number keys instead type a catalog sequence to jump to,
@@ -77,7 +87,7 @@ and a letter opens the Name Search.
 
 | Key | INDI mount action |
 | --- | --- |
-| `0` | Stop mount |
+| `0` | Stop mount (GPIO keypad/dev keyboard only; unavailable from HID keyboard) |
 | `2` | Move south — while the key is held |
 | `4` | Move west — while the key is held |
 | `5` | GoTo — only on Object Details (a selected object) |

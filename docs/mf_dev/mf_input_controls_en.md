@@ -1,6 +1,6 @@
 # MF PiFinder Input Controls (Keypad & Keyboard)
 
-Baseline: `mf_pifinder` branch, 2026-07-13.
+Baseline: current source tree, audited 2026-08-18.
 
 This document is the accurate, source-derived reference for how keypad and
 keyboard input is handled across the PiFinder UI: the global behavior shared by
@@ -11,6 +11,9 @@ against a single agreed spec.
 Companion doc: `docs/mf_dev/mf_keyboard_mapping_en.md` describes the physical key ->
 PiFinder-input mapping (which key produces which event). This doc describes what
 the UI does with those events.
+
+`mf_input_keymap_en.md` is a **target design** for future consolidation. Use this
+document as the source of truth for what the LCD currently does.
 
 ## 1. Input sources and event encoding
 
@@ -50,7 +53,7 @@ screen `self.stack[-1].key_*`.
 | `LNG_SQUARE` | Toggle the current screen's **marking menu** |
 | `SQUARE` | If a marking menu is open: go back one marking-menu level / close; else forward to screen |
 | `UP`/`DOWN`/`RIGHT`/`PLUS`/`MINUS`/numbers/letters | Forward to the active screen |
-| Help overlay open | Any key closes help; `UP`/`DOWN` page through help images |
+| Help overlay open | `UP`/`DOWN` page through help images; `LEFT`/`RIGHT`/`SQUARE`/numbers/letters close it. `+`/`-` and number/text release events are forwarded to the active screen or ignored |
 | `ALT_PLUS`/`ALT_MINUS` | Display brightness up/down (global) |
 | `ALT_0` | Screenshot |
 | `ALT_LEFT` | Save camera image |
@@ -73,7 +76,55 @@ screen `self.stack[-1].key_*`.
 - `ALT_UP` / `ALT_DOWN` / `ALT_SQUARE` — emitted by keyboards but not handled by
   `main.py` and not forwarded to screens.
 
-## 3. Base screen defaults (`UIModule`)
+## 3. Which LCD pages share a key map
+
+Not every LCD page uses the same key map. The global controls in §2 apply to all
+pages; after that, a class-level shared map or a page-specific map applies as
+shown in this tree.
+
+```text
+LCD key input
+├─ Global handling (all pages)
+│  ├─ LEFT / LNG_LEFT / LNG_RIGHT / LNG_SQUARE
+│  └─ ALT_+ / ALT_- / ALT_0 / ALT_LEFT / ALT_RIGHT
+└─ Active LCD page
+   ├─ Shared number/text mount map: GuideKeyMixin
+   │  ├─ Plain UITextMenu, UIObsList, UILocationList, UIEquipment
+   │  ├─ UIPreview, UIStatus, UIGPSStatus, UIGPSTimeSyncStatus, UIIndiStatus
+   │  └─ Mount Control ON → §7 mount map / OFF → number/text no-op
+   │     (arrows, SQUARE, and +/- stay page-specific)
+   ├─ Base UIModule map: supporting pages with no dedicated handler
+   │  └─ LEFT=back, SQUARE=cycle display mode, all other keys=no-op
+   └─ Page-specific map
+      ├─ Objects: UIObjectList / UIObjectDetails
+      ├─ Entry: UITextEntry / UIRADecEntry / date·time·location·value entry
+      ├─ INDI: UIIndiInit / UIIndiGuide / UIIndiMultiPointAlign
+      ├─ Alignment: UIAlign / UIAlignDaytime / UIPolarAlign
+      └─ Info/tools: UIChart / UISQM / UILog / UIConsole / UISQMCalibration
+```
+
+Therefore inheriting `GuideKeyMixin` does not make every key identical. The mixin
+only supplies the shared handling for **number and text keys**; a page such as
+Object List may override even those. Arrows, `SQUARE`, `+`, and `-` always defer
+to the active LCD page's handler.
+
+### LCD pages that depart from the shared map
+
+| Page/group | Key definitions different from the shared map |
+| --- | --- |
+| `UIObjectList` | numbers = catalog-sequence jump; letters = start Name Search; neither is mount jog |
+| `UIObjectDetails` | owns its mount map: `5` = current-object GoTo, `7` = Sync, `2/4/6/8` = cardinal movement; `+/-` = FOV or description scroll |
+| `UITextEntry` | numbers = T9/multi-tap; letters = direct text; `+` = space; `-` = delete |
+| Coordinate/value entry (`UIRADecEntry`, `UIDateEntry`, `UITimeEntry`, `UILocationEntry`, `UIIndiBacklash`, `UISQMSweep`) | number keys enter values and never jog the mount |
+| Dedicated INDI (`UIIndiInit`, `UIIndiGuide`, `UIIndiMultiPointAlign`) | connection/alignment stage and manual jog are defined by the screen state; do not assume the ordinary shared map |
+| Alignment (`UIAlign`, `UIAlignDaytime`, `UIPolarAlign`) | arrows, numbers, and `SQUARE` drive wizard state, star selection, or cancel |
+| Info/tools (`UIChart`, `UISQM`, `UILog`, `UIConsole`, `UISQMCalibration`) | content actions such as zoom, scroll, rating, development, or calibration take precedence |
+
+This tree indexes where the shared map can be expected. For the exact result of
+each key, consult §5 (standard menus), §6 (special pages), and §7 (shared mount
+map) together.
+
+## 4. Base screen defaults (`UIModule`)
 
 Unless a screen overrides them:
 
@@ -85,9 +136,9 @@ Unless a screen overrides them:
 | `PLUS` / `MINUS` / numbers / letters | no-op |
 | number **press** | falls through to `key_number()` (so a tap fires the discrete handler); number **release** = no-op |
 
-## 4. Standard menu — `UITextMenu` (and list variants)
+## 5. Standard menu — `UITextMenu` (Object List excepted)
 
-`UITextMenu` inherits **`GuideKeyMixin`** (see §6), so on standard menus the
+`UITextMenu` inherits **`GuideKeyMixin`** (see §7), so on standard menus the
 number and letter keys are hijacked for INDI mount control **when mount control
 is on** (numbers = shared mount map, letters = directional jog), and are
 otherwise no-ops. The mixin does **not** override `+`/`-`, so on standard menus
@@ -108,7 +159,7 @@ Config-option menus (via `RIGHT`):
 - `multi`: toggle the item in/out of the selection; `Select All` / `Select None`
   handle bulk toggles.
 
-### List variants (all inherit `UITextMenu` + `GuideKeyMixin`)
+### List variants
 
 - **`UIObjectList`**: `RIGHT` opens Object Details for the highlighted object;
   `SQUARE` cycles display mode `LOCATE -> NAME -> INFO`; **numbers type a catalog
@@ -121,7 +172,7 @@ Config-option menus (via `RIGHT`):
 - **`UIEquipment`** (`GuideKeyMixin` + `UIModule`): `UP`/`DOWN` switch Telescope /
   Eyepiece row; `RIGHT` opens the corresponding select menu.
 
-## 5. Screens with special key behavior
+## 6. Screens with special key behavior
 
 ### Object Details — `UIObjectDetails` (custom; NOT GuideKeyMixin)
 
@@ -148,24 +199,30 @@ Config-option menus (via `RIGHT`):
 - **`UILocationEntry`**: digits fill lat/lon/alt boxes; `MINUS` deletes / previous
   box; `PLUS` toggles sign (N/S, E/W); `RIGHT` advances the lat->lon->alt flow;
   `LEFT` previous box or cancel.
+- **`UIRADecEntry`**: digits fill the current RA/Dec/EPOCH field; `UP`/`DOWN`
+  change field, `MINUS` deletes, `PLUS` changes the Dec sign or epoch, `SQUARE`
+  cycles coordinate format, `RIGHT` creates the target, and `LEFT` cancels or
+  returns to the preceding field.
 
 ### INDI mount screens (`indi.py`)
 
 - **`UIIndiInit`**: discrete one-shot commands on digits — 1=Init 2=Sync
-  loc/time 3=Park 4=Set Home 5=Return Home 6=Unpark 7=Set Park 8=Restart driver;
-  `SQUARE` = Init.
+  loc/time 3=Park 4=Set Home 5=Return Home 6=Unpark 7=Set Park 8=Restart driver
+  9=Reboot mount; `SQUARE` = Init.
 - **`UIIndiBacklash`**: digits enter the selected axis's backlash value (0-999;
   `0` clears the entry); `PLUS` selects the RA axis, `MINUS` selects the DE axis;
   `RIGHT` runs auto-backlash; `SQUARE` saves both axes.
-- **`UIIndiGuide`**: `0`/`5` are discrete toggles (0=guide correction on/off,
-  5=one-shot refine on/off); direction digits `2/4/6/8` and letters are
-  **press/hold-to-move** guide (letters incl. diagonals; release stops); slew
-  rate is on `9` (up) / `3` (down); `PLUS`/`MINUS` are no-ops; `SQUARE` syncs the
+- **`UIIndiGuide`**: `0` toggles guide correction on/off; `5`, `1`, and `7` are
+  no-ops. Direction digits `2/4/6/8` and letters are **press/hold-to-move**
+  guide controls (letters include diagonals; release stops); slew rate is `9`
+  (up) / `3` (down), or keyboard `.` / `,` respectively; `PLUS`/`MINUS` are
+  no-ops; `SQUARE` syncs the
   mount to the current solve.
-- **`UIIndiMultiPointAlign`** (extends `UIIndiGuide`): staged wizard. In setup
-  stages digits are discrete (pick point count / mode); in the ADJUST stage the
-  same direction digits/letters become hold-to-move jog. `UP`/`DOWN`, `LEFT`/
-  `RIGHT`, `SQUARE` drive the wizard stage transitions.
+- **`UIIndiMultiPointAlign`** (extends `UIIndiGuide`): staged wizard. In POINTS,
+  `1-9` or `+`/`-` select the alignment-point count; in MODE, `1`=manual and
+  `2`=automatic. In ADJUST, direction digits and letters are hold-to-move; `0`
+  cancels and `9`/`3` adjust the slew rate. `UP`/`DOWN`, `LEFT`/`RIGHT`, and
+  `SQUARE` drive the wizard stage transitions.
 
 ### Alignment screens
 
@@ -195,7 +252,7 @@ Config-option menus (via `RIGHT`):
   (shared mount map) and letters (directional jog) drive the mount when mount
   control is on; `+`/`-` are no-ops.
 
-## 6. GuideKeyMixin — the cross-cutting number/letter hijack
+## 7. GuideKeyMixin — number/text keys on shared pages
 
 `GuideKeyMixin` (`base.py`) overrides `key_number` / `key_number_press` /
 `key_number_release` (-> the shared mount map `_mount_key*`) and `key_text` /
@@ -220,7 +277,7 @@ must also work from the physical keypad / HID (press/release) — e.g.
 `UIObjectList` catalog jump, `UIObjectDetails` GoTo/Sync — must additionally
 override `key_number_press` / `key_number_release`, and those screens do.
 
-## 7. Known inconsistencies (candidates to fix)
+## 8. Known inconsistencies (candidates to fix)
 
 > Updated 2026-07-13: three items previously listed here are resolved in the
 > source — ① discrete Object Details mount commands being shadowed on hardware
@@ -243,7 +300,7 @@ Remaining inconsistencies:
    `keyboard_interface.py` and no driver emits it, so `textentry.py`'s
    `key_long_minus` (clear all) is currently unreachable.
 
-## 8. Proposed target model (for discussion)
+## 9. Proposed target model (for discussion)
 
 Goal: one predictable scheme, identical on keypad and keyboard, that keeps both
 discrete actions and hold-to-move guide without each screen re-implementing the

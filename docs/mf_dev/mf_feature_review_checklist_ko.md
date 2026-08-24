@@ -465,7 +465,8 @@ MF_PiFinder에 추가되었거나 원본과 다르게 수정된 기능을 검토
 테스트 항목:
 
 - [ ] INDI 미설치 상태에서 기본 PiFinder 동작
-- [ ] `install_indi_mount_OnstepX.sh` 설치
+- [ ] 기본 경로인 `install_indi_mount_archive.sh` 아카이브 설치
+- [ ] 소스/패치 수정이 필요할 때만 `install_indi_mount_OnstepX.sh` 전체 빌드 설치
 - [ ] INDI Web Manager 접속
 - [ ] OnStepX profile start/connect
 - [ ] LX200 OnStepX network TCP setup

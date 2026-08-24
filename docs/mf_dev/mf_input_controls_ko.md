@@ -1,6 +1,6 @@
 # MF PiFinder 입력 조작법 (키패드 & 키보드)
 
-기준: `mf_pifinder` 브랜치, 2026-07-13.
+기준: 현재 소스 트리, 2026-08-18 점검.
 
 이 문서는 PiFinder UI가 키패드/키보드 입력을 처리하는 방식을 소스에서 정확히
 정리한 참조 문서입니다. 모든 화면이 공유하는 전역 동작과, 특수하게 동작하는
@@ -10,6 +10,9 @@
 관련 문서: `docs/mf_dev/mf_keyboard_mapping_ko.md`는 물리 키 -> PiFinder 입력 이벤트
 매핑(어떤 키가 어떤 이벤트를 내는지)을 다룹니다. 이 문서는 그 이벤트로 UI가
 무엇을 하는지를 다룹니다.
+
+`mf_input_keymap_ko.md`는 향후 통일을 위한 **목표 설계**입니다. 현재 LCD에서 실제로
+어떤 키가 동작하는지 확인할 때는 이 문서를 기준으로 합니다.
 
 ## 1. 입력 소스와 이벤트 인코딩
 
@@ -49,7 +52,7 @@ press/release base; 단발 숫자는 `keycode < 10`.
 | `LNG_SQUARE` | 현재 화면의 **마킹 메뉴** 토글 |
 | `SQUARE` | 마킹 메뉴가 열려 있으면 한 단계 뒤로/닫기, 아니면 화면으로 전달 |
 | `UP`/`DOWN`/`RIGHT`/`PLUS`/`MINUS`/숫자/문자 | 활성 화면으로 전달 |
-| help 오버레이 열림 | 아무 키나 닫기, `UP`/`DOWN`은 도움말 이미지 페이지 이동 |
+| help 오버레이 열림 | `UP`/`DOWN`은 도움말 이미지 페이지 이동; `LEFT`/`RIGHT`/`SQUARE`/숫자/문자는 닫기. `+`/`-`와 숫자·문자 release 이벤트는 활성 화면으로 전달되거나 무시됨 |
 | `ALT_PLUS`/`ALT_MINUS` | 디스플레이 밝기 증가/감소 (전역) |
 | `ALT_0` | 스크린샷 |
 | `ALT_LEFT` | 카메라 이미지 저장 |
@@ -72,7 +75,53 @@ press/release base; 단발 숫자는 `keycode < 10`.
 - `ALT_UP` / `ALT_DOWN` / `ALT_SQUARE` — 키보드가 내보내지만 `main.py`가 처리하지
   않고 화면으로도 전달하지 않음.
 
-## 3. 기본 화면 기본값 (`UIModule`)
+## 3. LCD 페이지별 키맵 적용 범위
+
+모든 LCD 페이지가 같은 키맵을 쓰지는 않습니다. 먼저 §2의 전역 키는 모든 페이지에
+공통이고, 그 다음에는 아래 트리처럼 클래스별 공통 맵 또는 화면 고유 맵이 적용됩니다.
+
+```text
+LCD 키 입력
+├─ 전역 처리 (모든 페이지)
+│  ├─ LEFT / LNG_LEFT / LNG_RIGHT / LNG_SQUARE
+│  └─ ALT_+ / ALT_- / ALT_0 / ALT_LEFT / ALT_RIGHT
+└─ 활성 LCD 페이지
+   ├─ 공통 숫자·문자 마운트 맵: GuideKeyMixin
+   │  ├─ 일반 UITextMenu, UIObsList, UILocationList, UIEquipment
+   │  ├─ UIPreview, UIStatus, UIGPSStatus, UIGPSTimeSyncStatus, UIIndiStatus
+   │  └─ Mount Control ON → §7 마운트 맵 / OFF → 숫자·문자 무효
+   │     (화살표·SQUARE·+/-는 각 페이지 고유 동작)
+   ├─ 기본 UIModule 맵: 고유 핸들러가 없는 보조 페이지
+   │  └─ LEFT=뒤로, SQUARE=표시 모드 순환, 나머지는 무효
+   └─ 화면 고유 맵
+      ├─ 객체: UIObjectList / UIObjectDetails
+      ├─ 입력: UITextEntry / UIRADecEntry / Date·Time·Location·값 입력
+      ├─ INDI: UIIndiInit / UIIndiGuide / UIIndiMultiPointAlign
+      ├─ 정렬: UIAlign / UIAlignDaytime / UIPolarAlign
+      └─ 정보·도구: UIChart / UISQM / UILog / UIConsole / UISQMCalibration
+```
+
+즉, `GuideKeyMixin`을 상속했다는 사실만으로 모든 키가 같아지는 것은 아닙니다.
+믹스인은 **숫자·문자 키만** 공통 마운트 맵으로 처리하며, Object List처럼 그 숫자·문자
+처리도 재정의할 수 있습니다. 화살표, `SQUARE`, `+`, `-`는 항상 해당 LCD 페이지의
+핸들러가 우선합니다.
+
+### 공통 맵에서 벗어나는 LCD 페이지
+
+| 페이지/그룹 | 공통 맵과 다른 키 정의 |
+| --- | --- |
+| `UIObjectList` | 숫자=카탈로그 순번 점프, 문자=Name Search 시작. 마운트 조그로 보내지 않음 |
+| `UIObjectDetails` | 자체 마운트 맵. `5`=현재 객체 GoTo, `7`=Sync, `2/4/6/8`=방향 이동; `+/-`=FOV 또는 설명 스크롤 |
+| `UITextEntry` | 숫자=T9/멀티탭 입력, 문자=직접 텍스트, `+`=공백, `-`=삭제 |
+| 좌표·값 입력 (`UIRADecEntry`, `UIDateEntry`, `UITimeEntry`, `UILocationEntry`, `UIIndiBacklash`, `UISQMSweep`) | 숫자가 값 입력에 우선하며 마운트 조그를 하지 않음 |
+| 전용 INDI (`UIIndiInit`, `UIIndiGuide`, `UIIndiMultiPointAlign`) | 연결/정렬 단계와 수동 조그를 화면 상태별로 정의. 일반 공통 맵과 동일하다고 가정하지 않음 |
+| 정렬 (`UIAlign`, `UIAlignDaytime`, `UIPolarAlign`) | 화살표·숫자·`SQUARE`가 정렬 마법사 단계/별 선택/취소에 사용 |
+| 정보/도구 (`UIChart`, `UISQM`, `UILog`, `UIConsole`, `UISQMCalibration`) | 확대·스크롤·등급·개발/보정 기능처럼 화면 콘텐츠 키가 우선 |
+
+이 트리는 "어느 화면에서 공통 키맵을 기대할 수 있는가"를 위한 인덱스입니다. 실제
+키별 결과는 §5(표준 메뉴), §6(특수 화면), §7(공통 마운트 맵)을 함께 확인합니다.
+
+## 4. 기본 화면 기본값 (`UIModule`)
 
 화면이 재정의하지 않으면:
 
@@ -84,9 +133,9 @@ press/release base; 단발 숫자는 `keycode < 10`.
 | `PLUS` / `MINUS` / 숫자 / 문자 | 동작 없음 |
 | 숫자 **press** | `key_number()`로 폴백(탭이 개별 핸들러를 실행); 숫자 **release** = 동작 없음 |
 
-## 4. 표준 메뉴 — `UITextMenu` (및 리스트 파생)
+## 5. 표준 메뉴 — `UITextMenu` (Object List 예외)
 
-`UITextMenu`는 **`GuideKeyMixin`**(§6)을 상속하므로, 표준 메뉴에서 숫자·문자
+`UITextMenu`는 **`GuideKeyMixin`**(§7)을 상속하므로, 표준 메뉴에서 숫자·문자
 키는 **마운트 제어가 켜져 있을 때** INDI 마운트 제어로 가로채이고(숫자=공통 마운트
 맵, 문자=방향 조그), 그 외에는 동작이 없습니다. 믹스인은 `+`/`-`를 재정의하지
 않으므로 표준 메뉴에서 `+`/`-`는 항상 무효입니다.
@@ -104,7 +153,7 @@ config-option 메뉴(`RIGHT`):
 - `single`: 값 하나 설정. `filter.*` 옵션은 값이 바뀌면 상위 메뉴로 자동 복귀.
 - `multi`: 항목을 선택 집합에 토글; `Select All` / `Select None`은 일괄 토글.
 
-### 리스트 파생 (모두 `UITextMenu` + `GuideKeyMixin` 상속)
+### 리스트 파생
 
 - **`UIObjectList`**: `RIGHT`는 하이라이트된 객체의 Object Details를 엶; `SQUARE`는
   표시 모드 `LOCATE -> NAME -> INFO` 순환; **숫자는 카탈로그 시퀀스를 입력해
@@ -117,7 +166,7 @@ config-option 메뉴(`RIGHT`):
 - **`UIEquipment`** (`GuideKeyMixin` + `UIModule`): `UP`/`DOWN`으로 망원경/아이피스
   행 전환; `RIGHT`로 해당 선택 메뉴 열기.
 
-## 5. 특수 키 동작 화면
+## 6. 특수 키 동작 화면
 
 ### Object Details — `UIObjectDetails` (커스텀, GuideKeyMixin 아님)
 
@@ -143,20 +192,27 @@ config-option 메뉴(`RIGHT`):
 - **`UILocationEntry`**: 숫자가 위도/경도/고도 칸을 채움; `MINUS` 삭제 / 이전 칸;
   `PLUS` 부호 토글(N/S, E/W); `RIGHT` 위도->경도->고도 흐름 진행; `LEFT` 이전 칸
   또는 취소.
+- **`UIRADecEntry`**: 숫자가 RA/Dec/EPOCH의 현재 필드를 채우며, `UP`/`DOWN`은 필드
+  이동, `MINUS`는 삭제, `PLUS`는 Dec 부호 또는 epoch 전환, `SQUARE`는 좌표 형식 순환,
+  `RIGHT`는 대상 생성, `LEFT`는 취소/이전 필드다.
 
 ### INDI 마운트 화면 (`indi.py`)
 
 - **`UIIndiInit`**: 숫자로 개별 1회 명령 — 1=Init 2=위치/시간 Sync 3=Park 4=홈
-  설정 5=홈 복귀 6=Unpark 7=Park 설정 8=드라이버 재시작; `SQUARE` = Init.
+  설정 5=홈 복귀 6=Unpark 7=Park 설정 8=드라이버 재시작 9=마운트 재부팅;
+  `SQUARE` = Init.
 - **`UIIndiBacklash`**: 숫자로 선택 축의 백래시 값 입력(0-999, `0`은 입력 초기화);
   `PLUS`는 RA 축, `MINUS`는 DE 축 선택; `RIGHT` 자동 백래시 실행; `SQUARE` 두 축 저장.
-- **`UIIndiGuide`**: `0`/`5`는 개별 토글(0=가이드 보정 on/off, 5=1회 정밀보정
-  on/off); 방향 숫자 `2/4/6/8`과 문자는 **press/홀드 이동** 가이드(문자는 대각 포함;
-  떼면 정지); 슬루 속도는 `9`(증가)/`3`(감소); `PLUS`/`MINUS`는 무효; `SQUARE`
+- **`UIIndiGuide`**: `0`은 가이드 보정 on/off 토글. `5`와 `1`/`7`은 무효.
+  방향 숫자 `2/4/6/8`과 문자는 **press/홀드 이동** 가이드(문자는 대각 포함;
+  떼면 정지); 슬루 속도는 `9`(증가)/`3`(감소), 키보드 `,`/`.`도 각각 감소/증가;
+  `PLUS`/`MINUS`는 무효; `SQUARE`
   현재 solve로 마운트 Sync.
-- **`UIIndiMultiPointAlign`** (`UIIndiGuide` 확장): 단계별 마법사. 설정 단계에서는
-  숫자가 개별(정렬점 수/모드 선택), ADJUST 단계에서는 같은 방향 숫자·문자가 홀드
-  이동 조그. `UP`/`DOWN`, `LEFT`/`RIGHT`, `SQUARE`가 마법사 단계 전환을 담당.
+- **`UIIndiMultiPointAlign`** (`UIIndiGuide` 확장): 단계별 마법사. POINTS 단계에서
+  `1-9` 또는 `+`/`-`로 정렬점 수를 정하고, MODE 단계에서 `1`=수동/`2`=자동을
+  선택한다. ADJUST 단계에서는 방향 숫자·문자가 홀드 이동 조그이고 `0`은 취소,
+  `9`/`3`은 속도 조절이다. `UP`/`DOWN`, `LEFT`/`RIGHT`, `SQUARE`가 마법사 단계
+  전환을 담당.
 
 ### 정렬 화면
 
@@ -182,7 +238,7 @@ config-option 메뉴(`RIGHT`):
   `GuideKeyMixin` — 화살표는 로컬 동작, 숫자(공통 마운트 맵)·문자(방향 조그)는 마운트
   ON이면 마운트 제어; `+`/`-`는 무효.
 
-## 6. GuideKeyMixin — 전 화면 숫자·문자 가로채기
+## 7. GuideKeyMixin — 공통 페이지의 숫자·문자 키
 
 `GuideKeyMixin`(`base.py`)은 `key_number`/`key_number_press`/`key_number_release`
 (-> 공통 마운트 맵 `_mount_key*`)와 `key_text`/`key_text_press`/`key_text_release`
@@ -204,7 +260,7 @@ config-option 메뉴(`RIGHT`):
 `key_number_press`/`key_number_release`도 함께 재정의해야 하며, 실제로 그렇게 되어
 있습니다.
 
-## 7. 알려진 불일치 (수정 후보)
+## 8. 알려진 불일치 (수정 후보)
 
 > 2026-07-13 갱신: 이전에 이 목록에 있던 세 항목은 소스에서 해소됨 —
 > ① Object Details 개별 마운트 명령이 하드웨어에서 가려지던 문제와
@@ -225,7 +281,7 @@ config-option 메뉴(`RIGHT`):
    없어 어떤 드라이버도 발생시키지 않으므로, `textentry.py`의
    `key_long_minus`(전체 삭제)는 현재 도달 불가.
 
-## 8. 제안 목표 모델 (논의용)
+## 9. 제안 목표 모델 (논의용)
 
 목표: 키패드와 키보드에서 동일하게 예측 가능한 하나의 체계로, 각 화면이 분기 로직을
 재구현하지 않고도 개별 동작과 홀드 이동 가이드를 모두 유지.
