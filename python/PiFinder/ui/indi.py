@@ -520,11 +520,9 @@ class UIIndiGuide(UIIndiBase):
             )
             self.message(_("Guide Correction"), 1)
         elif number == 9:
-            self._send_mount({"type": "increase_slew_rate"})
-            self.message(_("Speed +"), 0.5)
+            self._send_mount({"type": "increase_slew_rate", "notify_ui": True})
         elif number == 3:
-            self._send_mount({"type": "reduce_slew_rate"})
-            self.message(_("Speed -"), 0.5)
+            self._send_mount({"type": "reduce_slew_rate", "notify_ui": True})
 
     def key_number_press(self, number=None):
         if number is None:
@@ -553,10 +551,7 @@ class UIIndiGuide(UIIndiBase):
         command = self._GUIDE_TEXT_SPEED.get(char)
         if command is None:
             return False
-        self._send_mount({"type": command})
-        self.message(
-            _("Speed +") if command == "increase_slew_rate" else _("Speed -"), 0.5
-        )
+        self._send_mount({"type": command, "notify_ui": True})
         return True
 
     def key_text(self, char: str = ""):
@@ -928,11 +923,9 @@ class UIIndiMultiPointAlign(UIIndiGuide):
             if number == 0:
                 self._cancel_and_exit()
             elif number == 9:
-                self._send_mount({"type": "increase_slew_rate"})
-                self.message(_("Speed +"), 0.5)
+                self._send_mount({"type": "increase_slew_rate", "notify_ui": True})
             elif number == 3:
-                self._send_mount({"type": "reduce_slew_rate"})
-                self.message(_("Speed -"), 0.5)
+                self._send_mount({"type": "reduce_slew_rate", "notify_ui": True})
             return
 
         if self._stage == self._STAGE_POINTS and 1 <= number <= 9:

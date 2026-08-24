@@ -745,11 +745,8 @@ class UIModule:
         command = self._GUIDE_TEXT_SPEED.get(char)
         if command is None:
             return False
-        if not self._guide_send_mount({"type": command}):
+        if not self._guide_send_mount({"type": command, "notify_ui": True}):
             return False
-        self.message(
-            _("Speed +") if command == "increase_slew_rate" else _("Speed -"), 0.5
-        )
         return True
 
     def _guide_key_text(self, char: str) -> bool:
@@ -881,11 +878,9 @@ class UIModule:
             )
             self.message(_("Mount Sync"), 1)
         elif number == 9:
-            queue.put({"type": "increase_slew_rate"})
-            self.message(_("Speed +"), 0.5)
+            queue.put({"type": "increase_slew_rate", "notify_ui": True})
         elif number == 3:
-            queue.put({"type": "reduce_slew_rate"})
-            self.message(_("Speed -"), 0.5)
+            queue.put({"type": "reduce_slew_rate", "notify_ui": True})
         else:
             return False
         return True

@@ -4604,9 +4604,9 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._write_controller_status("align_target_cleared", "Select another star")
         return True
 
-    def change_slew_rate(self, delta: int) -> None:
+    def change_slew_rate(self, delta: int) -> bool:
         self.refresh_slew_rate()
-        self.set_slew_rate(self.slew_rate + delta)
+        return self.set_slew_rate(self.slew_rate + delta)
 
     def handle_command(self, command: Any) -> bool:
         if not isinstance(command, dict):
@@ -4671,9 +4671,13 @@ class MountControlIndi(BacklashCalibrationMixin):
                 command.get("lease_seconds"),
             )
         elif command_type == "increase_slew_rate":
-            self.change_slew_rate(1)
+            changed = self.change_slew_rate(1)
+            if changed and command.get("notify_ui"):
+                self.console_queue.put(("slew_rate_popup", self.slew_rate))
         elif command_type == "reduce_slew_rate":
-            self.change_slew_rate(-1)
+            changed = self.change_slew_rate(-1)
+            if changed and command.get("notify_ui"):
+                self.console_queue.put(("slew_rate_popup", self.slew_rate))
         elif command_type == "set_slew_rate":
             self.set_slew_rate(int(command.get("rate", self.slew_rate)))
         elif command_type == "set_track_freq":

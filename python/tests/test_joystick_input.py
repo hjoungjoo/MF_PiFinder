@@ -164,8 +164,8 @@ class TestMountActions:
             dispatcher.handle_button(button, True, 0.0)
             dispatcher.handle_button(button, False, 0.1)
         assert _drain(mount) == [
-            {"type": "increase_slew_rate"},
-            {"type": "reduce_slew_rate"},
+            {"type": "increase_slew_rate", "notify_ui": True},
+            {"type": "reduce_slew_rate", "notify_ui": True},
             {"type": "set_tracking", "enabled": False},
         ]
 

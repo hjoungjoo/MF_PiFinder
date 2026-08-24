@@ -77,6 +77,18 @@ display_device: DisplayBase = DisplayBase()
 keypad_pwm = None
 USER_LOCATION_SOURCES = {"WEB", "MANUAL"}
 USER_LOCATION_PREFIXES = ("CONFIG:",)
+SLEW_RATE_POPUP_LABELS = (
+    "Off",
+    "1/2",
+    "1",
+    "2",
+    "4",
+    "8",
+    "20",
+    "48",
+    "1/2 MAX",
+    "MAX",
+)
 # Throttle for the LiveCam wake check; update() runs every main-loop pass.
 LIVECAM_WAKE_POLL_SECONDS = 1.0
 
@@ -856,7 +868,18 @@ def main(
                 # Console
                 try:
                     console_msg = console_queue.get(block=False)
-                    if console_msg.startswith("DEGRADED_OPS"):
+                    if (
+                        isinstance(console_msg, tuple)
+                        and len(console_msg) == 2
+                        and console_msg[0] == "slew_rate_popup"
+                    ):
+                        rate = max(0, min(9, int(console_msg[1])))
+                        menu_manager.message(
+                            _("Speed: %(rate)s")
+                            % {"rate": SLEW_RATE_POPUP_LABELS[rate]},
+                            timeout=0.5,
+                        )
+                    elif console_msg.startswith("DEGRADED_OPS"):
                         menu_manager.message(_("Degraded\nCheck Status"), 5)
                         time.sleep(5)
                     else:
