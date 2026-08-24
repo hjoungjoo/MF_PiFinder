@@ -1885,6 +1885,12 @@ class Server:
                 max_gotos = 10
             cfg.set_option("indi_pifinder_goto_max_gotos", max(1, min(50, max_gotos)))
             self.ui_queue.put("reload_config")
+            # The web form writes the persistent setting. Clear any runtime
+            # keypad/keyboard/Web-Remote choice in the main UI so its state bar
+            # and the GoTo/Guide service use the newly saved value at once.
+            self.ui_queue.put("clear_goto_method_override")
+            if self.goto_guide_queue is not None:
+                self.goto_guide_queue.put({"type": "reload_config"})
             return _render_indi_page(_("INDI GoTo / Guide settings applied"))
 
         @app.route("/indi/goto_guide/suspend", methods=["POST"])

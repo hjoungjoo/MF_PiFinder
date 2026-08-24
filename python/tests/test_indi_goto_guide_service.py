@@ -53,6 +53,28 @@ def _set_imu_moving(service, moving):
     service._pointing["imu"]["metadata"]["moving"] = moving
 
 
+def test_runtime_goto_type_changes_without_config_write(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+
+    service.handle_command({"type": "set_goto_method", "goto_method": "indi_mount"})
+
+    assert service.runtime_goto_method == "indi_mount"
+    assert service.config_values["indi_goto_method"] == "indi_mount"
+
+
+def test_persistent_config_reload_clears_runtime_goto_type(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+    service.runtime_goto_method = "off"
+    service.config_values["indi_goto_method"] = "off"
+    reloaded = []
+    monkeypatch.setattr(service, "_reload_config_if_needed", lambda: reloaded.append(True))
+
+    service.handle_command({"type": "reload_config"})
+
+    assert service.runtime_goto_method is None
+    assert reloaded == [True]
+
+
 def test_recovery_starts_after_settle_when_motion_ends(monkeypatch):
     clock = [1000.0]
     service = _make_service(monkeypatch, clock)

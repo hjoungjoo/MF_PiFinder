@@ -60,7 +60,7 @@ with mount control on, status screens), they use one shared mapping:
 | `8` | Move North — **while held** |
 | `9` | Slew rate (speed) up |
 | `3` | Slew rate (speed) down |
-| `1` | unused |
+| `1` | Cycle GoTo Type: Off → INDI Mount → PiFinder |
 
 The cardinal keys (`2`/`4`/`6`/`8`) **move the mount for as long as they are
 held** (press starts motion, release stops it) — you move exactly as much as you
@@ -75,6 +75,18 @@ guide) and clears its target so it will not immediately re-correct; a later `5`
 (faster) / `3` (slower) — **not** on `+`/`-`, which keep their per-screen
 content meaning. Continuous jog is also on the keyboard letters
 (`q w e / a s d / z x c`, `s` = stop).
+
+`1` applies the new GoTo Type before showing its popup, so the popup always
+reports the selected type. This session-only setting controls whether GoTo is off, forwarded
+to the INDI mount, or performed through the PiFinder GoTo procedure. The
+physical keypad, external keyboard, and Web Remote `1` button use this same
+toggle and show the same completed-selection popup on the PiFinder display;
+they do not write `config.json`. Selecting GoTo Type in the Settings menu does
+save the persistent configuration and replaces the session-only selection.
+
+The title-bar GoTo indicator is hidden for `Off`, shows `I` for `INDI Mount`,
+and `P` for `PiFinder`. A connected INDI driver uses the bold glyph; a driver
+that is connecting, stale, or in an error state uses the thin glyph.
 
 ## Page groups and shared-map tree
 

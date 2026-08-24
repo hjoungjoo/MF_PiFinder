@@ -121,6 +121,9 @@ class IndiGotoGuideService:
         self.updated_at = 0.0
         self.last_config_load = 0.0
         self.config_values: dict[str, Any] = {}
+        # Keypad/keyboard/Web-Remote type changes are deliberately runtime
+        # only, avoiding repeated config.json writes to the SD card.
+        self.runtime_goto_method: Optional[str] = None
         self.last_command: Optional[str] = None
         self.service_state = "starting"
         self.phase = "idle"
@@ -227,6 +230,25 @@ class IndiGotoGuideService:
             self.phase = "idle"
             self.wait_reason = ""
             self.last_action = "ping"
+            return True
+        if command_type == "set_goto_method":
+            goto_method = str(command.get("goto_method", "")).strip()
+            if goto_method not in {"off", "indi_mount", "pifinder"}:
+                logger.warning("Invalid runtime GoTo Type: %r", command)
+                return True
+            self.runtime_goto_method = goto_method
+            self.config_values["indi_goto_method"] = goto_method
+            self.last_action = f"runtime GoTo Type: {goto_method}"
+            self._write_status(force=True)
+            return True
+        if command_type == "reload_config":
+            # Settings-menu changes are persistent and intentionally replace a
+            # transient keypad/keyboard/Web-Remote selection immediately.
+            self.runtime_goto_method = None
+            self.last_config_load = 0.0
+            self._reload_config_if_needed()
+            self.last_action = "config reloaded"
+            self._write_status(force=True)
             return True
         if command_type == "goto_target":
             self._handle_goto_target(command)
@@ -1597,6 +1619,8 @@ class IndiGotoGuideService:
                 cfg.get_option("indi_tracking_guide_manual_retarget_enabled", True)
             ),
         }
+        if self.runtime_goto_method is not None:
+            self.config_values["indi_goto_method"] = self.runtime_goto_method
         self.last_config_load = now
 
     def _mount_status_summary(self) -> dict[str, Any]:

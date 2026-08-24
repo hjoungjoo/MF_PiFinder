@@ -984,6 +984,10 @@ def main(
                 elif ui_command == "reload_config":
                     cfg.load_config()
                     gps_time_monitor.update_config(cfg)
+                elif ui_command == "clear_goto_method_override":
+                    # This is intentionally session-only; the Web INDI form
+                    # already saved its persistent GoTo Type separately.
+                    cfg.set_option("session.indi_goto_method", None)
                 elif ui_command == "catalogs_fully_loaded":
                     logger.info(
                         "All catalogs loaded - WDS and extended catalogs available"

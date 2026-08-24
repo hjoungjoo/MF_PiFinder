@@ -186,7 +186,15 @@ def apply_brightness(ui_module: UIModule) -> None:
 
 def reload_config(ui_module: UIModule) -> None:
     """Ask the main loop to reload config-backed runtime services."""
+    # A settings-menu change is persistent and supersedes any runtime-only
+    # type selected through keypad, keyboard, or Web Remote.
+    ui_module.config_object.set_option("session.indi_goto_method", None)
     ui_module.command_queues["ui_queue"].put("reload_config")
+    # A GoTo Type picked in Settings is persistent and must replace any
+    # keypad/keyboard/Web-Remote session override immediately.
+    goto_guide_queue = ui_module.command_queues.get("goto_guide")
+    if goto_guide_queue is not None:
+        goto_guide_queue.put({"type": "reload_config"})
     ui_module.message(_("Config updated"), 1)
 
 

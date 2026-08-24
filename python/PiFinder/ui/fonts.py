@@ -72,6 +72,11 @@ class Fonts:
         self.bold = Font(
             boldttf, bold_size, screen_width, use_layout_engine=use_layout_engine
         )  # 12
+        # Same point size as ``bold`` for title-bar status indicators that need
+        # to distinguish an active (bold) state from an inactive (thin) state.
+        self.regular = Font(
+            regularttf, bold_size, screen_width, use_layout_engine=use_layout_engine
+        )  # 12
         self.large = Font(
             regularttf, large_size, screen_width, use_layout_engine=use_layout_engine
         )  # 15

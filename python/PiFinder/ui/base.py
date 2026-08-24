@@ -426,16 +426,41 @@ class UIModule:
             return "problem"
         return "idle"
 
+    def _indi_indicator_spec(self):
+        """Return the GoTo Type glyph and current INDI connection state.
+
+        ``off`` deliberately has no indicator. ``I`` denotes direct INDI Mount
+        GoTo; ``P`` denotes the PiFinder GoTo procedure. The caller renders a
+        connected state in bold and every
+        other state in the matching regular/thin face.
+        """
+        goto_method = self._effective_goto_method()
+        if goto_method == "off":
+            return None, None
+        glyph = "I" if goto_method == "indi_mount" else "P"
+        return glyph, self._indi_indicator_state()
+
+    def _effective_goto_method(self) -> str:
+        """Return the valid session override, otherwise the saved setting."""
+        session_method = self.config_object.get_option("session.indi_goto_method")
+        if session_method in self._GOTO_METHOD_CYCLE:
+            return str(session_method)
+        saved_method = self.config_object.get_option("indi_goto_method", "pifinder")
+        return (
+            str(saved_method)
+            if saved_method in self._GOTO_METHOD_CYCLE
+            else "pifinder"
+        )
+
     def _draw_indi_indicator(self, y):
-        state = self._indi_indicator_state()
-        if state is None:
-            return
-        if state == "problem" and int(time.time() * 2) % 2 == 0:
+        glyph, state = self._indi_indicator_spec()
+        if glyph is None or state is None:
             return
 
         fill = self.colors.get(0 if state == "ok" else 32)
         x = int(self.display_class.resX * 0.865)
-        self.draw.text((x, y), "I", font=self.fonts.bold.font, fill=fill)
+        font = self.fonts.bold.font if state == "ok" else self.fonts.regular.font
+        self.draw.text((x, y), glyph, font=font, fill=fill)
 
     def _clock_untrusted(self) -> bool:
         """True while the system clock has not been GPS/NTP-synchronized this
@@ -776,10 +801,16 @@ class UIModule:
     # Wherever a number key drives the INDI mount (Object Details, mount-on menus,
     # status screens, INDI guide screens), the cardinal keys (2/4/6/8) move the
     # mount for as long as they are held (press starts motion, release stops it),
-    # a few discrete commands sit on 0/5/7 and the slew rate is on 9 (faster) /
-    # 3 (slower). Continuous jog is also on the keyboard letters. See
+    # a few discrete commands sit on 0/1/5/7 and the slew rate is on 9 (faster)
+    # / 3 (slower). Continuous jog is also on the keyboard letters. See
     # docs/mf_dev/mf_input_keymap_*.md.
     _MOUNT_JOG_DIRECTIONS = {2: "south", 4: "west", 6: "east", 8: "north"}
+    _GOTO_METHOD_CYCLE = ("off", "indi_mount", "pifinder")
+    _GOTO_METHOD_LABELS = {
+        "off": "Off",
+        "indi_mount": "INDI Mount",
+        "pifinder": "PiFinder",
+    }
 
     def _mount_control_queue(self):
         return self._guide_mount_queue()
@@ -804,9 +835,44 @@ class UIModule:
             return None
         return aligned.RA, aligned.Dec
 
+    def _toggle_goto_method(self) -> bool:
+        """Persist and announce the next GoTo Type selection.
+
+        This is a session-only setting: keypad, keyboard, and Web Remote
+        changes must not add frequent writes to the SD card. The persistent
+        Settings menu remains the place to save ``indi_goto_method``.
+        """
+        current = self._effective_goto_method()
+        try:
+            current_index = self._GOTO_METHOD_CYCLE.index(current)
+        except ValueError:
+            current_index = self._GOTO_METHOD_CYCLE.index("pifinder")
+        next_method = self._GOTO_METHOD_CYCLE[
+            (current_index + 1) % len(self._GOTO_METHOD_CYCLE)
+        ]
+        try:
+            self.config_object.set_option("session.indi_goto_method", next_method)
+        except (OSError, ValueError, TypeError) as exc:
+            logging.getLogger("UI.base").warning("Failed to save GoTo Type: %s", exc)
+            self.message(_("GoTo Type failed"), 1)
+            return False
+
+        goto_guide_queue = self._goto_guide_queue()
+        if goto_guide_queue is not None:
+            goto_guide_queue.put(
+                {"type": "set_goto_method", "goto_method": next_method}
+            )
+        self.message(
+            _("GoTo Type\n{method}").format(
+                method=_(self._GOTO_METHOD_LABELS[next_method])
+            ),
+            1,
+        )
+        return True
+
     def _mount_command(self, number, target=None, target_object=None) -> bool:
-        """Run a discrete mount command for a number key: 0=Stop 5=GoTo 7=Sync
-        9=Speed+ 3=Speed-.
+        """Run a discrete mount command for a number key: 0=Stop, 1=GoTo Type,
+        5=GoTo, 7=Sync, 9=Speed+, 3=Speed-.
 
         Directional keys (2/4/6/8) are handled as hold-to-move by _mount_key_*,
         not here. GoTo (5) needs an explicit ``target`` (ra, dec) — the screen
@@ -828,6 +894,8 @@ class UIModule:
             if guide_queue is not None:
                 guide_queue.put({"type": "stop_movement"})
             self.message(_("Mount Stop"), 1)
+        elif number == 1:
+            self._toggle_goto_method()
         elif number == 5:
             # GoTo is only available where an object is selected. Without a
             # target (plain menus / status) the key is unused.
