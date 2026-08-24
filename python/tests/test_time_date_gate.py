@@ -97,6 +97,15 @@ def test_time_entry_locked_accepts_entry_and_fires_callback():
     module.custom_callback.assert_called_once_with(module, "12:00:00")
 
 
+def test_time_entry_physical_keypad_one_is_digit_not_goto_type_toggle():
+    """Entry pages inherit UIModule's press-to-digit dispatch, not GuideKeyMixin."""
+    module = _build(UITimeEntry, _LOCKED)
+
+    module.key_number_press(1)
+
+    assert module.boxes[0] == "1"
+
+
 def test_time_entry_gate_message_renders():
     """The base gate helper draws without error on a real headless display."""
     module = _build(UITimeEntry, _UNLOCKED)

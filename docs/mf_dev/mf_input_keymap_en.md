@@ -83,6 +83,9 @@ physical keypad, external keyboard, and Web Remote `1` button use this same
 toggle and show the same completed-selection popup on the PiFinder display;
 they do not write `config.json`. Selecting GoTo Type in the Settings menu does
 save the persistent configuration and replaces the session-only selection.
+This shortcut applies only to pages using the shared mount-control key map.
+On numeric, coordinate, date/time, location, and text-entry pages, `1` remains
+normal input and never changes GoTo Type.
 
 The title-bar GoTo indicator is hidden for `Off`, shows `I` for `INDI Mount`,
 and `P` for `PiFinder`. A connected INDI driver uses the bold glyph; a driver
