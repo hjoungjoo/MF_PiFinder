@@ -162,6 +162,8 @@ PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 
 - UTC 시간 입력칸은 화면을 열어 둔 동안 초 단위로 계속 갱신됩니다.
 - `Reload Current Values`는 PiFinder 위치/시간과 OnStep의 현재 위치/시간 표시를 다시 읽습니다.
 - `Send Location and Time`을 누르면 서버가 요청을 받은 바로 그 시점의 PiFinder system UTC를 다시 계산해서 OnStep에 전송합니다. 따라서 브라우저나 휴대폰 시간이 틀려 있어도 최종 전송 시간은 PiFinder 기준입니다.
+- Web 요청은 driver가 느리거나 사용할 수 없는 경우에도 페이지가 멈추지 않도록 제한된 background sync로 시작합니다. 완료되면 상태 영역을 자동으로 새로 고치고, 결과와 driver readback 값을 표시합니다.
+- GPS가 새로 lock한 위치는 자동 적용합니다. 이후 GPS 변화는 jitter로 인한 mount 갱신을 막기 위해 500 m 초과이고 1분에 한 번 이하일 때만 적용합니다. `Locations`에서 위치를 Load하거나 기본 위치로 지정하는 것은 명시적 선택이므로 선택한 좌표를 즉시 적용합니다.
 - LX200 OnStepX 드라이버는 PiFinder용 커스텀 INDI 드라이버입니다. 위치/시간 동기화는 INDI `GEOGRAPHIC_COORD`/`TIME_UTC` 전체 벡터를 통해 처리하며, 드라이버 내부에서 OnStep LX200 명령으로 변환합니다.
 - `indi_setprop` CLI로 일부 element만 쓰는 방식은 피합니다. PiFinder는 PyIndi 전체 벡터 전송을 사용합니다.
 - 한국 시간대처럼 UTC+9인 환경에서 INDI `TIME_UTC.OFFSET`은 `+9.00`으로 전송되고, 드라이버가 OnStep의 `:SG-09:00#` convention으로 변환합니다.
@@ -175,7 +177,7 @@ PiFinder 웹 UI 상단 메뉴에는 `INDI` 항목이 별도로 표시됩니다. 
   Park 버튼을 비활성화하므로, PiFinder는 디버깅을 위해 원시 `:GU#` 마운트
   상태도 함께 표시합니다.
 - `At Home`, `Return Home`, `Park`, `Unpark`, `Set-Park` 명령을 보낼 수 있습니다.
-- Slew Rate는 OnStep의 0-9 단계를 그대로 사용합니다. `0`은 Off, `1`은 `1/2x`, `9`는 `Max`입니다.
+- Slew Rate는 OnStep의 0-9 단계를 그대로 사용합니다: `Off`, `1/2`, `1`, `2`, `4`, `8`, `20`, `48`, `1/2 MAX`, `MAX`.
 - 방향 버튼은 누르고 있는 동안 이동하고, 손을 떼면 정지 명령을 보냅니다.
 - 대각선 버튼은 North/South와 East/West 명령을 함께 보냅니다.
 

@@ -164,6 +164,8 @@ The `Location and Time` section is shown for `LX200 OnStepX` and sends PiFinder'
 - The UTC time field keeps ticking while the page is open.
 - `Reload Current Values` refreshes the PiFinder location/time and the displayed OnStep location/time without leaving the page.
 - When `Send Location and Time` is pressed, the server recalculates PiFinder system UTC at the moment the request is received and sends that value to OnStep. The final transmitted time is therefore based on PiFinder, not on the phone or browser clock.
+- The web request starts a bounded background sync so the page remains responsive even while a driver is slow or unavailable. The state area is refreshed automatically after the request completes; it reports the result and reads back the driver values.
+- A newly locked GPS location is applied automatically. Later GPS changes are filtered to avoid mount updates from jitter (more than 500 m, checked no more than once per minute). Loading a location or setting it as the default in `Locations` is an explicit selection and applies the chosen coordinates immediately.
 - LX200 OnStepX is the MF PiFinder custom INDI driver. Location/time sync uses full INDI `GEOGRAPHIC_COORD` and `TIME_UTC` vector updates, and the driver converts those values to OnStep LX200 commands internally.
 - Avoid partial `indi_setprop` CLI writes for these vectors. PiFinder uses PyIndi full-vector updates.
 - In a UTC+9 environment such as Korea, PiFinder sends INDI `TIME_UTC.OFFSET=+9.00`, and the driver converts it to the OnStep `:SG-09:00#` convention.
@@ -177,7 +179,7 @@ The `Mount Control` section is shown for `LX200 OnStepX` and provides simple ini
   both `At Home` and `Parked`, so PiFinder also shows the raw `:GU#` mount
   status for diagnostics.
 - `At Home`, `Return Home`, `Park`, `Unpark`, and `Set-Park` commands are available.
-- Slew Rate uses OnStep's native 0-9 scale. `0` is Off, `1` is `1/2x`, and `9` is `Max`.
+- Slew Rate uses OnStep's native 0-9 scale: `Off`, `1/2`, `1`, `2`, `4`, `8`, `20`, `48`, `1/2 MAX`, `MAX`.
 - Direction buttons move while held and send a stop command when released.
 - Diagonal buttons send the paired North/South and East/West commands together.
 
