@@ -19,6 +19,9 @@ import quaternion  # Numpy quaternion
 logger = logging.getLogger("IMU.pi")
 
 QUEUE_LEN = 10
+IMU_REINITIALIZE_AFTER_ERRORS = 3
+IMU_REINITIALIZE_INITIAL_DELAY_SECONDS = 1.0
+IMU_REINITIALIZE_MAX_DELAY_SECONDS = 30.0
 
 
 class Imu:
@@ -64,6 +67,9 @@ class Imu:
         self.accel = None
         # Epoch of the last successful sensor read
         self.last_read_time = 0.0
+        # Epoch of the last successful I2C interaction, including a calibration
+        # status read before the sensor is ready to supply an orientation.
+        self.last_io_time = 0.0
         self.__moving = False
         self.__reading_diff = 0.0
 
@@ -169,6 +175,7 @@ class Imu:
 
         # Throw out non-calibrated data
         status = self.sensor.calibration_status
+        self.last_io_time = time.time()
         self.calibration_status = tuple(int(v) for v in status)
         if self.calibration_status != self._last_calibration_status:
             logger.info(
@@ -320,10 +327,50 @@ def _handle_imu_command(imu, command, console_queue):
         logger.warning("Unknown IMU command: %s", command_type)
 
 
+def _update_imu_safely(imu, imu_sample, consecutive_errors):
+    """Run one sensor update without allowing an I2C error to kill the process.
+
+    Returns ``(failed, consecutive_errors, recovered)``. A successful call only
+    marks the sample healthy after the driver reports a new successful I2C
+    transaction through ``last_io_time``; a throttled iteration changes no
+    health state.
+    """
+    io_before = getattr(imu, "last_io_time", 0.0)
+    try:
+        imu.update()
+    except Exception as error:
+        consecutive_errors += 1
+        imu_sample.sensor_healthy = False
+        imu_sample.consecutive_errors = consecutive_errors
+        imu_sample.last_error = f"{type(error).__name__}: {error}"
+        imu_sample.moving = False
+        logger.exception(
+            "IMU sensor update failed (%d/%d)",
+            consecutive_errors,
+            IMU_REINITIALIZE_AFTER_ERRORS,
+        )
+        return True, consecutive_errors, False
+
+    io_after = getattr(imu, "last_io_time", 0.0)
+    recovered = False
+    if io_after > io_before:
+        recovered = not imu_sample.sensor_healthy
+        consecutive_errors = 0
+        imu_sample.sensor_healthy = True
+        imu_sample.consecutive_errors = 0
+        imu_sample.last_error = None
+        imu_sample.last_success_time = io_after
+    return False, consecutive_errors, recovered
+
+
 def imu_monitor(shared_state, console_queue, log_queue, command_queue=None):
     MultiprocLogging.configurer(log_queue)
     logger.debug("Starting IMU")
     imu = None
+    using_fake = False
+    reinitialize_requested = False
+    reinitialize_delay = IMU_REINITIALIZE_INITIAL_DELAY_SECONDS
+    next_reinitialize = 0.0
     try:
         imu = Imu()
         if getattr(imu, "calibration_loaded", False):
@@ -336,6 +383,9 @@ def imu_monitor(shared_state, console_queue, log_queue, command_queue=None):
         from PiFinder.imu_fake import Imu as ImuFake
 
         imu = ImuFake()
+        using_fake = True
+        reinitialize_requested = True
+        next_reinitialize = time.monotonic() + reinitialize_delay
 
     imu_calibrated = False
     imu_sample = ImuSample(
@@ -347,6 +397,10 @@ def imu_monitor(shared_state, console_queue, log_queue, command_queue=None):
         calibration_status=(0, 0, 0, 0),
         fusion_mode=getattr(imu, "fusion_mode", "unknown") if imu else "unknown",
         uses_magnetometer=getattr(imu, "use_magnetometer", False) if imu else False,
+        sensor_healthy=not using_fake,
+        consecutive_errors=0,
+        last_error="physical IMU unavailable" if using_fake else None,
+        last_success_time=None,
     )
 
     # update() already throttles the I2C reads to imu_sample_frequency (30 Hz),
@@ -355,6 +409,7 @@ def imu_monitor(shared_state, console_queue, log_queue, command_queue=None):
     # (~19% CPU) and the per-publish pickle leaks. Capture the period once; the
     # fake-IMU fallback has no such attr (and self-throttles), hence the default.
     sample_period = getattr(imu, "imu_sample_frequency", 1 / 30)
+    consecutive_errors = 0
 
     while True:
         if command_queue is not None:
@@ -366,7 +421,62 @@ def imu_monitor(shared_state, console_queue, log_queue, command_queue=None):
                 _handle_imu_command(imu, command, console_queue)
 
         loop_start = time.monotonic()
-        imu.update()
+        if reinitialize_requested and loop_start >= next_reinitialize:
+            try:
+                replacement = Imu()
+            except Exception as error:
+                next_delay = min(
+                    reinitialize_delay * 2.0,
+                    IMU_REINITIALIZE_MAX_DELAY_SECONDS,
+                )
+                logger.warning(
+                    "Could not reinitialize physical IMU; retrying in %.1fs: %s",
+                    next_delay,
+                    error,
+                )
+                imu_sample.sensor_healthy = False
+                imu_sample.last_error = f"{type(error).__name__}: {error}"
+                reinitialize_delay = next_delay
+                next_reinitialize = time.monotonic() + reinitialize_delay
+            else:
+                imu = replacement
+                using_fake = False
+                reinitialize_requested = False
+                reinitialize_delay = IMU_REINITIALIZE_INITIAL_DELAY_SECONDS
+                consecutive_errors = 0
+                imu_calibrated = False
+                sample_period = getattr(imu, "imu_sample_frequency", 1 / 30)
+                # Do not call the sensor healthy until its first successful I2C
+                # transaction. The freshly constructed Imu throttles its first
+                # update, so this normally changes on the following loop.
+                imu_sample.sensor_healthy = False
+                imu_sample.consecutive_errors = 0
+                imu_sample.last_error = "awaiting first sensor read after recovery"
+                console_queue.put("IMU: physical sensor reinitialized")
+                if getattr(imu, "calibration_loaded", False):
+                    console_queue.put("IMU: saved calibration loaded")
+                logger.info("Physical IMU reinitialized")
+
+        update_failed, consecutive_errors, recovered = _update_imu_safely(
+            imu, imu_sample, consecutive_errors
+        )
+        if recovered and not using_fake:
+            console_queue.put("IMU: sensor healthy")
+        if update_failed and consecutive_errors >= IMU_REINITIALIZE_AFTER_ERRORS:
+            from PiFinder.imu_fake import Imu as ImuFake
+
+            imu = ImuFake()
+            using_fake = True
+            reinitialize_requested = True
+            next_reinitialize = time.monotonic() + reinitialize_delay
+            imu_sample.status = 0
+            imu_sample.calibration_status = (0, 0, 0, 0)
+            imu_sample.fusion_mode = "unknown"
+            imu_sample.uses_magnetometer = False
+            imu_calibrated = False
+            console_queue.put("IMU: sensor read failure, recovering")
+            console_queue.put("DEGRADED_OPS IMU")
+
         imu_sample.status = imu.calibration
         imu_sample.calibration_status = getattr(imu, "calibration_status", None)
         imu_sample.fusion_mode = getattr(imu, "fusion_mode", "unknown")

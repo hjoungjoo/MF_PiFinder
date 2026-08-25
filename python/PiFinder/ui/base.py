@@ -447,9 +447,7 @@ class UIModule:
             return str(session_method)
         saved_method = self.config_object.get_option("indi_goto_method", "pifinder")
         return (
-            str(saved_method)
-            if saved_method in self._GOTO_METHOD_CYCLE
-            else "pifinder"
+            str(saved_method) if saved_method in self._GOTO_METHOD_CYCLE else "pifinder"
         )
 
     def _draw_indi_indicator(self, y):
@@ -533,7 +531,7 @@ class UIModule:
                 title_text = title_text[: title_max_chars - 1] + "…"
             self.draw.text((6, title_y), title_text, font=self.fonts.bold.font, fill=fg)
             imu = self.shared_state.imu()
-            moving = True if imu and imu.quat and imu.moving else False
+            moving = bool(imu and imu.is_usable() and imu.moving)
 
             # GPS status
             if self.shared_state.altaz_ready():

@@ -480,7 +480,12 @@ class CameraInterface:
                     imu_end = shared_state.imu()
 
                     # see if we moved during exposure
-                    if imu_start and imu_end:
+                    if (
+                        imu_start
+                        and imu_end
+                        and imu_start.is_usable(now=image_start_time)
+                        and imu_end.is_usable(now=image_end_time)
+                    ):
                         # Returns the pointing difference between successive IMU quaternions as
                         # an angle (radians). Note that this also accounts for rotation around the
                         # scope axis. Returns an angle in radians.
@@ -891,7 +896,12 @@ class CameraInterface:
                             camera_image.paste(captured_image)
                             capture_end = time.time()
                             capture_imu_end = shared_state.imu()
-                            if capture_imu_start and capture_imu_end:
+                            if (
+                                capture_imu_start
+                                and capture_imu_end
+                                and capture_imu_start.is_usable(now=capture_start)
+                                and capture_imu_end.is_usable(now=capture_end)
+                            ):
                                 capture_pointing_diff = qt.get_quat_angular_diff(
                                     capture_imu_start.quat,
                                     capture_imu_end.quat,

@@ -16,7 +16,7 @@
 상태 라벨: **living** = 소스에 맞춰 계속 갱신 / **install** = 설치·운영 가이드 /
 **plan** = 구현 전/부분 구현 계획 / **1회성** = 완료된 분석·검증 기록(유지 대상 아님).
 
-최종 갱신: 2026-08-04.
+최종 갱신: 2026-08-25.
 
 ## INDI 마운트 — 좌표·포인팅 (핵심)
 
@@ -70,6 +70,7 @@
 | [input_controls](mf_dev/mf_input_controls_ko.md) | 둘 다 | living | 입력 컨트롤 전반. |
 | [input_keymap](mf_dev/mf_input_keymap_ko.md) | 둘 다 | living | 키맵. |
 | [keyboard_mapping](mf_dev/mf_keyboard_mapping_ko.md) | 둘 다 | living | BT/USB HID 키보드 매핑. |
+| [imu_current_behavior_analysis](mf_dev/mf_imu_current_behavior_analysis_ko.md) | ko | **living ★** | IMU 전체 기준선과 P0 안전 개선 — BNO055 read/filter/recovery, health·freshness 계약, camera/solver anchor, integrator, sleep/UI/API, SkySafari·mount 융합, 임계값·상태 전이·후속 우선순위. |
 | [imu_compass_calibration](mf_dev/mf_imu_compass_calibration_ko.md) | 둘 다 | living | 선택형 BNO055 NDOF 지자계 보정. |
 
 ## 분석 · 검토 · 계획 (비-living, 이력/백로그)

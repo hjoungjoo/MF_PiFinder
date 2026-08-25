@@ -35,7 +35,13 @@ def _make_quat(w=1.0, x=0.0, y=0.0, z=0.0):
 
 
 def _make_imu_sample(
-    quat=None, timestamp=1000.0, status=3, moving=False, gyro=None, accel=None
+    quat=None,
+    timestamp=1000.0,
+    status=3,
+    moving=False,
+    gyro=None,
+    accel=None,
+    **health,
 ):
     return ImuSample(
         quat=quat or _make_quat(),
@@ -44,6 +50,7 @@ def _make_imu_sample(
         moving=moving,
         gyro=gyro,
         accel=accel,
+        **health,
     )
 
 
@@ -296,6 +303,31 @@ class TestTelemetryRecorder:
                 assert len(rec._buffer) == 2  # header + 1 imu
                 rec.record_imu(_make_imu_sample(moving=True, timestamp=1000.1))
                 assert len(rec._buffer) == 3
+            finally:
+                rec.stop()
+
+    def test_record_imu_keeps_health_transition_at_same_sample_epoch(self, tmp_path):
+        with patch("PiFinder.telemetry.TELEMETRY_DIR", tmp_path / "telemetry"):
+            rec = TelemetryRecorder()
+            rec.start(_make_cfg(), _make_shared_state())
+            try:
+                healthy = _make_imu_sample(moving=True, timestamp=1000.0)
+                rec.record_imu(healthy)
+                failed = _make_imu_sample(
+                    timestamp=1000.0,
+                    sensor_healthy=False,
+                    consecutive_errors=1,
+                    last_error="OSError: i2c bus failed",
+                    last_success_time=999.9,
+                )
+                rec.record_imu(failed)
+
+                assert len(rec._buffer) == 3
+                event = json.loads(rec._buffer[-1])
+                assert event["ok"] is False
+                assert event["ec"] == 1
+                assert event["err"] == "OSError: i2c bus failed"
+                assert event["lst"] == 999.9
             finally:
                 rec.stop()
 
@@ -728,6 +760,25 @@ class TestTelemetryPlayer:
         result = TelemetryPlayer.event_to_imu_sample(event)
         assert result.gyro == (0.01, -0.02, 0.03)
         assert result.accel == (0.1, 0.2, -0.3)
+
+    def test_event_to_imu_sample_restores_runtime_health(self):
+        event = {
+            "t": 1000.0,
+            "q": [1.0, 0.0, 0.0, 0.0],
+            "st": 3,
+            "ok": False,
+            "ec": 3,
+            "err": "OSError: i2c bus failed",
+            "lst": 999.5,
+        }
+
+        result = TelemetryPlayer.event_to_imu_sample(event)
+
+        assert result.sensor_healthy is False
+        assert result.consecutive_errors == 3
+        assert result.last_error == "OSError: i2c bus failed"
+        assert result.last_success_time == 999.5
+        assert result.orientation_valid() is False
 
 
 # ── TelemetryManager ────────────────────────────────────────────────

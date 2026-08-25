@@ -873,8 +873,9 @@ def _build_successful_solve(
     )
 
     imu_anchor = None
-    if last_image_metadata.get("imu"):
-        imu_anchor = last_image_metadata["imu"].quat
+    imu_sample = last_image_metadata.get("imu")
+    if imu_sample and imu_sample.is_usable(now=last_image_metadata.get("exposure_end")):
+        imu_anchor = imu_sample.quat
 
     return SuccessfulSolve(
         camera=camera_value,

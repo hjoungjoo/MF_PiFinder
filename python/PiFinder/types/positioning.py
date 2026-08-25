@@ -64,6 +64,7 @@ Design notes
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Tuple, Union
@@ -71,6 +72,12 @@ from typing import List, Optional, Tuple, Union
 import quaternion
 
 from PiFinder.types.coordinates import RaDecRoll
+
+
+# A healthy BNO055 normally publishes at 30 Hz. One second allows roughly
+# thirty missed reads (and normal process scheduling jitter) before a live
+# consumer must stop trusting the latest-value shared-state sample.
+IMU_SAMPLE_MAX_AGE_SECONDS = 1.0
 
 
 # =====================================================================
@@ -545,13 +552,74 @@ class ImuSample:
     # (m/s², gravity removed) — captured for telemetry recording.
     gyro: Optional[Tuple[float, float, float]] = None
     accel: Optional[Tuple[float, float, float]] = None
+    # Runtime health belongs to the sample so every process sees the same
+    # failure state. ``timestamp`` remains the orientation measurement epoch;
+    # ``last_success_time`` is the most recent successful sensor transaction.
+    sensor_healthy: bool = True
+    consecutive_errors: int = 0
+    last_error: Optional[str] = None
+    last_success_time: Optional[float] = None
 
     def is_calibrated(self) -> bool:
         return self.status == 3
 
+    def orientation_valid(self) -> bool:
+        """True when calibration, health, and quaternion shape are usable.
+
+        This deliberately does not inspect wall-clock age: telemetry replay
+        carries historical epochs and uses the same orientation math. Live
+        consumers should call :meth:`is_usable`, which adds freshness.
+        """
+        if not self.is_calibrated() or not self.sensor_healthy:
+            return False
+        try:
+            values = quaternion.as_float_array(self.quat)
+            norm = math.sqrt(sum(float(value) ** 2 for value in values))
+        except (AttributeError, TypeError, ValueError):
+            return False
+        return (
+            all(math.isfinite(float(value)) for value in values) and 0.8 <= norm <= 1.2
+        )
+
+    def age_seconds(self, now: Optional[float] = None) -> Optional[float]:
+        """Age of the orientation measurement, or ``None`` before any read.
+
+        A backwards wall-clock correction can put a sample slightly in the
+        future. Treat that as age zero; rejecting it would turn a clock sync
+        into an unrelated IMU outage.
+        """
+        try:
+            timestamp = float(self.timestamp)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(timestamp) or timestamp <= 0.0:
+            return None
+        current = time.time() if now is None else float(now)
+        return max(0.0, current - timestamp)
+
+    def is_fresh(
+        self,
+        max_age: float = IMU_SAMPLE_MAX_AGE_SECONDS,
+        *,
+        now: Optional[float] = None,
+    ) -> bool:
+        age = self.age_seconds(now)
+        return age is not None and age <= max_age
+
+    def is_usable(
+        self,
+        max_age: float = IMU_SAMPLE_MAX_AGE_SECONDS,
+        *,
+        now: Optional[float] = None,
+    ) -> bool:
+        """Live-consumer gate: valid orientation from a recent sensor read."""
+        return self.orientation_valid() and self.is_fresh(max_age, now=now)
+
     def to_dict(self) -> dict:
         """JSON-friendly form for the web API. ``quat`` becomes a
         scalar-first ``[w, x, y, z]`` list."""
+        now = time.time()
+        age = self.age_seconds(now)
         return {
             "quat": quaternion.as_float_array(self.quat).tolist(),
             "timestamp": self.timestamp,
@@ -564,6 +632,13 @@ class ImuSample:
             "uses_magnetometer": self.uses_magnetometer,
             "gyro": list(self.gyro) if self.gyro is not None else None,
             "accel": list(self.accel) if self.accel is not None else None,
+            "sensor_healthy": self.sensor_healthy,
+            "consecutive_errors": self.consecutive_errors,
+            "last_error": self.last_error,
+            "last_success_time": self.last_success_time,
+            "age_seconds": age,
+            "fresh": self.is_fresh(now=now),
+            "usable": self.is_usable(now=now),
         }
 
     # Pickle ``quat`` as floats (see _quat_to_floats): the IMU loop publishes
@@ -578,6 +653,12 @@ class ImuSample:
         state.setdefault("calibration_status", None)
         state.setdefault("fusion_mode", "imuplus")
         state.setdefault("uses_magnetometer", False)
+        state.setdefault("gyro", None)
+        state.setdefault("accel", None)
+        state.setdefault("sensor_healthy", True)
+        state.setdefault("consecutive_errors", 0)
+        state.setdefault("last_error", None)
+        state.setdefault("last_success_time", None)
         self.__dict__.update(state)
 
 

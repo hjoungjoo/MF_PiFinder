@@ -43,6 +43,7 @@ class UIStatus(GuideKeyMixin, UIModule):
             "IP": "--",
             "SSID": "--",
             "IMU": "--",
+            "IMU AGE": "--",
             "IMU CAL": "--",
             "IMU qw,qx": "--",
             "IMU qy,qz": "--",
@@ -130,11 +131,18 @@ class UIStatus(GuideKeyMixin, UIModule):
         # IMU Status & reading
         if imu:
             if imu.quat is not None:
-                if imu.moving:
+                usable = imu.is_usable()
+                if not imu.sensor_healthy:
+                    mtext = "Error"
+                elif not imu.is_fresh():
+                    mtext = "Stale"
+                elif imu.moving:
                     mtext = "Moving"
                 else:
                     mtext = "Static"
                 self.status_dict["IMU"] = f"{mtext : >11}" + " " + str(imu.status)
+                age = imu.age_seconds()
+                self.status_dict["IMU AGE"] = f"{age:.2f}s" if age is not None else "--"
                 cal = getattr(imu, "calibration_status", None)
                 mode = getattr(imu, "fusion_mode", "")
                 if cal:
@@ -146,7 +154,7 @@ class UIStatus(GuideKeyMixin, UIModule):
 
                 self.status_dict["IMU qw,qx"] = f"{imu.quat.w:>.2f},{imu.quat.x : >.2f}"
                 self.status_dict["IMU qy,qz"] = f"{imu.quat.y:>.2f},{imu.quat.z : >.2f}"
-                tube = self._tube_attitude_degrees(imu.quat)
+                tube = self._tube_attitude_degrees(imu.quat) if usable else None
                 if tube is None:
                     self.status_dict["T.ALT"] = "--"
                     self.status_dict["T.TILT"] = "--"
@@ -158,6 +166,7 @@ class UIStatus(GuideKeyMixin, UIModule):
                     self.status_dict["T.HDG"] = f"{hdg:.1f}"
         else:
             self.status_dict["IMU"] = "--"
+            self.status_dict["IMU AGE"] = "--"
             self.status_dict["IMU CAL"] = "--"
             self.status_dict["IMU qw,qx"] = "--"
             self.status_dict["IMU qy,qz"] = "--"

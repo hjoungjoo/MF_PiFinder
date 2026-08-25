@@ -87,6 +87,7 @@ class TelemetryRecorder:
         self._last_flush = 0.0
         self._imu_skip_count = 0
         self._last_imu_timestamp = None
+        self._last_imu_health_signature = None
         self._last_radio_sequence = None
         self._last_radio_time = 0.0
         self._last_target_id = None
@@ -120,6 +121,7 @@ class TelemetryRecorder:
         # Reset per-session state
         self._imu_skip_count = 0
         self._last_imu_timestamp = None
+        self._last_imu_health_signature = None
         self._last_radio_sequence = None
         self._last_radio_time = 0.0
         self._last_target_id = None
@@ -216,11 +218,20 @@ class TelemetryRecorder:
         """
         if not self.enabled or imu is None:
             return
-        if imu.timestamp == self._last_imu_timestamp:
+        health_signature = (
+            bool(getattr(imu, "sensor_healthy", True)),
+            int(getattr(imu, "consecutive_errors", 0)),
+            getattr(imu, "last_error", None),
+        )
+        if (
+            imu.timestamp == self._last_imu_timestamp
+            and health_signature == self._last_imu_health_signature
+        ):
             return  # same sample re-polled by a faster loop
         self._last_imu_timestamp = imu.timestamp
+        self._last_imu_health_signature = health_signature
         moving = imu.moving
-        if not moving:
+        if not moving and imu.sensor_healthy:
             self._imu_skip_count += 1
             if self._imu_skip_count < _STATIONARY_DECIMATION:
                 return
@@ -235,6 +246,12 @@ class TelemetryRecorder:
             "st": imu.status,
             "gyro": _serialize_vec(imu.gyro),
             "accel": _serialize_vec(imu.accel),
+            "ok": imu.sensor_healthy,
+            "ec": imu.consecutive_errors,
+            "err": imu.last_error,
+            "lst": _rf(imu.last_success_time)
+            if imu.last_success_time is not None
+            else None,
         }
         self._append(record)
 
@@ -547,6 +564,10 @@ class TelemetryPlayer:
             moving=event.get("mv", False),
             gyro=tuple(gyro) if gyro else None,
             accel=tuple(accel) if accel else None,
+            sensor_healthy=event.get("ok", True),
+            consecutive_errors=event.get("ec", 0),
+            last_error=event.get("err"),
+            last_success_time=event.get("lst"),
         )
 
 

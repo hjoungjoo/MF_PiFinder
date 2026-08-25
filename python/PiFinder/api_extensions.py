@@ -756,7 +756,8 @@ def register_api_routes(app, server_instance, require_auth=False):
         try:
             imu = server_instance.shared_state.imu()
             if imu:
-                return _json_response(imu.to_dict())
+                data = imu.to_dict()
+                return _json_response(data, 200 if data["usable"] else 503)
             return _json_response({"note": "IMU data not available"}, 503)
         except Exception as e:
             logger.error("api/imu error: %s", e)

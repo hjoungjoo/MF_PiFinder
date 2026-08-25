@@ -223,6 +223,42 @@ class TestPicklability:
         # __getstate__ must not mutate the live object in place.
         assert isinstance(original.quat, quaternion.quaternion)
 
+    def test_imu_sample_live_usability_requires_health_calibration_and_freshness(self):
+        sample = ImuSample(
+            quat=quaternion.one,
+            timestamp=100.0,
+            status=3,
+            sensor_healthy=True,
+        )
+
+        assert sample.orientation_valid() is True
+        assert sample.is_usable(now=100.5) is True
+        assert sample.is_usable(now=101.1) is False
+
+        sample.sensor_healthy = False
+        assert sample.orientation_valid() is False
+        assert sample.is_usable(now=100.5) is False
+
+    def test_imu_sample_json_exposes_runtime_health(self):
+        sample = ImuSample(
+            quat=quaternion.one,
+            timestamp=100.0,
+            status=3,
+            sensor_healthy=False,
+            consecutive_errors=2,
+            last_error="OSError: bus error",
+            last_success_time=99.5,
+        )
+
+        data = sample.to_dict()
+
+        assert data["sensor_healthy"] is False
+        assert data["consecutive_errors"] == 2
+        assert data["last_error"] == "OSError: bus error"
+        assert data["last_success_time"] == 99.5
+        assert data["fresh"] is False
+        assert data["usable"] is False
+
     def test_none_quaternion_anchor_round_trips(self):
         import pickle
 
@@ -252,11 +288,22 @@ class TestSolverBuilders:
     success (SuccessfulSolve) and failure (FailedSolve) shapes match
     what the integrator expects to apply."""
 
-    def _make_image_metadata(self, with_imu=True):
+    def _make_image_metadata(
+        self,
+        with_imu=True,
+        *,
+        status=3,
+        timestamp=1000.5,
+        sensor_healthy=True,
+        quat=quaternion.one,
+    ):
         meta = {"exposure_end": 1000.5, "exposure_time": 500_000}
         if with_imu:
             meta["imu"] = ImuSample(
-                quat=quaternion.quaternion(1, 0, 0, 0), timestamp=1000.5
+                quat=quat,
+                timestamp=timestamp,
+                status=status,
+                sensor_healthy=sensor_healthy,
             )
         return meta
 
@@ -325,6 +372,28 @@ class TestSolverBuilders:
         # Aligned falls back to the camera RA/Dec when no target offset.
         assert result.camera == Pointing(RA=1.0, Dec=2.0, Roll=3.0)
         assert result.aligned == Pointing(RA=1.0, Dec=2.0, Roll=3.0)
+
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            {"status": 2},
+            {"sensor_healthy": False},
+            {"timestamp": 998.0},
+            {"quat": quaternion.quaternion(0, 0, 0, 0)},
+        ],
+        ids=["uncalibrated", "unhealthy", "stale-at-frame-epoch", "zero-norm"],
+    )
+    def test_successful_solve_rejects_unusable_imu_anchor(self, metadata):
+        from PiFinder.solver import _build_successful_solve
+
+        result = _build_successful_solve(
+            solution={"RA": 1.0, "Dec": 2.0, "Roll": 3.0},
+            last_image_metadata=self._make_image_metadata(**metadata),
+            last_solve_attempt=1000.5,
+            last_solve_success=1000.5,
+        )
+
+        assert result.imu_anchor is None
 
     def test_failed_solve_carries_diagnostics_and_timing_only(self):
         from PiFinder.solver import _build_failed_solve

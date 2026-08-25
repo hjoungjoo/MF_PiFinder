@@ -184,6 +184,7 @@ def integrator(
                 and not pointing_updated
                 and idr.is_initialized()
                 and estimate.imu_anchor is not None
+                and (telemetry.replaying or imu.is_usable())
             ):
                 if _advance_with_imu(estimate, idr, imu):
                     pointing_updated = True
@@ -299,7 +300,7 @@ def _advance_with_imu(
     Returns ``True`` if cells were advanced, ``False`` if IMU motion
     was below the deadband.
     """
-    if not imu.is_calibrated():
+    if not imu.orientation_valid():
         return False
 
     q_x2imu = imu.quat

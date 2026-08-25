@@ -477,7 +477,7 @@ class PointingCoordinateService:
     def imu_altaz_degrees(
         self, imu_sample: Any, screen_direction: str
     ) -> Optional[Tuple[float, float]]:
-        if not imu_sample or not imu_sample.is_calibrated():
+        if not imu_sample or not imu_sample.is_usable():
             return None
         try:
             q_x2cam = (

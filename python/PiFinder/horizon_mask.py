@@ -105,7 +105,7 @@ def filter_ground_centroids(
     if (
         imu_sample is None
         or getattr(imu_sample, "quat", None) is None
-        or not imu_sample.is_calibrated()
+        or not imu_sample.orientation_valid()
     ):
         return centroids_yx, 0
     alts = centroid_altitudes(

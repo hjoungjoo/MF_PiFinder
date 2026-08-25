@@ -123,7 +123,7 @@ def test_imu_altaz_requires_calibrated_sample():
 def test_imu_fallback_returns_radec_for_calibrated_sample():
     sample = ImuSample(
         quat=quaternion.quaternion(1, 0, 0, 0),
-        timestamp=0.0,
+        timestamp=time.time(),
         status=3,
     )
 
@@ -135,6 +135,21 @@ def test_imu_fallback_returns_radec_for_calibrated_sample():
     ra_deg, dec_deg = pointing
     assert 0.0 <= ra_deg < 360.0
     assert -90.0 <= dec_deg <= 90.0
+
+
+@pytest.mark.unit
+def test_imu_fallback_rejects_stale_sample():
+    sample = ImuSample(
+        quat=quaternion.quaternion(1, 0, 0, 0),
+        timestamp=time.time() - 2.0,
+        status=3,
+    )
+
+    pointing = pos_server._imu_fallback_pointing(
+        DummyState(sample), datetime.datetime(2026, 7, 1, 12, tzinfo=pytz.UTC)
+    )
+
+    assert pointing is None
 
 
 @pytest.mark.unit
