@@ -11,7 +11,7 @@ from typing import Optional
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageOps
 
-from PiFinder import focus, utils
+from PiFinder import focus, mf_wide_focus, utils
 from PiFinder.ui.base import GuideKeyMixin, UIModule
 from PiFinder.ui.marking_menus import MarkingMenu, MarkingMenuOption
 
@@ -93,6 +93,8 @@ class UIPreview(GuideKeyMixin, UIModule):
         self._last_focus_catalog_time = 0.0
         self._last_focus_frame_time = 0.0
         self.focus_history: deque[tuple[float, float]] = deque()
+        self._wide_focus_mode = False
+        self._focus_frame_hw = (512, 512)
 
         self.marking_menu = MarkingMenu(
             left=MarkingMenuOption(
@@ -114,12 +116,48 @@ class UIPreview(GuideKeyMixin, UIModule):
         self._last_focus_catalog_time = 0.0
         self._last_focus_frame_time = 0.0
         self.focus_history.clear()
+        self._wide_focus_mode = False
+        self._focus_frame_hw = (512, 512)
+
+    def _focus_input_image(self, processed_image: Image.Image) -> Image.Image:
+        """Keep native pixels for wide lenses; preserve the legacy fallback."""
+
+        self._wide_focus_mode = False
+        self._focus_frame_hw = (processed_image.height, processed_image.width)
+        try:
+            lens_key = self.config_object.get_option("camera_lens")
+            manual_focal = self.config_object.get_option("camera_lens_focal_length_mm")
+            if not mf_wide_focus.wide_focus_enabled(lens_key, manual_focal):
+                return processed_image
+            raw = self.shared_state.cam_raw()
+            if raw is None:
+                return processed_image
+
+            from PiFinder.optics import resolve_camera_profile
+
+            profile = resolve_camera_profile(self.shared_state.camera_type())
+            native = mf_wide_focus.native_focus_frame(
+                np.asarray(raw),
+                bias_offset=profile.bias_offset,
+                bit_depth=profile.bit_depth,
+            )
+            native_image = self._orient_camera_image(Image.fromarray(native, mode="L"))
+            self._wide_focus_mode = True
+            self._focus_frame_hw = (native_image.height, native_image.width)
+            return native_image
+        except (AttributeError, TypeError, ValueError):
+            return processed_image
 
     def _measure_focus(
         self, raw_np: np.ndarray, *, record_history: bool = True
     ) -> None:
         """Measure HFD and locate display blobs from one raw frame."""
-        self.last_focus_result = focus.focus_hfd(raw_np)
+        if getattr(self, "_wide_focus_mode", False):
+            self.last_focus_result = focus.focus_hfd(
+                raw_np, sigma_k=mf_wide_focus.WIDE_FOCUS_SIGMA_K
+            )
+        else:
+            self.last_focus_result = focus.focus_hfd(raw_np)
         candidates = tuple(
             blob
             for blob in self.last_focus_result.blobs
@@ -154,6 +192,10 @@ class UIPreview(GuideKeyMixin, UIModule):
         if not centroids or not catalog_ids:
             return
 
+        if getattr(self, "_wide_focus_mode", False):
+            centroids = mf_wide_focus.scale_solver_centroids(
+                centroids, native_hw=getattr(self, "_focus_frame_hw", (512, 512))
+            )
         matched = focus.match_catalog_ids(
             self._tracked_focus_blobs, centroids, catalog_ids
         )
@@ -268,6 +310,10 @@ class UIPreview(GuideKeyMixin, UIModule):
             crop = raw_l.crop(
                 (crop_left, crop_top, crop_left + crop_w, crop_top + crop_h)
             )
+            if getattr(self, "_wide_focus_mode", False):
+                crop = mf_wide_focus.stretch_star_crop(
+                    crop, background=blob.background, peak=blob.peak
+                )
             enlarged = crop.resize(tile_size, resample=Image.Resampling.NEAREST)
             mosaic.paste(enlarged, (left, top))
 
@@ -295,6 +341,10 @@ class UIPreview(GuideKeyMixin, UIModule):
             crop = raw_l.crop(
                 (crop_left, crop_top, crop_left + crop_w, crop_top + crop_h)
             )
+            if getattr(self, "_wide_focus_mode", False):
+                crop = mf_wide_focus.stretch_star_crop(
+                    crop, background=blob.background, peak=blob.peak
+                )
             rendered = crop.resize(target_size, resample=Image.Resampling.NEAREST)
 
         return ImageChops.multiply(rendered.convert("RGB"), self.colors.red_image)
@@ -619,8 +669,9 @@ class UIPreview(GuideKeyMixin, UIModule):
         if last_image_time > self.last_update:
             image_updated = True
             raw_image = self.camera_image.copy()
+            focus_image = self._focus_input_image(raw_image)
 
-            raw_np = np.asarray(raw_image.convert("L"))
+            raw_np = np.asarray(focus_image.convert("L"))
             if last_image_time != self._last_focus_frame_time:
                 # A solve normally arrives after its image was first rendered.
                 # Identify those retained previous-frame blobs before tracking
@@ -638,7 +689,7 @@ class UIPreview(GuideKeyMixin, UIModule):
                 self._measure_focus(raw_np, record_history=False)
 
             if self.display_mode == DISPLAY_STARS:
-                self.screen.paste(self._render_focus_tiles(raw_image))
+                self.screen.paste(self._render_focus_tiles(focus_image))
             elif self.display_mode == DISPLAY_IMAGE:
                 # MF: a daylit/saturated processed frame washes out; render
                 # the raw sensor frame instead (daytime alignment path).
@@ -651,7 +702,7 @@ class UIPreview(GuideKeyMixin, UIModule):
             elif self.display_mode == DISPLAY_STATS:
                 self._draw_stats(raw_np, metadata)
             else:
-                self.screen.paste(self._render_brightest_star(raw_image))
+                self.screen.paste(self._render_brightest_star(focus_image))
             self.last_update = last_image_time
 
         if (image_updated or force) and self.display_mode == DISPLAY_STARS:

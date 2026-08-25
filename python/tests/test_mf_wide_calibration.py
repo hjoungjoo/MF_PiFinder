@@ -6,6 +6,7 @@ from PiFinder.mf_wide_calibration import (
     CALIBRATION_STORE_OPTION,
     CalibrationProfileStore,
     ManualTvDistortion,
+    build_auto_sky_profile,
     build_manual_tv_profile,
     initial_k1_from_tv,
 )
@@ -88,6 +89,54 @@ def test_automatic_profile_uses_the_same_persistent_restore_path():
     restored = CalibrationProfileStore(cfg).load_active("imx462", "4mm", profile)
     assert restored is not None
     assert restored["id"] == "auto-imx462-4mm-3"
+
+
+def test_completed_auto_sky_profile_persists_fit_evidence_and_revisions():
+    cfg = _Config()
+    profile = get_camera_profile("imx462")
+    store = CalibrationProfileStore(cfg)
+    evidence = {
+        "frames": 6,
+        "sky_directions": 2,
+        "radial_bins": {"central": 4, "mid": 12, "edge": 5},
+        "median_rmse_before_arcsec": 98.0,
+        "median_rmse_after_arcsec": 56.0,
+    }
+
+    first = store.save_auto_sky(
+        "imx462",
+        "6mm",
+        profile,
+        {"k1": -0.04, "k2": 0.0, "k3": 0.0, "p1": 0.0, "p2": 0.0},
+        evidence,
+    )
+    second = store.save_auto_sky(
+        "imx462",
+        "6mm",
+        profile,
+        {"k1": -0.043, "k2": 0.0, "k3": 0.0, "p1": 0.0, "p2": 0.0},
+        evidence,
+    )
+
+    assert first["id"] == "auto-imx462-6mm-1"
+    assert second["id"] == "auto-imx462-6mm-2"
+    assert second["source"] == "auto_sky"
+    assert second["provisional"] is False
+    assert second["verified_from_sky"] is True
+    assert second["fit_summary"] == evidence
+    assert store.load_active("imx462", "6mm", profile) == second
+
+
+def test_auto_sky_profile_rejects_non_finite_or_unsafe_coefficients():
+    profile = get_camera_profile("imx462")
+    with pytest.raises(ValueError):
+        build_auto_sky_profile(
+            "imx462", "6mm", profile, {"k1": float("nan")}, {}, revision=1
+        )
+    with pytest.raises(ValueError):
+        build_auto_sky_profile(
+            "imx462", "6mm", profile, {"k1": -2.0}, {}, revision=1
+        )
 
 
 def test_tv_requires_reference_geometry_and_direction():

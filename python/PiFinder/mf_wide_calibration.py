@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from typing import Any, Final, Mapping
 
 from PiFinder.sqm.camera_profiles import CameraProfile
@@ -151,6 +152,54 @@ def build_manual_tv_profile(
     }
 
 
+def build_auto_sky_profile(
+    camera_type: str,
+    lens_key: str,
+    profile: CameraProfile,
+    coefficients: Mapping[str, float],
+    fit_summary: Mapping[str, Any],
+    revision: int,
+) -> dict[str, Any]:
+    """Create a completed on-sky Brown--Conrady calibration profile.
+
+    The fitter and its observing-session policy remain separate from the
+    persistent store.  This boundary only accepts a complete, finite
+    coefficient set and records the validation evidence alongside it.
+    """
+
+    if revision < 1:
+        raise CalibrationValidationError("Calibration revision must be positive")
+    try:
+        normalised = {
+            key: float(coefficients.get(key, 0.0))
+            for key in ("k1", "k2", "k3", "p1", "p2")
+        }
+    except (TypeError, ValueError) as exc:
+        raise CalibrationValidationError(
+            "Automatic calibration coefficients must be numeric"
+        ) from exc
+    if not all(math.isfinite(value) for value in normalised.values()):
+        raise CalibrationValidationError(
+            "Automatic calibration coefficients must be finite"
+        )
+    if any(abs(value) > 1.0 for value in normalised.values()):
+        raise CalibrationValidationError(
+            "Automatic calibration coefficient is outside the safe range"
+        )
+    return {
+        "id": f"auto-{camera_type}-{lens_key}-{revision}",
+        "version": 1,
+        "source": "auto_sky",
+        "provisional": False,
+        "verified_from_sky": True,
+        "model": "brown_conrady",
+        "coefficients": normalised,
+        "fit_summary": dict(fit_summary),
+        "fingerprint": calibration_fingerprint(camera_type, lens_key, profile),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def _normalise_store(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         return {"version": STORE_VERSION, "profiles": {}, "active": {}}
@@ -242,3 +291,34 @@ class CalibrationProfileStore:
         store["profiles"][profile_id] = dict(candidate)
         store["active"][context] = profile_id
         self._cfg.set_option(CALIBRATION_STORE_OPTION, store)
+
+    def save_auto_sky(
+        self,
+        camera_type: str,
+        lens_key: str,
+        profile: CameraProfile,
+        coefficients: Mapping[str, float],
+        fit_summary: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Persist and select a validated on-sky profile for this geometry."""
+
+        store = self._load()
+        prefix = f"auto-{camera_type}-{lens_key}-"
+        revisions = []
+        for profile_id in store["profiles"]:
+            if not isinstance(profile_id, str) or not profile_id.startswith(prefix):
+                continue
+            try:
+                revisions.append(int(profile_id[len(prefix) :]))
+            except ValueError:
+                continue
+        candidate = build_auto_sky_profile(
+            camera_type,
+            lens_key,
+            profile,
+            coefficients,
+            fit_summary,
+            revision=max(revisions, default=0) + 1,
+        )
+        self.save_profile(camera_type, lens_key, profile, candidate)
+        return candidate

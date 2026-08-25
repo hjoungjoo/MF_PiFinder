@@ -66,6 +66,9 @@ def test_tile_size_targets_solver_fov_without_ever_upscaling_a_small_crop():
 
 
 def test_plan_uses_lens_specific_size_for_both_grid_strategies():
+    six = plan_tiles_for_focal(
+        (1080, 1920), 26.6481, 10.0, 6.0, central_tile_size_px=980
+    )
     wide = plan_tiles_for_focal(
         (1080, 1920), 20.1442, 10.0, 8.0, central_tile_size_px=980
     )
@@ -73,10 +76,29 @@ def test_plan_uses_lens_specific_size_for_both_grid_strategies():
         (1080, 1920), 16.1752, 10.0, 10.0, central_tile_size_px=980
     )
 
+    assert {tile.rect.width for tile in six.tiles} == {640}
+    assert {tile.rect.height for tile in six.tiles} == {640}
+    assert len(six.tiles) == 15
     assert {tile.rect.width for tile in wide.tiles} == {564}
     assert {tile.rect.height for tile in wide.tiles} == {564}
     assert {tile.rect.width for tile in recovery.tiles} == {702}
     assert {tile.rect.height for tile in recovery.tiles} == {702}
+
+
+def test_six_mm_field_size_does_not_leak_when_lens_changes():
+    six = plan_tiles_for_focal(
+        (1080, 1920), 26.6481, 10.0, 6.0, central_tile_size_px=980
+    )
+    manual_neighbour = plan_tiles_for_focal(
+        (1080, 1920), 25.0, 10.0, 6.1, central_tile_size_px=980
+    )
+    eight = plan_tiles_for_focal(
+        (1080, 1920), 20.1442, 10.0, 8.0, central_tile_size_px=980
+    )
+
+    assert six.central_tile.rect.width == 640
+    assert manual_neighbour.central_tile.rect.width == 512
+    assert eight.central_tile.rect.width == 564
 
 
 def test_normal_lenses_use_a_central_crop_sized_three_by_three_recovery_grid():

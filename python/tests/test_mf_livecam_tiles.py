@@ -109,6 +109,20 @@ def test_selected_calibrated_lens_keeps_its_effective_focal_length_for_tile_size
     assert {round(tile["crop_width"] * 1920) for tile in payload["tiles"]} == {914}
 
 
+def test_six_mm_overlay_uses_field_validated_640px_solver_crops():
+    payload = overlay_payload(
+        camera_type="imx462_color",
+        lens_key="6mm",
+        manual_focal_length_mm=None,
+        frame_hw=(1080, 1920),
+    )
+
+    assert payload["strategy"] == "wide_grid"
+    assert len(payload["tiles"]) == 15
+    assert {round(tile["crop_width"] * 1920) for tile in payload["tiles"]} == {640}
+    assert {round(tile["crop_height"] * 1080) for tile in payload["tiles"]} == {640}
+
+
 def test_display_rotation_names_native_solver_crops_in_video_coordinates():
     """A 90-degree Preview names every crop by its visible UDLR location."""
 

@@ -35,6 +35,8 @@ from typing import Optional
 
 import numpy as np
 
+from PiFinder.mf_cloud_gate import select_clear_window_candidates
+
 logger = logging.getLogger("Solver.SepDetect")
 
 _sep = None
@@ -73,6 +75,10 @@ class SepDetection:
     # Otherwise-keepable detections removed by the warm-pixel map. High
     # values on an empty sky are expected (the map is doing its job).
     masked_count: int = 0
+    cloud_gate_active: bool = False
+    cloud_gated_count: int = 0
+    cloud_contrast: float = 0.0
+    cloud_background_limit: Optional[float] = None
 
 
 def warm_pixel_excess(frame: np.ndarray) -> np.ndarray:
@@ -157,6 +163,7 @@ def detect_stars(
     max_npix: int = 40,
     cluster_radius_px: float = 50.0,
     cluster_max_neighbors: int = 1,
+    cloud_window_gate: bool = False,
 ) -> Optional[SepDetection]:
     """
     Detect stars on a raw sensor frame (uint16 mosaic, any shape).
@@ -230,7 +237,8 @@ def detect_stars(
         if np.median(interior) >= 0.98 * saturation_level:
             return _empty()
 
-    data_sub = data - bkg.back()
+    background = bkg.back()
+    data_sub = data - background
     objects = sep.extract(
         data_sub,
         thresh=sigma,
@@ -287,6 +295,16 @@ def detect_stars(
         isolated = neighbours <= cluster_max_neighbors
         full_y, full_x, fluxes = full_y[isolated], full_x[isolated], fluxes[isolated]
 
+    cloud_selection = select_clear_window_candidates(
+        background,
+        np.column_stack(((full_y - 0.5) / 2.0, (full_x - 0.5) / 2.0)),
+        enabled=cloud_window_gate,
+    )
+    cloud_gated_count = int(len(full_y) - np.count_nonzero(cloud_selection.keep))
+    full_y = full_y[cloud_selection.keep]
+    full_x = full_x[cloud_selection.keep]
+    fluxes = fluxes[cloud_selection.keep]
+
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
     order = np.argsort(fluxes)[::-1][:max_stars]
@@ -297,6 +315,10 @@ def detect_stars(
         background_rms=float(bkg.globalrms),
         elapsed_ms=elapsed_ms,
         masked_count=masked_count,
+        cloud_gate_active=cloud_selection.active,
+        cloud_gated_count=cloud_gated_count,
+        cloud_contrast=cloud_selection.contrast,
+        cloud_background_limit=cloud_selection.background_limit,
     )
 
 

@@ -187,6 +187,33 @@ def test_renderer_preserves_raw_luminance_values():
 
 
 @pytest.mark.unit
+def test_wide_renderer_stretches_only_the_displayed_star_crop():
+    preview = object.__new__(UIPreview)
+    preview.focus_zoom = FOCUS_NOMINAL_ZOOM
+    preview._wide_focus_mode = True
+    preview.display_class = SimpleNamespace(resolution=(128, 128), titlebar_height=17)
+    preview.colors = SimpleNamespace(
+        red_image=Image.new("RGB", (128, 128), (255, 0, 0))
+    )
+    preview.last_focus_result = FocusResult(
+        median_hfd=5.0,
+        n_used=1,
+        background=20.0,
+        peak=80.0,
+        too_defocused=False,
+        blobs=(_blob(x=256, y=256, peak=80, extent=4),),
+    )
+    raw = np.full((512, 512), 20, dtype=np.uint8)
+    raw[255:258, 255:258] = 80
+
+    rendered = np.asarray(preview._render_focus_tiles(Image.fromarray(raw)))
+
+    assert rendered[:, :, 0].max() == 255
+    assert np.asarray(raw).max() == 80
+    assert np.all(rendered[:, :, 1:] == 0)
+
+
+@pytest.mark.unit
 def test_edge_star_crop_contains_only_source_frame_pixels():
     preview = object.__new__(UIPreview)
     preview.focus_zoom = FOCUS_NOMINAL_ZOOM

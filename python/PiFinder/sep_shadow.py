@@ -42,6 +42,8 @@ import numpy as np
 
 from PiFinder import sep_detect, utils
 from PiFinder import solver_frame_map as sfm
+from PiFinder.mf_cloud_gate import wide_cloud_gate_enabled
+from PiFinder.mf_manual_lens import manual_focal_from_state
 from PiFinder.sep_detect import SepDetection
 from PiFinder.sqm.camera_profiles import get_camera_profile
 
@@ -239,11 +241,15 @@ class SepShadowRunner:
             if time.time() - float(entry.get("timestamp") or 0) > MAX_FRAME_AGE_S:
                 return None
             frame = np.asarray(entry["frame"])
+            lens_key = getattr(shared_state, "camera_lens", lambda: "")()
             detection = sep_detect.detect_stars(
                 frame,
                 sigma=self.sigma,
                 saturation_level=self.saturation_level,
                 warm_pixel_map=self.warm_pixel_map,
+                cloud_window_gate=wide_cloud_gate_enabled(
+                    lens_key, manual_focal_from_state(shared_state)
+                ),
             )
             if detection is None:
                 return None
@@ -259,6 +265,9 @@ class SepShadowRunner:
                 "frame_hw": [int(frame.shape[0]), int(frame.shape[1])],
                 "masked": detection.masked_count,
                 "sigma": self.sigma,
+                "cloud_gate_active": detection.cloud_gate_active,
+                "cloud_gated": detection.cloud_gated_count,
+                "cloud_contrast": detection.cloud_contrast,
                 "timestamp": time.time(),
             }
             return SepRun(

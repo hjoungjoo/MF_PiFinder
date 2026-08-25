@@ -1699,6 +1699,7 @@ def solver(
                                         "saturation_level"
                                     ],
                                     warm_pixel_map=cedar_ff_geometry["warm_map"],
+                                    cloud_window_gate=focal_length < 10.0,
                                 )
                                 return () if detection is None else detection.centroids
 

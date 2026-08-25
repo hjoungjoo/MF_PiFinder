@@ -26,6 +26,7 @@ from PiFinder.livecam_config import (
     PREVIEW_MODE_RAW,
     SOURCE_CROPPED,
     SOURCE_ORIGINAL,
+    SOURCE_STAR_ONLY,
     STAGE_SOURCES,
     VALID_IMAGE_FORMATS,
     normalize_settings,
@@ -166,6 +167,8 @@ def publish_selected_frame(
         selected = original_raw
         if selected is not None and rotation_90:
             selected = np.rot90(selected, rotation_90)
+    if source == SOURCE_STAR_ONLY and selected is not None and rotation_90:
+        selected = np.rot90(selected, rotation_90)
     if selected is None:
         return
 
@@ -176,7 +179,7 @@ def publish_selected_frame(
     info = RawFrameInfo.from_array(
         selected,
         source=source,
-        rotation_90=rotation_90 if source == SOURCE_ORIGINAL else 0,
+        rotation_90=rotation_90 if source in {SOURCE_ORIGINAL, SOURCE_STAR_ONLY} else 0,
         display_rotation_degrees=display_rotation,
         raw_format=raw_format,
         camera_type=camera_type,

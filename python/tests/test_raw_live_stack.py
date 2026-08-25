@@ -7,6 +7,7 @@ from PiFinder.raw_live_stack import (
     DisplayFrameBuilder,
     SOURCE_CROPPED,
     SOURCE_ORIGINAL,
+    SOURCE_STAR_ONLY,
     RawLiveStackProcessor,
     download_color_mode,
     download_image_format,
@@ -111,6 +112,12 @@ def test_processing_enabled_coerces_string_values():
     assert not processing_enabled({"processing_enabled": "false"})
 
 
+def test_star_only_is_a_valid_livecam_input_source():
+    settings = normalize_settings({"input_frame_source": SOURCE_STAR_ONLY})
+
+    assert settings["input_frame_source"] == SOURCE_STAR_ONLY
+
+
 def test_default_settings_for_config_restores_livecam_defaults():
     defaults = default_settings_for_config(DummyConfig({"camera_rotation": 90}))
 
@@ -172,6 +179,26 @@ def test_publish_original_rotates_without_crop():
     assert entry["info"]["source"] == SOURCE_ORIGINAL
     assert entry["frame"].shape == (4, 3)
     np.testing.assert_array_equal(entry["frame"], np.rot90(original, 1))
+
+
+def test_publish_star_only_rotates_like_original_raw():
+    shared = DummySharedState()
+    star_only = np.arange(12, dtype=np.uint16).reshape(3, 4)
+
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True, "input_frame_source": SOURCE_STAR_ONLY},
+        _profile(rotation_90=1),
+        "test",
+        None,
+        None,
+        stage_frames={SOURCE_STAR_ONLY: star_only},
+    )
+
+    entry = shared.raw_live_frame()
+    assert entry["info"]["source"] == SOURCE_STAR_ONLY
+    assert entry["info"]["rotation_90"] == 1
+    np.testing.assert_array_equal(entry["frame"], np.rot90(star_only, 1))
 
 
 def test_publish_stage_source_uses_stage_frame():

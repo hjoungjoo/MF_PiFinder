@@ -20,6 +20,13 @@ MIN_TILE_SIZE_PX: Final[int] = 512
 TARGET_SOLVER_TILE_FOV_DEGREES: Final[float] = 11.6
 DEFAULT_OVERLAP: Final[float] = 0.20
 RECOVERY_GRID_SIZE: Final[int] = 3
+# Same-frame IMX462 field validation on 2026-08-25 found that the generic
+# 512px floor left most 6mm crops with only four to six detections (1/15
+# solved), while 640px retained the 3x5 grid and solved 9/15.  Keep this
+# empirical exception isolated from the generic FOV calculation so changing
+# lenses immediately restores the normal per-lens geometry.
+SIX_MM_FOCAL_LENGTH_MM: Final[float] = 6.0
+SIX_MM_FIELD_TILE_SIZE_PX: Final[int] = 640
 
 
 @dataclass(frozen=True)
@@ -323,10 +330,19 @@ def plan_tiles_for_focal(
     overlap: float = DEFAULT_OVERLAP,
     display_rotation_degrees: int = 0,
 ) -> MFWideTilePlan:
-    """Select native FOV-sized tiles and their grid strategy for a lens."""
+    """Select native FOV-sized tiles and their grid strategy for a lens.
+
+    The 6.0mm optical train uses its field-validated 640px crop when the
+    camera's established central crop is large enough. Other named or manual
+    focal lengths continue to use the generic FOV calculation.
+    """
 
     reference_size = central_tile_size_px or MIN_TILE_SIZE_PX
     tile_size = optimal_tile_size_px(full_fov_degrees, reference_size)
+    if math.isclose(
+        float(focal_length_mm), SIX_MM_FOCAL_LENGTH_MM, rel_tol=0.0, abs_tol=0.05
+    ):
+        tile_size = min(reference_size, SIX_MM_FIELD_TILE_SIZE_PX)
 
     if focal_length_mm < 10.0:
         return plan_wide_tiles(

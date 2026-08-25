@@ -25,6 +25,7 @@ from PiFinder.livecam_config import (
     SOURCE_ORIGINAL,
     SOURCE_RESIZED_512,
     SOURCE_SOLVER_INPUT,
+    SOURCE_STAR_ONLY,
     SOURCE_STRETCHED_8BIT,
     normalize_settings,
     processing_enabled,
@@ -173,7 +174,47 @@ class CameraPI(CameraInterface):
 
         # Only the full-sensor frame needs keeping past the crop, and only
         # when the LiveCam viewer is actually looking at it.
-        original_raw = raw_capture if livecam_source == SOURCE_ORIGINAL else None
+        original_raw = (
+            raw_capture
+            if livecam_source in {SOURCE_ORIGINAL, SOURCE_STAR_ONLY}
+            else None
+        )
+
+        # Star-only is a LiveCam diagnostic input, never a solver input at
+        # this stage.  It deliberately runs only while selected because the
+        # five-frame robust RAW preprocessor is substantially heavier than the
+        # ordinary preview pipeline.  Switching away resets its temporal
+        # window so an old scene cannot leak into a later inspection.
+        star_only_raw = None
+        if livecam_source == SOURCE_STAR_ONLY:
+            try:
+                from PiFinder.mf_star_only_preprocess import MFStarOnlyAccumulator
+
+                accumulator = getattr(self, "_mf_star_only_accumulator", None)
+                if accumulator is None:
+                    accumulator = MFStarOnlyAccumulator()
+                    self._mf_star_only_accumulator = accumulator
+                fingerprint = (
+                    self.camera_type,
+                    self.profile.format,
+                    tuple(raw_capture.shape),
+                    metadata.get("ExposureTime"),
+                    metadata.get("AnalogueGain"),
+                    self.profile.rotation_90,
+                )
+                star_only_raw = accumulator.add(
+                    raw_capture,
+                    saturation_level=float(2**self.profile.bit_depth - 1),
+                    fingerprint=fingerprint,
+                ).frame
+                self._mf_star_only_live_selected = True
+            except Exception:
+                logger.exception("LiveCam star-only preprocessing failed")
+        elif getattr(self, "_mf_star_only_live_selected", False):
+            accumulator = getattr(self, "_mf_star_only_accumulator", None)
+            if accumulator is not None:
+                accumulator.reset()
+            self._mf_star_only_live_selected = False
 
         # Uncropped frame for the SEP full-frame detection path (shadow /
         # fallback). Same orientation convention as the cropped frame:
@@ -226,6 +267,8 @@ class CameraPI(CameraInterface):
         # viewer selected (solver_input is published by the camera loop after
         # rotation, not here).
         stage_frames = {}
+        if star_only_raw is not None:
+            stage_frames[SOURCE_STAR_ONLY] = star_only_raw
 
         # Store raw in shared state (before processing) for calibration and analysis
         if hasattr(self, "shared_state"):
