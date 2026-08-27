@@ -134,9 +134,7 @@ def test_auto_sky_profile_rejects_non_finite_or_unsafe_coefficients():
             "imx462", "6mm", profile, {"k1": float("nan")}, {}, revision=1
         )
     with pytest.raises(ValueError):
-        build_auto_sky_profile(
-            "imx462", "6mm", profile, {"k1": -2.0}, {}, revision=1
-        )
+        build_auto_sky_profile("imx462", "6mm", profile, {"k1": -2.0}, {}, revision=1)
 
 
 def test_tv_requires_reference_geometry_and_direction():

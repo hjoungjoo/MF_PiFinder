@@ -74,7 +74,7 @@ def test_guide_mixin_discrete_commands_and_goto_type_toggle():
     assert screen.command_queues["ui_queue"].commands == []
     assert screen.command_queues["goto_guide"].commands == [
         {"type": "stop_movement"},
-        {"type": "set_goto_method", "goto_method": "off"}
+        {"type": "set_goto_method", "goto_method": "off"},
     ]
     assert messages[-1] == ("GoTo Type\nOff", 1)
 

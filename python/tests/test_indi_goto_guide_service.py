@@ -67,7 +67,9 @@ def test_persistent_config_reload_clears_runtime_goto_type(monkeypatch):
     service.runtime_goto_method = "off"
     service.config_values["indi_goto_method"] = "off"
     reloaded = []
-    monkeypatch.setattr(service, "_reload_config_if_needed", lambda: reloaded.append(True))
+    monkeypatch.setattr(
+        service, "_reload_config_if_needed", lambda: reloaded.append(True)
+    )
 
     service.handle_command({"type": "reload_config"})
 

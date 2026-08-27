@@ -159,9 +159,7 @@ class JoystickDispatcher:
                 {"type": "increase_slew_rate", "notify_ui": True}
             )
         elif action == "speed_down" and pressed:
-            self.mountcontrol_queue.put(
-                {"type": "reduce_slew_rate", "notify_ui": True}
-            )
+            self.mountcontrol_queue.put({"type": "reduce_slew_rate", "notify_ui": True})
         elif action == "tracking_off" and pressed:
             self.mountcontrol_queue.put({"type": "set_tracking", "enabled": False})
 

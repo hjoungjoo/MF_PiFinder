@@ -1660,7 +1660,9 @@ class Server:
                             or "INDI location/time sync failed"
                         )
                     with self._indi_location_time_sync_lock:
-                        self._indi_location_time_sync_status["message"] = readback_message
+                        self._indi_location_time_sync_status["message"] = (
+                            readback_message
+                        )
                         self._indi_location_time_sync_status["updated_at"] = time.time()
                     onstep_props = _wait_for_onstep_location_match(
                         indi_cfg, lat, lon, timeout=8.0
@@ -2273,7 +2275,9 @@ class Server:
                 utc_time = _current_pifinder_utc_datetime()
                 indi_cfg = _indi_config_values()
                 _require_onstepx_driver(indi_cfg)
-                if not _start_indi_location_time_sync(lat, lon, elev, utc_time, indi_cfg):
+                if not _start_indi_location_time_sync(
+                    lat, lon, elev, utc_time, indi_cfg
+                ):
                     return _render_indi_page(
                         error_message=_("Location and UTC time sync is already running")
                     )

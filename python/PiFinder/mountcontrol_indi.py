@@ -4735,7 +4735,9 @@ class MountControlIndi(BacklashCalibrationMixin):
             self.clear_multipoint_align_target()
         elif command_type == "sync_location_time":
             self.sync_location_time(
-                include_default_location=bool(command.get("include_default_location", False)),
+                include_default_location=bool(
+                    command.get("include_default_location", False)
+                ),
                 latitude=command.get("latitude"),
                 longitude=command.get("longitude"),
                 elevation=command.get("elevation"),
