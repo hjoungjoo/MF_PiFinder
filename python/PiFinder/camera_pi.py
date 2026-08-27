@@ -14,7 +14,7 @@ from PiFinder import config
 from PiFinder.camera_interface import CameraInterface
 from PiFinder.sqm import apply_variant, detect_camera_type, get_camera_profile
 from PiFinder.sqm.radiometer import collect_radiometer_sample
-from typing import Tuple
+from typing import Optional, Tuple
 import logging
 import re
 import time
@@ -34,6 +34,8 @@ import numpy as np
 
 logger = logging.getLogger("Camera.Pi")
 
+CONTINUOUS_BUFFER_COUNT = 3
+
 
 def raw_downshift(delivered_format: str, profile_bit_depth: int) -> int:
     """Bits to right-shift delivered raw samples into profile-depth units.
@@ -47,6 +49,30 @@ def raw_downshift(delivered_format: str, profile_bit_depth: int) -> int:
     match = re.search(r"\d+", str(delivered_format))
     delivered_depth = int(match.group()) if match else profile_bit_depth
     return max(0, delivered_depth - profile_bit_depth)
+
+
+def estimate_sensor_drops(
+    previous_timestamp_ns, current_timestamp_ns, frame_duration_us
+) -> int:
+    """Estimate skipped sensor frames between two delivered frames.
+
+    Picamera2 deliberately recycles completed requests when ``queue=False``
+    and no capture job is waiting.  Those drops are the desired overload
+    policy, but they must be observable.  The sensor timestamps and reported
+    frame duration let us estimate how many frame intervals were skipped.
+    Invalid or changing metadata is treated conservatively as no measured
+    drop rather than inventing a large count.
+    """
+    try:
+        previous_ns = int(previous_timestamp_ns)
+        current_ns = int(current_timestamp_ns)
+        duration_ns = float(frame_duration_us) * 1000.0
+    except (TypeError, ValueError):
+        return 0
+    if previous_ns <= 0 or current_ns <= previous_ns or duration_ns <= 0:
+        return 0
+    intervals = max(1, int(round((current_ns - previous_ns) / duration_ns)))
+    return max(0, intervals - 1)
 
 
 class CameraPI(CameraInterface):
@@ -76,6 +102,11 @@ class CameraPI(CameraInterface):
         # Initialize runtime gain from profile (can be changed via commands)
         self.gain = self.profile.analog_gain
         self._radiometer_sequence = 0
+        self._capture_sequence = 0
+        self._last_sensor_timestamp_ns: Optional[int] = None
+        self._estimated_sensor_drops = 0
+        self.last_frame_id: Optional[int] = None
+        self.last_capture_diagnostics: dict[str, object] = {}
 
         self.camType = f"PI {self.camera_type}"
         self.initialize()
@@ -86,6 +117,8 @@ class CameraPI(CameraInterface):
         cam_config = self.camera.create_still_configuration(
             {"size": (512, 512)},
             raw={"size": self.profile.raw_size, "format": self.profile.format},
+            buffer_count=CONTINUOUS_BUFFER_COUNT,
+            queue=False,
         )
         self.camera.configure(cam_config)
 
@@ -112,9 +145,13 @@ class CameraPI(CameraInterface):
         return raw
 
     def _default_controls(self) -> None:
-        self.camera.set_controls({"AeEnable": False})
-        self.camera.set_controls({"AnalogueGain": self.gain})
-        self.camera.set_controls({"ExposureTime": self.exposure_time})
+        self.camera.set_controls(
+            {
+                "AeEnable": False,
+                "AnalogueGain": self.gain,
+                "ExposureTime": self.exposure_time,
+            }
+        )
 
     def start_camera(self) -> None:
         self.camera.start()
@@ -130,17 +167,64 @@ class CameraPI(CameraInterface):
         it to an 8 bit mono image stretched to use the maximum
         amount of the 255 level space.
         """
+        capture_started_ns = time.monotonic_ns()
         _request = self.camera.capture_request()
-        raw_capture = self._raw_array(_request)
-        # tmp_image = _request.make_image("main")
+        request_received_ns = time.monotonic_ns()
+        try:
+            # Copy the DMA-backed array and metadata, then return the request as
+            # soon as possible.  With triple buffering this lets libcamera keep
+            # exposing while all CPU-heavy work below runs.
+            sensor_raw = self._raw_array(_request)
+            metadata = dict(_request.get_metadata())
+        finally:
+            _request.release()
+        request_released_ns = time.monotonic_ns()
 
-        # Log actual camera metadata for exposure verification (debug level only)
-        metadata = _request.get_metadata()
+        self._capture_sequence += 1
+        sensor_timestamp = metadata.get("SensorTimestamp")
+        sensor_timestamp_ns: Optional[int]
+        if sensor_timestamp is None:
+            sensor_timestamp_ns = None
+        else:
+            try:
+                sensor_timestamp_ns = int(sensor_timestamp)
+            except (TypeError, ValueError):
+                sensor_timestamp_ns = None
+        self.last_frame_id = (
+            sensor_timestamp_ns
+            if sensor_timestamp_ns is not None
+            else self._capture_sequence
+        )
+        skipped_frames = estimate_sensor_drops(
+            self._last_sensor_timestamp_ns,
+            sensor_timestamp_ns,
+            metadata.get("FrameDuration"),
+        )
+        self._estimated_sensor_drops += skipped_frames
+        if sensor_timestamp_ns is not None:
+            self._last_sensor_timestamp_ns = sensor_timestamp_ns
+
+        self.last_capture_diagnostics = {
+            "frame_id": self.last_frame_id,
+            "frame_sequence": self._capture_sequence,
+            "sensor_timestamp_ns": sensor_timestamp_ns,
+            "request_wait_ms": (request_received_ns - capture_started_ns) / 1e6,
+            "request_held_ms": (request_released_ns - request_received_ns) / 1e6,
+            "estimated_dropped_since_last": skipped_frames,
+            "estimated_dropped_total": self._estimated_sensor_drops,
+            "processing_ms": None,
+        }
+
+        # Log actual camera metadata for exposure verification (debug level only).
         actual_exposure = metadata.get("ExposureTime", "unknown")
         actual_gain = metadata.get("AnalogueGain", "unknown")
         logger.debug(
-            f"Captured frame - Requested: {self.exposure_time}µs/{self.gain}x gain, "
-            f"Actual: {actual_exposure}µs/{actual_gain:.2f}x gain"
+            "Captured frame %s - Requested: %sµs/%sx gain, Actual: %sµs/%sx gain",
+            self.last_frame_id,
+            self.exposure_time,
+            self.gain,
+            actual_exposure,
+            actual_gain,
         )
         # Sensor die temperature (diagnostic only): the black level wanders
         # ±2 ADU night-to-night and temperature is the prime suspect. Not all
@@ -157,7 +241,26 @@ class CameraPI(CameraInterface):
         # driver chooses to report.
         self.last_frame_metadata = metadata
 
-        _request.release()
+        # Crop and run the sparse radiometer before any optional LiveCam,
+        # manager-proxy or PIL work.  The request is already released, so the
+        # sensor is exposing the next frame concurrently.
+        raw_capture = self.profile.crop_and_rotate(sensor_raw)
+        cropped_raw = raw_capture
+        if hasattr(self, "shared_state"):
+            self._radiometer_sequence += 1
+            try:
+                radiometer_exposure = float(actual_exposure) / 1_000_000.0
+            except (TypeError, ValueError):
+                radiometer_exposure = float(self.exposure_time) / 1_000_000.0
+            sample = collect_radiometer_sample(
+                raw_capture,
+                self.profile,
+                radiometer_exposure,
+                sequence=self._radiometer_sequence,
+                captured_at=time.time(),
+            )
+            if sample is not None:
+                self.shared_state.set_sqm_radiometer_sample(sample)
 
         livecam_settings = {}
         livecam_active = False
@@ -175,7 +278,7 @@ class CameraPI(CameraInterface):
         # Only the full-sensor frame needs keeping past the crop, and only
         # when the LiveCam viewer is actually looking at it.
         original_raw = (
-            raw_capture
+            sensor_raw
             if livecam_source in {SOURCE_ORIGINAL, SOURCE_STAR_ONLY}
             else None
         )
@@ -197,13 +300,13 @@ class CameraPI(CameraInterface):
                 fingerprint = (
                     self.camera_type,
                     self.profile.format,
-                    tuple(raw_capture.shape),
+                    tuple(sensor_raw.shape),
                     metadata.get("ExposureTime"),
                     metadata.get("AnalogueGain"),
                     self.profile.rotation_90,
                 )
                 star_only_raw = accumulator.add(
-                    raw_capture,
+                    sensor_raw,
                     saturation_level=float(2**self.profile.bit_depth - 1),
                     fingerprint=fingerprint,
                 ).frame
@@ -222,34 +325,9 @@ class CameraPI(CameraInterface):
         # the manager proxy pickles (copies) on set_solver_raw below.
         solver_full = None
         if getattr(self, "_publish_solver_raw", False):
-            solver_full = raw_capture
+            solver_full = sensor_raw
             if self.profile.rotation_90 != 0:
                 solver_full = np.rot90(solver_full, self.profile.rotation_90)
-
-        # Apply camera-specific crop and rotation
-        raw_capture = self.profile.crop_and_rotate(raw_capture)
-        # The uint16 cropped frame survives the float processing below
-        # (astype rebinds raw_capture); LiveCam publishes from this reference.
-        cropped_raw = raw_capture
-
-        # Reduce the matrix while it is local to the camera process. The solver
-        # can publish radiometric SQM from this small sample without a solve and
-        # without copying/scanning the raw frame on every capture.
-        if hasattr(self, "shared_state"):
-            self._radiometer_sequence += 1
-            try:
-                radiometer_exposure = float(actual_exposure) / 1_000_000.0
-            except (TypeError, ValueError):
-                radiometer_exposure = float(self.exposure_time) / 1_000_000.0
-            sample = collect_radiometer_sample(
-                raw_capture,
-                self.profile,
-                radiometer_exposure,
-                sequence=self._radiometer_sequence,
-                captured_at=time.time(),
-            )
-            if sample is not None:
-                self.shared_state.set_sqm_radiometer_sample(sample)
 
         # One-shot pipeline stage dump (save_stages command): collect a copy
         # of every processing stage of THIS frame; written at the end of this
@@ -278,6 +356,9 @@ class CameraPI(CameraInterface):
                     {
                         "frame": solver_full,
                         "timestamp": time.time(),
+                        "frame_id": self.last_frame_id,
+                        "frame_sequence": self._capture_sequence,
+                        "sensor_timestamp_ns": sensor_timestamp_ns,
                         "exposure_us": metadata.get("ExposureTime"),
                         "gain": metadata.get("AnalogueGain"),
                     }
@@ -340,6 +421,9 @@ class CameraPI(CameraInterface):
             except Exception as exc:
                 logger.warning("LiveCam RAW publish failed: %s", exc)
 
+        self.last_capture_diagnostics["processing_ms"] = (
+            time.monotonic_ns() - request_released_ns
+        ) / 1e6
         return raw_image
 
     def _write_stage_dump(self, stage_dump_dir, stages) -> None:
@@ -487,9 +571,13 @@ class CameraPI(CameraInterface):
         # picamera2 supports changing controls on-the-fly without restart.
         # Setting a manual exposure always disables native auto-exposure, so a
         # prior `set_exp:native` (daytime align) can't keep overriding it.
-        self.camera.set_controls({"AeEnable": False})
-        self.camera.set_controls({"AnalogueGain": gain})
-        self.camera.set_controls({"ExposureTime": exposure_time})
+        self.camera.set_controls(
+            {
+                "AeEnable": False,
+                "AnalogueGain": gain,
+                "ExposureTime": exposure_time,
+            }
+        )
 
         # Start camera if it's not already running
         if not self._camera_started:

@@ -25,7 +25,18 @@ class _SharedState:
         return "imx462"
 
     def last_image_metadata(self):
-        return {"exposure_time": 25000, "gain": 1.0}
+        return {
+            "frame_id": 123,
+            "sensor_timestamp_ns": 456,
+            "exposure_time": 25000,
+            "actual_exposure_us": 24991,
+            "gain": 1.0,
+            "actual_gain": 1.02,
+            "capture_pipeline": {
+                "request_held_ms": 2.5,
+                "estimated_dropped_since_last": 0,
+            },
+        }
 
 
 class _Server:
@@ -134,3 +145,19 @@ def test_empty_body_is_rejected(client):
 
     assert response.status_code == 400
     assert server.queued() == []
+
+
+@pytest.mark.unit
+def test_get_reports_applied_values_and_capture_pipeline(client):
+    test_client, _server = client
+
+    payload = test_client.get("/api/camera/controls").get_json()
+
+    assert payload["exposure"]["actual_us"] == 24991
+    assert payload["gain"]["actual"] == 1.02
+    assert payload["capture_pipeline"] == {
+        "frame_id": 123,
+        "sensor_timestamp_ns": 456,
+        "request_held_ms": 2.5,
+        "estimated_dropped_since_last": 0,
+    }

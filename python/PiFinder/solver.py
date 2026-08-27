@@ -1264,8 +1264,23 @@ def solver(
                 # use the time the exposure started here to
                 # reject images started before the last solve
                 # which might be from the IMU
+                solver_frame_entry = None
                 try:
-                    last_image_metadata = shared_state.last_image_metadata()
+                    solver_frame_getter = getattr(shared_state, "solver_frame", None)
+                    if callable(solver_frame_getter):
+                        candidate_entry = solver_frame_getter()
+                        if (
+                            isinstance(candidate_entry, dict)
+                            and "image" in candidate_entry
+                            and isinstance(candidate_entry.get("metadata"), dict)
+                        ):
+                            solver_frame_entry = candidate_entry
+                    if solver_frame_entry is not None:
+                        last_image_metadata = solver_frame_entry["metadata"]
+                    else:
+                        # Backwards-compatible path for debug/test shared-state
+                        # implementations that do not publish an atomic frame.
+                        last_image_metadata = shared_state.last_image_metadata()
                 except (BrokenPipeError, ConnectionResetError) as e:
                     logger.error(f"Lost connection to shared state manager: {e}")
                     continue
@@ -1313,9 +1328,14 @@ def solver(
                     )
 
                 try:
-                    img = camera_image.copy()
-                    img = img.convert(mode="L")
-                    np_image = np.asarray(img, dtype=np.uint8)
+                    if solver_frame_entry is not None:
+                        np_image = np.asarray(
+                            solver_frame_entry["image"], dtype=np.uint8
+                        )
+                    else:
+                        img = camera_image.copy()
+                        img = img.convert(mode="L")
+                        np_image = np.asarray(img, dtype=np.uint8)
 
                     # Mark that we're attempting a solve - use image exposure_end timestamp.
                     # This is more accurate than wall clock and ties the attempt to the
@@ -1370,6 +1390,11 @@ def solver(
                                 or "frame" not in ff_entry
                                 or time.time() - float(ff_entry.get("timestamp") or 0)
                                 > MAX_FRAME_AGE_S
+                                or (
+                                    last_image_metadata.get("frame_id") is not None
+                                    and ff_entry.get("frame_id")
+                                    != last_image_metadata.get("frame_id")
+                                )
                             ):
                                 # No fresh raw: fall back to the 512 path for
                                 # this attempt rather than skipping it.
@@ -1396,7 +1421,10 @@ def solver(
                             def _sep_detect_bg():
                                 try:
                                     sep_thread_result["run"] = sep_shadow.detect(
-                                        shared_state
+                                        shared_state,
+                                        expected_frame_id=last_image_metadata.get(
+                                            "frame_id"
+                                        ),
                                     )
                                 except Exception:
                                     logger.exception("Parallel SEP detect failed")
@@ -1580,7 +1608,10 @@ def solver(
                             sep_thread.join(timeout=5.0)
                             sep_run = sep_thread_result.get("run")
                         else:
-                            sep_run = sep_shadow.detect(shared_state)
+                            sep_run = sep_shadow.detect(
+                                shared_state,
+                                expected_frame_id=last_image_metadata.get("frame_id"),
+                            )
                         if sep_run is not None:
                             sep_count = len(sep_run.detection.centroids)
                         sep_can_solve = bool(

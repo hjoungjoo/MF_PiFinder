@@ -314,6 +314,10 @@ class SharedStateObj:
             "camera_lens_focal_length_mm", None
         )
         self.__cam_raw = None
+        # Atomic latest-wins 512 solver frame and its metadata.  Keeping these
+        # in one manager payload prevents the solver from pairing an image
+        # with metadata from a neighbouring frame when capture outruns solve.
+        self.__solver_frame = None
         # Uncropped raw sensor frame for the SEP full-frame detection path
         # (dict: {"frame": uint16 ndarray, "exposure_end": float}). Only
         # published while solver_shadow_detect / solver_sep_fallback is on.
@@ -594,6 +598,12 @@ class SharedStateObj:
 
     def set_cam_raw(self, v):
         self.__cam_raw = v
+
+    def solver_frame(self):
+        return self.__solver_frame
+
+    def set_solver_frame(self, v):
+        self.__solver_frame = v
 
     def solver_raw(self):
         return self.__solver_raw

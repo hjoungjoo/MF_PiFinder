@@ -22,7 +22,7 @@ import logging
 
 from pathlib import Path
 
-from PiFinder import camera_stage_dump, state_utils, timez, utils
+from PiFinder import camera_stage_dump, timez, utils
 import PiFinder.pointing_model.quaternion_transforms as qt
 from PiFinder.auto_exposure import (
     ExposurePIDController,
@@ -426,33 +426,25 @@ class CameraInterface:
                 root_dir, "test_images", "pifinder_debug_02.png"
             )
 
-            # 60 half-second cycles (30 seconds between captures in sleep mode)
-            sleep_delay = 60
             was_sleeping = False
             while True:
-                sleeping = state_utils.sleep_for_framerate(
-                    shared_state, limit_framerate=False
-                )
-                if sleeping:
-                    # Log transition to sleep mode
-                    if not was_sleeping:
-                        logger.info("Camera entering low-power sleep mode")
-                        was_sleeping = True
-                    # Even in sleep mode, we want to take photos every
-                    # so often to update positions
-                    sleep_delay -= 1
-                    if sleep_delay > 0:
-                        continue
-                    else:
-                        sleep_delay = 60
-                        logger.debug("Sleep mode: waking for periodic capture")
-                elif was_sleeping:
-                    logger.info("Camera exiting low-power sleep mode")
+                sleeping = shared_state.power_state() <= 0
+                if sleeping and not was_sleeping:
+                    # Display/UI sleep must not stop the sensor stream.  The
+                    # next exposure continues while this frame is processed;
+                    # processing overload is handled by latest-wins drops.
+                    logger.info(
+                        "Display sleep active; camera capture remains continuous"
+                    )
+                    was_sleeping = True
+                elif not sleeping and was_sleeping:
+                    logger.info("Display sleep ended; camera remained active")
                     was_sleeping = False
 
                 imu_start = shared_state.imu()
                 image_start_time = time.time()
                 if self._camera_started:
+                    capture_succeeded = True
                     if not test_mode_on:
                         base_image = self._capture_with_timeout()
                         if base_image is None:
@@ -462,6 +454,7 @@ class CameraInterface:
                             # simply fails to solve.
                             logger.warning("Camera capture timed out; blank frame")
                             base_image = self._blank_capture()
+                            capture_succeeded = False
                         base_image = base_image.convert("L")
 
                         base_image = base_image.rotate(solve_rotation)
@@ -495,26 +488,59 @@ class CameraInterface:
                     else:
                         pointing_diff = 0.0
 
-                    # Make image available
+                    # Make image available.  The solver gets an atomic image +
+                    # metadata envelope below; camera_image remains the legacy
+                    # latest preview surface used by the UI.
                     if test_mode_on and abs(pointing_diff) > 0.01:
                         # Scope moved during the fake exposure: return a blank
                         # image so the solver doesn't report a stale solve
-                        camera_image.paste(self._blank_capture())
+                        solver_image = self._blank_capture()
                     else:
-                        camera_image.paste(base_image)
+                        solver_image = base_image
+
+                    if capture_succeeded and not test_mode_on:
+                        frame_id = getattr(self, "last_frame_id", None)
+                        driver_metadata = (
+                            getattr(self, "last_frame_metadata", None) or {}
+                        )
+                        pipeline = dict(
+                            getattr(self, "last_capture_diagnostics", None) or {}
+                        )
+                    else:
+                        # A timeout/test image has no matching sensor request.
+                        # Give it a unique synthetic id so no previous full RAW
+                        # can be paired with this 512 frame.
+                        frame_id = -time.monotonic_ns()
+                        driver_metadata = {}
+                        pipeline = {}
 
                     image_metadata = {
+                        "frame_id": frame_id,
                         "exposure_start": image_start_time,
                         "exposure_end": image_end_time,
                         "imu": imu_end,
                         "imu_delta": np.rad2deg(pointing_diff),
                         "exposure_time": self.exposure_time,
-                        "actual_exposure_us": (
-                            getattr(self, "last_frame_metadata", None) or {}
-                        ).get("ExposureTime"),
+                        "actual_exposure_us": driver_metadata.get("ExposureTime"),
                         "gain": self.gain,
+                        "actual_gain": driver_metadata.get("AnalogueGain"),
+                        "sensor_timestamp_ns": driver_metadata.get("SensorTimestamp"),
+                        "frame_duration_us": driver_metadata.get("FrameDuration"),
                         "sensor_temp_c": getattr(self, "last_sensor_temp", None),
+                        "capture_pipeline": pipeline,
                     }
+                    publish_solver_frame = getattr(
+                        shared_state, "set_solver_frame", None
+                    )
+                    if callable(publish_solver_frame):
+                        publish_solver_frame(
+                            {
+                                "frame_id": frame_id,
+                                "image": np.asarray(solver_image, dtype=np.uint8),
+                                "metadata": image_metadata,
+                            }
+                        )
+                    camera_image.paste(solver_image)
                     shared_state.set_last_image_metadata(image_metadata)
 
                     # LiveCam "Input Frame" solver_input stage: what the

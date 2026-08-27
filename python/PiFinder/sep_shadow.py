@@ -231,12 +231,20 @@ class SepShadowRunner:
         self._fallback_fail_streak = 0
         self._last_failed_sep_count = None
 
-    def detect(self, shared_state) -> Optional[SepRun]:
-        """Run SEP on the freshest published full-frame raw, or None."""
+    def detect(self, shared_state, expected_frame_id=None) -> Optional[SepRun]:
+        """Run SEP on the matching fresh full-frame raw, or return ``None``."""
         self._attempt_counter += 1
         try:
             entry = shared_state.solver_raw()
             if not entry or "frame" not in entry:
+                return None
+            if (
+                expected_frame_id is not None
+                and entry.get("frame_id") != expected_frame_id
+            ):
+                # Camera publication is latest-wins.  A new full RAW may land
+                # while the solver still owns the previous 512 frame; never
+                # combine those neighbouring frames.
                 return None
             if time.time() - float(entry.get("timestamp") or 0) > MAX_FRAME_AGE_S:
                 return None

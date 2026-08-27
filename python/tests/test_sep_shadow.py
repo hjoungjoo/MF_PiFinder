@@ -29,6 +29,14 @@ class DummyShared:
         self._overlay = v
 
 
+class DummyRawShared:
+    def __init__(self, entry):
+        self._entry = entry
+
+    def solver_raw(self):
+        return self._entry
+
+
 def _runner(tmp_path):
     return SepShadowRunner(
         shadow_enabled=False,
@@ -110,6 +118,16 @@ class TestOverlayPublish:
         shared = DummyShared()
         runner.publish_overlay(shared)
         assert "matched" not in shared.sep_overlay()
+
+
+@pytest.mark.unit
+def test_detect_rejects_full_raw_from_a_neighbouring_frame(tmp_path):
+    runner = _runner(tmp_path)
+    shared = DummyRawShared(
+        {"frame_id": 101, "frame": np.zeros((16, 16), dtype=np.uint16)}
+    )
+
+    assert runner.detect(shared, expected_frame_id=102) is None
 
 
 @pytest.mark.unit

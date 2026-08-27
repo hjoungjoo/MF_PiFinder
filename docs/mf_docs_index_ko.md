@@ -83,6 +83,7 @@
 | [solve_motion_gate_review](mf_dev/mf_solve_motion_gate_review_ko.md) | 둘 다 | **plan(미구현)** | 노출 중 이동 프레임 솔브 게이트 미배선 검토(협의 대기). |
 | [auto_exposure_methods](mf_dev/mf_auto_exposure_methods_ko.md) | 둘 다 | **조사(완료)** | 자동 노출·게인 제어 방법 조사 — 현행 매치 수 기반의 문제(P1~P7)와 대안(검출 별 수 서보 등) 비교, 권고 초안. |
 | [auto_exposure_plan](mf_dev/mf_auto_exposure_plan_ko.md) | ko | **구현 완료(접근법 재검토 중)** | 검출 별 수 컨트롤러 설계+구현 — 기존 기능 유지, Camera Exp 메뉴 "Star"(`camera_exp=auto_star`)로 선택. ADR m0020/m0022. |
+| [auto_star_framewise_exposure_gain_research](mf_dev/mf_auto_star_framewise_exposure_gain_research_ko.md) | ko | **무중단 캡처 기반 구현·제어기 구현 전** | Triple-buffer/latest-wins 캡처와 frame pairing 구현 완료. Auto(Star) 2중 루프는 좌표/추적 우선, 주변 catalog-match 별 SNR, 중앙 달 배제, 오검출 증거 기반 gain 하향으로 설계. |
 | [auto_exposure_field_review_20260726](mf_report/mf_auto_exposure_field_review_20260726_ko.md) | ko | **방향 확정(최종 방안 코퍼스 대기)** | 서울 광해 현장 검증 — 병목은 검출 감도. B+C(비크롭 12-bit+SEP) 채택, 야간 검증 요약(§7). |
 | [sep_fullframe_impl](mf_dev/mf_sep_fullframe_impl_ko.md) | ko | **구현 기록(이력)** | 광해 솔빙 보강의 구현·튜닝·야간 실측 원자료(자동 노출+SEP). 설계 정본은 [cedar_sep_hybrid_design](mf_dev/mf_cedar_sep_hybrid_design_ko.md)으로 이관(2026-08-02). |
 | [cedar_sep_hybrid_solve_20260728](mf_report/mf_cedar_sep_hybrid_solve_20260728_ko.md) | 둘 다 | **공지** | 커뮤니티 공유용 — cedar+SEP 하이브리드 솔빙 구조 설명과 광해 하늘 실증 요약 ([영문판](mf_report/mf_cedar_sep_hybrid_solve_20260728_en.md) 포함). |

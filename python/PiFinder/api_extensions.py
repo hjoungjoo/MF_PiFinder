@@ -1263,8 +1263,10 @@ def register_api_routes(app, server_instance, require_auth=False):
         except Exception:
             metadata = {}
 
-        actual_exposure = metadata.get("exposure_time")
-        actual_gain = metadata.get("gain")
+        actual_exposure = metadata.get(
+            "actual_exposure_us", metadata.get("exposure_time")
+        )
+        actual_gain = metadata.get("actual_gain", metadata.get("gain"))
         profile_gain = _camera_profile_gain()
 
         data = {
@@ -1290,6 +1292,11 @@ def register_api_routes(app, server_instance, require_auth=False):
                 "presets": list(camera_controls.GAIN_PRESETS),
                 "min": camera_controls.MIN_GAIN,
                 "max": camera_controls.MAX_GAIN,
+            },
+            "capture_pipeline": {
+                "frame_id": metadata.get("frame_id"),
+                "sensor_timestamp_ns": metadata.get("sensor_timestamp_ns"),
+                **dict(metadata.get("capture_pipeline") or {}),
             },
         }
         if message:
