@@ -140,9 +140,11 @@ star_strength = E * persistence_weight(P, N)
 
 시간 반복만으로는 고정 hot pixel도 별로 강화되므로 공간 PSF gate를 함께 적용한다.
 약한 임계값을 넘은 연결 성분 중 3–30픽셀인 compact component만 인정하고, 인정된
-core 둘레 3픽셀만 원래 residual을 복원한다. 반복 compact component는 100%, 한
-프레임에서만 나타난 compact component는 20% 강도로 보존한다. 단일 픽셀과 큰 구름
-결은 제거된다. 거의 모든 배경이 0이 되어 SEP의 RMS가 0이 되는 수치적 특이점을
+core 둘레 3픽셀만 원래 residual을 복원한다. 반복 compact component는 100%로
+보존한다. 한 프레임에서만 나타난 후보는 그 프레임 안에서 독립적으로 3.5σ 이상의
+compact component를 형성할 때만 20% 강도로 보존한다. 서로 다른 프레임의 약한
+픽셀들을 합쳐 단일 PSF를 만드는 것은 금지한다. 단일 픽셀과 큰 구름 결은 제거된다.
+거의 모든 배경이 0이 되어 SEP의 RMS가 0이 되는 수치적 특이점을
 막기 위해 출력에는 64 ADU pedestal와 ±3 ADU의 결정론적 저레벨 dither를 넣는다.
 이 dither만 있는 제어 영상에서는 SEP 후보가 검출되지 않는다.
 
@@ -267,6 +269,18 @@ mean-10 실측은 별 수와 match 수를 크게 늘렸지만, LiveCam 스택은
 IMU 이동 reset, 다른 구름/맑은 하늘/16mm 회귀를 마치기 전에는 좌표 발행 경로를
 활성화하지 않는다. 타일 solver 설정은 비활성 상태를 유지한다.
 
-검증 상태는 신규 단위 테스트 7개, Ruff, 신규 모듈 mypy가 통과했다. 저장소 전체
+검증 상태는 신규 단위 테스트 9개, Ruff, 신규 모듈 mypy가 통과했다. 저장소 전체
 테스트는 1,909 passed, 177 skipped이며 이번 파일과 무관한 기존 logging/RA·Dec UI/
 UI smoke coverage 테스트 11개가 실패했다. 이 11개는 본 기능 범위에서 수정하지 않는다.
+
+### 10.1 2026-08-27 박명·얇은 구름 회귀
+
+`PiFinder_data/captures/mf_replay/20260827_2016_twilight_thin_cloud_6mm`에
+6mm, 100ms, gain 29.512의 고유 RAW 15장을 보존했다. 원본은 묶음별 Cedar 1개,
+SEP 3–8개로 솔빙에 필요한 실제 별이 부족했다. 이전 단일-frame 합성은 서로 다른
+프레임의 약한 잡음을 결합해 SEP 상한 48개를 만들었으므로 보정이 필요했다.
+
+단일-frame PSF를 프레임별로 독립 평가하도록 바꾼 뒤 현재 세 묶음은 모두 SEP 1개,
+solve 실패를 정직하게 유지했다. 같은 수정으로 2026-08-26 야간 corpus 네 묶음을
+재검증한 결과 중앙 solve 4/4를 유지했고 중앙 Matches 7–11, 전체 Matches 10–14였다.
+따라서 5프레임, 2회 반복, 2.5σ 약한 반복 기준은 유지하고 단일-frame 합성만 수정한다.

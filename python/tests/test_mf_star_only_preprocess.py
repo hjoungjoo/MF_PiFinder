@@ -6,6 +6,7 @@ import pytest
 from PiFinder.mf_star_only_preprocess import (
     MFStarOnlyAccumulator,
     MFStarOnlyConfig,
+    _single_frame_component_mask,
     preprocess_star_evidence,
     robust_cell_maps,
 )
@@ -112,6 +113,29 @@ def test_compact_star_visible_in_one_cloud_gap_is_retained_but_capped():
     assert final is not None
     assert final.frame[70, 80] > 100
     assert final.frame[70, 80] < 900
+
+
+def test_weak_pixels_from_different_frames_cannot_form_one_fake_psf():
+    config = MFStarOnlyConfig(minimum_psf_pixels=3)
+    evidences = np.zeros((5, 20, 20), dtype=np.float32)
+    evidences[0, 10, 9] = 4.0
+    evidences[1, 10, 10] = 4.0
+    evidences[2, 10, 11] = 4.0
+
+    accepted = _single_frame_component_mask(evidences, config)
+
+    assert not accepted.any()
+
+
+def test_compact_psf_formed_inside_one_frame_is_retained():
+    config = MFStarOnlyConfig(minimum_psf_pixels=3)
+    evidences = np.zeros((5, 20, 20), dtype=np.float32)
+    evidences[2, 10, 9:12] = 4.0
+
+    accepted = _single_frame_component_mask(evidences, config)
+
+    assert accepted[10, 10]
+    assert np.count_nonzero(accepted) == 3
 
 
 def test_fingerprint_change_resets_temporal_window():

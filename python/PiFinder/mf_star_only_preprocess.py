@@ -32,6 +32,7 @@ class MFStarOnlyConfig:
     minimum_psf_pixels: int = 3
     maximum_psf_pixels: int = 30
     psf_dilation_px: int = 3
+    single_frame_evidence_sigma: float = 3.5
     single_frame_permission: float = 0.20
     output_pedestal_adu: int = 64
     output_dither_adu: int = 3
@@ -197,6 +198,25 @@ def _point_component_mask(core: np.ndarray, config: MFStarOnlyConfig) -> np.ndar
     return np.isin(labels, accepted_labels)
 
 
+def _single_frame_component_mask(
+    evidences: np.ndarray, config: MFStarOnlyConfig
+) -> np.ndarray:
+    """Keep compact evidence formed inside one frame, never across frames.
+
+    Combining all pixels whose temporal persistence is exactly one can join
+    unrelated weak noise from different exposures into a fake multi-pixel
+    PSF.  Each exposure must therefore form its own compact component before
+    the accepted masks are combined.
+    """
+
+    accepted = np.zeros(evidences.shape[1:], dtype=bool)
+    for evidence in evidences:
+        accepted |= _point_component_mask(
+            evidence >= config.single_frame_evidence_sigma, config
+        )
+    return accepted
+
+
 def _output_dither(shape: tuple[int, int], amplitude: int) -> np.ndarray:
     """Return deterministic low-level dither for zero-RMS detector safety."""
 
@@ -353,10 +373,11 @@ class MFStarOnlyAccumulator:
             evidences >= self.config.weak_evidence_sigma, axis=0
         )
         repeated_core = _point_component_mask(persistence >= 2, self.config)
-        single_core = _point_component_mask(persistence == 1, self.config)
         repeated_keep = ndimage.binary_dilation(
             repeated_core, iterations=self.config.psf_dilation_px
         )
+        single_core = _single_frame_component_mask(evidences, self.config)
+        single_core &= ~repeated_keep
         single_keep = ndimage.binary_dilation(
             single_core, iterations=self.config.psf_dilation_px
         )
