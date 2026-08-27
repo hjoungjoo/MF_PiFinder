@@ -355,9 +355,28 @@ def test_log_viewer_keeps_its_own_console_scrollbars():
     assert ".log-container::-webkit-scrollbar" in logs_html
 
 
+def test_livecam_zoom_keeps_the_whole_frame_in_the_scroll_range():
+    livecam_html = (VIEWS_DIR / "livecam.html").read_text()
+
+    shell = _rule_block(livecam_html, ".livecam-preview-shell")
+    stage = _rule_block(livecam_html, ".livecam-image-stage")
+    placeholder = _rule_block(livecam_html, "#livecamPlaceholder")
+
+    # Center alignment places half of an oversized flex item before the
+    # scroll origin, where scrollLeft/scrollTop can never reach it.
+    assert "align-items: flex-start" in shell
+    assert "justify-content: flex-start" in shell
+    assert "overflow: auto" in shell
+
+    # Auto margins preserve the centred appearance until the image overflows;
+    # they then collapse to zero so every edge remains reachable.
+    assert "margin: auto" in stage
+    assert "margin: auto" in placeholder
+
+
 def _rule_block(css: str, selector: str) -> str:
     """Return the declarations of the first rule whose selector list has this one."""
-    match = re.search(rf"^{re.escape(selector)}\s*[,{{]", css, re.MULTILINE)
+    match = re.search(rf"^\s*{re.escape(selector)}\s*[,{{]", css, re.MULTILINE)
     assert match, f"no rule for {selector}"
     open_brace = css.index("{", match.start())
     return css[open_brace : css.index("}", open_brace)]
