@@ -75,6 +75,11 @@ class SepDetection:
     # Otherwise-keepable detections removed by the warm-pixel map. High
     # values on an empty sky are expected (the map is doing its job).
     masked_count: int = 0
+    # Otherwise-keepable point sources whose local 3x3 peak reached sensor
+    # full scale.  Urban lamps and building beacons dominated the brightest
+    # SEP candidates in the 2026-09-02 field frame; real tracking stars were
+    # comfortably below this threshold.
+    saturated_count: int = 0
     cloud_gate_active: bool = False
     cloud_gated_count: int = 0
     cloud_contrast: float = 0.0
@@ -186,7 +191,10 @@ def detect_stars(
             of the frame border (vignette / background-mesh edge zone).
         saturation_level: Sensor full scale (e.g. 4095 for 12-bit). When
             given and the binned interior median is at it, return zero
-            detections instead of edge noise.
+            detections instead of edge noise. Individual sources whose raw
+            3x3 peak reaches 98% of full scale are also rejected; these are
+            much more likely to be clipped ground lights than useful stellar
+            centroids and their distorted profiles are unsafe for solving.
         warm_pixel_map: (N, 2) int (y, x) static-defect positions from
             ``build_warm_pixel_map``, same orientation as ``raw_frame``.
             Detections within ``warm_pixel_radius_px`` of a mapped position
@@ -270,6 +278,22 @@ def detect_stars(
         & (npix <= max_npix)
     )
 
+    # A whole-frame saturation guard above cannot catch isolated urban
+    # lights.  Sample the linear RAW, not SEP's background-subtracted/binned
+    # image: six clipped tower/building detections were the six brightest
+    # candidates in the failing 2026-09-02 frame.  Reject before the top-N
+    # cap so those lights cannot crowd out real stars.
+    saturated_count = 0
+    if saturation_level is not None and keep.any():
+        yi = np.clip(np.round(full_y).astype(int), 1, h - 2)
+        xi = np.clip(np.round(full_x).astype(int), 1, w - 2)
+        peak = np.empty(len(full_y), dtype=np.float64)
+        for i, (yy, xx) in enumerate(zip(yi, xi)):
+            peak[i] = arr[yy - 1 : yy + 2, xx - 1 : xx + 2].max()
+        saturated = peak >= 0.98 * float(saturation_level)
+        saturated_count = int((keep & saturated).sum())
+        keep &= ~saturated
+
     # Warm-pixel map: drop otherwise-keepable detections sitting on a known
     # static defect (before the top-N cap, so defects can't crowd out stars).
     masked_count = 0
@@ -316,6 +340,7 @@ def detect_stars(
         background_rms=float(bkg.globalrms),
         elapsed_ms=elapsed_ms,
         masked_count=masked_count,
+        saturated_count=saturated_count,
         cloud_gate_active=cloud_selection.active,
         cloud_gated_count=cloud_gated_count,
         cloud_contrast=cloud_selection.contrast,

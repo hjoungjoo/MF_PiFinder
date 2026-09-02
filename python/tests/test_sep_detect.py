@@ -95,6 +95,31 @@ class TestSepDetect:
         assert result is not None
         assert len(result.centroids) == 0
 
+    def test_isolated_saturated_source_is_rejected_and_counted(self):
+        normal = (270, 360)
+        clipped = (270, 600)
+        frame = _synthetic_frame([normal], peak=500.0)
+        # A compact clipped source models the tower/building lights observed
+        # in the urban field frame without saturating the surrounding sky.
+        frame[267:274, 597:604] = 4095
+        result = sep_detect.detect_stars(
+            frame,
+            sigma=4.0,
+            saturation_level=4095,
+        )
+        assert result is not None
+        assert result.saturated_count >= 1
+        normal_distance = np.hypot(
+            result.centroids[:, 0] - normal[0],
+            result.centroids[:, 1] - normal[1],
+        )
+        assert normal_distance.min() < 2.0
+        clipped_distance = np.hypot(
+            result.centroids[:, 0] - clipped[0],
+            result.centroids[:, 1] - clipped[1],
+        )
+        assert len(clipped_distance) == 0 or clipped_distance.min() > 5.0
+
 
 @pytest.mark.unit
 class TestWarmPixelMap:

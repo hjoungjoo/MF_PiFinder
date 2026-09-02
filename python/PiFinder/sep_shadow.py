@@ -44,7 +44,10 @@ from PiFinder import sep_detect, utils
 from PiFinder import solver_frame_map as sfm
 from PiFinder.mf_cloud_gate import wide_cloud_gate_enabled
 from PiFinder.mf_manual_lens import manual_focal_from_state
+from PiFinder.mf_wide_calibration import CalibrationProfileStore
+from PiFinder.mf_wide_distortion import active_coefficients, undistort_global_centroids
 from PiFinder.sep_detect import SepDetection
+from PiFinder.solve_acceptance import solution_quality_decision
 from PiFinder.sqm.camera_profiles import get_camera_profile
 
 logger = logging.getLogger("Solver.SepShadow")
@@ -64,6 +67,7 @@ CSV_FIELDS = [
     "fallback_used",
     "fallback_rmse",
     "sep_masked",
+    "sep_saturated",
 ]
 
 # A solver_raw older than this no longer matches the attempt being logged
@@ -109,6 +113,7 @@ class SepShadowRunner:
         csv_path=None,
         warm_pixel_map: Optional[np.ndarray] = None,
         base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
+        distortion_coefficients: Optional[dict[str, float]] = None,
     ):
         self.shadow_enabled = shadow_enabled
         self.fallback_enabled = fallback_enabled
@@ -122,6 +127,7 @@ class SepShadowRunner:
         self.saturation_level = saturation_level
         self.csv_path = csv_path or (utils.log_dir / "solver_shadow_log.csv")
         self.warm_pixel_map = warm_pixel_map
+        self.distortion_coefficients = distortion_coefficients
         # Fallback backoff state (see fallback_should_attempt): a fallback
         # solve on unsolvable input burns up to solve_timeout (1 s) of solver
         # CPU per attempt -- indoors/under cloud that is every attempt.
@@ -133,13 +139,14 @@ class SepShadowRunner:
         self._last_overlay: Optional[dict] = None
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
-            "rotation=%.0f° crop_width=%dpx warm_pixels=%d log=%s",
+            "rotation=%.0f° crop_width=%dpx warm_pixels=%d distortion=%s log=%s",
             shadow_enabled,
             fallback_enabled,
             sigma,
             rotation_deg,
             crop_width_px,
             0 if warm_pixel_map is None else len(warm_pixel_map),
+            "active" if distortion_coefficients is not None else "off",
             self.csv_path,
         )
 
@@ -149,6 +156,7 @@ class SepShadowRunner:
         cfg,
         camera_type: Optional[str],
         base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
+        lens_key: Optional[str] = None,
     ):
         """Build a runner from config, or None when the path is disabled
         or the camera profile (crop geometry) is not resolvable yet."""
@@ -178,6 +186,11 @@ class SepShadowRunner:
             except Exception:
                 logger.exception("Warm-pixel map load failed; continuing unmasked")
                 warm_map = None
+            calibration = CalibrationProfileStore(cfg).load_active(
+                camera_type,
+                str(lens_key or ""),
+                profile,
+            )
             return cls(
                 shadow_enabled=shadow,
                 fallback_enabled=fallback,
@@ -187,6 +200,7 @@ class SepShadowRunner:
                 saturation_level=float(2**profile.bit_depth - 1),
                 warm_pixel_map=warm_map,
                 base_fov_degrees=base_fov_degrees,
+                distortion_coefficients=active_coefficients(calibration),
             )
         except Exception:
             logger.exception("SEP shadow runner init failed; disabled")
@@ -272,6 +286,7 @@ class SepShadowRunner:
                 "centroids": detection.centroids.tolist(),
                 "frame_hw": [int(frame.shape[0]), int(frame.shape[1])],
                 "masked": detection.masked_count,
+                "saturated": detection.saturated_count,
                 "sigma": self.sigma,
                 "cloud_gate_active": detection.cloud_gate_active,
                 "cloud_gated": detection.cloud_gated_count,
@@ -296,6 +311,7 @@ class SepShadowRunner:
         shared_state,
         target_sky_coord=None,
         centroids_override=None,
+        solve_path: str = "sep_full",
     ) -> Optional[dict]:
         """Solve from SEP centroids in the rotated full frame.
 
@@ -321,6 +337,12 @@ class SepShadowRunner:
                 if centroids_override is None
                 else np.asarray(centroids_override, dtype=np.float64)
             )
+            if self.distortion_coefficients is not None:
+                source = undistort_global_centroids(
+                    source,
+                    run.frame_hw,
+                    self.distortion_coefficients,
+                )
             cents, canvas = sfm.rotate_centroids(
                 source, run.frame_hw, self.rotation_deg
             )
@@ -343,6 +365,18 @@ class SepShadowRunner:
                 target_sky_coord=target_sky_coord,
                 solve_timeout=FALLBACK_SOLVE_TIMEOUT_MS,
             )
+            quality = solution_quality_decision(solution, solve_path)
+            if not quality.accepted:
+                if solution and solution.get("RA") is not None:
+                    logger.warning(
+                        "Rejected %s solution: %s (matches=%s RMSE=%s Prob=%s)",
+                        solve_path,
+                        quality.reason,
+                        solution.get("Matches"),
+                        solution.get("RMSE"),
+                        solution.get("Prob"),
+                    )
+                return None
             if (
                 solution
                 and solution.get("RA") is not None
@@ -360,6 +394,12 @@ class SepShadowRunner:
         except Exception:
             logger.exception("SEP fallback solve failed")
             return None
+
+    def clear_matched_overlay(self) -> None:
+        """Remove a provisional match rejected by the continuity gate."""
+
+        if self._last_overlay is not None:
+            self._last_overlay.pop("matched", None)
 
     def _rotate_csv_on_schema_change(self) -> None:
         """Sideline a CSV written with an older field list, once.
@@ -508,6 +548,7 @@ class SepShadowRunner:
                     f"{fallback_rmse:.2f}" if fallback_rmse is not None else ""
                 ),
                 "sep_masked": run.detection.masked_count if run else "",
+                "sep_saturated": run.detection.saturated_count if run else "",
             }
             self._rotate_csv_on_schema_change()
             write_header = not self.csv_path.exists()

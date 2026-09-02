@@ -15,7 +15,9 @@ import numpy as np
 import pytest
 
 from PiFinder import solver_frame_map as sfm
-from PiFinder.sep_shadow import SepShadowRunner
+from PiFinder.mf_wide_distortion import undistort_global_centroids
+from PiFinder.sep_detect import SepDetection
+from PiFinder.sep_shadow import SepRun, SepShadowRunner
 
 
 class DummyShared:
@@ -35,6 +37,21 @@ class DummyRawShared:
 
     def solver_raw(self):
         return self._entry
+
+
+class DummySolveShared:
+    def target_pixel(self):
+        return (255.5, 255.5)
+
+
+class DummyT3:
+    def __init__(self, solution):
+        self.solution = solution
+        self.calls = []
+
+    def solve_from_centroids(self, centroids, canvas, **kwargs):
+        self.calls.append((np.asarray(centroids), canvas, kwargs))
+        return dict(self.solution)
 
 
 def _runner(tmp_path):
@@ -183,3 +200,75 @@ class TestFallbackBackoff:
         runner.note_solved()
         _tick(runner)
         assert runner.fallback_should_attempt(28) is True
+
+
+@pytest.mark.unit
+class TestSolveSafety:
+    @staticmethod
+    def _run(centroids):
+        return SepRun(
+            detection=SepDetection(
+                centroids=np.asarray(centroids, dtype=np.float64),
+                fluxes=np.ones(len(centroids)),
+                background_median=100.0,
+                background_rms=3.0,
+                elapsed_ms=1.0,
+            ),
+            frame_hw=(1080, 1920),
+            exposure_us=100_000,
+            gain=30.0,
+        )
+
+    def test_solve_undistorts_centroids_before_rotation(self, tmp_path):
+        coefficients = {
+            "k1": -0.04,
+            "k2": 0.0,
+            "k3": 0.0,
+            "p1": 0.0,
+            "p2": 0.0,
+        }
+        runner = SepShadowRunner(
+            shadow_enabled=False,
+            fallback_enabled=True,
+            sigma=4.0,
+            rotation_deg=0.0,
+            crop_width_px=980,
+            csv_path=tmp_path / "shadow.csv",
+            distortion_coefficients=coefficients,
+        )
+        source = np.asarray([(80.0, 120.0), (540.0, 960.0)])
+        fake = DummyT3(
+            {"RA": 10.0, "Dec": 20.0, "Matches": 7, "RMSE": 90.0, "Prob": 1e-6}
+        )
+        solution = runner.solve(fake, self._run(source), DummySolveShared())
+        assert solution is not None
+        expected = undistort_global_centroids(source, (1080, 1920), coefficients)
+        assert fake.calls[0][0] == pytest.approx(expected)
+
+    def test_solve_rejects_observed_six_match_false_pattern(self, tmp_path):
+        runner = _runner(tmp_path)
+        fake = DummyT3(
+            {
+                "RA": 120.0,
+                "Dec": 30.0,
+                "Matches": 6,
+                "RMSE": 80.5,
+                "Prob": 9.542e-5,
+            }
+        )
+        solution = runner.solve(
+            fake,
+            self._run([(100.0 + i * 30, 200.0 + i * 40) for i in range(8)]),
+            DummySolveShared(),
+            solve_path="sep_center",
+        )
+        assert solution is None
+
+    def test_clear_matched_overlay_keeps_candidates(self, tmp_path):
+        runner = _runner(tmp_path)
+        runner._last_overlay = {
+            "centroids": [[1.0, 2.0]],
+            "matched": [[1.0, 2.0]],
+        }
+        runner.clear_matched_overlay()
+        assert runner._last_overlay == {"centroids": [[1.0, 2.0]]}

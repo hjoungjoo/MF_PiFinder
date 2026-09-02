@@ -13,11 +13,14 @@ docs/mf_dev/mf_cedar_fullframe_primary_plan_ko.md:
   same contract sep_shadow.solve fulfils for the SEP fallback.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
 from PiFinder import solver
 from PiFinder import solver_frame_map as sfm
+from PiFinder.mf_wide_distortion import undistort_global_centroids
 
 FULL_H, FULL_W = 1080, 1920
 CROP_W = 980
@@ -57,7 +60,16 @@ def test_count_in_crop_uses_centred_window():
 @pytest.mark.unit
 def test_solve_cedar_fullframe_maps_like_sep_path():
     fake = _FakeT3(
-        {"RA": 10.0, "Dec": 20.0, "Roll": 30.0, "y_target": 100.0, "x_target": 200.0}
+        {
+            "RA": 10.0,
+            "Dec": 20.0,
+            "Roll": 30.0,
+            "y_target": 100.0,
+            "x_target": 200.0,
+            "Matches": 7,
+            "RMSE": 90.0,
+            "Prob": 1e-6,
+        }
     )
     centroids = [(540.0, 960.0), (100.0, 100.0), (900.0, 1800.0)]
 
@@ -114,7 +126,16 @@ def test_solve_cedar_fullframe_swallows_solver_errors():
 
 @pytest.mark.unit
 def test_solve_cedar_fullframe_accepts_future_crop_fov_without_mapping_change():
-    fake = _FakeT3({"RA": 10.0, "y_target": 100.0, "x_target": 200.0})
+    fake = _FakeT3(
+        {
+            "RA": 10.0,
+            "y_target": 100.0,
+            "x_target": 200.0,
+            "Matches": 7,
+            "RMSE": 90.0,
+            "Prob": 1e-6,
+        }
+    )
     solver._solve_cedar_fullframe(
         fake,
         [(540.0, 960.0)],
@@ -130,6 +151,43 @@ def test_solve_cedar_fullframe_accepts_future_crop_fov_without_mapping_change():
     assert fake.calls[0]["fov_estimate"] == pytest.approx(
         sfm.fov_estimate_deg(canvas[1], CROP_W, base_fov_degrees=10.38)
     )
+
+
+@pytest.mark.unit
+def test_solve_cedar_fullframe_undistorts_before_rotation():
+    fake = _FakeT3({"RA": 10.0, "Matches": 7, "RMSE": 90.0, "Prob": 1e-6})
+    centroids = np.asarray([(80.0, 120.0), (540.0, 960.0)])
+    coefficients = {"k1": -0.04, "k2": 0.0, "k3": 0.0, "p1": 0.0, "p2": 0.0}
+    solver._solve_cedar_fullframe(
+        fake,
+        centroids,
+        (FULL_H, FULL_W),
+        rotation_deg=90.0,
+        crop_width_px=CROP_W,
+        shared_state=_FakeSharedState(),
+        distortion_coefficients=coefficients,
+    )
+    corrected = undistort_global_centroids(
+        centroids,
+        (FULL_H, FULL_W),
+        coefficients,
+    )
+    expected, _ = sfm.rotate_centroids(corrected, (FULL_H, FULL_W), 90.0)
+    assert fake.calls[0]["cents"] == pytest.approx(expected)
+
+
+@pytest.mark.unit
+def test_solve_cedar_fullframe_rejects_weak_quality():
+    fake = _FakeT3({"RA": 10.0, "Dec": 20.0, "Matches": 5, "RMSE": 90.0, "Prob": 1e-6})
+    solution = solver._solve_cedar_fullframe(
+        fake,
+        [(540.0, 960.0)],
+        (FULL_H, FULL_W),
+        rotation_deg=90.0,
+        crop_width_px=CROP_W,
+        shared_state=_FakeSharedState(),
+    )
+    assert solution == {}
 
 
 @pytest.mark.unit
@@ -193,6 +251,15 @@ def test_center_first_remainder_uses_full_paths_only_after_center_failure():
     assert path == "cedar_full"
     assert solution["RA"] == 2.0
     assert calls == ["sep_center", "cedar_full"]
+
+
+@pytest.mark.unit
+def test_auto_star_peripheral_tile_result_cannot_bypass_disabled_wide_pointing():
+    candidate = {"RA": 120.0, "Dec": 30.0}
+    result = SimpleNamespace(solution=candidate)
+
+    assert solver._wide_result_pointing_solution(result, False) == {}
+    assert solver._wide_result_pointing_solution(result, True) is candidate
 
 
 @pytest.mark.unit

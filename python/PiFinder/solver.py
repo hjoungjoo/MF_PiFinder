@@ -46,6 +46,7 @@ from PiFinder.mf_wide_solver import (
 from PiFinder.mf_wide_tiles import migrate_legacy_tile_ids
 from PiFinder.optics import OpticalTrainResolver, build_optical_train
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
+from PiFinder.solve_acceptance import SolveContinuityGate, solution_quality_decision
 from PiFinder.sqm import SQM as SQMCalculator
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.sqm.black_level import BlackLevelTracker
@@ -965,7 +966,10 @@ def _build_failed_solve(
 
 
 def _cedar_fullframe_geometry(
-    cfg, camera_type, base_fov_degrees: float = sfm.SOLVER_FOV_DEG
+    cfg,
+    camera_type,
+    base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
+    lens_key: str = "",
 ):
     """Context for the full-frame cedar path, or None until resolvable.
 
@@ -990,6 +994,11 @@ def _cedar_fullframe_geometry(
                 warm_map = np.asarray(np.load(WARM_MAP_PATH), dtype=np.int32)
         except Exception:
             logger.exception("Warm-pixel map load failed; FF gates run unmasked")
+        calibration = CalibrationProfileStore(cfg).load_active(
+            camera_type,
+            str(lens_key or ""),
+            profile,
+        )
         return {
             "rotation_deg": rotation,
             "crop_width_px": crop_width,
@@ -997,6 +1006,7 @@ def _cedar_fullframe_geometry(
             "warm_map": warm_map,
             "screen_direction": cfg.get_option("screen_direction"),
             "base_fov_degrees": base_fov_degrees,
+            "distortion_coefficients": active_coefficients(calibration),
         }
     except Exception:
         logger.exception("cedar full-frame geometry unavailable")
@@ -1042,6 +1052,21 @@ def _solve_center_first_remainder(stages):
     return last_solution, ""
 
 
+def _wide_result_pointing_solution(wide_result, publish_enabled: bool) -> dict:
+    """Return a tile solve only when the experimental pointing tier is on.
+
+    Auto(Star) may run peripheral tiles while the centre is contaminated so
+    it can measure matched-star SNR away from a Moon or bright obstruction.
+    That diagnostic need must not silently override ``wide_solver_enabled``
+    and turn the same experimental result into a published pointing.
+    """
+
+    if not publish_enabled or wide_result is None:
+        return {}
+    solution = getattr(wide_result, "solution", None)
+    return solution if isinstance(solution, dict) else {}
+
+
 def _count_in_crop(centroids, frame_hw, crop_width_px: int) -> int:
     """Detections inside the (centred) production crop window.
 
@@ -1072,6 +1097,8 @@ def _solve_cedar_fullframe(
     shared_state,
     target_sky_coord=None,
     base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
+    distortion_coefficients: Optional[dict[str, float]] = None,
+    solve_path: str = "cedar_full",
 ) -> dict:
     """Solve full-frame cedar centroids at native FOV, in 512 semantics.
 
@@ -1081,9 +1108,14 @@ def _solve_cedar_fullframe(
     y/x_target is mapped back so the alignment chain persists 512-space
     coordinates unchanged."""
     try:
-        cents, canvas = sfm.rotate_centroids(
-            np.asarray(centroids, dtype=np.float64), frame_hw, rotation_deg
-        )
+        source = np.asarray(centroids, dtype=np.float64)
+        if distortion_coefficients is not None:
+            source = undistort_global_centroids(
+                source,
+                frame_hw,
+                distortion_coefficients,
+            )
+        cents, canvas = sfm.rotate_centroids(source, frame_hw, rotation_deg)
         target_pixel = sfm.map_target_pixel_to_frame(
             shared_state.target_pixel(), canvas, crop_width_px
         )
@@ -1101,6 +1133,18 @@ def _solve_cedar_fullframe(
             target_sky_coord=target_sky_coord,
             solve_timeout=CEDAR_FF_SOLVE_TIMEOUT_MS,
         )
+        quality = solution_quality_decision(solution, solve_path)
+        if not quality.accepted:
+            if solution and solution.get("RA") is not None:
+                logger.warning(
+                    "Rejected %s solution: %s (matches=%s RMSE=%s Prob=%s)",
+                    solve_path,
+                    quality.reason,
+                    solution.get("Matches"),
+                    solution.get("RMSE"),
+                    solution.get("Prob"),
+                )
+            return {}
         if (
             solution
             and solution.get("RA") is not None
@@ -1138,6 +1182,7 @@ def solver(
     align_dec = 0
     last_solve_attempt: float = 0.0
     last_solve_success = None  # exposure_end of most recent successful solve
+    solve_continuity = SolveContinuityGate()
 
     centroids = []
     log_no_stars_found = True
@@ -1380,6 +1425,7 @@ def solver(
                             _sep_cfg,
                             shared_state.camera_type(),
                             fullframe_base_fov,
+                            getattr(shared_state, "camera_lens", lambda: "")(),
                         )
 
                     t0 = precision_timestamp()
@@ -1423,6 +1469,7 @@ def solver(
                                 _sep_cfg,
                                 shared_state.camera_type(),
                                 fullframe_base_fov,
+                                getattr(shared_state, "camera_lens", lambda: "")(),
                             )
                         if (
                             center_first_wanted
@@ -1543,6 +1590,10 @@ def solver(
                                         base_fov_degrees=cedar_ff_geometry[
                                             "base_fov_degrees"
                                         ],
+                                        distortion_coefficients=cedar_ff_geometry[
+                                            "distortion_coefficients"
+                                        ],
+                                        solve_path="cedar_center",
                                     )
                                     ff_center_solved = bool(
                                         solution and solution.get("RA") is not None
@@ -1567,6 +1618,9 @@ def solver(
                                     ),
                                     base_fov_degrees=cedar_ff_geometry[
                                         "base_fov_degrees"
+                                    ],
+                                    distortion_coefficients=cedar_ff_geometry[
+                                        "distortion_coefficients"
                                     ],
                                 )
                         else:
@@ -1610,10 +1664,12 @@ def solver(
                             _sep_cfg,
                             shared_state.camera_type(),
                             fullframe_base_fov,
+                            getattr(shared_state, "camera_lens", lambda: "")(),
                         )
                     sep_run = None
                     sep_fallback_used = False
                     wide_result = None
+                    wide_pointing_used = False
                     exposure_quality = None
                     sep_can_solve = False
                     if sep_shadow is not None:
@@ -1799,16 +1855,33 @@ def solver(
                                 solve=_wide_tetra_solve,
                                 rectify_centroids=_wide_rectify_centroids,
                             )
-                            if wide_result.solution is not None:
-                                solution = wide_result.solution
+                            wide_pointing = _wide_result_pointing_solution(
+                                wide_result,
+                                wide_solver_wanted,
+                            )
+                            if wide_pointing:
+                                solution = wide_pointing
                                 solve_path = wide_result.solve_path
+                                wide_pointing_used = True
                                 logger.info(
                                     "Tile recovery solve success via %s (%s)",
                                     wide_result.solve_path,
                                     ",".join(wide_result.consensus_tile_ids),
                                 )
-                            else:
+                            elif wide_result.solution is not None:
                                 logger.info(
+                                    "Peripheral tile solve retained for "
+                                    "Auto(Star) quality only; wide pointing disabled "
+                                    "(%s)",
+                                    ",".join(wide_result.consensus_tile_ids),
+                                )
+                            else:
+                                tile_log = (
+                                    logger.info
+                                    if wide_result.candidate_tile_ids
+                                    else logger.debug
+                                )
+                                tile_log(
                                     "Tile recovery held: %s (candidates=%s)",
                                     wide_result.reason,
                                     ",".join(wide_result.candidate_tile_ids),
@@ -1858,6 +1931,7 @@ def solver(
                                 shared_state,
                                 target_sky_coord=_sep_target_sky,
                                 centroids_override=sep_subset,
+                                solve_path="sep_center",
                             )
 
                         def _cedar_full_stage():
@@ -1872,6 +1946,9 @@ def solver(
                                 shared_state,
                                 target_sky_coord=_solver_args.get("target_sky_coord"),
                                 base_fov_degrees=cedar_ff_geometry["base_fov_degrees"],
+                                distortion_coefficients=cedar_ff_geometry[
+                                    "distortion_coefficients"
+                                ],
                             )
 
                         def _sep_full_stage():
@@ -1922,6 +1999,55 @@ def solver(
                         )
                         if sep_fallback_used:
                             solve_path = "sep_full"
+
+                    # A single native wide-field pattern must never become
+                    # pointing truth by itself.  Established 512/centre
+                    # paths seed the anchor immediately; a cold full-frame
+                    # lock or a >5° jump is published only after the next
+                    # independent frame agrees.  Legitimate slews therefore
+                    # cost one solve interval, while intermittent urban-light
+                    # matches are discarded.
+                    if solution and solution.get("RA") is not None:
+                        continuity = solve_continuity.evaluate(
+                            solution,
+                            solve_path,
+                            last_solve_attempt,
+                        )
+                        if (
+                            continuity.accepted
+                            and continuity.reason == "confirmed_jump"
+                        ):
+                            logger.info(
+                                "Confirmed %s solution on consecutive frames "
+                                "(RA=%.4f Dec=%.4f agreement=%.2f°)",
+                                solve_path,
+                                float(solution["RA"]),
+                                float(solution["Dec"]),
+                                float(continuity.separation_deg or 0.0),
+                            )
+                        elif not continuity.accepted:
+                            logger.warning(
+                                "Held %s solution for confirmation: %s "
+                                "(RA=%.4f Dec=%.4f separation=%s)",
+                                solve_path,
+                                continuity.reason,
+                                float(solution["RA"]),
+                                float(solution["Dec"]),
+                                (
+                                    f"{continuity.separation_deg:.2f}°"
+                                    if continuity.separation_deg is not None
+                                    else "cold"
+                                ),
+                            )
+                            if sep_shadow is not None:
+                                sep_shadow.clear_matched_overlay()
+                                if sep_fallback_used and sep_run is not None:
+                                    sep_shadow.record_fallback_result(
+                                        False,
+                                        len(sep_run.detection.centroids),
+                                    )
+                            solution = {}
+                            sep_fallback_used = False
 
                     # Consume full-frame matched coordinates while they still
                     # exist.  Published pointing keeps its existing 512-space
@@ -2058,7 +2184,7 @@ def solver(
                             len(centroids),
                             solution.get("RMSE") or -1.0,
                         )
-                    elif wide_result is not None and wide_result.solution is not None:
+                    elif wide_pointing_used:
                         # Tile-local matches are not in the 512 production
                         # coordinate system, so never leak them into SQM or
                         # the regular matched-star overlay path.
@@ -2150,8 +2276,7 @@ def solver(
                                 if sep_fallback_used and sep_run is not None
                                 else (
                                     wide_result.centroid_count
-                                    if wide_result is not None
-                                    and wide_result.solution is not None
+                                    if wide_pointing_used
                                     else (
                                         ff_in_crop_count
                                         if used_fullframe
