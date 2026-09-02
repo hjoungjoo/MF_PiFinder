@@ -1288,6 +1288,8 @@ def register_api_routes(app, server_instance, require_auth=False):
                 # persisted, so the applied value from frame metadata is the
                 # only reading available here.
                 "actual": actual_gain,
+                "requested": metadata.get("gain"),
+                "mode": metadata.get("gain_mode"),
                 "profile_gain": profile_gain,
                 "presets": list(camera_controls.GAIN_PRESETS),
                 "min": camera_controls.MIN_GAIN,

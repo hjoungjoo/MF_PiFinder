@@ -863,14 +863,25 @@ function hydrateCameraControls(data) {
     cameraControls.exposureUs.value = exposure.requested ?? exposure.actual_us ?? '';
   }
 
-  // The runtime gain is not persisted anywhere, so the applied value from the
-  // last frame is the only reading available.
+  // Restore the explicit runtime selection. Sensor gain metadata is quantized
+  // (IMX462 reports a requested 30x as about 29.51x), so inferring Profile
+  // from the applied value incorrectly turns it into Manual after refresh.
   const actualGain = gain.actual;
+  const requestedGain = gain.requested;
   const profileGain = gain.profile_gain;
-  if (actualGain === null || actualGain === undefined) {
+  if (gain.mode === 'profile') {
+    cameraControls.gainSelect.value = 'profile';
+    cameraControls.gainValue.value = actualGain ?? profileGain ?? '';
+  } else if (gain.mode === 'manual' && requestedGain !== null && requestedGain !== undefined) {
+    const preset = matchPresetOption(cameraControls.gainSelect, requestedGain, 0);
+    cameraControls.gainSelect.value = preset || MANUAL_OPTION;
+    cameraControls.gainValue.value = requestedGain;
+  } else if (actualGain === null || actualGain === undefined) {
     cameraControls.gainSelect.value = 'profile';
     cameraControls.gainValue.value = profileGain ?? '';
   } else if (
+    // Backward-compatible fallback for metadata published by an older camera
+    // process during a rolling update.
     profileGain !== null &&
     profileGain !== undefined &&
     Math.abs(Number(actualGain) - Number(profileGain)) < 0.05

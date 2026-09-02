@@ -5,14 +5,20 @@ Star-count controller for solver-driven auto-exposure.
 
 An alternative to the match-count controller
 (``auto_exposure.ExposurePIDController``), selected with the Camera Exp
-menu's "Star" item (``camera_exp = "auto_star"``). The feedback
-signal is the number of centroids cedar-detect extracted from the frame
-(``SolveDiagnostics.Centroids``) rather than the number of stars tetra3
+menu's "Star" item (``camera_exp = "auto_star"``). The feedback signal is a
+conservative full-frame consensus of gated Cedar and SEP detections (falling
+back to ``SolveDiagnostics.Centroids``) rather than the number of stars tetra3
 matched against the catalog. That distinction is the point:
 
 * 0 detected -> exposure/optics problem -> zero-match recovery ladder
 * N>0 detected but 0 matched -> solver-side problem -> the ladder does
   NOT run (the match-count controller cannot tell these apart)
+
+When sky glow makes the response non-monotonic, the controller remembers the
+recent per-exposure median detection yield. If a longer exposure loses the
+candidates a shorter exposure retained, it holds the empirical best for 90
+seconds instead of repeatedly hunting into saturation, then permits a fresh
+scan so changing sky conditions can be learned.
 
 The control law and defaults follow cedar-server's field-proven exposure
 servo (https://github.com/smroid/cedar-server -- calibrator.rs /
@@ -29,11 +35,40 @@ Design doc: docs/mf_dev/mf_auto_exposure_plan_ko.md.
 
 import logging
 import time
+from collections import deque
+from statistics import median
 from typing import Optional
 
 from PiFinder.auto_exposure import ZeroMatchRecovery
 
 logger = logging.getLogger("AutoExposure.StarCount")
+
+
+def full_frame_star_count(
+    production_crop_count: int,
+    cedar_gated_count: Optional[int],
+    cedar_raw_count: Optional[int] = None,
+    sep_count: Optional[int] = None,
+) -> int:
+    """Choose the reliable widest-field detection count for exposure control.
+
+    ``SolveDiagnostics.Centroids`` intentionally retains the historical
+    production-crop count even when the solver detects on the full sensor.
+    That is the wrong signal for exposure: a Moon or obstruction in the
+    centre can leave the crop empty while usable stars remain around it.
+    Prefer the full-frame Cedar count *after* warm-pixel/horizon/shape gates.
+    Also admit a conservative count-level consensus between the independent
+    Cedar and SEP detectors: no more candidates than the smaller detector saw.
+    This recovers real peripheral stars that a geometry gate rejected without
+    letting Cedar-only warm pixels or SEP-only noise make high gain look useful.
+    Keep the crop count as a compatibility fallback and defensive lower bound.
+    """
+    crop_count = max(0, int(production_crop_count or 0))
+    gated_count = max(0, int(cedar_gated_count or 0))
+    consensus_count = 0
+    if cedar_raw_count is not None and sep_count is not None:
+        consensus_count = min(max(0, int(cedar_raw_count)), max(0, int(sep_count)))
+    return max(crop_count, gated_count, consensus_count)
 
 
 class ExposureStarCountController:
@@ -61,6 +96,7 @@ class ExposureStarCountController:
         low_star_escape_after: int = 4,
         anchor_trust_s: float = 90.0,
         trusted_zero_limit: int = 8,
+        empirical_hold_s: float = 90.0,
         recovery: Optional[ZeroMatchRecovery] = None,
     ):
         """
@@ -102,6 +138,8 @@ class ExposureStarCountController:
                 really gone); a bright frame still steps down.
             trusted_zero_limit: Consecutive zero-detection attempts the
                 trust window absorbs before the recovery ladder engages.
+            empirical_hold_s: How long an unsolved exposure that empirically
+                beats longer exposures is held before allowing a fresh scan.
             recovery: Zero-match recovery ladder; here it triggers on
                 zero *detected* stars, not zero matches.
         """
@@ -119,6 +157,7 @@ class ExposureStarCountController:
         self.low_star_escape_after = low_star_escape_after
         self.anchor_trust_s = anchor_trust_s
         self.trusted_zero_limit = trusted_zero_limit
+        self.empirical_hold_s = empirical_hold_s
 
         self._anchor = initial_anchor
         self._initial_anchor = initial_anchor
@@ -130,6 +169,11 @@ class ExposureStarCountController:
         self._low_star_streak = 0
         self._low_star_escaped = False
         self._anchor_solved_time: Optional[float] = None
+        self._detection_history: dict[int, deque[int]] = {}
+        self._empirical_anchor: Optional[int] = None
+        self._empirical_score = 0.0
+        self._detection_ceiling: Optional[int] = None
+        self._detection_ceiling_time: Optional[float] = None
         self._recovery = recovery or ZeroMatchRecovery()
 
         logger.info(
@@ -150,6 +194,7 @@ class ExposureStarCountController:
         self._low_star_streak = 0
         self._low_star_escaped = False
         self._anchor_solved_time = None
+        self._clear_empirical_search()
         self._recovery.reset()
         logger.debug("StarCount controller reset")
 
@@ -175,6 +220,9 @@ class ExposureStarCountController:
         Returns:
             New exposure time in microseconds, or None if no change needed.
         """
+        self._expire_empirical_search()
+        self._record_detection(current_exposure, centroid_count)
+
         # Exception path: nothing detected at all -- exposure may be badly
         # wrong. Delegate to the recovery ladder (same ladder as the
         # match-count controller, but triggered on detections, not matches).
@@ -184,6 +232,19 @@ class ExposureStarCountController:
         # only when the streak outlives ``trusted_zero_limit``.
         if centroid_count == 0:
             self._zero_count += 1
+            if self._empirical_anchor is not None:
+                if current_exposure != self._empirical_anchor:
+                    # A longer/other exposure lost detections that a recent
+                    # exposure retained. Return to the measured best instead
+                    # of restarting the blind recovery ladder.
+                    self._set_detection_ceiling(self._empirical_anchor)
+                    return self._empirical_anchor
+                if self._zero_count <= self.trusted_zero_limit:
+                    # Passing cloud at the empirical best: hold briefly. If
+                    # it stays empty the block below clears the stale evidence
+                    # and resumes the full recovery search.
+                    return None
+                self._clear_empirical_search()
             if (
                 self._anchor_trusted()
                 and self._zero_count <= self.trusted_zero_limit
@@ -307,6 +368,7 @@ class ExposureStarCountController:
             self._anchor = self._clamp_absolute(current_exposure)
             self._bright_ceiling = None
             self._anchor_solved_time = time.time()
+            self._clear_empirical_search()
             return None
 
         # Bright-sky guard: short of stars but the background is already
@@ -334,6 +396,7 @@ class ExposureStarCountController:
         if self.deadband_low <= star_fraction <= self.deadband_high:
             self._anchor = self._clamp_absolute(current_exposure)
             self._bright_ceiling = None
+            self._clear_empirical_search()
             return None
 
         # Inside the anchor trust window a shortfall does not justify
@@ -406,6 +469,8 @@ class ExposureStarCountController:
         new_exposure = self._clamp_to_anchor(requested)
         if self._bright_ceiling is not None:
             new_exposure = min(new_exposure, self._bright_ceiling)
+        if self._detection_ceiling is not None:
+            new_exposure = min(new_exposure, self._detection_ceiling)
         return self._clamp_absolute(new_exposure)
 
     def _clamp_to_anchor(self, requested: int) -> int:
@@ -464,10 +529,71 @@ class ExposureStarCountController:
         range and under any active bright ceiling -- returning to an anchor
         the ceiling just ruled out would re-enter the glow it stepped away
         from."""
-        anchor = self._clamp_absolute(self._anchor)
+        anchor = self._clamp_absolute(
+            self._empirical_anchor
+            if self._empirical_anchor is not None
+            else self._anchor
+        )
         if self._bright_ceiling is not None:
             anchor = min(anchor, self._bright_ceiling)
+        if self._detection_ceiling is not None:
+            anchor = min(anchor, self._detection_ceiling)
         return anchor
+
+    def _record_detection(self, exposure: int, count: int) -> None:
+        """Track robust recent detection yield for each attempted exposure."""
+        exposure = self._clamp_absolute(exposure)
+        history = self._detection_history.setdefault(exposure, deque(maxlen=8))
+        history.append(max(0, int(count)))
+
+        candidates = []
+        for tried_exposure, samples in self._detection_history.items():
+            if len(samples) < 2:
+                continue
+            score = float(median(samples))
+            if score > 0:
+                candidates.append((score, tried_exposure))
+        if not candidates:
+            return
+
+        # Highest robust count wins; for equal counts prefer the shorter
+        # exposure because it reduces motion blur and control latency.
+        best_score = max(score for score, _ in candidates)
+        best_exposure = min(
+            tried_exposure
+            for score, tried_exposure in candidates
+            if score == best_score
+        )
+        self._empirical_anchor = best_exposure
+        self._empirical_score = best_score
+
+        current_score = float(median(history))
+        if (
+            exposure > best_exposure
+            and len(history) >= 2
+            and current_score + 1.0 <= best_score
+        ):
+            self._set_detection_ceiling(best_exposure)
+
+    def _set_detection_ceiling(self, exposure: int) -> None:
+        ceiling = self._clamp_absolute(exposure)
+        if self._detection_ceiling is None or ceiling < self._detection_ceiling:
+            self._detection_ceiling = ceiling
+        self._detection_ceiling_time = time.time()
+
+    def _expire_empirical_search(self) -> None:
+        if (
+            self._detection_ceiling_time is not None
+            and time.time() - self._detection_ceiling_time >= self.empirical_hold_s
+        ):
+            self._clear_empirical_search()
+
+    def _clear_empirical_search(self) -> None:
+        self._detection_history = {}
+        self._empirical_anchor = None
+        self._empirical_score = 0.0
+        self._detection_ceiling = None
+        self._detection_ceiling_time = None
 
     def _return_to_anchor(self, current_exposure: int) -> Optional[int]:
         # Clamp on the way out too: this value goes straight to the sensor,
@@ -489,6 +615,9 @@ class ExposureStarCountController:
             "low_star_streak": self._low_star_streak,
             "low_star_escaped": self._low_star_escaped,
             "anchor_trusted": self._anchor_trusted(),
+            "empirical_anchor": self._empirical_anchor,
+            "empirical_score": self._empirical_score,
+            "detection_ceiling": self._detection_ceiling,
             "recovery_active": self._recovery.is_active(),
             "deadband": (self.deadband_low, self.deadband_high),
             "min_exposure": self.min_exposure,

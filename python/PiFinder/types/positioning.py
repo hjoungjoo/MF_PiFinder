@@ -253,10 +253,10 @@ class SolveDiagnostics:
     it on every solve, including failures, and expects an int.
 
     ``Centroids`` is the number of stars cedar-detect extracted from the
-    frame, published on every attempt like ``Matches``. The star-count
-    controller reads it; the difference between the two separates
-    exposure/optics problems (0 detected) from solver-side failures
-    (N detected, 0 matched).
+    production crop, published on every attempt like ``Matches``. Auto(Star)
+    uses the per-path full-frame counts below when available and retains this
+    as its compatibility fallback. Detection count versus Matches still
+    separates exposure/optics problems from solver-side failures.
     """
 
     Matches: int = 0
@@ -271,10 +271,9 @@ class SolveDiagnostics:
     # legacy "cedar_512" / "tetra3" modes. Diagnostics only -- before
     # this field the path had to be inferred from Matches > Centroids.
     solve_path: str = ""
-    # Per-path detector counts.  ``Centroids`` remains the auto-exposure
-    # feedback signal and therefore changes meaning to the detector that
-    # actually solved.  These fields preserve the full cascade diagnostics
-    # so a SEP rescue does not hide what cedar saw on the same frame.
+    # Per-path detector counts. Auto(Star) combines these conservatively for
+    # peripheral exposure feedback; preserving each count also ensures a SEP
+    # rescue does not hide what Cedar saw on the same frame.
     CedarRawCentroids: Optional[int] = None
     CedarGatedCentroids: Optional[int] = None
     CedarCenterCentroids: Optional[int] = None

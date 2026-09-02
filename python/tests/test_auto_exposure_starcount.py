@@ -13,8 +13,29 @@ See docs/mf_dev/mf_auto_exposure_plan_ko.md.
 import pytest
 
 from PiFinder.auto_exposure import RECOVERY_LADDER, ZeroMatchRecovery
-from PiFinder.auto_exposure_starcount import ExposureStarCountController
+from PiFinder.auto_exposure_starcount import (
+    ExposureStarCountController,
+    full_frame_star_count,
+)
 from PiFinder.types.positioning import SolveDiagnostics
+
+
+@pytest.mark.unit
+def test_full_frame_star_count_prefers_gated_peripheral_detections():
+    assert full_frame_star_count(0, 5) == 5
+
+
+@pytest.mark.unit
+def test_full_frame_star_count_never_loses_crop_or_uses_missing_full_frame():
+    assert full_frame_star_count(3, 2) == 3
+    assert full_frame_star_count(3, None) == 3
+
+
+@pytest.mark.unit
+def test_full_frame_star_count_uses_conservative_detector_consensus():
+    assert full_frame_star_count(0, 2, cedar_raw_count=11, sep_count=8) == 8
+    assert full_frame_star_count(0, 2, cedar_raw_count=11, sep_count=0) == 2
+    assert full_frame_star_count(0, 2, cedar_raw_count=None, sep_count=8) == 2
 
 
 @pytest.mark.unit
@@ -422,6 +443,45 @@ class TestExposureStarCountController:
         for _ in range(5):
             controller.update(1, 400000)
         assert not controller._recovery.is_active()
+
+    def test_empirical_best_blocks_a_longer_exposure_that_loses_stars(self):
+        controller = ExposureStarCountController(
+            target_stars=10, low_star_escape_after=2
+        )
+        controller.update(3, 200000)
+        controller.update(3, 200000)  # two samples establish robust best
+
+        assert controller.update(0, 400000) == 200000
+        status = controller.get_status()
+        assert status["empirical_anchor"] == 200000
+        assert status["empirical_score"] == 3.0
+        assert status["detection_ceiling"] == 200000
+
+        # Once back at the measured best, the low-count servo cannot fling
+        # the exposure into the longer regime that already lost detections.
+        for _ in range(4):
+            assert controller.update(3, 200000) is None
+
+    def test_empirical_best_eventually_reopens_search_when_it_turns_empty(self):
+        controller = ExposureStarCountController(target_stars=10)
+        controller.update(3, 200000)
+        controller.update(3, 200000)
+
+        for _ in range(controller.trusted_zero_limit):
+            assert controller.update(0, 200000) is None
+        assert controller.update(0, 200000) == RECOVERY_LADDER[0]
+        assert controller.get_status()["empirical_anchor"] is None
+
+    def test_deadband_replaces_empirical_search_with_working_anchor(self):
+        controller = ExposureStarCountController(target_stars=10)
+        controller.update(3, 200000)
+        controller.update(3, 200000)
+
+        assert controller.update(10, 200000) is None
+        status = controller.get_status()
+        assert status["anchor"] == 200000
+        assert status["empirical_anchor"] is None
+        assert status["detection_ceiling"] is None
 
     def test_custom_recovery_injected(self):
         recovery = ZeroMatchRecovery(trigger_count=1)

@@ -29,7 +29,10 @@ from PiFinder.auto_exposure import (
     ExposureSNRController,
     generate_exposure_sweep,
 )
-from PiFinder.auto_exposure_starcount import ExposureStarCountController
+from PiFinder.auto_exposure_starcount import (
+    ExposureStarCountController,
+    full_frame_star_count,
+)
 from PiFinder.livecam_config import SOURCE_SOLVER_INPUT, settings_from_config
 
 logger = logging.getLogger("Camera.Interface")
@@ -39,6 +42,7 @@ logger = logging.getLogger("Camera.Interface")
 # falls back to this fixed short exposure -- short enough not to saturate in
 # daylight while still usable for framing a distant object.
 DAYTIME_AE_FALLBACK_EXPOSURE = 1000  # microseconds
+FULL_FRAME_AUTO_STAR_TARGET = 10
 
 # Driver metadata keys copied into each sweep frame's per-image JSON: the
 # exposure/gain actually applied plus every thermal and black-level signal
@@ -148,6 +152,11 @@ class CameraInterface:
     # Native (camera-driver) auto-exposure, distinct from the solver-driven
     # auto-exposure above. Enabled for daytime alignment via `set_exp:native`.
     _native_ae_enabled = False
+    # Runtime-only gain selection.  The sensor-reported AnalogueGain is
+    # quantized (for example a requested 30x is reported as about 29.51x), so
+    # the web UI cannot reconstruct whether the user selected Profile or a
+    # numeric value from actual metadata alone.
+    _gain_mode = "profile"  # "profile" or "manual"
     # Handle to an in-flight capture thread (see _capture_with_timeout). A
     # wedged V4L2 capture can outlive its timeout; tracking it lets the next
     # frame decline to start a second, concurrent capture on a camera that is
@@ -391,6 +400,11 @@ class CameraInterface:
             config_exp = cfg.get_option("camera_exp")
             if config_exp in ("auto", "auto_star"):
                 self._auto_exposure_enabled = True
+                # SQM temporarily replaces the solver-driven controller with
+                # its background SNR loop. A saved Auto mode must always boot
+                # into its own controller even if a prior UI path failed to
+                # send SQM's matching exit command.
+                self._auto_exposure_mode = "pid"
                 self._ae_controller_choice = (
                     "star_count" if config_exp == "auto_star" else "match_count"
                 )
@@ -523,6 +537,7 @@ class CameraInterface:
                         "exposure_time": self.exposure_time,
                         "actual_exposure_us": driver_metadata.get("ExposureTime"),
                         "gain": self.gain,
+                        "gain_mode": self._gain_mode,
                         "actual_gain": driver_metadata.get("AnalogueGain"),
                         "sensor_timestamp_ns": driver_metadata.get("SensorTimestamp"),
                         "frame_duration_us": driver_metadata.get("FrameDuration"),
@@ -654,6 +669,7 @@ class CameraInterface:
                                 )
 
                                 # Call auto-exposure update based on current mode
+                                feedback_stars = matched_stars
                                 if self._auto_exposure_mode == "snr":
                                     # SNR mode: use background-based controller (for SQM measurements)
                                     if self._auto_exposure_snr is None:
@@ -674,12 +690,19 @@ class CameraInterface:
                                         noise_floor=processed_noise_floor,
                                     )
                                 elif self._ae_controller_choice == "star_count":
-                                    # Star-count controller: feedback from
-                                    # detected centroids, not catalog matches
-                                    # (docs/mf_dev/mf_auto_exposure_plan_ko.md).
+                                    # Star-count controller: conservative
+                                    # full-frame detector consensus, not
+                                    # catalog matches (central crop is only a
+                                    # fallback). See auto_star research doc.
                                     if self._auto_exposure_star is None:
                                         self._auto_exposure_star = (
-                                            ExposureStarCountController()
+                                            ExposureStarCountController(
+                                                target_stars=(
+                                                    FULL_FRAME_AUTO_STAR_TARGET
+                                                    if self._publish_solver_raw
+                                                    else 20
+                                                )
+                                            )
                                         )
                                     arr = np.asarray(base_image)
                                     h, w = arr.shape[0], arr.shape[1]
@@ -693,8 +716,14 @@ class CameraInterface:
                                     # solver stamps last_solve_success with
                                     # the attempt time. solve_source cannot
                                     # tell this (IMU masks it, see gate above).
-                                    new_exposure = self._auto_exposure_star.update(
+                                    feedback_stars = full_frame_star_count(
                                         solution.diagnostics.Centroids,
+                                        solution.diagnostics.CedarGatedCentroids,
+                                        solution.diagnostics.CedarRawCentroids,
+                                        solution.diagnostics.SepCentroids,
+                                    )
+                                    new_exposure = self._auto_exposure_star.update(
+                                        feedback_stars,
                                         self.exposure_time,
                                         center_mean=center_mean,
                                         solve_success=(
@@ -714,7 +743,7 @@ class CameraInterface:
                                 ):
                                     # Exposure value actually changed - update camera
                                     logger.info(
-                                        f"Auto-exposure adjustment: {matched_stars} stars → "
+                                        f"Auto-exposure adjustment: {feedback_stars} stars → "
                                         f"{self.exposure_time}µs → {new_exposure}µs "
                                         f"(change: {new_exposure - self.exposure_time:+d}µs)"
                                     )
@@ -759,6 +788,9 @@ class CameraInterface:
                                 # star-count controller.
                                 self._auto_exposure_enabled = True
                                 self._native_ae_enabled = False
+                                # Selecting either solver-driven mode must end
+                                # SQM's temporary background-SNR override.
+                                self._auto_exposure_mode = "pid"
                                 self._last_solve_time = None  # Reset solve tracking
                                 self._ae_controller_choice = (
                                     "star_count"
@@ -835,11 +867,16 @@ class CameraInterface:
                             gain_value = command.split(":", 1)[1]
                             if gain_value == "profile":
                                 self.gain = self.get_default_gain()
+                                gain_mode = "profile"
                             else:
                                 self.gain = float(gain_value)
+                                gain_mode = "manual"
                             self.exposure_time, self.gain = self.set_camera_config(
                                 self.exposure_time, self.gain
                             )
+                            # Only publish the selection after the camera
+                            # accepted the corresponding control update.
+                            self._gain_mode = gain_mode
                             gain_text = f"{self.gain:g}"
                             console_queue.put("CAM: Gain=" + gain_text)
                             logger.info(f"Gain changed: {old_gain:g}x → {gain_text}x")
@@ -945,6 +982,10 @@ class CameraInterface:
                                         getattr(self, "last_frame_metadata", None) or {}
                                     ).get("ExposureTime"),
                                     "gain": self.gain,
+                                    "gain_mode": self._gain_mode,
+                                    "actual_gain": (
+                                        getattr(self, "last_frame_metadata", None) or {}
+                                    ).get("AnalogueGain"),
                                     "sensor_temp_c": getattr(
                                         self, "last_sensor_temp", None
                                     ),

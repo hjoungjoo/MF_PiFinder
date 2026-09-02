@@ -1036,8 +1036,9 @@ def _solve_center_first_remainder(stages):
 def _count_in_crop(centroids, frame_hw, crop_width_px: int) -> int:
     """Detections inside the (centred) production crop window.
 
-    Published as SolveDiagnostics.Centroids on the full-frame path so
-    auto-exposure keeps its 512-crop star-count semantics unchanged."""
+    Published as SolveDiagnostics.Centroids on the full-frame path for legacy
+    diagnostics and as the Auto(Star) fallback when full-frame per-detector
+    counts are unavailable."""
     if centroids is None or len(centroids) == 0:
         return 0
     arr = np.asarray(centroids, dtype=np.float64)
