@@ -195,6 +195,16 @@ class CameraInterface:
             return float(profile.analog_gain)
         return float(getattr(self, "gain", 1.0))
 
+    def framewise_auto_star_active(self) -> bool:
+        """Whether the hardware backend's Auto(Star) v2 owns controls."""
+        return False
+
+    def reset_framewise_auto_star(self, *, gain_locked: bool = False) -> None:
+        """Reset backend framewise state after a control-ownership change."""
+
+    def update_framewise_auto_star_quality(self, quality) -> None:
+        """Feed solver quality to a backend framewise controller, if any."""
+
     def initialize(self) -> None:
         pass
 
@@ -375,6 +385,7 @@ class CameraInterface:
                 or cfg.get_option("solver_sep_fallback")
                 or cfg.get_option("solver_cedar_fullframe")
                 or cfg.get_option("wide_solver_enabled")
+                or cfg.get_option("camera_auto_star_framewise")
             )
             if self._publish_solver_raw:
                 logger.info(
@@ -543,6 +554,9 @@ class CameraInterface:
                         "frame_duration_us": driver_metadata.get("FrameDuration"),
                         "sensor_temp_c": getattr(self, "last_sensor_temp", None),
                         "capture_pipeline": pipeline,
+                        "auto_star_control": dict(
+                            getattr(self, "last_auto_star_control", None) or {}
+                        ),
                     }
                     publish_solver_frame = getattr(
                         shared_state, "set_solver_frame", None
@@ -694,7 +708,55 @@ class CameraInterface:
                                     # full-frame detector consensus, not
                                     # catalog matches (central crop is only a
                                     # fallback). See auto_star research doc.
-                                    if self._auto_exposure_star is None:
+                                    if self.framewise_auto_star_active():
+                                        quality = getattr(
+                                            solution.diagnostics,
+                                            "ExposureQuality",
+                                            None,
+                                        )
+                                        if quality is None:
+                                            quality = {
+                                                "frame_id": getattr(
+                                                    solution.diagnostics,
+                                                    "FrameId",
+                                                    None,
+                                                ),
+                                                "source": (
+                                                    "peripheral_full"
+                                                    if "full"
+                                                    in solution.diagnostics.solve_path
+                                                    else "center"
+                                                ),
+                                                "region_ids": (
+                                                    ("U", "L", "R", "D")
+                                                    if "full"
+                                                    in solution.diagnostics.solve_path
+                                                    else ("C",)
+                                                ),
+                                                "matched_stars": matched_stars,
+                                                "candidate_stars": full_frame_star_count(
+                                                    solution.diagnostics.Centroids,
+                                                    solution.diagnostics.CedarGatedCentroids,
+                                                    solution.diagnostics.CedarRawCentroids,
+                                                    solution.diagnostics.SepCentroids,
+                                                ),
+                                                "snr_p25": None,
+                                                "snr_median": None,
+                                                "rmse": solve_rmse,
+                                                "solve_success": (
+                                                    solution.last_solve_success
+                                                    == solve_attempt_time
+                                                ),
+                                            }
+                                        if quality.get("frame_id") is not None:
+                                            self.update_framewise_auto_star_quality(
+                                                quality
+                                            )
+                                        new_exposure = None
+                                        feedback_stars = quality.get(
+                                            "candidate_stars", matched_stars
+                                        )
+                                    elif self._auto_exposure_star is None:
                                         self._auto_exposure_star = (
                                             ExposureStarCountController(
                                                 target_stars=(
@@ -704,33 +766,34 @@ class CameraInterface:
                                                 )
                                             )
                                         )
-                                    arr = np.asarray(base_image)
-                                    h, w = arr.shape[0], arr.shape[1]
-                                    center_mean = float(
-                                        arr[
-                                            h // 4 : h - h // 4,
-                                            w // 4 : w - w // 4,
-                                        ].mean()
-                                    )
-                                    # Per-attempt success: on success the
-                                    # solver stamps last_solve_success with
-                                    # the attempt time. solve_source cannot
-                                    # tell this (IMU masks it, see gate above).
-                                    feedback_stars = full_frame_star_count(
-                                        solution.diagnostics.Centroids,
-                                        solution.diagnostics.CedarGatedCentroids,
-                                        solution.diagnostics.CedarRawCentroids,
-                                        solution.diagnostics.SepCentroids,
-                                    )
-                                    new_exposure = self._auto_exposure_star.update(
-                                        feedback_stars,
-                                        self.exposure_time,
-                                        center_mean=center_mean,
-                                        solve_success=(
-                                            solution.last_solve_success
-                                            == solve_attempt_time
-                                        ),
-                                    )
+                                    if not self.framewise_auto_star_active():
+                                        arr = np.asarray(base_image)
+                                        h, w = arr.shape[0], arr.shape[1]
+                                        center_mean = float(
+                                            arr[
+                                                h // 4 : h - h // 4,
+                                                w // 4 : w - w // 4,
+                                            ].mean()
+                                        )
+                                        # Per-attempt success: on success the
+                                        # solver stamps last_solve_success with
+                                        # the attempt time. solve_source cannot
+                                        # tell this (IMU masks it, see gate above).
+                                        feedback_stars = full_frame_star_count(
+                                            solution.diagnostics.Centroids,
+                                            solution.diagnostics.CedarGatedCentroids,
+                                            solution.diagnostics.CedarRawCentroids,
+                                            solution.diagnostics.SepCentroids,
+                                        )
+                                        new_exposure = self._auto_exposure_star.update(
+                                            feedback_stars,
+                                            self.exposure_time,
+                                            center_mean=center_mean,
+                                            solve_success=(
+                                                solution.last_solve_success
+                                                == solve_attempt_time
+                                            ),
+                                        )
                                 else:
                                     # Match-count controller (default)
                                     new_exposure = self._auto_exposure_pid.update(
@@ -803,6 +866,18 @@ class CameraInterface:
                                     self._auto_exposure_pid.reset()
                                 if self._auto_exposure_star is not None:
                                     self._auto_exposure_star.reset()
+                                if exp_value == "auto_star":
+                                    # Re-selecting Auto(Star) explicitly
+                                    # unlocks automatic gain and begins at the
+                                    # sensor profile's high-gain default.
+                                    self.gain = self.get_default_gain()
+                                    self._gain_mode = "profile"
+                                    self.set_camera_config(
+                                        self.exposure_time, self.gain
+                                    )
+                                    self.reset_framewise_auto_star(gain_locked=False)
+                                else:
+                                    self.reset_framewise_auto_star()
                                 # Record the mode the same way a manual exposure
                                 # is recorded below: the Camera Exp menu and the
                                 # web LiveCam page both read camera_exp back to
@@ -821,6 +896,7 @@ class CameraInterface:
                                 # untouched so the prior mode can be restored.
                                 self._auto_exposure_enabled = False
                                 self._last_solve_time = None
+                                self.reset_framewise_auto_star()
                                 if self.set_native_ae(True):
                                     self._native_ae_enabled = True
                                     console_queue.put("CAM: Native AE")
@@ -843,6 +919,7 @@ class CameraInterface:
                                 # set_camera_config also clears native AE on Pi.
                                 self._auto_exposure_enabled = False
                                 self._native_ae_enabled = False
+                                self.reset_framewise_auto_star()
                                 self.exposure_time = int(exp_value)
                                 self.set_camera_config(self.exposure_time, self.gain)
                                 # Calibration uses transient manual exposures;
@@ -877,6 +954,16 @@ class CameraInterface:
                             # Only publish the selection after the camera
                             # accepted the corresponding control update.
                             self._gain_mode = gain_mode
+                            if (
+                                self._auto_exposure_enabled
+                                and self._ae_controller_choice == "star_count"
+                            ):
+                                # Numeric gain is an explicit lock. Profile
+                                # remains the automatic ladder's high-gain
+                                # start and therefore stays unlocked.
+                                self.reset_framewise_auto_star(
+                                    gain_locked=(gain_mode == "manual")
+                                )
                             gain_text = f"{self.gain:g}"
                             console_queue.put("CAM: Gain=" + gain_text)
                             logger.info(f"Gain changed: {old_gain:g}x → {gain_text}x")
@@ -885,6 +972,9 @@ class CameraInterface:
                             mode = command.split(":")[1]
                             if mode in ["pid", "snr"]:
                                 self._auto_exposure_mode = mode
+                                self.reset_framewise_auto_star(
+                                    gain_locked=(self._gain_mode == "manual")
+                                )
                                 console_queue.put(f"CAM: AE Mode={mode.upper()}")
                                 logger.info(
                                     f"Auto-exposure mode changed to: {mode.upper()}"
@@ -900,6 +990,7 @@ class CameraInterface:
                             # also clears native AeEnable on Pi).
                             self._auto_exposure_enabled = False
                             self._native_ae_enabled = False
+                            self.reset_framewise_auto_star()
                             if command == "exp_up":
                                 self.exposure_time = int(self.exposure_time * 1.25)
                             else:
@@ -909,6 +1000,7 @@ class CameraInterface:
                         if command == "exp_save":
                             # Saving exposure disables auto-exposure and locks to current value
                             self._auto_exposure_enabled = False
+                            self.reset_framewise_auto_star()
                             cfg.set_option("camera_exp", self.exposure_time)
                             cfg.set_option("camera_gain", int(self.gain))
                             console_queue.put(

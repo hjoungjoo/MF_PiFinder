@@ -1,7 +1,7 @@
 # Auto(Star) 프레임 단위 노출·게인 제어 개선 조사 및 구현안
 
-> 상태: **무중단 캡처 기반·주변 검출 노출 안정화 구현 완료, framewise SNR/gain
-> 제어기 구현 전** (2026-09-02)
+> 상태: **framewise v2 구현·실내/구름 실기 검증 완료, 맑은 밤 A/B 대기**
+> (2026-09-02)
 >
 > 요청 목표: Auto(Star)가 솔브 결과를 기다리지 않고 **매 캡처 프레임을
 > 측정하여 가능한 가장 이른 프레임에 노출과 게인을 반영**한다. 어두운
@@ -43,6 +43,31 @@
 > 참별/오검출 품질 증거가 아직 없으므로 프로파일 30(실제 29.51)을 유지했다.
 > 이 단계는 여전히 솔버 결과 주기의 exposure 안정화이며, 매 RAW 프레임
 > 주변 matched-star SNR과 자동 gain actuator는 후속 구현 범위다.
+
+> Framewise v2 구현·실기 반영(2026-09-02): 3×3 주변 RAW p50/MAD/p90/p99/
+> p999/포화율, 중앙 달·bloom connected-component 제외, 실제 메타데이터 기반
+> pending/apply 확인, 비대칭 exposure 제어, gain 사다리 시험/rollback 및
+> full-frame/주변 타일 catalog-match RAW SNR 요약을 구현했다. 기존 솔브 주기
+> Auto(Star)는 v2 활성 중 카메라 값을 쓰지 않는다. IMX462 실기에서 제어
+> 계산 7.2~10.4 ms, 전체 후처리 41.8~48.2 ms, request-held 4.0~5.5 ms,
+> 관측 drop 0이었다. 이 장치에서 command→applied 지연은 최대 7 accepted
+> frames로 재측정되어 timeout은 실측+2인 9 frames로 정했다. 별이 없는 구름
+> 조건에서는 포화 탈출과 pending windup 방지만 검증했으며 gain 품질 판정과
+> §12 야간 합격 기준은 다음 맑은 밤에 검증해야 한다. 기능은
+> `camera_auto_star_framewise` opt-in으로 유지한다.
+
+> 광해 시야 추가 검증(2026-09-02): gain 30/200 ms에서 주변 p999가
+> 3969/4095까지 올라간 첫 프레임에 100 ms 하향을 제출했고 7 accepted frames
+> 뒤 실제 100 ms, p999 2222, 포화율 0으로 복구했다. 이후 gain 30/100 ms에서
+> 100→15 단계 시험이 한 번 발생했으나 gain 15/약 197 ms도 catalog match가
+> 0이어서 gain 30/약 99 ms로 rollback했다. 후보 수 감소만으로 낮은 gain을
+> 유지하지 않고 실제 solve 성공과 3개 이상 match 개선을 요구하도록 수정했으며,
+> 실패한 gain 시험은 90초 cooldown한다. 최종 관측 구간은 gain 30/100 ms,
+> p50 1173~1184, p999 2152~2182, 포화율 0, direction reversal 0이었다.
+> 숫자 gain만 lock하고 `Profile`은 자동 gain 사다리를 unlock한다. 낮은 gain이
+> 실제 품질 개선으로 유지된 뒤에는 양호한 주변 solve 5회가 연속될 때 한 단계
+> 높은 gain을 같은 총 노광량으로 재시험하고 품질이 나빠지지 않을 때만 기본
+> 고gain 방향으로 복귀한다.
 
 ## 1. 결론
 

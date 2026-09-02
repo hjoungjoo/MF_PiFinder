@@ -79,6 +79,7 @@ class SepDetection:
     cloud_gated_count: int = 0
     cloud_contrast: float = 0.0
     cloud_background_limit: Optional[float] = None
+    cloud_directional_coherence: float = 1.0
 
 
 def warm_pixel_excess(frame: np.ndarray) -> np.ndarray:
@@ -319,6 +320,7 @@ def detect_stars(
         cloud_gated_count=cloud_gated_count,
         cloud_contrast=cloud_selection.contrast,
         cloud_background_limit=cloud_selection.background_limit,
+        cloud_directional_coherence=cloud_selection.directional_coherence,
     )
 
 

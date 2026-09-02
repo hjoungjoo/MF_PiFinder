@@ -1300,6 +1300,7 @@ def register_api_routes(app, server_instance, require_auth=False):
                 "sensor_timestamp_ns": metadata.get("sensor_timestamp_ns"),
                 **dict(metadata.get("capture_pipeline") or {}),
             },
+            "auto_star_control": dict(metadata.get("auto_star_control") or {}),
         }
         if message:
             data["message"] = message

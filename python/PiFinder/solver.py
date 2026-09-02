@@ -31,6 +31,7 @@ from PiFinder import utils
 from PiFinder import timez
 from PiFinder import horizon_mask, sep_detect
 from PiFinder import solver_frame_map as sfm
+from PiFinder.auto_exposure_framewise import matched_star_exposure_quality
 from PiFinder.mf_manual_lens import manual_focal_from_state
 from PiFinder.mf_livecam_tiles import active_focal_length_mm
 from PiFinder.mf_wide_calibration import CalibrationProfileStore
@@ -852,6 +853,8 @@ def _build_successful_solve(
     tile_accepted: tuple[str, ...] = (),
     tile_reason: str = "",
     tile_scores: tuple[dict[str, object], ...] = (),
+    frame_id: Optional[int] = None,
+    exposure_quality: Optional[dict[str, object]] = None,
 ) -> SuccessfulSolve:
     """Fold a successful tetra3 ``solution`` dict into a
     :class:`SuccessfulSolve` message.
@@ -901,6 +904,8 @@ def _build_successful_solve(
             TileAccepted=tile_accepted,
             TileReason=tile_reason,
             TileScores=tile_scores,
+            FrameId=frame_id,
+            ExposureQuality=exposure_quality,
         ),
         alignment=AlignmentResult(
             x_target=solution.get("x_target"),
@@ -927,6 +932,8 @@ def _build_failed_solve(
     tile_accepted: tuple[str, ...] = (),
     tile_reason: str = "",
     tile_scores: tuple[dict[str, object], ...] = (),
+    frame_id: Optional[int] = None,
+    exposure_quality: Optional[dict[str, object]] = None,
 ) -> FailedSolve:
     """Build a :class:`FailedSolve` message for an attempt that produced
     no pointing. The integrator's long-lived estimate preserves the
@@ -951,6 +958,8 @@ def _build_failed_solve(
             TileAccepted=tile_accepted,
             TileReason=tile_reason,
             TileScores=tile_scores,
+            FrameId=frame_id,
+            ExposureQuality=exposure_quality,
         ),
     )
 
@@ -1185,6 +1194,7 @@ def solver(
     # wide grid; at/above 10 mm it uses the 3x3 recovery grid.  The
     # false default leaves every established Cedar/SEP path in control.
     wide_solver_wanted = bool(_sep_cfg.get_option("wide_solver_enabled"))
+    auto_star_framewise_wanted = bool(_sep_cfg.get_option("camera_auto_star_framewise"))
     cedar_ff_geometry = None  # context dict, resolved lazily
     cedar_ff_geometry_key = None
     # Ground-light rejection for the FF path (docs field test 2026-08-04):
@@ -1374,6 +1384,7 @@ def solver(
 
                     t0 = precision_timestamp()
                     used_fullframe = False
+                    ff_frame = None
                     ff_frame_hw = None
                     ff_center_solved = False
                     cedar_raw_count = None
@@ -1603,6 +1614,7 @@ def solver(
                     sep_run = None
                     sep_fallback_used = False
                     wide_result = None
+                    exposure_quality = None
                     sep_can_solve = False
                     if sep_shadow is not None:
                         if sep_thread is not None:
@@ -1637,8 +1649,29 @@ def solver(
                     # disabled during an alignment command because an
                     # off-centre tile cannot reliably return the alignment
                     # target's pixel inside its own crop.
+                    center_contaminated_for_ae = False
                     if (
-                        wide_solver_wanted
+                        auto_star_framewise_wanted
+                        and used_fullframe
+                        and ff_frame is not None
+                    ):
+                        profile = get_camera_profile(shared_state.camera_type())
+                        center_height = ff_frame.shape[0] // 3
+                        center_width = ff_frame.shape[1] // 3
+                        center_y = (ff_frame.shape[0] - center_height) // 2
+                        center_x = (ff_frame.shape[1] - center_width) // 2
+                        center_sparse = ff_frame[
+                            center_y : center_y + center_height : 8,
+                            center_x : center_x + center_width : 8,
+                        ]
+                        center_contaminated_for_ae = bool(
+                            center_sparse.size
+                            and np.percentile(center_sparse, 99.9)
+                            >= 0.85 * (2**profile.bit_depth - 1)
+                        )
+
+                    if (
+                        (wide_solver_wanted or center_contaminated_for_ae)
                         and used_fullframe
                         and (not solution or solution.get("RA") is None)
                         and align_ra == 0
@@ -1890,6 +1923,128 @@ def solver(
                         if sep_fallback_used:
                             solve_path = "sep_full"
 
+                    # Consume full-frame matched coordinates while they still
+                    # exist.  Published pointing keeps its existing 512-space
+                    # contract; only this compact AE summary crosses processes.
+                    if (
+                        used_fullframe
+                        and ff_frame is not None
+                        and solution
+                        and solution.get("RA") is not None
+                        and solution.get("matched_centroids") is not None
+                        and "full" in solve_path
+                    ):
+                        try:
+                            matched = np.asarray(
+                                solution["matched_centroids"], dtype=np.float64
+                            )
+                            _, matched_canvas = sfm.rotate_centroids(
+                                np.empty((0, 2)),
+                                ff_frame_hw,
+                                cedar_ff_geometry["rotation_deg"],
+                            )
+                            matched_raw, _ = sfm.rotate_centroids(
+                                matched,
+                                matched_canvas,
+                                (360.0 - cedar_ff_geometry["rotation_deg"]) % 360.0,
+                            )
+                            exposure_quality = matched_star_exposure_quality(
+                                ff_frame,
+                                matched_raw,
+                                frame_id=last_image_metadata.get("frame_id"),
+                                candidate_stars=(
+                                    len(sep_run.detection.centroids)
+                                    if sep_fallback_used and sep_run is not None
+                                    else len(centroids)
+                                ),
+                                bit_depth=get_camera_profile(
+                                    shared_state.camera_type()
+                                ).bit_depth,
+                                source="peripheral_full",
+                                rmse=solution.get("RMSE"),
+                            )
+                        except Exception:
+                            logger.exception("Auto(Star) matched-star quality failed")
+                    elif wide_result is not None:
+                        accepted_scores = [
+                            score
+                            for score in wide_result.tile_scores
+                            if score.solved and score.tile_id != "C"
+                        ]
+                        if accepted_scores:
+                            tile_candidates = sum(
+                                score.centroid_count for score in accepted_scores
+                            )
+                            tile_rmse = max(
+                                (
+                                    score.rmse
+                                    for score in accepted_scores
+                                    if score.rmse is not None
+                                ),
+                                default=None,
+                            )
+                            tile_matched = tuple(
+                                point
+                                for score in accepted_scores
+                                for point in score.matched_centroids_raw
+                            )
+                            if tile_matched:
+                                exposure_quality = matched_star_exposure_quality(
+                                    ff_frame,
+                                    tile_matched,
+                                    frame_id=last_image_metadata.get("frame_id"),
+                                    candidate_stars=tile_candidates,
+                                    bit_depth=get_camera_profile(
+                                        shared_state.camera_type()
+                                    ).bit_depth,
+                                    source="peripheral_tile",
+                                    rmse=tile_rmse,
+                                )
+                            else:
+                                exposure_quality = {
+                                    "frame_id": last_image_metadata.get("frame_id"),
+                                    "source": "peripheral_tile",
+                                    "region_ids": tuple(
+                                        score.tile_id for score in accepted_scores
+                                    ),
+                                    "matched_stars": sum(
+                                        score.matches for score in accepted_scores
+                                    ),
+                                    "candidate_stars": tile_candidates,
+                                    "snr_p25": None,
+                                    "snr_median": None,
+                                    "rmse": tile_rmse,
+                                    "solve_success": True,
+                                    "center_contaminated": bool(
+                                        wide_result.central_saturated
+                                        or center_contaminated_for_ae
+                                    ),
+                                }
+
+                    if exposure_quality is None and used_fullframe:
+                        exposure_quality = {
+                            "frame_id": last_image_metadata.get("frame_id"),
+                            "source": "peripheral_full",
+                            "region_ids": (),
+                            "matched_stars": 0,
+                            "candidate_stars": max(
+                                value or 0
+                                for value in (
+                                    cedar_gated_count,
+                                    cedar_raw_count,
+                                    sep_count,
+                                )
+                            ),
+                            "snr_p25": None,
+                            "snr_median": None,
+                            "rmse": solution.get("RMSE") if solution else None,
+                            "solve_success": False,
+                            "center_contaminated": bool(
+                                center_contaminated_for_ae
+                                or (wide_result and wide_result.central_saturated)
+                            ),
+                        }
+
                     if sep_fallback_used:
                         # SEP per-centroid outputs are in full-frame space;
                         # never let them reach 512-space SQM photometry.
@@ -2035,6 +2190,8 @@ def solver(
                                 if wide_result is not None
                                 else ()
                             ),
+                            frame_id=last_image_metadata.get("frame_id"),
+                            exposure_quality=exposure_quality,
                         )
                         # Popped only now: _build_successful_solve above needs
                         # it for the Gaia-G reference band.
@@ -2125,6 +2282,8 @@ def solver(
                                     if wide_result is not None
                                     else ()
                                 ),
+                                frame_id=last_image_metadata.get("frame_id"),
+                                exposure_quality=exposure_quality,
                             )
                         )
 

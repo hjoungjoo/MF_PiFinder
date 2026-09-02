@@ -276,6 +276,7 @@ class SepShadowRunner:
                 "cloud_gate_active": detection.cloud_gate_active,
                 "cloud_gated": detection.cloud_gated_count,
                 "cloud_contrast": detection.cloud_contrast,
+                "cloud_directional_coherence": (detection.cloud_directional_coherence),
                 "timestamp": time.time(),
             }
             return SepRun(

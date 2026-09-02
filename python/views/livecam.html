@@ -905,6 +905,7 @@ function renderCameraStatus(data, hydrate) {
   }
   const exposure = data.exposure || {};
   const gain = data.gain || {};
+  const autoStar = data.auto_star_control || {};
   const modeLabels = {
     auto: "{{ _('Auto') }}",
     auto_star: "{{ _('Auto (Star)') }}",
@@ -915,6 +916,11 @@ function renderCameraStatus(data, hydrate) {
     formatGain(gain.actual),
     modeLabels[exposure.mode] || exposure.mode || '-'
   ];
+  if (exposure.mode === 'auto_star' && autoStar.version === 2) {
+    const pending = autoStar.pending ? 'pending' : 'applied';
+    const gainState = autoStar.gain_locked ? 'gain locked' : 'gain auto';
+    parts.push(`v2 ${pending}: ${autoStar.reason || '-'} (${gainState})`);
+  }
   cameraControls.liveValues.textContent = parts.join(' / ');
   if (!data.available) {
     cameraControls.applyButton.disabled = true;

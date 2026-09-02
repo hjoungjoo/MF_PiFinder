@@ -285,6 +285,11 @@ class SolveDiagnostics:
     TileAccepted: tuple[str, ...] = ()
     TileReason: str = ""
     TileScores: tuple[dict[str, object], ...] = ()
+    # Camera frame identity and compact Auto(Star) v2 quality.  The quality
+    # dict intentionally contains only scalar/short tuple diagnostics; full
+    # RAW and matched arrays stay inside the solver process.
+    FrameId: Optional[int] = None
+    ExposureQuality: Optional[dict[str, object]] = None
 
 
 @dataclass

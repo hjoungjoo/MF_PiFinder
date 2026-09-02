@@ -48,6 +48,9 @@ class MFWideTileScore:
     matches: int = 0
     rmse: float | None = None
     reason: str = ""
+    # Catalog-matched coordinates mapped back to the original full RAW.
+    # Kept solver-local for Auto(Star) photometry; omitted from diagnostics.
+    matched_centroids_raw: tuple[tuple[float, float], ...] = ()
 
     def as_diagnostic(self) -> dict[str, Any]:
         return {
@@ -293,6 +296,27 @@ def solve_wide_tiles(
             )
             return None, len(raw_centroids)
         normalised = _normalise_centre_solution(result)
+        matched_raw: tuple[tuple[float, float], ...] = ()
+        if normalised.get("matched_centroids") is not None:
+            matched_rotated = np.asarray(
+                normalised["matched_centroids"], dtype=np.float64
+            ).reshape(-1, 2)
+            _, rotated_canvas = sfm.rotate_centroids(
+                np.empty((0, 2)),
+                (tile.rect.height, tile.rect.width),
+                rotation_deg,
+            )
+            matched_local, _ = sfm.rotate_centroids(
+                matched_rotated,
+                rotated_canvas,
+                (360.0 - rotation_deg) % 360.0,
+            )
+            matched_global = matched_local + np.asarray(
+                [tile.rect.y, tile.rect.x], dtype=np.float64
+            )
+            matched_raw = tuple(
+                (float(point[0]), float(point[1])) for point in matched_global
+            )
         tile_scores.append(
             MFWideTileScore(
                 tile.tile_id,
@@ -304,6 +328,7 @@ def solve_wide_tiles(
                     if normalised.get("RMSE") is not None
                     else None
                 ),
+                matched_centroids_raw=matched_raw,
             )
         )
         return normalised, len(raw_centroids)

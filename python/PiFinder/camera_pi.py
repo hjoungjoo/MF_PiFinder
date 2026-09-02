@@ -12,6 +12,13 @@ This module is the camera
 from PIL import Image
 from PiFinder import config
 from PiFinder.camera_interface import CameraInterface
+from PiFinder.auto_exposure_framewise import (
+    AutoStarFrameController,
+    ExposureGainAllocator,
+    SolveExposureQuality,
+    collect_spatial_frame_sample,
+)
+from PiFinder.camera_controls import MAX_EXPOSURE_US, MIN_EXPOSURE_US
 from PiFinder.sqm import apply_variant, detect_camera_type, get_camera_profile
 from PiFinder.sqm.radiometer import collect_radiometer_sample
 from typing import Optional, Tuple
@@ -101,6 +108,11 @@ class CameraPI(CameraInterface):
 
         # Initialize runtime gain from profile (can be changed via commands)
         self.gain = self.profile.analog_gain
+        self._auto_star_framewise_enabled = bool(
+            cfg and cfg.get_option("camera_auto_star_framewise")
+        )
+        self._auto_star_controller: Optional[AutoStarFrameController] = None
+        self.last_auto_star_control: dict[str, object] = {}
         self._radiometer_sequence = 0
         self._capture_sequence = 0
         self._last_sensor_timestamp_ns: Optional[int] = None
@@ -135,7 +147,133 @@ class CameraPI(CameraInterface):
             )
 
         self._default_controls()
+        self._configure_framewise_controller()
         self.start_camera()
+
+    def _driver_control_range(self, name, fallback):
+        """Return a numeric (minimum, maximum) from Picamera2 control info."""
+        try:
+            info = self.camera.camera_controls.get(name)
+            if info is not None and len(info) >= 2:
+                return float(info[0]), float(info[1])
+        except (AttributeError, TypeError, ValueError):
+            pass
+        return fallback
+
+    def _configure_framewise_controller(self) -> None:
+        exposure_min, exposure_max = self._driver_control_range(
+            "ExposureTime", (MIN_EXPOSURE_US, MAX_EXPOSURE_US)
+        )
+        gain_min, gain_max = self._driver_control_range(
+            "AnalogueGain",
+            (1.0, float(getattr(self.profile, "analog_gain", self.gain))),
+        )
+        allocator = ExposureGainAllocator(
+            min_exposure_us=max(MIN_EXPOSURE_US, int(exposure_min)),
+            max_exposure_us=min(MAX_EXPOSURE_US, int(exposure_max)),
+            max_gain=min(
+                float(getattr(self.profile, "analog_gain", self.gain)), gain_max
+            ),
+            min_gain=max(1.0, gain_min),
+        )
+        self._auto_star_controller = AutoStarFrameController(allocator)
+        logger.info(
+            "Auto(Star) framewise %s (exposure=%d..%dus, gain=%s)",
+            (
+                "enabled"
+                if getattr(self, "_auto_star_framewise_enabled", False)
+                else "shadow-disabled"
+            ),
+            allocator.min_exposure_us,
+            allocator.max_exposure_us,
+            allocator.gain_ladder,
+        )
+
+    def framewise_auto_star_active(self) -> bool:
+        return bool(
+            self._auto_star_framewise_enabled
+            and self._auto_star_controller is not None
+            and self._auto_exposure_enabled
+            and self._ae_controller_choice == "star_count"
+            and self._auto_exposure_mode != "snr"
+            and not self._native_ae_enabled
+        )
+
+    def reset_framewise_auto_star(self, *, gain_locked: bool = False) -> None:
+        if self._auto_star_controller is not None:
+            self._auto_star_controller.reset(gain_locked=gain_locked)
+        self.last_auto_star_control = (
+            self._auto_star_controller.status()
+            if self._auto_star_controller is not None
+            else {}
+        )
+
+    def update_framewise_auto_star_quality(self, quality) -> None:
+        if self._auto_star_controller is None or not isinstance(quality, dict):
+            return
+        try:
+            self._auto_star_controller.update_quality(
+                SolveExposureQuality(
+                    frame_id=int(quality["frame_id"]),
+                    source=str(quality.get("source") or "center"),
+                    region_ids=tuple(quality.get("region_ids") or ()),
+                    matched_stars=int(quality.get("matched_stars") or 0),
+                    candidate_stars=int(quality.get("candidate_stars") or 0),
+                    snr_p25=quality.get("snr_p25"),
+                    snr_median=quality.get("snr_median"),
+                    rmse=quality.get("rmse"),
+                    solve_success=bool(quality.get("solve_success")),
+                    center_contaminated=bool(quality.get("center_contaminated", False)),
+                )
+            )
+            self.last_auto_star_control = self._auto_star_controller.status()
+        except (KeyError, TypeError, ValueError):
+            logger.exception("Invalid Auto(Star) solver quality payload")
+
+    def _process_framewise_auto_star(self, raw_capture, metadata) -> None:
+        controller = self._auto_star_controller
+        if controller is None:
+            return
+        if not self.framewise_auto_star_active():
+            self.last_auto_star_control = controller.status()
+            return
+        try:
+            actual_exposure = float(metadata.get("ExposureTime", self.exposure_time))
+            actual_gain = float(metadata.get("AnalogueGain", self.gain))
+            sample = collect_spatial_frame_sample(
+                raw_capture,
+                frame_id=int(
+                    self.last_frame_id
+                    if self.last_frame_id is not None
+                    else self._capture_sequence
+                ),
+                frame_sequence=self._capture_sequence,
+                actual_exposure_us=actual_exposure,
+                actual_gain=actual_gain,
+                bit_depth=self.profile.bit_depth,
+                pedestal_adu=self.profile.bias_offset,
+                captured_at=time.time(),
+            )
+            if sample is None:
+                return
+            target = controller.on_frame(sample)
+            if target is not None:
+                self.exposure_time, self.gain = self.set_camera_config(
+                    target.exposure_us, target.gain
+                )
+                controller.mark_submitted(target, self._capture_sequence)
+                logger.info(
+                    "Auto(Star) framewise: %sus/%sx -> %dus/%gx (%s)",
+                    int(actual_exposure),
+                    f"{actual_gain:g}",
+                    target.exposure_us,
+                    target.gain,
+                    target.reason,
+                )
+            self.last_auto_star_control = controller.status()
+        except Exception:
+            # A diagnostic/controller bug must not interrupt continuous capture.
+            logger.exception("Auto(Star) framewise processing failed")
 
     def _raw_array(self, request) -> np.ndarray:
         """A request's raw frame in the profile's bit-depth units (uint16)."""
@@ -246,6 +384,14 @@ class CameraPI(CameraInterface):
         # sensor is exposing the next frame concurrently.
         raw_capture = self.profile.crop_and_rotate(sensor_raw)
         cropped_raw = raw_capture
+        control_started_ns = time.monotonic_ns()
+        self._process_framewise_auto_star(raw_capture, metadata)
+        self.last_capture_diagnostics["capture_to_control_ms"] = (
+            time.monotonic_ns() - request_released_ns
+        ) / 1e6
+        self.last_capture_diagnostics["controller_processing_ms"] = (
+            time.monotonic_ns() - control_started_ns
+        ) / 1e6
         if hasattr(self, "shared_state"):
             self._radiometer_sequence += 1
             try:

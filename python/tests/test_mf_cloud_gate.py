@@ -32,14 +32,31 @@ def test_uniform_background_passes_every_candidate_unchanged():
 
 
 def test_structured_cloud_keeps_only_dark_clear_window_candidates():
-    background = np.linspace(1000.0, 4000.0, 100).reshape(10, 10)
-    points = np.array([[0.0, 0.0], [1.0, 5.0], [5.0, 5.0], [9.0, 9.0]])
+    yy, xx = np.mgrid[0:32, 0:32]
+    background = 1800.0 + 1100.0 * np.sin(xx / 4.0) * np.cos(yy / 5.0)
+    points = np.array([[0.0, 0.0], [8.0, 12.0], [15.0, 5.0], [24.0, 27.0]])
     result = select_clear_window_candidates(background, points, enabled=True)
 
     assert result.active is True
     assert result.contrast > 0.55
-    assert result.keep.tolist() == [True, True, False, False]
+    expected = [
+        background[round(y), round(x)] <= np.percentile(background, 20)
+        for y, x in points
+    ]
+    assert result.keep.tolist() == expected
     assert result.background_limit == pytest.approx(np.percentile(background, 20))
+    assert result.directional_coherence < 0.68
+
+
+def test_smooth_light_pollution_gradient_is_not_mistaken_for_cloud():
+    background = np.linspace(600.0, 3000.0, 32)[None, :] * np.ones((32, 1))
+    points = np.array([[2.0, 3.0], [20.0, 25.0]])
+    result = select_clear_window_candidates(background, points, enabled=True)
+
+    assert result.contrast > 0.55
+    assert result.directional_coherence == pytest.approx(1.0)
+    assert result.active is False
+    assert result.keep.tolist() == [True, True]
 
 
 def test_disabled_or_invalid_gate_fails_open():
