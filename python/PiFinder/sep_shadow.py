@@ -355,7 +355,11 @@ class SepShadowRunner:
             detection = sep_detect.detect_stars(
                 result.frame,
                 sigma=self.sigma,
-                saturation_level=self.saturation_level,
+                # Sensor-saturated extended structures were hard-masked before
+                # temporal synthesis. Summing repeated real stars can still
+                # clip the synthetic 12-bit output; that is evidence, not a
+                # newly saturated sensor source, so do not reject it again.
+                saturation_level=None,
                 warm_pixel_map=self.warm_pixel_map,
                 # Broad cloud structure was removed already. Reapplying the
                 # directional cloud gate can reject the compact residuals the

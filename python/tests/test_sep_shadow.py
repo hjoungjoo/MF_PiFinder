@@ -172,6 +172,7 @@ def test_solver_preprocessor_requires_two_matching_frames(monkeypatch, tmp_path)
     assert run.diagnostics.frame_count == 2
     assert run.frame_id == 2
     assert detected_frames[0][1]["cloud_window_gate"] is False
+    assert detected_frames[0][1]["saturation_level"] is None
     runner.use_preprocessed_overlay(run)
     assert runner._last_overlay["preprocessed"] is True
     assert runner._last_overlay["preprocess_frames"] == 2

@@ -2097,9 +2097,11 @@ def solver(
                                         sep_detect.filter_plain_centroids(
                                             preprocessed_cedar,
                                             preprocessed_frame,
-                                            saturation_level=cedar_ff_geometry[
-                                                "saturation_level"
-                                            ],
+                                            # True extended saturation was
+                                            # removed before synthesis. A
+                                            # clipped synthetic star is valid
+                                            # accumulated evidence.
+                                            saturation_level=None,
                                             warm_pixel_map=cedar_ff_geometry[
                                                 "warm_map"
                                             ],
