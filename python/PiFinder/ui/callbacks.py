@@ -690,7 +690,16 @@ def start_distortion_calibration(ui_module: UIModule) -> None:
             "last_reason": "requested",
         }
     )
-    ui_module.message(_("Distortion\nWaiting for stars"), 3)
+    from PiFinder.ui.distortion_calibration import UIDistortionCalibration
+
+    ui_module.add_to_stack(
+        {
+            "name": _("Measure Sky"),
+            "class": UIDistortionCalibration,
+            "label": "distortion_calibration_progress",
+            "request_id": request_id,
+        }
+    )
 
 
 def cancel_distortion_calibration(ui_module: UIModule) -> None:

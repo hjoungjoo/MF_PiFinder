@@ -93,6 +93,7 @@ from PiFinder.ui.object_list import SortOrder, UIObjectList
 from PiFinder.nearby import NEAREST_LIST_CAP
 from PiFinder.ui.log import UILog
 from PiFinder.ui.dateentry import UIDateEntry
+from PiFinder.ui.distortion_calibration import UIDistortionCalibration
 from PiFinder.ui.sqm_calibration import UISQMCalibration
 from PiFinder.ui.sqm_sweep import UISQMSweep
 from PiFinder.ui.software import UIMigrationConfirm, UIMigrationProgress
@@ -194,6 +195,7 @@ _DYNAMIC_IDS = [
     "UIIndiInit",
     "UIMigrationConfirm",
     "UIMigrationProgress",
+    "UIDistortionCalibration",
 ]
 
 
@@ -251,6 +253,13 @@ def _build_dynamic_item_definition(spec_id: str, sample_object) -> dict:
             "class": UIMigrationProgress,
             "version_info": {"version": "2.5.0"},
             "label": "migration_progress",
+        }
+    if spec_id == "UIDistortionCalibration":
+        return {
+            "name": "Measure Sky",
+            "class": UIDistortionCalibration,
+            "request_id": 123,
+            "label": "distortion_calibration_progress",
         }
     raise KeyError(spec_id)  # pragma: no cover
 

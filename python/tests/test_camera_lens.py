@@ -6,6 +6,10 @@ import pytest
 
 import PiFinder.i18n  # noqa: F401
 from PiFinder.ui import callbacks, menu_structure
+from PiFinder.ui.distortion_calibration import (
+    UIDistortionCalibration,
+    distortion_progress_values,
+)
 from PiFinder.mf_wide_calibration import CalibrationProfileStore
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.types.positioning import (
@@ -186,6 +190,8 @@ def test_measure_sky_queues_session_for_the_selected_lens():
     assert command.lens_key == "6mm"
     assert ui.shared_state.distortion_status["state"] == "requested"
     assert callbacks.distortion_status_suffix(ui) == "  0/5"
+    assert ui.pushed["class"] is UIDistortionCalibration
+    assert ui.pushed["request_id"] == command.request_id
 
 
 def test_distortion_menu_keeps_showing_progress_while_worker_is_measuring():
@@ -200,6 +206,50 @@ def test_distortion_menu_keeps_showing_progress_while_worker_is_measuring():
     assert callbacks.distortion_status_suffix(ui) == "  2/5"
     callbacks.show_distortion_status(ui)
     assert ui.messages[-1][0] == "Measuring 2/5\nSolving frame"
+
+
+def test_distortion_progress_screen_normalises_live_measurement_status():
+    values = distortion_progress_values(
+        {
+            "state": "measuring",
+            "request_id": 99,
+            "accepted_frames": 2,
+            "required_frames": 5,
+            "last_candidates": 156,
+            "last_reason": "measuring_frame",
+        },
+        99,
+    )
+
+    assert values == {
+        "state": "measuring",
+        "accepted": 2,
+        "required": 5,
+        "candidates": 156,
+        "k1": None,
+        "reason": "Solving full frame",
+    }
+
+
+def test_leaving_active_distortion_progress_screen_cancels_its_session():
+    ui = _UI("6mm")
+    ui.shared_state.distortion_status = {
+        "state": "measuring",
+        "request_id": 99,
+        "accepted_frames": 2,
+        "required_frames": 5,
+    }
+    screen = object.__new__(UIDistortionCalibration)
+    screen.request_id = 99
+    screen._cancel_sent = False
+    screen.shared_state = ui.shared_state
+    screen.command_queues = ui.command_queues
+
+    assert screen.key_left() is True
+    command = ui.command_queues["align_command"].get_nowait()
+    assert isinstance(command, CancelDistortionCalibration)
+    assert command.request_id == 99
+    assert ui.shared_state.distortion_status["state"] == "cancelled"
 
 
 def test_distortion_status_reports_and_reset_clears_saved_sky_profile():
