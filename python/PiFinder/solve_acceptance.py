@@ -66,12 +66,13 @@ def solution_quality_decision(
 
     if not solution or solution.get("RA") is None:
         return SolveAcceptanceDecision(False, "no_solution")
-    if solve_path not in {
+    native_fullframe_path = solve_path in {
         "sep_center",
         "sep_full",
         "cedar_center",
         "cedar_full",
-    }:
+    } or solve_path.startswith("preprocessed_")
+    if not native_fullframe_path:
         return SolveAcceptanceDecision(True, "established_path")
     try:
         matches = int(cast(Any, solution.get("Matches") or 0))
@@ -81,9 +82,7 @@ def solution_quality_decision(
         return SolveAcceptanceDecision(False, "missing_quality_metrics")
     if not all(math.isfinite(value) for value in (rmse, probability)):
         return SolveAcceptanceDecision(False, "nonfinite_quality_metrics")
-    min_matches = (
-        SEP_MIN_MATCHES if solve_path.startswith("sep") else FULLFRAME_MIN_MATCHES
-    )
+    min_matches = SEP_MIN_MATCHES if "sep" in solve_path else FULLFRAME_MIN_MATCHES
     if matches < min_matches:
         return SolveAcceptanceDecision(False, f"matches_below_{min_matches}")
     if rmse > FULLFRAME_MAX_RMSE_ARCSEC:

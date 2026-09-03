@@ -255,6 +255,12 @@
             <span>{{ _('Stack On') }}</span>
           </label>
         </p>
+        <p>
+          <label>
+            <input type="checkbox" id="solverPreprocessEnabled" />
+            <span>{{ _('Preprocess for solving') }}</span>
+          </label>
+        </p>
       </div>
       <div class="input-field col s12 m2">
         <select class="browser-default" id="stackMode">
@@ -466,6 +472,7 @@ const controls = {
   input_frame_source: document.getElementById('inputFrameSource'),
   output_source: document.getElementById('outputSource'),
   stack_enabled: document.getElementById('stackEnabled'),
+  solver_preprocess_enabled: document.getElementById('solverPreprocessEnabled'),
   stack_mode: document.getElementById('stackMode'),
   stack_frame_limit: document.getElementById('stackFrameLimit'),
   preview_mode: document.getElementById('previewMode'),
@@ -659,6 +666,7 @@ function applySettingsToControls(settings) {
   controls.input_frame_source.value = settings.input_frame_source || 'original_raw';
   controls.output_source.value = settings.output_source || 'latest_selected_raw';
   syncStackFromOutput();
+  controls.solver_preprocess_enabled.checked = !!settings.solver_preprocess_enabled;
   controls.stack_mode.value = settings.stack_mode || 'mean';
   controls.stack_frame_limit.value = settings.stack_frame_limit ?? 10;
   controls.preview_mode.value = settings.preview_mode || 'raw_display';
@@ -676,6 +684,7 @@ function collectSettings() {
     input_frame_source: controls.input_frame_source.value,
     output_source: controls.output_source.value,
     stack_enabled: controls.output_source.value === 'stack',
+    solver_preprocess_enabled: controls.solver_preprocess_enabled.checked,
     stack_mode: controls.stack_mode.value,
     stack_frame_limit: parseInt(controls.stack_frame_limit.value, 10),
     preview_mode: controls.preview_mode.value,

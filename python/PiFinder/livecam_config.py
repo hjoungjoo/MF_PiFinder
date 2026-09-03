@@ -14,13 +14,10 @@ from typing import Any
 CONFIG_PREFIX = "livecam_"
 STACK_FRAME_LIMIT_MAX = 500
 
-# ``processing_enabled`` is intentionally session-only: it is never read from or
-# written to the persisted config. The RAW LiveCam pipeline is resource-heavy
-# (it processes every camera frame), so it must always start OFF and only run
-# when the user explicitly turns it on for the current session. Persisting it
-# would silently re-enable the pipeline on every restart. All other LiveCam
-# settings persist normally.
-SESSION_ONLY_KEYS = {"processing_enabled"}
+# These opt-in processing switches are intentionally session-only: neither is
+# read from nor written to persisted config.  Both can be CPU-heavy and must
+# start OFF after an application restart.
+SESSION_ONLY_KEYS = {"processing_enabled", "solver_preprocess_enabled"}
 SOURCE_ORIGINAL = "original_raw"
 SOURCE_CROPPED = "cropped_raw"
 # Post-processing pipeline stages between the cropped raw and the solver
@@ -60,6 +57,7 @@ VALID_COLOR_MODES = {COLOR_MODE_THEME, COLOR_MODE_COLOR, COLOR_MODE_MONO}
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "processing_enabled": False,
+    "solver_preprocess_enabled": False,
     "input_frame_source": SOURCE_ORIGINAL,
     "output_source": OUTPUT_LATEST,
     "stack_enabled": False,
@@ -80,6 +78,9 @@ def normalize_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]
         merged.update(settings)
 
     merged["processing_enabled"] = _coerce_bool(merged.get("processing_enabled"))
+    merged["solver_preprocess_enabled"] = _coerce_bool(
+        merged.get("solver_preprocess_enabled")
+    )
 
     if merged.get("input_frame_source") not in VALID_SOURCES:
         merged["input_frame_source"] = SOURCE_ORIGINAL

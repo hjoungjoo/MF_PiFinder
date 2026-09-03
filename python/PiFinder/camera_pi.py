@@ -21,7 +21,7 @@ from PiFinder.auto_exposure_framewise import (
 from PiFinder.camera_controls import MAX_EXPOSURE_US, MIN_EXPOSURE_US
 from PiFinder.sqm import apply_variant, detect_camera_type, get_camera_profile
 from PiFinder.sqm.radiometer import collect_radiometer_sample
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 import logging
 import re
 import time
@@ -408,13 +408,13 @@ class CameraPI(CameraInterface):
             if sample is not None:
                 self.shared_state.set_sqm_radiometer_sample(sample)
 
-        livecam_settings = {}
+        livecam_settings: dict[str, Any] = {}
         livecam_active = False
         livecam_source = None
         if hasattr(self, "shared_state") and hasattr(
             self.shared_state, "livecam_settings"
         ):
-            livecam_settings = self.shared_state.livecam_settings()
+            livecam_settings = self.shared_state.livecam_settings() or {}
             livecam_active = processing_enabled(livecam_settings)
             if livecam_active:
                 livecam_source = normalize_settings(livecam_settings)[
@@ -470,7 +470,10 @@ class CameraPI(CameraInterface):
         # profile rotation applied, crop skipped. The reference is free --
         # the manager proxy pickles (copies) on set_solver_raw below.
         solver_full = None
-        if getattr(self, "_publish_solver_raw", False):
+        solver_preprocess_enabled = bool(
+            livecam_settings.get("solver_preprocess_enabled", False)
+        )
+        if getattr(self, "_publish_solver_raw", False) or solver_preprocess_enabled:
             solver_full = sensor_raw
             if self.profile.rotation_90 != 0:
                 solver_full = np.rot90(solver_full, self.profile.rotation_90)

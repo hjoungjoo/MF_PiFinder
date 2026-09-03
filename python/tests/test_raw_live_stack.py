@@ -112,6 +112,15 @@ def test_processing_enabled_coerces_string_values():
     assert not processing_enabled({"processing_enabled": "false"})
 
 
+def test_solver_preprocess_enabled_is_normalized_as_boolean():
+    assert normalize_settings({"solver_preprocess_enabled": "true"})[
+        "solver_preprocess_enabled"
+    ]
+    assert not normalize_settings({"solver_preprocess_enabled": "false"})[
+        "solver_preprocess_enabled"
+    ]
+
+
 def test_star_only_is_a_valid_livecam_input_source():
     settings = normalize_settings({"input_frame_source": SOURCE_STAR_ONLY})
 
@@ -159,6 +168,16 @@ def test_processing_enabled_is_not_persisted():
     assert f"{CONFIG_PREFIX}processing_enabled" not in cfg.options
     # Other settings still persist normally.
     assert cfg.options[f"{CONFIG_PREFIX}stack_mode"] == "mean"
+
+
+def test_solver_preprocess_enabled_is_session_only():
+    stale_cfg = WritableConfig({f"{CONFIG_PREFIX}solver_preprocess_enabled": True})
+
+    assert settings_from_config(stale_cfg)["solver_preprocess_enabled"] is False
+    cfg = WritableConfig()
+    returned = save_settings_to_config(cfg, {"solver_preprocess_enabled": True})
+    assert returned["solver_preprocess_enabled"] is True
+    assert f"{CONFIG_PREFIX}solver_preprocess_enabled" not in cfg.options
 
 
 def test_publish_original_rotates_without_crop():

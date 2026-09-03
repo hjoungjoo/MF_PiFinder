@@ -374,6 +374,17 @@ def test_livecam_zoom_keeps_the_whole_frame_in_the_scroll_range():
     assert "margin: auto" in placeholder
 
 
+def test_livecam_has_session_solver_preprocess_control_below_stack():
+    livecam_html = (VIEWS_DIR / "livecam.html").read_text()
+
+    assert livecam_html.index('id="stackEnabled"') < livecam_html.index(
+        'id="solverPreprocessEnabled"'
+    )
+    assert "solver_preprocess_enabled: controls.solver_preprocess_enabled.checked" in (
+        livecam_html
+    )
+
+
 def _rule_block(css: str, selector: str) -> str:
     """Return the declarations of the first rule whose selector list has this one."""
     match = re.search(rf"^\s*{re.escape(selector)}\s*[,{{]", css, re.MULTILINE)

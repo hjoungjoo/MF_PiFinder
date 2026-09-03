@@ -40,6 +40,7 @@ from PiFinder.mf_wide_solver import tile_solver_eligible
 from PiFinder.optics import OpticalTrainResolver
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.livecam_config import (
+    SESSION_ONLY_KEYS,
     default_settings_for_config,
     disabled_status,
     normalize_settings,
@@ -222,13 +223,15 @@ def register_api_routes(app, server_instance, require_auth=False):
             _raw_stack_cfg_cache["settings"] = settings_from_config(config.Config())
             _raw_stack_cfg_cache["mtime"] = mtime
         settings = dict(_raw_stack_cfg_cache["settings"])
-        # processing_enabled is session-only (never persisted). settings_from_config
-        # always returns it off, so carry forward the live value the user toggled
-        # for this session; otherwise a status poll would immediately disable it.
+        # Session-only switches are never persisted. settings_from_config always
+        # returns them off, so carry forward the values toggled for this session;
+        # otherwise a status poll would immediately disable them.
         if hasattr(server_instance.shared_state, "livecam_settings"):
             live = server_instance.shared_state.livecam_settings()
             if live:
-                settings["processing_enabled"] = bool(live.get("processing_enabled"))
+                for key in SESSION_ONLY_KEYS:
+                    if key in live:
+                        settings[key] = bool(live[key])
         if hasattr(server_instance.shared_state, "set_livecam_settings"):
             server_instance.shared_state.set_livecam_settings(settings)
         return settings

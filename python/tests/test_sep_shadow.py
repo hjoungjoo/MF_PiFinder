@@ -148,6 +148,40 @@ def test_detect_rejects_full_raw_from_a_neighbouring_frame(tmp_path):
 
 
 @pytest.mark.unit
+def test_solver_preprocessor_requires_two_matching_frames(monkeypatch, tmp_path):
+    runner = _runner(tmp_path)
+    detected_frames = []
+
+    def fake_detect(frame, **kwargs):
+        detected_frames.append((np.asarray(frame).copy(), kwargs))
+        return SepDetection(
+            centroids=np.asarray([[40.0, 50.0]]),
+            fluxes=np.asarray([100.0]),
+            background_median=64.0,
+            background_rms=1.0,
+            elapsed_ms=1.0,
+        )
+
+    monkeypatch.setattr("PiFinder.sep_shadow.sep_detect.detect_stars", fake_detect)
+    frame = np.zeros((128, 128), dtype=np.uint16)
+
+    assert runner.preprocess_frame(frame, fingerprint=("same",), frame_id=1) is None
+    run = runner.preprocess_frame(frame, fingerprint=("same",), frame_id=2)
+
+    assert run is not None
+    assert run.diagnostics.frame_count == 2
+    assert run.frame_id == 2
+    assert detected_frames[0][1]["cloud_window_gate"] is False
+    runner.use_preprocessed_overlay(run)
+    assert runner._last_overlay["preprocessed"] is True
+    assert runner._last_overlay["preprocess_frames"] == 2
+    assert runner._last_overlay["frame_id"] == 2
+
+    # A changed exposure/lens/etc. fingerprint must start a fresh window.
+    assert runner.preprocess_frame(frame, fingerprint=("changed",), frame_id=3) is None
+
+
+@pytest.mark.unit
 class TestFallbackBackoff:
     def test_first_attempt_always_allowed(self, tmp_path):
         runner = _runner(tmp_path)

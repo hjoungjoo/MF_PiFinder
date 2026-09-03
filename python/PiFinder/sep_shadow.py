@@ -44,6 +44,10 @@ from PiFinder import sep_detect, utils
 from PiFinder import solver_frame_map as sfm
 from PiFinder.mf_cloud_gate import wide_cloud_gate_enabled
 from PiFinder.mf_manual_lens import manual_focal_from_state
+from PiFinder.mf_star_only_preprocess import (
+    MFStarOnlyAccumulator,
+    MFStarOnlyDiagnostics,
+)
 from PiFinder.mf_wide_calibration import CalibrationProfileStore
 from PiFinder.mf_wide_distortion import active_coefficients, undistort_global_centroids
 from PiFinder.sep_detect import SepDetection
@@ -96,6 +100,17 @@ class SepRun:
     gain: Optional[float]
 
 
+@dataclass
+class PreprocessedRun:
+    """Star-only full frame and detector result in unchanged RAW coordinates."""
+
+    frame: np.ndarray
+    detection: SepDetection
+    diagnostics: MFStarOnlyDiagnostics
+    frame_hw: tuple[int, int]
+    frame_id: Optional[int]
+
+
 class SepShadowRunner:
     def __init__(
         self,
@@ -137,6 +152,7 @@ class SepShadowRunner:
         self._last_failed_sep_count: Optional[int] = None
         # Overlay entry for the in-flight attempt (see publish_overlay)
         self._last_overlay: Optional[dict] = None
+        self._star_only = MFStarOnlyAccumulator()
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
             "rotation=%.0f° crop_width=%dpx warm_pixels=%d distortion=%s log=%s",
@@ -157,13 +173,14 @@ class SepShadowRunner:
         camera_type: Optional[str],
         base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
         lens_key: Optional[str] = None,
+        force_create: bool = False,
     ):
         """Build a runner from config, or None when the path is disabled
         or the camera profile (crop geometry) is not resolvable yet."""
         try:
             shadow = bool(cfg.get_option("solver_shadow_detect"))
             fallback = bool(cfg.get_option("solver_sep_fallback"))
-            if not (shadow or fallback):
+            if not (shadow or fallback or force_create):
                 return None
             if not camera_type:
                 return None
@@ -285,6 +302,7 @@ class SepShadowRunner:
             self._last_overlay = {
                 "centroids": detection.centroids.tolist(),
                 "frame_hw": [int(frame.shape[0]), int(frame.shape[1])],
+                "frame_id": entry.get("frame_id"),
                 "masked": detection.masked_count,
                 "saturated": detection.saturated_count,
                 "sigma": self.sigma,
@@ -303,6 +321,80 @@ class SepShadowRunner:
         except Exception:
             logger.exception("SEP shadow detect failed")
             return None
+
+    def reset_preprocessor(self) -> None:
+        """Discard temporal evidence after motion or when the UI switch is off."""
+
+        self._star_only.reset()
+
+    def preprocess_frame(
+        self,
+        frame,
+        *,
+        fingerprint,
+        frame_id: Optional[int] = None,
+    ) -> Optional[PreprocessedRun]:
+        """Build a star-only frame and run SEP without changing coordinates.
+
+        The first frame only warms the temporal accumulator.  Requiring a
+        second observation is the main protection against hot pixels and
+        one-frame cloud glints being promoted into solver stars.
+        """
+
+        try:
+            arr = np.asarray(frame)
+            result = self._star_only.add(
+                arr,
+                saturation_level=float(
+                    self.saturation_level or np.iinfo(arr.dtype).max
+                ),
+                fingerprint=fingerprint,
+            )
+            if result.diagnostics.frame_count < 2:
+                return None
+            detection = sep_detect.detect_stars(
+                result.frame,
+                sigma=self.sigma,
+                saturation_level=self.saturation_level,
+                warm_pixel_map=self.warm_pixel_map,
+                # Broad cloud structure was removed already. Reapplying the
+                # directional cloud gate can reject the compact residuals the
+                # preprocessing was specifically designed to preserve.
+                cloud_window_gate=False,
+            )
+            if detection is None:
+                return None
+            return PreprocessedRun(
+                frame=result.frame,
+                detection=detection,
+                diagnostics=result.diagnostics,
+                frame_hw=(int(arr.shape[0]), int(arr.shape[1])),
+                frame_id=frame_id,
+            )
+        except Exception:
+            logger.exception("Star-only solver preprocessing failed")
+            self._star_only.reset()
+            return None
+
+    def use_preprocessed_overlay(self, run: PreprocessedRun) -> None:
+        """Show the candidates from the frame that is actually being solved."""
+
+        detection = run.detection
+        self._last_overlay = {
+            "centroids": detection.centroids.tolist(),
+            "frame_hw": [int(run.frame_hw[0]), int(run.frame_hw[1])],
+            "frame_id": run.frame_id,
+            "masked": detection.masked_count,
+            "saturated": detection.saturated_count,
+            "sigma": self.sigma,
+            "cloud_gate_active": detection.cloud_gate_active,
+            "cloud_gated": detection.cloud_gated_count,
+            "cloud_contrast": detection.cloud_contrast,
+            "cloud_directional_coherence": detection.cloud_directional_coherence,
+            "preprocessed": True,
+            "preprocess_frames": run.diagnostics.frame_count,
+            "timestamp": time.time(),
+        }
 
     def solve(
         self,

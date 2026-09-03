@@ -60,6 +60,14 @@ def test_quality_gates_native_cedar_center_path():
     assert decision.reason == "matches_below_6"
 
 
+@pytest.mark.parametrize("path", ["preprocessed_cedar_full", "preprocessed_sep_center"])
+def test_quality_gates_preprocessed_native_paths(path):
+    decision = solution_quality_decision(
+        _solution(matches=5, rmse=90.0, prob=1e-6), path
+    )
+    assert decision.accepted is False
+
+
 def test_angular_separation_handles_ra_wrap():
     assert angular_separation_deg(359.5, 0.0, 0.5, 0.0) == pytest.approx(1.0)
 
