@@ -1404,6 +1404,41 @@ pifinder_menu = {
                             ],
                         },
                         {
+                            "name": _("Distortion"),
+                            "class": UITextMenu,
+                            "select": "single",
+                            "name_suffix_callback": callbacks.distortion_status_suffix,
+                            "items": [
+                                {
+                                    "name": _("Status"),
+                                    "callback": callbacks.show_distortion_status,
+                                },
+                                {
+                                    "name": _("Measure Sky"),
+                                    "callback": callbacks.start_distortion_calibration,
+                                },
+                                {
+                                    "name": _("Cancel Measurement"),
+                                    "callback": callbacks.cancel_distortion_calibration,
+                                },
+                                {
+                                    "name": _("Reset"),
+                                    "class": UITextMenu,
+                                    "select": "single",
+                                    "items": [
+                                        {
+                                            "name": _("Confirm"),
+                                            "callback": callbacks.reset_distortion_calibration,
+                                        },
+                                        {
+                                            "name": _("Cancel"),
+                                            "callback": callbacks.go_back,
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
                             "name": _("GPS Settings"),
                             "class": UITextMenu,
                             "select": "single",

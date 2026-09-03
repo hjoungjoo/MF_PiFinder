@@ -735,7 +735,29 @@ class ReloadSqmCalibration:
     pass
 
 
-SolverCommand = Union[AlignOnRaDec, AlignCancel, ReloadSqmCalibration]
+@dataclass
+class StartDistortionCalibration:
+    """Arm an on-sky lens-distortion measurement session."""
+
+    camera_type: str
+    lens_key: str
+    request_id: int
+
+
+@dataclass
+class CancelDistortionCalibration:
+    """Cancel the active distortion session, if any."""
+
+    request_id: int | None = None
+
+
+SolverCommand = Union[
+    AlignOnRaDec,
+    AlignCancel,
+    ReloadSqmCalibration,
+    StartDistortionCalibration,
+    CancelDistortionCalibration,
+]
 """Anything that can travel on ``align_command_queue`` (note the queue
 also carries non-alignment commands today, hence the broader name)."""
 
@@ -773,6 +795,7 @@ __all__ = [
     "AlignedResult",
     "AlignmentResult",
     "CameraFrameMetadata",
+    "CancelDistortionCalibration",
     "FailedSolve",
     "ImuSample",
     "Pointing",
@@ -784,5 +807,6 @@ __all__ = [
     "SolveResult",
     "SolveSource",
     "SolverCommand",
+    "StartDistortionCalibration",
     "SuccessfulSolve",
 ]

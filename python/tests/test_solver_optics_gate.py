@@ -60,3 +60,11 @@ def test_fullframe_geometry_key_changes_when_lens_changes():
 
     assert sixteen != four
     assert restored == sixteen
+
+
+def test_fullframe_geometry_key_changes_when_calibration_changes():
+    state = _State("imx462_color", "6mm")
+    before = solver._fullframe_optics_key(state, 27.0, "")
+    after = solver._fullframe_optics_key(state, 27.0, "auto-imx462_color-6mm-2")
+
+    assert before != after

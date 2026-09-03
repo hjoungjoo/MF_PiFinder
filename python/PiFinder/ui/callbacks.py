@@ -25,9 +25,14 @@ from PiFinder import utils, calc_utils
 from PiFinder.boot_config import get_boot_config_path
 from PiFinder.locations import Location as SavedLocation
 from PiFinder.mf_manual_lens import normalise_manual_focal_length
+from PiFinder.mf_wide_calibration import CalibrationProfileStore
 from PiFinder.optics import LENSES
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.state import Location
+from PiFinder.types.positioning import (
+    CancelDistortionCalibration,
+    StartDistortionCalibration,
+)
 from PiFinder.ui.base import UIModule
 from PiFinder.ui.textentry import UITextEntry
 from PiFinder.catalogs import CatalogFilter
@@ -570,6 +575,149 @@ def manual_lens_focal_length_suffix(ui_module: UIModule) -> str:
         return f"  {float(focal_length):.1f}"
     except (TypeError, ValueError):
         return ""
+
+
+def _distortion_context(ui_module: UIModule):
+    camera_type = str(ui_module.shared_state.camera_type() or "")
+    lens_key = str(ui_module.config_object.get_option("camera_lens", "") or "")
+    if lens_key not in LENSES:
+        raise ValueError(_("Select a named lens first"))
+    return camera_type, lens_key, get_camera_profile(camera_type)
+
+
+def _active_distortion_profile(ui_module: UIModule):
+    try:
+        camera_type, lens_key, profile = _distortion_context(ui_module)
+    except (KeyError, ValueError):
+        return None
+    return CalibrationProfileStore(ui_module.config_object).load_active(
+        camera_type, lens_key, profile
+    )
+
+
+def distortion_status_suffix(ui_module: UIModule) -> str:
+    """Compact live state beside Advanced > Distortion."""
+
+    try:
+        status = ui_module.shared_state.distortion_calibration_status() or {}
+    except (AttributeError, BrokenPipeError, ConnectionResetError):
+        status = {}
+    if status.get("state") in {"requested", "waiting_stars", "collecting"}:
+        return "  {}/{}".format(
+            int(status.get("accepted_frames") or 0),
+            int(status.get("required_frames") or 5),
+        )
+    active = _active_distortion_profile(ui_module)
+    if active is None:
+        return "  None"
+    return "  Sky" if active.get("source") == "auto_sky" else "  TV"
+
+
+_DISTORTION_REASON_LABELS = {
+    "requested": "Waiting for stars",
+    "waiting_stars": "Waiting for stars",
+    "not_enough_candidates": "Need more stars",
+    "distortion_fit_failed": "No stable fit",
+    "not_enough_field_coverage": "Need edge stars",
+    "invalid_distortion": "Invalid fit",
+    "unsafe_distortion": "Unsafe fit",
+    "corrected_replay_failed": "Replay failed",
+    "corrected_coordinate_mismatch": "Position mismatch",
+    "no_rmse_improvement": "No improvement",
+    "frame_moving": "Hold still",
+    "waiting_full_frame": "Waiting for frame",
+}
+
+
+def show_distortion_status(ui_module: UIModule) -> None:
+    try:
+        camera_type, lens_key, profile = _distortion_context(ui_module)
+    except (KeyError, ValueError) as exc:
+        ui_module.message(str(exc), 3)
+        return
+    status = ui_module.shared_state.distortion_calibration_status() or {}
+    state = str(status.get("state") or "idle")
+    if state in {"requested", "waiting_stars", "collecting"}:
+        accepted = int(status.get("accepted_frames") or 0)
+        required = int(status.get("required_frames") or 5)
+        reason_key = str(status.get("last_reason") or "waiting_stars")
+        reason = _DISTORTION_REASON_LABELS.get(reason_key, reason_key)
+        ui_module.message(f"Measuring {accepted}/{required}\n{reason}", 3)
+        return
+    active = CalibrationProfileStore(ui_module.config_object).load_active(
+        camera_type, lens_key, profile
+    )
+    if active is None:
+        ui_module.message(f"Not measured\n{lens_key}", 3)
+        return
+    coefficients = active.get("coefficients") or {}
+    source = "Sky measured" if active.get("source") == "auto_sky" else "TV baseline"
+    ui_module.message(f"{source}\nk1 {float(coefficients.get('k1', 0.0)):.4f}", 3)
+
+
+def start_distortion_calibration(ui_module: UIModule) -> None:
+    try:
+        camera_type, lens_key, _camera_profile = _distortion_context(ui_module)
+    except (KeyError, ValueError) as exc:
+        ui_module.message(str(exc), 3)
+        return
+    command_queue = ui_module.command_queues.get("align_command")
+    if command_queue is None:
+        ui_module.message(_("Solver unavailable"), 3)
+        return
+    request_id = time.time_ns()
+    command_queue.put(
+        StartDistortionCalibration(
+            camera_type=camera_type,
+            lens_key=lens_key,
+            request_id=request_id,
+        )
+    )
+    ui_module.shared_state.set_distortion_calibration_status(
+        {
+            "state": "requested",
+            "request_id": request_id,
+            "camera_type": camera_type,
+            "lens_key": lens_key,
+            "accepted_frames": 0,
+            "required_frames": 5,
+            "last_reason": "requested",
+        }
+    )
+    ui_module.message(_("Distortion\nWaiting for stars"), 3)
+
+
+def cancel_distortion_calibration(ui_module: UIModule) -> None:
+    status = ui_module.shared_state.distortion_calibration_status() or {}
+    request_id = status.get("request_id")
+    command_queue = ui_module.command_queues.get("align_command")
+    if command_queue is not None:
+        command_queue.put(CancelDistortionCalibration(request_id=request_id))
+    ui_module.shared_state.set_distortion_calibration_status(
+        {"state": "cancelled", "accepted_frames": 0, "required_frames": 5}
+    )
+    ui_module.message(_("Measurement cancelled"), 2)
+
+
+def reset_distortion_calibration(ui_module: UIModule) -> None:
+    try:
+        camera_type, lens_key, profile = _distortion_context(ui_module)
+    except (KeyError, ValueError) as exc:
+        ui_module.message(str(exc), 3)
+        return
+    ui_module.shared_state.set_distortion_calibration_status(
+        {"state": "reset", "accepted_frames": 0, "required_frames": 5}
+    )
+    command_queue = ui_module.command_queues.get("align_command")
+    if command_queue is not None:
+        command_queue.put(CancelDistortionCalibration())
+    removed = CalibrationProfileStore(ui_module.config_object).clear(
+        camera_type, lens_key, profile
+    )
+    ui_module.message(
+        _("Distortion reset") if removed else _("No calibration found"), 2
+    )
+    ui_module.remove_from_stack()
 
 
 def switch_language(ui_module: UIModule) -> None:

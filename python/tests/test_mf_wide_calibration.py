@@ -127,6 +127,18 @@ def test_completed_auto_sky_profile_persists_fit_evidence_and_revisions():
     assert store.load_active("imx462", "6mm", profile) == second
 
 
+def test_clear_removes_only_the_selected_camera_lens_geometry():
+    cfg = _Config()
+    profile = get_camera_profile("imx462")
+    store = CalibrationProfileStore(cfg)
+    store.save_auto_sky("imx462", "4mm", profile, {"k1": -0.02}, {"frames": 5})
+    store.save_auto_sky("imx462", "6mm", profile, {"k1": -0.04}, {"frames": 5})
+
+    assert store.clear("imx462", "6mm", profile) == 1
+    assert store.load_active("imx462", "6mm", profile) is None
+    assert store.load_active("imx462", "4mm", profile) is not None
+
+
 def test_auto_sky_profile_rejects_non_finite_or_unsafe_coefficients():
     profile = get_camera_profile("imx462")
     with pytest.raises(ValueError):

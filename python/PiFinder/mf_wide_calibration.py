@@ -322,3 +322,21 @@ class CalibrationProfileStore:
         )
         self.save_profile(camera_type, lens_key, profile, candidate)
         return candidate
+
+    def clear(self, camera_type: str, lens_key: str, profile: CameraProfile) -> int:
+        """Remove every saved profile for one exact camera/lens geometry."""
+
+        store = self._load()
+        context = calibration_context_key(camera_type, lens_key)
+        fingerprint = calibration_fingerprint(camera_type, lens_key, profile)
+        profile_ids = [
+            profile_id
+            for profile_id, candidate in store["profiles"].items()
+            if isinstance(candidate, Mapping)
+            and candidate.get("fingerprint") == fingerprint
+        ]
+        for profile_id in profile_ids:
+            store["profiles"].pop(profile_id, None)
+        store["active"].pop(context, None)
+        self._cfg.set_option(CALIBRATION_STORE_OPTION, store)
+        return len(profile_ids)

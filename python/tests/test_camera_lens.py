@@ -1,9 +1,17 @@
 """Offline coverage for the passive Advanced > Lens declaration UI."""
 
+import queue
+
 import pytest
 
 import PiFinder.i18n  # noqa: F401
 from PiFinder.ui import callbacks, menu_structure
+from PiFinder.mf_wide_calibration import CalibrationProfileStore
+from PiFinder.sqm.camera_profiles import get_camera_profile
+from PiFinder.types.positioning import (
+    CancelDistortionCalibration,
+    StartDistortionCalibration,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -15,10 +23,14 @@ class _Config:
         self.saved = {}
 
     def get_option(self, option, default=None):
+        if option in self.saved:
+            return self.saved[option]
         if option == "camera_lens":
             return self.lens if self.lens is not None else default
         if option == "camera_lens_focal_length_mm":
             return self.focal_length if self.focal_length is not None else default
+        if option == "wide_solver_calibration_store_v1":
+            return default
         raise AssertionError(option)
 
     def set_option(self, option, value):
@@ -28,12 +40,22 @@ class _Config:
 class _State:
     def __init__(self):
         self.lens = None
+        self.distortion_status = {"state": "idle"}
+
+    def camera_type(self):
+        return "imx462_color"
 
     def set_camera_lens(self, lens):
         self.lens = lens
 
     def set_camera_lens_focal_length_mm(self, focal_length):
         self.focal_length = focal_length
+
+    def distortion_calibration_status(self):
+        return dict(self.distortion_status)
+
+    def set_distortion_calibration_status(self, value):
+        self.distortion_status = dict(value)
 
 
 class _UI:
@@ -42,6 +64,8 @@ class _UI:
         self.shared_state = _State()
         self.pushed = None
         self.messages = []
+        self.command_queues = {"align_command": queue.SimpleQueue()}
+        self.removed = False
 
     def add_to_stack(self, item):
         self.pushed = item
@@ -49,11 +73,30 @@ class _UI:
     def message(self, message, timeout):
         self.messages.append((message, timeout))
 
+    def remove_from_stack(self):
+        self.removed = True
+
 
 def _lens_menu():
     def walk(node):
         if isinstance(node, dict):
             if node.get("name") == "Lens":
+                return node
+            for child in node.get("items", []):
+                result = walk(child)
+                if result:
+                    return result
+        return None
+
+    result = walk(menu_structure.pifinder_menu)
+    assert result is not None
+    return result
+
+
+def _named_menu(name):
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("name") == name:
                 return node
             for child in node.get("items", []):
                 result = walk(child)
@@ -116,3 +159,60 @@ def test_manual_lens_menu_displays_the_active_focal_length():
     ui = _UI()
     ui.config_object.focal_length = 7.6
     assert callbacks.manual_lens_focal_length_suffix(ui) == "  7.6"
+
+
+def test_distortion_menu_exposes_status_measure_cancel_and_confirmed_reset():
+    menu = _named_menu("Distortion")
+    assert [item["name"] for item in menu["items"]] == [
+        "Status",
+        "Measure Sky",
+        "Cancel Measurement",
+        "Reset",
+    ]
+    assert menu["items"][-1]["items"][0]["callback"] is (
+        callbacks.reset_distortion_calibration
+    )
+
+
+def test_measure_sky_queues_session_for_the_selected_lens():
+    ui = _UI("6mm")
+    ui.shared_state.lens = "6mm"
+
+    callbacks.start_distortion_calibration(ui)
+
+    command = ui.command_queues["align_command"].get_nowait()
+    assert isinstance(command, StartDistortionCalibration)
+    assert command.camera_type == "imx462_color"
+    assert command.lens_key == "6mm"
+    assert ui.shared_state.distortion_status["state"] == "requested"
+    assert callbacks.distortion_status_suffix(ui) == "  0/5"
+
+
+def test_distortion_status_reports_and_reset_clears_saved_sky_profile():
+    ui = _UI("6mm")
+    profile = get_camera_profile("imx462_color")
+    CalibrationProfileStore(ui.config_object).save_auto_sky(
+        "imx462_color", "6mm", profile, {"k1": -0.043}, {"frames": 5}
+    )
+    assert callbacks.distortion_status_suffix(ui) == "  Sky"
+
+    callbacks.reset_distortion_calibration(ui)
+
+    command = ui.command_queues["align_command"].get_nowait()
+    assert isinstance(command, CancelDistortionCalibration)
+    assert (
+        CalibrationProfileStore(ui.config_object).load_active(
+            "imx462_color", "6mm", profile
+        )
+        is None
+    )
+    assert ui.removed is True
+
+
+def test_measure_sky_requires_a_named_lens():
+    ui = _UI("")
+
+    callbacks.start_distortion_calibration(ui)
+
+    assert ui.command_queues["align_command"].empty()
+    assert "Select a named lens" in ui.messages[-1][0]

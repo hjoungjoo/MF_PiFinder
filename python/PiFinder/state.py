@@ -332,6 +332,11 @@ class SharedStateObj:
             "frame_count": 0,
             "error": None,
         }
+        self.__distortion_calibration_status: dict[str, Any] = {
+            "state": "idle",
+            "accepted_frames": 0,
+            "required_frames": 5,
+        }
         self.__raw_live_frame = None
         # Latest SEP detection (small dict) for the LiveCam overlay
         self.__sep_overlay = None
@@ -638,6 +643,12 @@ class SharedStateObj:
 
     def set_solver_preprocess_status(self, v):
         self.__solver_preprocess_status = dict(v or {})
+
+    def distortion_calibration_status(self):
+        return dict(self.__distortion_calibration_status)
+
+    def set_distortion_calibration_status(self, v):
+        self.__distortion_calibration_status = dict(v or {})
 
     def sep_overlay(self):
         return self.__sep_overlay
