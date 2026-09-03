@@ -602,7 +602,12 @@ def distortion_status_suffix(ui_module: UIModule) -> str:
         status = ui_module.shared_state.distortion_calibration_status() or {}
     except (AttributeError, BrokenPipeError, ConnectionResetError):
         status = {}
-    if status.get("state") in {"requested", "waiting_stars", "collecting"}:
+    if status.get("state") in {
+        "requested",
+        "waiting_stars",
+        "measuring",
+        "collecting",
+    }:
         return "  {}/{}".format(
             int(status.get("accepted_frames") or 0),
             int(status.get("required_frames") or 5),
@@ -626,6 +631,7 @@ _DISTORTION_REASON_LABELS = {
     "no_rmse_improvement": "No improvement",
     "frame_moving": "Hold still",
     "waiting_full_frame": "Waiting for frame",
+    "measuring_frame": "Solving frame",
 }
 
 
@@ -637,7 +643,7 @@ def show_distortion_status(ui_module: UIModule) -> None:
         return
     status = ui_module.shared_state.distortion_calibration_status() or {}
     state = str(status.get("state") or "idle")
-    if state in {"requested", "waiting_stars", "collecting"}:
+    if state in {"requested", "waiting_stars", "measuring", "collecting"}:
         accepted = int(status.get("accepted_frames") or 0)
         required = int(status.get("required_frames") or 5)
         reason_key = str(status.get("last_reason") or "waiting_stars")

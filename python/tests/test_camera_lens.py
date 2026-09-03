@@ -188,6 +188,20 @@ def test_measure_sky_queues_session_for_the_selected_lens():
     assert callbacks.distortion_status_suffix(ui) == "  0/5"
 
 
+def test_distortion_menu_keeps_showing_progress_while_worker_is_measuring():
+    ui = _UI("6mm")
+    ui.shared_state.distortion_status = {
+        "state": "measuring",
+        "accepted_frames": 2,
+        "required_frames": 5,
+        "last_reason": "measuring_frame",
+    }
+
+    assert callbacks.distortion_status_suffix(ui) == "  2/5"
+    callbacks.show_distortion_status(ui)
+    assert ui.messages[-1][0] == "Measuring 2/5\nSolving frame"
+
+
 def test_distortion_status_reports_and_reset_clears_saved_sky_profile():
     ui = _UI("6mm")
     profile = get_camera_profile("imx462_color")

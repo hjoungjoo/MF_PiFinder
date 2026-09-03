@@ -9,6 +9,7 @@ This module is the solver
 """
 
 from PiFinder.multiproclogging import MultiprocLogging
+from concurrent.futures import ThreadPoolExecutor
 import queue
 import numpy as np
 import time
@@ -1291,6 +1292,28 @@ def solver(
     MultiprocLogging.configurer(log_queue)
     logger.debug("Starting Solver")
     t3 = tetra3.Tetra3(str(utils.tetra3_dir / "data" / "default_database.npz"))
+    distortion_calibration_executor = ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="distortion-calibration"
+    )
+    distortion_calibration_t3 = None
+    distortion_calibration_future = None
+
+    def _measure_distortion_task(request_id, payload):
+        nonlocal distortion_calibration_t3
+        if distortion_calibration_t3 is None:
+            distortion_calibration_t3 = tetra3.Tetra3(
+                str(utils.tetra3_dir / "data" / "default_database.npz")
+            )
+        observation = measure_distortion_frame(
+            distortion_calibration_t3,
+            payload["centroids"],
+            payload["frame_hw"],
+            rotation_deg=payload["rotation_deg"],
+            crop_width_px=payload["crop_width_px"],
+            base_fov_degrees=payload["base_fov_degrees"],
+        )
+        return request_id, payload["source"], observation
+
     align_ra = 0
     align_dec = 0
     last_solve_attempt: float = 0.0
@@ -2891,112 +2914,59 @@ def solver(
                             )
                         )
 
-                    # Calibration is deliberately performed after the normal
-                    # solve result has been published.  Camera capture is a
-                    # separate latest-wins producer, so these extra fits do
-                    # not insert a gap between exposures.
-                    if distortion_calibration_session is not None:
+                    # Calibration runs on its own tetra3 instance. The normal
+                    # pointing result above is never delayed by the fit; while
+                    # one sample is running, intermediate frames are dropped
+                    # and the newest available frame is submitted next.
+                    if (
+                        distortion_calibration_future is not None
+                        and distortion_calibration_future.done()
+                    ):
                         try:
-                            current_camera = str(shared_state.camera_type() or "")
-                            current_lens = str(
-                                getattr(shared_state, "camera_lens", lambda: "")() or ""
+                            (
+                                completed_request_id,
+                                completed_source,
+                                calibration_observation,
+                            ) = distortion_calibration_future.result()
+                            distortion_calibration_future = None
+                            latest_status = (
+                                shared_state.distortion_calibration_status() or {}
                             )
                             if (
-                                current_camera
-                                != distortion_calibration_session.camera_type
-                                or current_lens
-                                != distortion_calibration_session.lens_key
+                                distortion_calibration_session is None
+                                or completed_request_id
+                                != distortion_calibration_session.request_id
+                                or latest_status.get("state") in {"cancelled", "reset"}
                             ):
-                                shared_state.set_distortion_calibration_status(
-                                    {
-                                        "state": "error",
-                                        "accepted_frames": len(
-                                            distortion_calibration_session.samples
-                                        ),
-                                        "required_frames": 5,
-                                        "last_reason": "camera_or_lens_changed",
-                                    }
-                                )
-                                distortion_calibration_session = None
-                            elif frame_moving:
-                                distortion_calibration_session.last_reason = (
-                                    "frame_moving"
-                                )
-                                shared_state.set_distortion_calibration_status(
-                                    distortion_calibration_session.status()
-                                )
-                            elif distortion_calibration_input is None:
-                                distortion_calibration_session.last_reason = (
-                                    "waiting_full_frame"
-                                )
-                                shared_state.set_distortion_calibration_status(
-                                    distortion_calibration_session.status()
+                                logger.info(
+                                    "Discarding completed distortion fit after "
+                                    "session cancel/reset"
                                 )
                             else:
-                                calibration_observation = measure_distortion_frame(
-                                    t3,
-                                    distortion_calibration_input["centroids"],
-                                    distortion_calibration_input["frame_hw"],
-                                    rotation_deg=distortion_calibration_input[
-                                        "rotation_deg"
-                                    ],
-                                    crop_width_px=distortion_calibration_input[
-                                        "crop_width_px"
-                                    ],
-                                    base_fov_degrees=distortion_calibration_input[
-                                        "base_fov_degrees"
-                                    ],
-                                )
-                                latest_calibration_status = (
-                                    shared_state.distortion_calibration_status() or {}
-                                )
-                                latest_request_id = latest_calibration_status.get(
-                                    "request_id"
-                                )
-                                if latest_calibration_status.get("state") in {
-                                    "cancelled",
-                                    "reset",
-                                } or latest_request_id not in {
-                                    None,
-                                    distortion_calibration_session.request_id,
-                                }:
-                                    logger.info(
-                                        "Discarding completed distortion fit after "
-                                        "session cancel/reset"
-                                    )
-                                    distortion_calibration_session = None
-                                    continue
                                 distortion_calibration_session.add(
                                     calibration_observation
                                 )
                                 logger.info(
                                     "Distortion calibration %s (%s, candidates=%d, "
-                                    "accepted=%d/5)",
+                                    "accepted=%d/5; %s)",
                                     calibration_observation.reason,
-                                    distortion_calibration_input["source"],
+                                    completed_source,
                                     calibration_observation.candidates,
                                     len(distortion_calibration_session.samples),
+                                    calibration_observation.diagnostics,
                                 )
                                 if distortion_calibration_session.ready():
-                                    status_before_save = (
-                                        shared_state.distortion_calibration_status()
-                                        or {}
-                                    )
-                                    if status_before_save.get("state") in {
-                                        "cancelled",
-                                        "reset",
-                                    }:
-                                        distortion_calibration_session = None
-                                        continue
                                     coefficients, fit_summary = (
                                         distortion_calibration_session.profile_values()
                                     )
                                     candidate = CalibrationProfileStore(
                                         _sep_cfg
                                     ).save_auto_sky(
-                                        current_camera,
-                                        current_lens,
-                                        get_camera_profile(current_camera),
+                                        distortion_calibration_session.camera_type,
+                                        distortion_calibration_session.lens_key,
+                                        get_camera_profile(
+                                            distortion_calibration_session.camera_type
+                                        ),
                                         coefficients,
                                         fit_summary,
                                     )
@@ -3004,8 +2974,8 @@ def solver(
                                         {
                                             "state": "completed",
                                             "request_id": distortion_calibration_session.request_id,
-                                            "camera_type": current_camera,
-                                            "lens_key": current_lens,
+                                            "camera_type": distortion_calibration_session.camera_type,
+                                            "lens_key": distortion_calibration_session.lens_key,
                                             "accepted_frames": len(
                                                 distortion_calibration_session.samples
                                             ),
@@ -3028,7 +2998,8 @@ def solver(
                                         )
                                     )
                         except Exception:
-                            logger.exception("Distortion calibration failed")
+                            distortion_calibration_future = None
+                            logger.exception("Distortion calibration worker failed")
                             shared_state.set_distortion_calibration_status(
                                 {
                                     "state": "error",
@@ -3042,6 +3013,61 @@ def solver(
                                 }
                             )
                             distortion_calibration_session = None
+
+                    if (
+                        distortion_calibration_session is not None
+                        and distortion_calibration_future is None
+                    ):
+                        current_camera = str(shared_state.camera_type() or "")
+                        current_lens = str(
+                            getattr(shared_state, "camera_lens", lambda: "")() or ""
+                        )
+                        if (
+                            current_camera != distortion_calibration_session.camera_type
+                            or current_lens != distortion_calibration_session.lens_key
+                        ):
+                            shared_state.set_distortion_calibration_status(
+                                {
+                                    "state": "error",
+                                    "accepted_frames": len(
+                                        distortion_calibration_session.samples
+                                    ),
+                                    "required_frames": 5,
+                                    "last_reason": "camera_or_lens_changed",
+                                }
+                            )
+                            distortion_calibration_session = None
+                        elif frame_moving:
+                            distortion_calibration_session.last_reason = "frame_moving"
+                            shared_state.set_distortion_calibration_status(
+                                distortion_calibration_session.status()
+                            )
+                        elif distortion_calibration_input is None:
+                            distortion_calibration_session.last_reason = (
+                                "waiting_full_frame"
+                            )
+                            shared_state.set_distortion_calibration_status(
+                                distortion_calibration_session.status()
+                            )
+                        else:
+                            distortion_calibration_session.last_reason = (
+                                "measuring_frame"
+                            )
+                            shared_state.set_distortion_calibration_status(
+                                distortion_calibration_session.status(
+                                    state="measuring",
+                                    candidates=len(
+                                        distortion_calibration_input["centroids"]
+                                    ),
+                                )
+                            )
+                            distortion_calibration_future = (
+                                distortion_calibration_executor.submit(
+                                    _measure_distortion_task,
+                                    distortion_calibration_session.request_id,
+                                    distortion_calibration_input,
+                                )
+                            )
 
                     if sep_shadow is not None:
                         # Overlay ships once per attempt, after the solve

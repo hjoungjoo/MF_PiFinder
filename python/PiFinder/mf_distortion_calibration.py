@@ -30,13 +30,23 @@ MAX_SESSION_SAMPLES = 12
 MAX_RMSE_ARCSEC = 180.0
 MIN_RMSE_IMPROVEMENT = 0.03
 MAX_K1_MAD = 0.015
-MAX_K1_ABS = 0.5
-CALIBRATION_SOLVE_TIMEOUT_MS = 1500
-TETRA_DISTORTION_RANGE = (-0.25, 0.25)
-# tetra3 and the persistent Brown model normalise radius differently, and the
-# fitted FOV absorbs part of tetra3's centre scale. Replay a small bracket in
-# the actual production model instead of trusting one analytic conversion.
-BROWN_REPLAY_SCALES = (0.35, 0.50, 0.75, 1.0)
+CALIBRATION_SOLVE_TIMEOUT_MS = 600
+# Search directly in the Brown model that production applies. A tetra3
+# variable-distortion range can expand one pattern into a huge hash search
+# before its timeout check; scalar zero-distortion replays stay bounded.
+BROWN_K1_SEARCH = (
+    -0.35,
+    -0.28,
+    -0.22,
+    -0.18,
+    -0.15,
+    -0.12,
+    -0.10,
+    -0.08,
+    -0.05,
+    0.0,
+    0.05,
+)
 
 
 @dataclass(frozen=True)
@@ -58,28 +68,7 @@ class DistortionObservation:
     reason: str
     candidates: int
     measurement: DistortionFrameMeasurement | None = None
-
-
-def tetra_k_to_brown_k1(
-    tetra_k: float,
-    raw_frame_hw: tuple[int, int],
-    tetra_canvas_hw: tuple[int, int],
-) -> float:
-    """Convert tetra3's width/2 radial coefficient to our corner scale.
-
-    tetra3 represents the non-linear part as ``k * (2r/width)^2`` while
-    :mod:`mf_wide_distortion` uses ``k1 * (r/corner_radius)^2``.  The constant
-    centre scale in tetra3 is absorbed by its fitted focal length, leaving
-    this direct scale conversion for the radial term.
-    """
-
-    value = float(tetra_k)
-    raw_h, raw_w = map(float, raw_frame_hw)
-    canvas_width = float(tetra_canvas_hw[1])
-    if not math.isfinite(value) or raw_h <= 0 or raw_w <= 0 or canvas_width <= 0:
-        raise ValueError("invalid distortion conversion geometry")
-    corner_radius = math.hypot(raw_h / 2.0, raw_w / 2.0)
-    return value * 4.0 * corner_radius**2 / canvas_width**2
+    diagnostics: str = ""
 
 
 def _radial_bin_counts(
@@ -129,7 +118,7 @@ def measure_distortion_frame(
     if len(centroids) < MIN_CANDIDATES:
         return DistortionObservation(False, "not_enough_candidates", len(centroids))
 
-    rotated, canvas = sfm.rotate_centroids(centroids, frame_hw, rotation_deg)
+    _, canvas = sfm.rotate_centroids(centroids, frame_hw, rotation_deg)
     fov = sfm.fov_estimate_deg(
         canvas[1], crop_width_px, base_fov_degrees=base_fov_degrees
     )
@@ -140,38 +129,11 @@ def measure_distortion_frame(
         "return_matches": True,
         "solve_timeout": CALIBRATION_SOLVE_TIMEOUT_MS,
     }
-    fitted = t3.solve_from_centroids(
-        rotated, canvas, distortion=TETRA_DISTORTION_RANGE, **solve_kwargs
-    )
-    if not _solved(fitted, MIN_MATCHES):
-        return DistortionObservation(False, "distortion_fit_failed", len(centroids))
-
-    matched_value = fitted.get("matched_centroids")
-    matched = np.asarray(
-        [] if matched_value is None else matched_value, dtype=np.float64
-    )
-    bins = _radial_bin_counts(matched, canvas)
-    if (
-        bins["central"] < MIN_CENTRAL_MATCHES
-        or bins["mid"] < MIN_MID_MATCHES
-        or bins["edge"] < MIN_EDGE_MATCHES
-    ):
-        return DistortionObservation(False, "not_enough_field_coverage", len(centroids))
-
-    try:
-        converted_k1 = tetra_k_to_brown_k1(
-            float(fitted["distortion"]), frame_hw, canvas
-        )
-    except (KeyError, TypeError, ValueError):
-        return DistortionObservation(False, "invalid_distortion", len(centroids))
-    if not math.isfinite(converted_k1):
-        return DistortionObservation(False, "unsafe_distortion", len(centroids))
-
-    replayed: list[tuple[float, Mapping[str, Any]]] = []
-    for scale in BROWN_REPLAY_SCALES:
-        candidate_k1 = converted_k1 * scale
-        if abs(candidate_k1) > MAX_K1_ABS:
-            continue
+    replayed: list[tuple[float, Mapping[str, Any], dict[str, int]]] = []
+    baseline = None
+    solved_without_coverage = False
+    diagnostics: list[str] = []
+    for candidate_k1 in BROWN_K1_SEARCH:
         coefficients = {
             "k1": candidate_k1,
             "k2": 0.0,
@@ -189,30 +151,80 @@ def measure_distortion_frame(
             corrected_rotated, canvas, distortion=0.0, **solve_kwargs
         )
         if _solved(checked_candidate, MIN_MATCHES):
-            replayed.append((candidate_k1, checked_candidate))
+            if candidate_k1 == 0.0:
+                baseline = checked_candidate
+            matched_value = checked_candidate.get("matched_centroids")
+            matched = np.asarray(
+                [] if matched_value is None else matched_value, dtype=np.float64
+            )
+            bins = _radial_bin_counts(matched, canvas)
+            diagnostics.append(
+                f"{candidate_k1:+.3f}:{float(checked_candidate['RMSE']):.1f}/"
+                f"{int(checked_candidate['Matches'])}/"
+                f"{bins['central']}-{bins['mid']}-{bins['edge']}"
+            )
+            if (
+                bins["central"] >= MIN_CENTRAL_MATCHES
+                and bins["mid"] >= MIN_MID_MATCHES
+                and bins["edge"] >= MIN_EDGE_MATCHES
+            ):
+                replayed.append((candidate_k1, checked_candidate, bins))
+            else:
+                solved_without_coverage = True
+        else:
+            diagnostics.append(f"{candidate_k1:+.3f}:fail")
+    diagnostic_text = ",".join(diagnostics)
     if not replayed:
-        return DistortionObservation(False, "corrected_replay_failed", len(centroids))
-
-    k1, checked = min(replayed, key=lambda item: float(item[1]["RMSE"]))
-
-    separation = angular_separation_deg(
-        float(fitted["RA"]),
-        float(fitted["Dec"]),
-        float(checked["RA"]),
-        float(checked["Dec"]),
-    )
-    if separation > 0.25:
+        reason = (
+            "not_enough_field_coverage"
+            if solved_without_coverage
+            else "distortion_fit_failed"
+        )
         return DistortionObservation(
-            False, "corrected_coordinate_mismatch", len(centroids)
+            False, reason, len(centroids), diagnostics=diagnostic_text
         )
 
-    baseline = t3.solve_from_centroids(rotated, canvas, distortion=0.0, **solve_kwargs)
-    rmse_before = float(baseline["RMSE"]) if _solved(baseline, MIN_MATCHES) else None
+    k1, checked, bins = min(replayed, key=lambda item: float(item[1]["RMSE"]))
+    if k1 in {BROWN_K1_SEARCH[0], BROWN_K1_SEARCH[-1]}:
+        return DistortionObservation(
+            False,
+            "unsafe_distortion",
+            len(centroids),
+            diagnostics=diagnostic_text,
+        )
+
+    coordinate_confirmed = any(
+        other_solution is not checked
+        and angular_separation_deg(
+            float(checked["RA"]),
+            float(checked["Dec"]),
+            float(other_solution["RA"]),
+            float(other_solution["Dec"]),
+        )
+        <= 0.25
+        for _, other_solution, _ in replayed
+    )
+    if not coordinate_confirmed:
+        return DistortionObservation(
+            False,
+            "corrected_coordinate_mismatch",
+            len(centroids),
+            diagnostics=diagnostic_text,
+        )
+
+    rmse_before = None
+    if baseline is not None and _solved(baseline, MIN_MATCHES):
+        rmse_before = float(baseline["RMSE"])
     rmse_after = float(checked["RMSE"])
     if rmse_before is not None and rmse_after > rmse_before * (
         1.0 - MIN_RMSE_IMPROVEMENT
     ):
-        return DistortionObservation(False, "no_rmse_improvement", len(centroids))
+        return DistortionObservation(
+            False,
+            "no_rmse_improvement",
+            len(centroids),
+            diagnostics=diagnostic_text,
+        )
 
     measurement = DistortionFrameMeasurement(
         k1=k1,
@@ -221,11 +233,17 @@ def measure_distortion_frame(
         radial_bins=bins,
         rmse_before_arcsec=rmse_before,
         rmse_after_arcsec=rmse_after,
-        fitted_rmse_arcsec=float(fitted["RMSE"]),
+        fitted_rmse_arcsec=rmse_after,
         ra=float(checked["RA"]),
         dec=float(checked["Dec"]),
     )
-    return DistortionObservation(True, "accepted", len(centroids), measurement)
+    return DistortionObservation(
+        True,
+        "accepted",
+        len(centroids),
+        measurement,
+        diagnostics=diagnostic_text,
+    )
 
 
 class DistortionCalibrationSession:
@@ -282,7 +300,7 @@ class DistortionCalibrationSession:
                 abs(value - coefficients["k1"]) for value in values
             ),
             "median_rmse_after_arcsec": statistics.median(after),
-            "method": "tetra3_radial_fit_brown_replay_v1",
+            "method": "brown_k1_grid_search_v1",
         }
         if before:
             summary["median_rmse_before_arcsec"] = statistics.median(before)

@@ -7,7 +7,6 @@ from PiFinder.mf_distortion_calibration import (
     DistortionCalibrationSession,
     DistortionFrameMeasurement,
     measure_distortion_frame,
-    tetra_k_to_brown_k1,
 )
 
 
@@ -42,36 +41,23 @@ def _matched_field():
 
 class _Tetra:
     def __init__(
-        self, *, baseline_rmse=100.0, matched=None, replay_rmses=(80, 60, 70, 90)
+        self,
+        *,
+        matched=None,
+        replay_rmses=(150, 110, 80, 65, 60, 70, 80, 95, 120, 150, 170),
     ):
         self.calls = []
-        self.baseline_rmse = baseline_rmse
         self.matched = _matched_field() if matched is None else matched
         self.replay_rmses = replay_rmses
 
     def solve_from_centroids(self, centroids, canvas, **kwargs):
         self.calls.append((np.asarray(centroids), canvas, kwargs))
-        if len(self.calls) == 1:
-            return {
-                "RA": 42.0,
-                "Dec": 21.0,
-                "Matches": len(self.matched),
-                "RMSE": 50.0,
-                "distortion": -0.03,
-                "matched_centroids": self.matched,
-            }
-        if 2 <= len(self.calls) <= 5:
-            return {
-                "RA": 42.02,
-                "Dec": 21.0,
-                "Matches": 18,
-                "RMSE": self.replay_rmses[len(self.calls) - 2],
-            }
         return {
             "RA": 42.0,
             "Dec": 21.0,
-            "Matches": 18,
-            "RMSE": self.baseline_rmse,
+            "Matches": len(self.matched),
+            "RMSE": self.replay_rmses[len(self.calls) - 1],
+            "matched_centroids": self.matched,
         }
 
 
@@ -97,7 +83,7 @@ def test_frame_fit_requires_candidates_before_using_tetra():
     assert t3.calls == []
 
 
-def test_frame_fit_converts_and_replay_validates_distortion():
+def test_frame_fit_searches_and_replay_validates_brown_distortion():
     t3 = _Tetra()
     result = measure_distortion_frame(
         t3,
@@ -110,13 +96,10 @@ def test_frame_fit_converts_and_replay_validates_distortion():
 
     assert result.accepted is True
     assert result.measurement is not None
-    assert result.measurement.k1 == pytest.approx(
-        tetra_k_to_brown_k1(-0.03, (1000, 1500), (1000, 1500)) * 0.5
-    )
+    assert result.measurement.k1 == pytest.approx(-0.15)
     assert result.measurement.radial_bins["edge"] >= 3
-    assert len(t3.calls) == 6
-    assert t3.calls[0][2]["distortion"] == (-0.25, 0.25)
-    assert t3.calls[1][2]["distortion"] == 0.0
+    assert len(t3.calls) == 11
+    assert all(call[2]["distortion"] == 0.0 for call in t3.calls)
 
 
 def test_frame_fit_rejects_matches_without_full_field_coverage():
@@ -135,7 +118,7 @@ def test_frame_fit_rejects_matches_without_full_field_coverage():
 
 
 def test_frame_fit_requires_a_material_replay_improvement():
-    t3 = _Tetra(baseline_rmse=61.0)
+    t3 = _Tetra(replay_rmses=(160, 150, 140, 130, 120, 110, 105, 103, 101, 100, 120))
     result = measure_distortion_frame(
         t3,
         _candidates(),
