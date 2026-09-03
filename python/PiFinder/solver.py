@@ -88,13 +88,95 @@ CEDAR_FF_SOLVE_TIMEOUT_MS = 300
 
 
 def _solver_preprocess_enabled(shared_state) -> bool:
-    """Read the session-only LiveCam solver switch defensively."""
+    """Read the persisted production solver-preprocessing switch defensively."""
 
     try:
         settings = shared_state.livecam_settings() or {}
         return bool(settings.get("solver_preprocess_enabled", False))
     except (AttributeError, BrokenPipeError, ConnectionResetError):
         return False
+
+
+def _publish_solver_preprocess_status(
+    shared_state,
+    *,
+    enabled: bool,
+    state: str,
+    frame_count: int = 0,
+    frame_id=None,
+    reset_reason=None,
+    error=None,
+    clear_frame: bool = False,
+) -> None:
+    """Publish lightweight production-preprocessor state for LiveCam.
+
+    Best-effort by design: preview/status publication must never turn a valid
+    solve into a failed attempt.
+    """
+
+    try:
+        setter = getattr(shared_state, "set_solver_preprocess_status", None)
+        if callable(setter):
+            setter(
+                {
+                    "enabled": bool(enabled),
+                    "state": state,
+                    "frame_count": int(frame_count),
+                    "frame_limit": 5,
+                    "frame_id": frame_id,
+                    "reset_reason": reset_reason,
+                    "error": error,
+                    "updated": time.time(),
+                }
+            )
+        if clear_frame:
+            frame_setter = getattr(shared_state, "set_solver_preprocessed_frame", None)
+            if callable(frame_setter):
+                frame_setter(None)
+    except Exception:
+        logger.exception("Could not publish solver preprocessing status")
+
+
+def _publish_solver_preprocessed_preview(
+    shared_state, preprocessed_run, image_metadata
+) -> None:
+    """Cache the exact production star-only frame for instant LiveCam use."""
+
+    try:
+        from PiFinder.raw_live_stack import publish_solver_preprocessed_frame
+
+        camera_type = shared_state.camera_type()
+        profile = get_camera_profile(camera_type)
+        settings = shared_state.livecam_settings() or {}
+        publish_solver_preprocessed_frame(
+            shared_state,
+            preprocessed_run.frame,
+            profile,
+            camera_type,
+            image_metadata,
+            preprocess_frames=preprocessed_run.diagnostics.frame_count,
+            display_rotation_degrees=int(
+                settings.get("display_rotation_degrees", 0) or 0
+            ),
+        )
+        _publish_solver_preprocess_status(
+            shared_state,
+            enabled=True,
+            state="ready",
+            frame_count=preprocessed_run.diagnostics.frame_count,
+            frame_id=preprocessed_run.frame_id,
+            reset_reason=preprocessed_run.diagnostics.reset_reason,
+        )
+    except Exception as exc:
+        logger.exception("Could not publish solver preprocessed LiveCam frame")
+        _publish_solver_preprocess_status(
+            shared_state,
+            enabled=True,
+            state="preview_error",
+            frame_id=image_metadata.get("frame_id"),
+            error=f"{exc.__class__.__name__}: {exc}",
+            clear_frame=True,
+        )
 
 
 def _optical_fov_gate_params(shared_state) -> tuple[float, float]:
@@ -1409,6 +1491,16 @@ def solver(
                     last_solve_attempt = last_image_metadata["exposure_end"]
 
                     solver_preprocess_enabled = _solver_preprocess_enabled(shared_state)
+                    imu_sample = last_image_metadata.get("imu")
+                    frame_moving = bool(getattr(imu_sample, "moving", False))
+                    try:
+                        frame_moving = (
+                            frame_moving
+                            or abs(float(last_image_metadata.get("imu_delta") or 0.0))
+                            > 0.1
+                        )
+                    except (TypeError, ValueError):
+                        frame_moving = True
 
                     fullframe_base_fov = (
                         _optical_crop_fov(shared_state)
@@ -2022,34 +2114,38 @@ def solver(
                         if sep_fallback_used:
                             solve_path = "sep_full"
 
-                    # Optional star-only path selected from LiveCam. The raw
-                    # cascade remains available while the temporal window
+                    # Production star-only path controlled from LiveCam. The
+                    # raw cascade remains available while the temporal window
                     # warms and as a fallback, but once preprocessing produces
-                    # a valid solve it is preferred. Coordinates are unchanged
-                    # and both detectors retain the centre-before-full order.
-                    if sep_shadow is not None and not solver_preprocess_enabled:
-                        sep_shadow.reset_preprocessor()
+                    # a valid solve it is preferred. The exact frame and its
+                    # warm/reset/error state are cached for LiveCam; selecting
+                    # that view never starts a second accumulator.
+                    if not solver_preprocess_enabled:
+                        if sep_shadow is not None:
+                            sep_shadow.reset_preprocessor("disabled")
+                        _publish_solver_preprocess_status(
+                            shared_state,
+                            enabled=False,
+                            state="disabled",
+                            frame_id=last_image_metadata.get("frame_id"),
+                            clear_frame=True,
+                        )
                     elif (
                         solver_preprocess_enabled
                         and sep_shadow is not None
                         and ff_frame is not None
                     ):
                         raw_solved = bool(solution and solution.get("RA") is not None)
-                        imu_sample = last_image_metadata.get("imu")
-                        frame_moving = bool(getattr(imu_sample, "moving", False))
-                        try:
-                            frame_moving = (
-                                frame_moving
-                                or abs(
-                                    float(last_image_metadata.get("imu_delta") or 0.0)
-                                )
-                                > 0.1
-                            )
-                        except (TypeError, ValueError):
-                            frame_moving = True
-
                         if frame_moving:
-                            sep_shadow.reset_preprocessor()
+                            sep_shadow.reset_preprocessor("reset_moving")
+                            _publish_solver_preprocess_status(
+                                shared_state,
+                                enabled=True,
+                                state="reset_moving",
+                                frame_id=last_image_metadata.get("frame_id"),
+                                reset_reason="moving",
+                                clear_frame=True,
+                            )
                         else:
                             lens_key = getattr(
                                 shared_state, "camera_lens", lambda: ""
@@ -2082,6 +2178,11 @@ def solver(
                                 precision_timestamp() - preprocess_started
                             ) * 1000
                             if preprocessed_run is not None:
+                                _publish_solver_preprocessed_preview(
+                                    shared_state,
+                                    preprocessed_run,
+                                    last_image_metadata,
+                                )
                                 raw_overlay = sep_shadow._last_overlay
                                 sep_shadow.use_preprocessed_overlay(preprocessed_run)
                                 preprocessed_frame = preprocessed_run.frame
@@ -2244,24 +2345,49 @@ def solver(
                                     preprocessed_sep_count,
                                     selected_path or "none",
                                 )
+                            else:
+                                preprocess_status = sep_shadow.preprocess_status()
+                                _publish_solver_preprocess_status(
+                                    shared_state,
+                                    enabled=True,
+                                    state=str(
+                                        preprocess_status.get("state") or "warming"
+                                    ),
+                                    frame_count=int(
+                                        preprocess_status.get("frame_count") or 0
+                                    ),
+                                    frame_id=last_image_metadata.get("frame_id"),
+                                    reset_reason=preprocess_status.get("reset_reason"),
+                                    error=preprocess_status.get("error"),
+                                    clear_frame=True,
+                                )
+                    elif solver_preprocess_enabled:
+                        _publish_solver_preprocess_status(
+                            shared_state,
+                            enabled=True,
+                            state="waiting_for_raw",
+                            frame_id=last_image_metadata.get("frame_id"),
+                            clear_frame=True,
+                        )
 
                     # A single native wide-field pattern must never become
-                    # pointing truth by itself.  Established 512/centre
-                    # paths seed the anchor immediately; a cold full-frame
-                    # lock or a >5° jump is published only after the next
-                    # independent frame agrees.  Legitimate slews therefore
-                    # cost one solve interval, while intermittent urban-light
-                    # matches are discarded.
+                    # pointing truth by itself. Cold full-frame locks and
+                    # >5° jumps need an independent confirmation. With solver
+                    # preprocessing enabled, stationary fine jumps and raw
+                    # fallback transitions are confirmed too; the allowance
+                    # includes sidereal drift since the trusted frame.
                     if solution and solution.get("RA") is not None:
                         continuity = solve_continuity.evaluate(
                             solution,
                             solve_path,
                             last_solve_attempt,
+                            stationary=not frame_moving,
+                            prefer_preprocessed=solver_preprocess_enabled,
                         )
-                        if (
-                            continuity.accepted
-                            and continuity.reason == "confirmed_jump"
-                        ):
+                        if continuity.accepted and continuity.reason in {
+                            "confirmed_jump",
+                            "confirmed_stationary_change",
+                        }:
                             logger.info(
                                 "Confirmed %s solution on consecutive frames "
                                 "(RA=%.4f Dec=%.4f agreement=%.2f°)",

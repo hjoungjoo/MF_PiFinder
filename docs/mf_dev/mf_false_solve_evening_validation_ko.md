@@ -62,6 +62,19 @@ source는 flux 정렬 전에 제거한다. 같은 문제 RAW의 최종 후보는
   경로의 Matches/RMSE/Prob 품질 기준은 먼저 통과해야 한다.
 - 보류 중 원래 신뢰 좌표로 복귀하면 잘못된 pending 후보를 즉시 폐기한다.
 
+2026-09-03 고정 장비 미세 흔들림 실측 뒤 다음 stationary 규칙을 추가했다.
+
+- IMU `moving=false`이면 즉시 허용 범위는 1.5 arcmin +
+  `(항성시 각속도 × 경과시간 × 1.25)`다. 고정 Alt/Az 장비에서 발생하는 정상적인
+  RA/Dec 진행은 막지 않는다.
+- 범위를 넘는 좌표는 다음 독립 프레임도 같은 위치를 지지할 때만 확정한다.
+- 전처리 solve를 신뢰한 뒤 원본 경로로 fallback하면 변화량이 작아도 한 프레임
+  확인한다.
+- solver preprocessing이 ON인 초기 raw solve도 한 프레임 확인한 뒤 첫 anchor로
+  채택한다.
+- `moving=true`인 수동 이동 중에는 이 미세 gate를 적용하지 않는다. 기존 5° 대규모
+  점프 확인은 그대로 유지되며, 이동 종료 뒤 연속 solve로 새 위치를 확정한다.
+
 이 계층은 단발성 점프를 막는다. 같은 지상광 pattern이 두 프레임 연속 오검출되는 경우는
 포화 source 제거와 품질 기준이 먼저 차단한다. 비포화 지상광의 반복 오검출이 야간에
 관측되면 matched centroid의 영상 분포 기준을 실제 자료로 산정해야 하며, 검증 없이
@@ -100,6 +113,9 @@ Auto(Star)에 제공한다. 그러나 `wide_solver_enabled=false`이면 그 해�
 - `Rejected ... false_probability_too_high`: false-match 확률이 큰 해 차단
 - `Held ... solution for confirmation: jump_confirmation`: 기존 좌표에서 5° 넘는 첫 해 보류
 - `Held ... initial_fullframe_confirmation`: 재시작 뒤 첫 native 해 보류
+- `Held ... stationary_change_confirmation`: 정지 중 허용 범위를 넘은 첫 해 보류
+- `Held ... raw_fallback_confirmation`: 전처리에서 원본으로 바뀐 첫 해 보류
+- `Held ... initial_preferred_confirmation`: 전처리 ON으로 시작한 초기 raw 해 보류
 - `Confirmed ... solution on consecutive frames`: 다음 프레임까지 일치해 새 좌표 승인
 - `Peripheral tile solve retained for Auto(Star) quality only`: 주변 SNR에는 사용했지만
   비활성화된 타일 pointing 좌표는 발행하지 않음
@@ -121,9 +137,43 @@ Auto(Star)에 제공한다. 그러나 `wide_solver_enabled=false`이면 그 해�
 ## 5. 회귀 검사
 
 - `test_sep_detect.py`: 개별 포화 source만 제거하고 비포화 별을 보존한다.
-- `test_solve_acceptance.py`: RA 0° wrap, 초기 full-frame 확인, 큰 점프 확인, 만료 및
-  원래 좌표 복귀를 검사한다.
+- `test_solve_acceptance.py`: RA 0° wrap, 초기 full-frame 확인, 큰 점프 확인, 만료,
+  원래 좌표 복귀, stationary sky-rate allowance, raw fallback 확인, 이동 중 bypass를
+  검사한다.
 - `test_sep_shadow.py`: SEP 6점 경계 해 차단과 왜곡 보정 적용을 검사한다.
 - `test_solver_cedar_fullframe.py`: Cedar full-frame 품질 차단과 왜곡 보정 적용을 검사한다.
 - 저장한 실제 문제 RAW 재생 결과: 최종 후보 18 → 12, 제거된 최종 후보 6개 모두
   4095 ADU 포화 지상광.
+
+## 6. 광각 솔브 좌표 안정화
+
+Stationary 확인 gate는 잘못된 단발 좌표를 막지만, 6 mm 광각 영상에서 정상으로
+확정된 solve 자체의 1–4 arcmin 산포까지 제거하지는 않는다. SkySafari와 Web에
+제공하는 `PointingCoordinateService` 출력에 다음 후단 안정화를 적용한다.
+
+- 서로 다른 정상 `CAM` solve 5개만 구면 단위 벡터로 평균한다. 같은 solve를 반복
+  조회하거나 `CAM_FAILED`가 보존한 좌표는 평균 창에 다시 넣지 않는다.
+- 고정 카메라는 Alt/Az에서 평균한 뒤 현재 시각 RA/Dec로 변환한다. 따라서 지구 자전에
+  따른 정상적인 RA 진행을 지연시키지 않는다.
+- 추적 장비는 RA/Dec 평균이 적합하다. 첫 5개 solve의 적도/수평 산포를 비교해 더 작은
+  좌표계를 고르고, 관측 중에는 좌표계를 바꾸지 않는다. 좌표계 재선택은 실제 IMU 이동,
+  0.25° 이상의 새 위치, 위치 변경 또는 명시적 상태 초기화 뒤에만 한다.
+- IMU `moving=true` 또는 IMU dead-reckoning 좌표는 평균을 우회하고 창을 즉시 비운다.
+  따라서 수동 이동 반응과 최신 plate solve/IMU anchor 계약은 바뀌지 않는다.
+- 첫 4개 solve는 원시 확정 좌표를 그대로 제공한다. 3개만으로 좌표계를 정했을 때
+  초기 노이즈 때문에 적도/수평 좌표계를 잘못 고르는 실측 사례가 있어, 정확성을 위해
+  5개가 모두 찬 뒤 평균을 시작한다.
+
+2026-09-03 고정 장비에서 최종 구현을 45초 실측했다. 23개 상태 표본과 13개 독립
+solve 동안 선택 frame은 전부 `horizontal`, window는 전부 5로 유지됐다.
+
+| 지표 | 원시 정상 solve | SkySafari용 평균 좌표 |
+|---|---:|---:|
+| 연속 step 중앙값 | 1.18 arcmin | 0.51 arcmin |
+| 연속 step p95 | 2.73 arcmin | 0.79 arcmin |
+| 연속 step 최대 | 4.42 arcmin | 0.99 arcmin |
+
+평균 좌표 표본은 약 2초 간격이므로 중앙값 0.51 arcmin에는 고정 Alt/Az 장비의 정상
+항성시 진행이 포함된다. 개발 중 sliding window마다 frame을 다시 고르는 방식은
+`horizontal ↔ equatorial` 전환 시 최대 28.65 arcmin 점프를 만들었고, 위 frame lock으로
+제거했다.

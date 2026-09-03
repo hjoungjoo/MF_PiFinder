@@ -120,3 +120,124 @@ def test_return_to_trusted_clears_a_false_jump_candidate():
     assert back.accepted is True
     # A later different jump must start confirmation from scratch.
     assert not gate.evaluate(_solution(ra=100.2, dec=20.1), "sep_full", 103.0).accepted
+
+
+def test_stationary_change_above_sky_rate_needs_confirmation():
+    gate = SolveContinuityGate()
+    assert gate.evaluate(_solution(), "cedar_512", 100.0).accepted
+
+    excursion = gate.evaluate(
+        _solution(ra=306.12),
+        "preprocessed_cedar_center",
+        102.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    )
+    assert excursion.accepted is False
+    assert excursion.reason == "stationary_change_confirmation"
+
+    confirmed = gate.evaluate(
+        _solution(ra=306.13),
+        "preprocessed_cedar_center",
+        104.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    )
+    assert confirmed.accepted is True
+    assert confirmed.reason == "confirmed_stationary_change"
+
+
+def test_stationary_sky_rate_change_is_accepted_immediately():
+    gate = SolveContinuityGate()
+    assert gate.evaluate(_solution(), "cedar_512", 100.0).accepted
+
+    # 0.01 degree in two seconds is below the measurement floor plus the
+    # sidereal-rate allowance for a fixed terrestrial instrument.
+    decision = gate.evaluate(
+        _solution(ra=306.01),
+        "preprocessed_cedar_center",
+        102.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    )
+    assert decision.accepted is True
+    assert decision.reason == "near_trusted"
+
+
+def test_stationary_raw_fallback_after_preprocessing_needs_confirmation():
+    gate = SolveContinuityGate()
+    first = gate.evaluate(
+        _solution(),
+        "preprocessed_cedar_center",
+        100.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    )
+    assert first.accepted is False
+    assert gate.evaluate(
+        _solution(ra=306.005),
+        "preprocessed_cedar_center",
+        102.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    ).accepted
+
+    fallback = gate.evaluate(
+        _solution(ra=306.01),
+        "cedar_512",
+        104.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    )
+    assert fallback.accepted is False
+    assert fallback.reason == "raw_fallback_confirmation"
+
+    # A return to the preferred path near the trusted coordinate is accepted
+    # immediately and clears the isolated fallback candidate.
+    recovered = gate.evaluate(
+        _solution(ra=306.015),
+        "preprocessed_cedar_center",
+        106.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    )
+    assert recovered.accepted is True
+    assert recovered.reason == "near_trusted"
+
+
+def test_preferred_stationary_start_confirms_even_established_raw_path():
+    gate = SolveContinuityGate()
+    first = gate.evaluate(
+        _solution(),
+        "cedar_512",
+        100.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    )
+    assert first.accepted is False
+    assert first.reason == "initial_preferred_confirmation"
+
+    second = gate.evaluate(
+        _solution(ra=306.005),
+        "cedar_512",
+        102.0,
+        stationary=True,
+        prefer_preprocessed=True,
+    )
+    assert second.accepted is True
+    assert second.reason == "confirmed_stationary_change"
+
+
+def test_moving_instrument_bypasses_fine_stationary_gate():
+    gate = SolveContinuityGate()
+    assert gate.evaluate(_solution(), "cedar_512", 100.0).accepted
+
+    decision = gate.evaluate(
+        _solution(ra=306.12),
+        "preprocessed_cedar_center",
+        102.0,
+        stationary=False,
+        prefer_preprocessed=True,
+    )
+    assert decision.accepted is True
+    assert decision.reason == "near_trusted"

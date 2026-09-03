@@ -153,6 +153,12 @@ class SepShadowRunner:
         # Overlay entry for the in-flight attempt (see publish_overlay)
         self._last_overlay: Optional[dict] = None
         self._star_only = MFStarOnlyAccumulator()
+        self._preprocess_status: dict = {
+            "state": "idle",
+            "frame_count": 0,
+            "reset_reason": None,
+            "error": None,
+        }
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
             "rotation=%.0f° crop_width=%dpx warm_pixels=%d distortion=%s log=%s",
@@ -322,10 +328,19 @@ class SepShadowRunner:
             logger.exception("SEP shadow detect failed")
             return None
 
-    def reset_preprocessor(self) -> None:
+    def reset_preprocessor(self, reason: str = "reset") -> None:
         """Discard temporal evidence after motion or when the UI switch is off."""
 
         self._star_only.reset()
+        self._preprocess_status = {
+            "state": reason,
+            "frame_count": 0,
+            "reset_reason": reason,
+            "error": None,
+        }
+
+    def preprocess_status(self) -> dict:
+        return dict(self._preprocess_status)
 
     def preprocess_frame(
         self,
@@ -350,11 +365,21 @@ class SepShadowRunner:
                 ),
                 fingerprint=fingerprint,
             )
+            self._preprocess_status = {
+                "state": ("warming" if result.diagnostics.frame_count < 2 else "ready"),
+                "frame_count": result.diagnostics.frame_count,
+                "reset_reason": result.diagnostics.reset_reason,
+                "error": None,
+            }
             if result.diagnostics.frame_count < 2:
                 return None
             detection = sep_detect.detect_stars(
                 result.frame,
                 sigma=self.sigma,
+                # Keep tetra3's proven brightest-48 input unchanged while
+                # allowing LiveCam to show genuine filtered stars farther
+                # down the flux ranking in a strongly graded sky.
+                overlay_max_stars=128,
                 # Sensor-saturated extended structures were hard-masked before
                 # temporal synthesis. Summing repeated real stars can still
                 # clip the synthetic 12-bit output; that is evidence, not a
@@ -367,6 +392,7 @@ class SepShadowRunner:
                 cloud_window_gate=False,
             )
             if detection is None:
+                self._preprocess_status["state"] = "waiting_for_stars"
                 return None
             return PreprocessedRun(
                 frame=result.frame,
@@ -375,17 +401,27 @@ class SepShadowRunner:
                 frame_hw=(int(arr.shape[0]), int(arr.shape[1])),
                 frame_id=frame_id,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Star-only solver preprocessing failed")
             self._star_only.reset()
+            self._preprocess_status = {
+                "state": "error",
+                "frame_count": 0,
+                "reset_reason": "processing_error",
+                "error": f"{exc.__class__.__name__}: {exc}",
+            }
             return None
 
     def use_preprocessed_overlay(self, run: PreprocessedRun) -> None:
         """Show the candidates from the frame that is actually being solved."""
 
         detection = run.detection
+        overlay_centroids = detection.overlay_centroids
+        if overlay_centroids is None:
+            overlay_centroids = detection.centroids
         self._last_overlay = {
-            "centroids": detection.centroids.tolist(),
+            "centroids": overlay_centroids.tolist(),
+            "solver_centroids": len(detection.centroids),
             "frame_hw": [int(run.frame_hw[0]), int(run.frame_hw[1])],
             "frame_id": run.frame_id,
             "masked": detection.masked_count,

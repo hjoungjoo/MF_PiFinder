@@ -224,8 +224,8 @@ def register_api_routes(app, server_instance, require_auth=False):
             _raw_stack_cfg_cache["mtime"] = mtime
         settings = dict(_raw_stack_cfg_cache["settings"])
         # Session-only switches are never persisted. settings_from_config always
-        # returns them off, so carry forward the values toggled for this session;
-        # otherwise a status poll would immediately disable them.
+        # returns them at their defaults, so carry forward values toggled for
+        # this session; otherwise a status poll would immediately reset them.
         if hasattr(server_instance.shared_state, "livecam_settings"):
             live = server_instance.shared_state.livecam_settings()
             if live:
@@ -1143,7 +1143,7 @@ def register_api_routes(app, server_instance, require_auth=False):
                 server_instance.shared_state,
                 settings,
                 image_format=image_format,
-                color_mode=download_color_mode(server_instance.shared_state),
+                color_mode=download_color_mode(server_instance.shared_state, settings),
                 web_theme=request.args.get("theme", "grey"),
                 accept_new_frame=False,
             )

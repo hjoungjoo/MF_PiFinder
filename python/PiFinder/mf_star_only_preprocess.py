@@ -23,6 +23,8 @@ class MFStarOnlyConfig:
     temporal_frames: int = 5
     saturation_fraction: float = 0.98
     extended_saturated_pixels: int = 16
+    compact_saturated_max_pixels: int = 96
+    compact_saturated_max_span_px: int = 16
     saturated_dilation_px: int = 6
     weak_evidence_sigma: float = 2.5
     evidence_cap_sigma: float = 12.0
@@ -239,6 +241,30 @@ def _extended_saturation_mask(
     sizes = np.bincount(labels.ravel())
     extended_labels = np.flatnonzero(sizes >= config.extended_saturated_pixels)
     extended_labels = extended_labels[extended_labels != 0]
+    # A well-focused bright star can contain tens of clipped sensor pixels.
+    # Area alone therefore cannot distinguish it from an urban light.  Keep
+    # compact clipped components and let the point-response plus temporal PSF
+    # gates decide whether they are stellar; only spatially extended clipped
+    # structures become the destructive hard mask.
+    if len(extended_labels):
+        objects = ndimage.find_objects(labels)
+        truly_extended = []
+        max_pixels = max(0, int(config.compact_saturated_max_pixels))
+        max_span = max(0, int(config.compact_saturated_max_span_px))
+        for label in extended_labels:
+            bounds = objects[int(label) - 1]
+            if bounds is None:
+                continue
+            height = int(bounds[0].stop - bounds[0].start)
+            width = int(bounds[1].stop - bounds[1].start)
+            compact = (
+                int(sizes[label]) <= max_pixels
+                and height <= max_span
+                and width <= max_span
+            )
+            if not compact:
+                truly_extended.append(int(label))
+        extended_labels = np.asarray(truly_extended, dtype=np.int64)
     hard = np.isin(labels, extended_labels)
     if hard.any() and config.saturated_dilation_px > 0:
         hard = ndimage.binary_dilation(
@@ -297,7 +323,11 @@ def preprocess_star_evidence(
     # reducing the white-noise variance.  Calibrate that attenuation before
     # comparing the response with the RAW-domain robust RMS.
     evidence = point_response * config.point_response_gain / np.maximum(rms_local, 1.0)
-    evidence *= soft_weight
+    # ``rms_local`` already expresses the response in local SNR units.  A
+    # second background/noise weight here suppressed genuine stars twice in
+    # the light-polluted lower field (the 2026-09-04 frame reduced a valid
+    # 5.3-sigma clipped PSF to 1.5 sigma).  Keep soft weighting on output
+    # amplitude, but make temporal admission depend on local PSF SNR alone.
     residual *= soft_weight
     evidence[hard_mask] = 0.0
     residual[hard_mask] = 0.0

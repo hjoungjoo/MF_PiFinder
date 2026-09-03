@@ -62,6 +62,22 @@ class TestSepDetect:
         assert result is not None
         assert len(result.centroids) <= 10
 
+    def test_overlay_cap_does_not_expand_solver_centroids(self):
+        stars = [(50 + 40 * i, 60 + 70 * (i % 12)) for i in range(30)]
+        frame = _synthetic_frame(stars)
+        result = sep_detect.detect_stars(
+            frame, sigma=4.0, max_stars=10, overlay_max_stars=20
+        )
+
+        assert result is not None
+        assert len(result.centroids) <= 10
+        assert result.overlay_centroids is not None
+        assert len(result.overlay_centroids) >= len(result.centroids)
+        assert len(result.overlay_centroids) <= 20
+        np.testing.assert_allclose(
+            result.overlay_centroids[: len(result.centroids)], result.centroids
+        )
+
     def test_unusable_frame_returns_none(self):
         assert sep_detect.detect_stars(np.zeros((4, 4), dtype=np.uint16)) is None
         assert sep_detect.detect_stars(np.zeros((10, 10, 3), dtype=np.uint16)) is None

@@ -1155,11 +1155,10 @@ class Server:
         def livecam():
             if hasattr(self.shared_state, "set_livecam_settings"):
                 settings = settings_from_config(config.Config())
-                # settings_from_config forces session-only keys
-                # (processing_enabled) back to their OFF default. Carry forward
-                # the live session value so reopening the page does not silently
-                # disable a pipeline the user turned on for this session; only an
-                # app restart clears it. Mirrors _raw_stack_settings().
+                # settings_from_config forces processing_enabled back to its
+                # session default. Carry forward the live value so reopening the
+                # page does not silently disable preview processing. Solver
+                # preprocessing is persisted and restored from config.
                 if hasattr(self.shared_state, "livecam_settings"):
                     live = self.shared_state.livecam_settings() or {}
                     for key in SESSION_ONLY_KEYS:

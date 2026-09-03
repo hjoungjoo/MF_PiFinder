@@ -421,21 +421,33 @@ class CameraPI(CameraInterface):
                     "input_frame_source"
                 ]
 
+        solver_preprocess_enabled = bool(
+            livecam_settings.get("solver_preprocess_enabled", False)
+        )
+        # When production preprocessing is active, LiveCam reads the exact
+        # already-warm solver output from shared state. A camera-side
+        # accumulator remains only as a diagnostic fallback while production
+        # preprocessing is disabled.
+        camera_star_only_selected = bool(
+            livecam_source == SOURCE_STAR_ONLY and not solver_preprocess_enabled
+        )
+
         # Only the full-sensor frame needs keeping past the crop, and only
         # when the LiveCam viewer is actually looking at it.
         original_raw = (
             sensor_raw
-            if livecam_source in {SOURCE_ORIGINAL, SOURCE_STAR_ONLY}
+            if livecam_source == SOURCE_ORIGINAL or camera_star_only_selected
             else None
         )
 
-        # Star-only is a LiveCam diagnostic input, never a solver input at
-        # this stage.  It deliberately runs only while selected because the
-        # five-frame robust RAW preprocessor is substantially heavier than the
-        # ordinary preview pipeline.  Switching away resets its temporal
-        # window so an old scene cannot leak into a later inspection.
+        # Diagnostic fallback used only when production solver preprocessing
+        # is off. It deliberately runs only while selected because the robust
+        # RAW preprocessor is substantially heavier than the ordinary preview
+        # pipeline. With production preprocessing on, duplicating it here
+        # would add capture-path work and show a different, newly-warming
+        # temporal state from the frame Cedar+SEP actually consumes.
         star_only_raw = None
-        if livecam_source == SOURCE_STAR_ONLY:
+        if camera_star_only_selected:
             try:
                 from PiFinder.mf_star_only_preprocess import MFStarOnlyAccumulator
 
@@ -470,9 +482,6 @@ class CameraPI(CameraInterface):
         # profile rotation applied, crop skipped. The reference is free --
         # the manager proxy pickles (copies) on set_solver_raw below.
         solver_full = None
-        solver_preprocess_enabled = bool(
-            livecam_settings.get("solver_preprocess_enabled", False)
-        )
         if getattr(self, "_publish_solver_raw", False) or solver_preprocess_enabled:
             solver_full = sensor_raw
             if self.profile.rotation_90 != 0:

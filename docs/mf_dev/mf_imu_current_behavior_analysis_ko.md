@@ -576,17 +576,20 @@ Integrator가 sample을 적용하려면 모두 만족해야 한다.
 3. `estimate.imu_anchor`가 있음.
 4. live에서는 `imu.is_usable()`, telemetry replay에서는
    `imu.orientation_valid()`가 true.
-5. anchor quaternion과 현재 quaternion의 회전각이 `0.06°`보다 큼.
-6. `predict()`가 유효한 camera/aligned 쌍을 반환함.
+5. IMU process의 hysteresis 이동 판정 `imu.moving`이 true.
+6. anchor quaternion과 현재 quaternion의 회전각이 `0.06°`보다 큼.
+7. `predict()`가 유효한 camera/aligned 쌍을 반환함.
 
 여기서 비교 대상은 직전 IMU sample이 아니라 **마지막 성공 solve의 anchor**다.
-따라서 anchor에서 0.06°를 한 번 넘은 뒤에는 scope가 멈춰도 각 sample이 anchor보다
-계속 멀기 때문에 estimate timestamp/source가 IMU로 갱신될 수 있다. 작은 움직임을
-누적 적분하는 구조가 아니라 현재 절대 quaternion을 anchor frame에 직접 투영하는
-구조이므로 중간 sample 누락이 각도 누적으로 증폭되지는 않는다.
+작은 움직임을 누적 적분하는 구조가 아니라 현재 절대 quaternion을 마지막 성공 solve의
+anchor frame에 직접 투영한다. 따라서 중간 sample 누락이 각도 누적으로 증폭되지 않으며,
+새 정상 solve가 확정될 때마다 그 좌표와 같은 프레임의 IMU quaternion으로 기준이
+교체된다.
 
-`ImuSample.moving` flag는 이 gate에서 사용하지 않는다. Sensitivity를 Off로 해도
-calibrated quaternion과 0.06° deadband 조건이 맞으면 pointing은 진행한다.
+2026-09-03 수정부터 `ImuSample.moving`을 함께 요구한다. 이전에는 IMUPLUS의 정지 yaw
+drift가 시간이 지나 anchor 대비 0.06°를 넘으면 실제 이동으로 오인되어 좌표가 흔들릴
+수 있었다. 이제 정지 상태에서는 마지막 plate-anchored estimate를 유지하고, 실제 이동
+hysteresis가 켜진 동안에만 anchor 대비 현재 자세를 투영한다.
 
 ### 9.4 게시와 timing
 
@@ -609,9 +612,9 @@ failed solve는 기존 solve cells, estimate cells, IMU anchor를 보존하고:
 - `solve_source = CAM_FAILED`
 - auto-exposure가 실패를 즉시 보도록 무조건 게시
 
-그 뒤 같은 loop에서 IMU가 anchor로부터 0.06°보다 멀면 estimate를 다시 진행하고
-source를 `IMU`로 바꾼다. 정지 상태라 deadband 안이면 `CAM_FAILED`가 유지되지만
-LCD/shared `PointingEstimate`에는 마지막 estimate가 남아 있다.
+그 뒤 같은 loop에서 `moving=true`이고 IMU가 anchor로부터 0.06°보다 멀면 estimate를
+다시 진행하고 source를 `IMU`로 바꾼다. 정지 상태에서는 `CAM_FAILED`가 유지되지만
+LCD/shared `PointingEstimate`와 외부 좌표 서비스 모두 마지막 estimate를 유지한다.
 
 ### 9.6 replay
 
@@ -693,7 +696,7 @@ Position server process의 background thread가 0.2초마다 다음 후보를 �
 plate solve 또는 plate-anchored PiFinder IMU estimate
   > aligned mount + gated IMU disturbance delta
   > aligned mount only
-  > raw IMU fallback
+  > magnetometer 또는 session alignment가 있는 absolute IMU fallback
   > unavailable
 ```
 
@@ -706,6 +709,7 @@ plate solve 또는 plate-anchored PiFinder IMU estimate
 - datetime 존재
 - `imu.is_usable()` (`status==3`, healthy, finite/unit quaternion, age 1초 이하)
 - quaternion이 camera boresight로 변환 가능
+- NDOF magnetometer 절대 방위가 있거나 session-only SkySafari alignment가 적용됨
 
 처리 순서:
 
@@ -719,8 +723,9 @@ native IMU quaternion
   → current location/time의 RA/Dec
 ```
 
-IMUPLUS의 raw azimuth는 임의 yaw 기준이다. 첫 solve 전 절대 하늘 좌표로 쓰려면
-SkySafari Align으로 현재 target과 raw IMU Alt/Az 사이 offset을 설정할 수 있다.
+IMUPLUS의 raw azimuth는 임의 yaw 기준이므로 정렬 없이 절대 하늘 좌표로 선택하지
+않는다. 첫 solve 전 절대 하늘 좌표로 쓰려면 SkySafari Align으로 현재 target과 raw
+IMU Alt/Az 사이 offset을 설정할 수 있다.
 이 offset은 memory only이며 plate solve가 생기거나 Reset Pointing을 수행하면 지운다.
 
 ### 11.3 fallback smoothing
@@ -741,21 +746,22 @@ pointing coordinate status metadata에 기록된다.
 
 ### 11.4 `CAM_FAILED` 경계
 
-외부 좌표 서비스의 solved 후보는 source가 `CAM` 또는 plate anchor가 있는 `IMU`일
-때만 유효하다. `CAM_FAILED`는 `PointingEstimate`에 보존된 estimate가 있어도 solved
-후보에서 거부한다.
+외부 좌표 서비스의 solved 후보는 source가 `CAM`, 또는 plate anchor가 있는 `IMU`와
+`CAM_FAILED`일 때 유효하다. `CAM_FAILED`는 새 좌표의 실패가 아니라 최신 solve
+attempt가 실패했다는 상태이며, integrator에 보존된 plate-anchored estimate는 계속
+유효한 medium-quality 좌표로 취급한다.
 
 따라서 failed solve 직후:
 
 - LCD/Web의 canonical solution은 마지막 estimate를 계속 보유한다.
-- integrator가 같은/다음 loop에 0.06° 이상 IMU 진행을 하면 source가 `IMU`가 되어
+- integrator가 같은/다음 loop에 실제 이동과 0.06° 이상 IMU 진행을 확인하면 source가
+  `IMU`가 되어
   외부 좌표도 다시 plate-anchored estimate를 쓴다.
-- 정지 상태라 source가 `CAM_FAILED`에 머물면 Positioning service는 preserved estimate
-  대신 aligned mount 또는 raw IMU fallback으로 내려간다.
+- 정지 상태라 source가 `CAM_FAILED`에 머물러도 Positioning service는 preserved
+  estimate를 계속 사용한다.
 
-이는 “failed solve에서도 마지막 estimate를 보존한다”는 integrator 정책과 외부
-좌표 선택 정책 사이의 의미 차이다. 의도된 source 격리인지, 외부 좌표의 순간 전환
-원인인지 개선 전에 명시적으로 결정해야 한다.
+이 정합으로 구름 통과 중 SkySafari가 미정렬 IMUPLUS 절대 좌표로 순간 전환하던 경로를
+제거했다. plate anchor가 전혀 없는 `CAM_FAILED`는 계속 거부한다.
 
 ### 11.5 mount+IMU disturbance delta
 
@@ -893,7 +899,7 @@ IMU process 시작
 ### 14.2 solve 뒤 scope 이동
 
 ```text
-현재 quaternion이 solve anchor에서 0.06° 초과
+IMU moving=true + 현재 quaternion이 solve anchor에서 0.06° 초과
   → camera/aligned estimate 예측
   → estimate_time=sample timestamp
   → solve_source=IMU
@@ -908,8 +914,8 @@ FailedSolve
   → diagnostics 갱신
   → solve_source=CAM_FAILED
   → shared solution 즉시 게시
-  → 충분한 IMU 이동이면 곧 source=IMU
-  → 정지면 외부 좌표 서비스만 mount/raw fallback으로 전환 가능
+  → 실제 IMU 이동이 충분하면 곧 source=IMU
+  → 정지면 모든 소비자가 마지막 plate-anchored estimate 유지
 ```
 
 ### 14.4 sleep/wake
@@ -1056,17 +1062,12 @@ skip-vs-failed semantics, image/metadata atomicity를 함께 확정한다.
 
 현재처럼 “Off이지만 일부 IMU 경로는 계속 동작”하는 의미가 가장 혼란스럽다.
 
-#### P1-5. `CAM_FAILED` preserved estimate 정책 정합
+#### P1-5. `CAM_FAILED` preserved estimate 정책 정합 (2026-09-03 완료)
 
-Integrator는 preserved estimate를 유효 pointing으로 유지하지만 외부 좌표 서비스는
-`CAM_FAILED` source를 거부한다. 다음 중 하나를 결정해야 한다.
-
-- plate anchor + preserved estimate를 medium quality solved 후보로 인정
-- 현재 전환을 의도된 정책으로 유지하되 status/문서에서 source change를 명확히 표시
-- 실패 attempt와 pointing source를 한 enum에 함께 넣지 않고 별도 필드로 분리
-
-세 번째가 데이터 모델상 가장 명확하다. `last_attempt_success`와 “현재 estimate의
-생산자”는 서로 다른 사실이다.
+Plate anchor + preserved estimate를 medium quality solved 후보로 인정하도록 적용했다.
+이에 따라 failed attempt 중에도 외부 좌표가 미정렬 raw IMU로 전환하지 않는다. 장기적으로
+`last_attempt_success`와 “현재 estimate 생산자”를 별도 필드로 분리하는 데이터 모델
+정리는 여전히 유효하지만, 현재 enum 구조에서도 좌표 연속성은 보장한다.
 
 ### P2 — 진단·보정·테스트
 

@@ -21,6 +21,7 @@ from PiFinder.integrator import _advance_with_imu, _apply_successful_solve
 from PiFinder.pointing_model.imu_dead_reckoning import ImuDeadReckoning
 from PiFinder.pointing_model.quaternion_transforms import axis_angle2quat, radec2q_eq
 from PiFinder.types.positioning import (
+    FailedSolve,
     ImuSample,
     Pointing,
     PointingEstimate,
@@ -364,6 +365,79 @@ class TestIntegratorDrift:
         assert (
             max_error < 10
         ), f"Stationary max drift {max_error:.1f} arcsec exceeds 10 arcsec threshold"
+
+    def test_stationary_anchor_drift_does_not_move_plate_anchored_coordinate(self):
+        """Large accumulated IMUPLUS drift is not physical telescope motion."""
+        idr = ImuDeadReckoning("flat")
+        anchor_quat = _make_imu_quat_for_radec(
+            idr, np.deg2rad(180.0), np.deg2rad(45.0), 0.0
+        )
+        solve = SuccessfulSolve(
+            camera=Pointing(RA=180.0, Dec=45.0, Roll=0.0),
+            aligned=Pointing(RA=180.0, Dec=45.0, Roll=0.0),
+            imu_anchor=anchor_quat,
+            last_solve_attempt=100.0,
+            last_solve_success=100.0,
+        )
+        estimate = _apply_successful_solve(PointingEstimate(), solve, idr)
+        drifted_quat = (
+            anchor_quat * axis_angle2quat([0, 0, 1], np.deg2rad(0.5))
+        ).normalized()
+
+        advanced = _advance_with_imu(
+            estimate,
+            idr,
+            ImuSample(
+                quat=drifted_quat,
+                timestamp=101.0,
+                status=3,
+                moving=False,
+            ),
+        )
+
+        assert advanced is False
+        assert estimate.pointing.aligned.estimate == solve.aligned
+
+    def test_failed_solve_then_real_motion_uses_last_successful_anchor(self):
+        """No-solve motion remains relative to the last confirmed plate solve."""
+        from PiFinder.integrator import _apply_failed_solve
+
+        idr = ImuDeadReckoning("flat")
+        anchor_quat = _make_imu_quat_for_radec(
+            idr, np.deg2rad(100.0), np.deg2rad(20.0), 0.0
+        )
+        solve = SuccessfulSolve(
+            camera=Pointing(RA=100.0, Dec=20.0, Roll=0.0),
+            aligned=Pointing(RA=100.0, Dec=20.0, Roll=0.0),
+            imu_anchor=anchor_quat,
+            last_solve_attempt=100.0,
+            last_solve_success=100.0,
+        )
+        estimate = _apply_successful_solve(PointingEstimate(), solve, idr)
+        _apply_failed_solve(
+            estimate,
+            FailedSolve(last_solve_attempt=101.0, last_solve_success=100.0),
+        )
+
+        moved_quat = _make_imu_quat_for_radec(
+            idr, np.deg2rad(102.0), np.deg2rad(20.0), 0.0
+        )
+        advanced = _advance_with_imu(
+            estimate,
+            idr,
+            ImuSample(
+                quat=moved_quat,
+                timestamp=102.0,
+                status=3,
+                moving=True,
+            ),
+        )
+
+        assert advanced is True
+        assert estimate.pointing.camera.solve == solve.camera
+        assert estimate.imu_anchor == anchor_quat
+        assert estimate.pointing.aligned.estimate.RA == pytest.approx(102.0)
+        assert estimate.pointing.aligned.estimate.Dec == pytest.approx(20.0)
 
     def test_slew_tracking_accuracy(self):
         """

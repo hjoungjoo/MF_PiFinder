@@ -13,6 +13,7 @@ from PiFinder.raw_live_stack import (
     download_image_format,
     normalize_settings,
     publish_selected_frame,
+    publish_solver_preprocessed_frame,
 )
 from PiFinder.livecam_config import processing_enabled
 from PiFinder.livecam_config import (
@@ -28,6 +29,12 @@ from PiFinder.sqm.camera_profiles import CameraProfile
 class DummySharedState:
     def __init__(self):
         self._frame = None
+        self._solver_preprocessed_frame = None
+        self._solver_preprocess_status = {
+            "enabled": False,
+            "state": "disabled",
+            "frame_count": 0,
+        }
         self._sep_overlay = None
         self.set_calls = 0
 
@@ -37,6 +44,23 @@ class DummySharedState:
     def set_raw_live_frame(self, value):
         self.set_calls += 1
         self._frame = value
+
+    def solver_preprocessed_frame(self):
+        return self._solver_preprocessed_frame
+
+    def solver_preprocessed_frame_info(self):
+        if not self._solver_preprocessed_frame:
+            return None
+        return self._solver_preprocessed_frame.get("info")
+
+    def set_solver_preprocessed_frame(self, value):
+        self._solver_preprocessed_frame = value
+
+    def solver_preprocess_status(self):
+        return dict(self._solver_preprocess_status)
+
+    def set_solver_preprocess_status(self, value):
+        self._solver_preprocess_status = dict(value)
 
     def sep_overlay(self):
         return self._sep_overlay
@@ -127,6 +151,126 @@ def test_star_only_is_a_valid_livecam_input_source():
     assert settings["input_frame_source"] == SOURCE_STAR_ONLY
 
 
+def test_star_only_uses_already_warm_solver_preprocessed_frame():
+    shared = DummySharedState()
+    raw = np.full((4, 4), 10, dtype=np.uint16)
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True},
+        _profile(),
+        "test",
+        raw,
+        raw,
+        metadata={"timestamp": 1.0, "frame_id": 1},
+    )
+    preprocessed = np.full((4, 4), 200, dtype=np.uint16)
+    publish_solver_preprocessed_frame(
+        shared,
+        preprocessed,
+        _profile(),
+        "test",
+        {"exposure_end": 2.0, "frame_id": 2, "gain": 3.0},
+        preprocess_frames=5,
+    )
+    shared.set_solver_preprocess_status(
+        {
+            "enabled": True,
+            "state": "ready",
+            "frame_count": 5,
+            "frame_limit": 5,
+            "error": None,
+        }
+    )
+    settings = normalize_settings(
+        {
+            "processing_enabled": True,
+            "solver_preprocess_enabled": True,
+            "input_frame_source": SOURCE_STAR_ONLY,
+            "web_image_format": "png",
+        }
+    )
+    processor = RawLiveStackProcessor()
+
+    status = processor.status(shared, settings)
+    rendered = processor.render_raw_tiff(shared, settings)
+
+    assert status["frame"]["frame_id"] == 2
+    assert status["frame"]["producer"] == "solver_preprocessor"
+    assert status["frame"]["preprocess_frames"] == 5
+    assert status["preprocess"]["state"] == "ready"
+    assert rendered is not None
+    image = np.asarray(Image.open(io.BytesIO(rendered[0])))
+    np.testing.assert_array_equal(image, preprocessed)
+
+
+def test_star_only_status_reports_solver_warmup_without_stale_raw_frame():
+    shared = DummySharedState()
+    raw = np.full((4, 4), 10, dtype=np.uint16)
+    publish_selected_frame(
+        shared,
+        {"processing_enabled": True},
+        _profile(),
+        "test",
+        raw,
+        raw,
+        metadata={"timestamp": 1.0, "frame_id": 1},
+    )
+    shared.set_solver_preprocess_status(
+        {
+            "enabled": True,
+            "state": "warming",
+            "frame_count": 1,
+            "frame_limit": 5,
+            "error": None,
+        }
+    )
+    settings = normalize_settings(
+        {
+            "processing_enabled": True,
+            "solver_preprocess_enabled": True,
+            "input_frame_source": SOURCE_STAR_ONLY,
+        }
+    )
+
+    status = RawLiveStackProcessor().status(shared, settings)
+
+    assert status["has_frame"] is False
+    assert status["frame"] is None
+    assert status["preprocess"]["state"] == "warming"
+    assert status["preprocess"]["frame_count"] == 1
+
+
+def test_star_only_uses_camera_fallback_when_solver_preprocessing_is_off():
+    shared = DummySharedState()
+    fallback = np.full((4, 4), 33, dtype=np.uint16)
+    publish_selected_frame(
+        shared,
+        {
+            "processing_enabled": True,
+            "input_frame_source": SOURCE_STAR_ONLY,
+        },
+        _profile(),
+        "test",
+        fallback,
+        fallback,
+        metadata={"timestamp": 1.0, "frame_id": 7},
+        stage_frames={SOURCE_STAR_ONLY: fallback},
+    )
+    settings = normalize_settings(
+        {
+            "processing_enabled": True,
+            "solver_preprocess_enabled": False,
+            "input_frame_source": SOURCE_STAR_ONLY,
+        }
+    )
+
+    status = RawLiveStackProcessor().status(shared, settings)
+
+    assert status["has_frame"] is True
+    assert status["frame"]["frame_id"] == 7
+    assert status["preprocess"] is None
+
+
 def test_default_settings_for_config_restores_livecam_defaults():
     defaults = default_settings_for_config(DummyConfig({"camera_rotation": 90}))
 
@@ -170,14 +314,16 @@ def test_processing_enabled_is_not_persisted():
     assert cfg.options[f"{CONFIG_PREFIX}stack_mode"] == "mean"
 
 
-def test_solver_preprocess_enabled_is_session_only():
-    stale_cfg = WritableConfig({f"{CONFIG_PREFIX}solver_preprocess_enabled": True})
+def test_solver_preprocess_enabled_defaults_on_and_is_persisted():
+    assert settings_from_config(WritableConfig())["solver_preprocess_enabled"] is True
 
-    assert settings_from_config(stale_cfg)["solver_preprocess_enabled"] is False
+    stored_off = WritableConfig({f"{CONFIG_PREFIX}solver_preprocess_enabled": False})
+    assert settings_from_config(stored_off)["solver_preprocess_enabled"] is False
+
     cfg = WritableConfig()
-    returned = save_settings_to_config(cfg, {"solver_preprocess_enabled": True})
-    assert returned["solver_preprocess_enabled"] is True
-    assert f"{CONFIG_PREFIX}solver_preprocess_enabled" not in cfg.options
+    returned = save_settings_to_config(cfg, {"solver_preprocess_enabled": False})
+    assert returned["solver_preprocess_enabled"] is False
+    assert cfg.options[f"{CONFIG_PREFIX}solver_preprocess_enabled"] is False
 
 
 def test_publish_original_rotates_without_crop():

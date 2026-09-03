@@ -426,6 +426,10 @@
         <div class="livecam-status-value" id="statusSource">-</div>
       </div>
       <div class="livecam-status-item">
+        <div class="livecam-status-label">{{ _('Solver Preprocessing') }}</div>
+        <div class="livecam-status-value" id="statusPreprocess">-</div>
+      </div>
+      <div class="livecam-status-item">
         <div class="livecam-status-label">{{ _('RAW Shape') }}</div>
         <div class="livecam-status-value" id="statusShape">-</div>
       </div>
@@ -507,7 +511,7 @@ const wideTileEditToggle = document.getElementById('wideTileEdit');
 const wideTileSvg = document.getElementById('wideTileSvg');
 let pollTimer = null;
 let waitingSince = null;
-let lastFrameId = null;
+let lastFrameKey = null;
 let controlsHydrated = false;
 let imageZoom = 1.0;
 let fitMode = true;
@@ -700,11 +704,22 @@ function renderStatus(data, syncControls = false) {
   const settings = data.settings || {};
   const frame = data.frame || {};
   const stack = data.stack || {};
+  const preprocess = data.preprocess || {};
   if (syncControls || !controlsHydrated) {
     applySettingsToControls(settings);
     controlsHydrated = true;
   }
   setText('statusSource', frame.source || settings.input_frame_source);
+  let preprocessText = '-';
+  if (settings.input_frame_source === 'star_only' && settings.solver_preprocess_enabled) {
+    const state = preprocess.state || 'waiting';
+    const count = preprocess.frame_count ?? frame.preprocess_frames;
+    const limit = preprocess.frame_limit || 5;
+    preprocessText = count === null || count === undefined
+      ? state
+      : `${state} (${count} / ${limit})`;
+  }
+  setText('statusPreprocess', preprocessText);
   setText('statusShape', frame.shape ? frame.shape.join(' x ') : null);
   setText('statusDisplayShape', stack.display_shape ? stack.display_shape.join(' x ') : null);
   setText('statusDtype', frame.dtype);
@@ -729,7 +744,10 @@ function renderStatus(data, syncControls = false) {
       ? levels.map((v) => Math.round(v)).join(' / ')
       : null
   );
-  setText('statusError', stack.last_error || stack.last_reject_reason || '-');
+  setText(
+    'statusError',
+    preprocess.error || stack.last_error || stack.last_reject_reason || '-'
+  );
   if (data.enabled && data.has_frame) {
     waitingSince = null;
     image.hidden = false;
@@ -739,8 +757,12 @@ function renderStatus(data, syncControls = false) {
     // image fetch costs a full-frame read + stretch server-side, so
     // re-fetching an unchanged frame just burns Pi CPU.
     const frameId = data.frame && data.frame.frame_id;
-    if (frameId !== lastFrameId || !image.src) {
-      lastFrameId = frameId;
+    // A camera frame id can be shared by original/cropped/star-only products.
+    // Include the producer/source so changing Input Frame fetches the cached
+    // product immediately even when it belongs to the same exposure.
+    const frameKey = `${frame.producer || frame.source || settings.input_frame_source}:${frameId}`;
+    if (frameKey !== lastFrameKey || !image.src) {
+      lastFrameKey = frameKey;
       image.src = imageUrl();
       loadWideTiles();
     }
@@ -757,9 +779,20 @@ function renderStatus(data, syncControls = false) {
         waitingSince = Date.now();
       }
       const seconds = Math.round((Date.now() - waitingSince) / 1000);
-      placeholder.textContent =
-        "{{ _('Processing is on. Waiting for the camera to publish the next RAW frame') }}" +
-        ` (${seconds}s)`;
+      if (
+        settings.input_frame_source === 'star_only' &&
+        settings.solver_preprocess_enabled
+      ) {
+        const preprocessState = preprocess.state || 'waiting_for_raw';
+        const frameCount = preprocess.frame_count || 0;
+        placeholder.textContent =
+          `{{ _('Solver preprocessing') }}: ${preprocessState} ` +
+          `(${frameCount} / ${preprocess.frame_limit || 5}, ${seconds}s)`;
+      } else {
+        placeholder.textContent =
+          "{{ _('Processing is on. Waiting for the camera to publish the next RAW frame') }}" +
+          ` (${seconds}s)`;
+      }
     } else {
       waitingSince = null;
       placeholder.textContent = "{{ _('Processing is off.') }}";

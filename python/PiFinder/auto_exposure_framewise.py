@@ -23,19 +23,25 @@ GAIN_LADDER = (30.0, 15.0, 8.0, 4.0, 2.0, 1.0)
 REGION_NAMES = ("UL", "U", "UR", "L", "C", "R", "DL", "D", "DR")
 PERIPHERAL_REGIONS = frozenset(REGION_NAMES) - {"C"}
 
-# Before the first catalog-confirmed solve there is no stellar SNR anchor.
-# A purely fail-closed controller used to stop forever after twilight's bright
-# sky guard lowered exposure.  Maintain a conservative peripheral background
-# during acquisition instead: as twilight fades, exposure follows it upward
-# and the first stars become detectable without a manual mode toggle.  The
-# upper edge remains below the 30% bright-sky guard and upward applications
-# are still capped at +0.5 stop.
-ACQUISITION_BACKGROUND_FRACTION = 0.24
-ACQUISITION_RATIO_DEADBAND = 0.05
+# A 2026-09-04 on-sky sweep (200/280/400/450/560 ms, IMX462 gain 29.51)
+# found the useful maximum at 400 ms: 19-26 catalog matches while the robust
+# CFA-cell-max p99.9 of usable peripheral regions was 82.6-83.6% of full
+# scale. At 450 ms it reached 87.4% without adding matches; at 560 ms
+# saturation spread into the centre/right and solve reliability collapsed.
+# Drive this robust highlight statistic, rather than the broad sky median, so
+# Auto(Star) can expose faint stars close to the sensor headroom limit.
+USABLE_HIGHLIGHT_TARGET_FRACTION = 0.84
+USABLE_HIGHLIGHT_LOW_FRACTION = 0.78
+USABLE_HIGHLIGHT_HIGH_FRACTION = 0.87
+USABLE_HIGHLIGHT_DOWN_P99_FRACTION = 0.68
+USABLE_BACKGROUND_TARGET_FRACTION = 0.52
+USABLE_BACKGROUND_HIGH_FRACTION = 0.60
 PERIPHERAL_SATURATED_AREA_FRACTION = 0.005
 PERIPHERAL_BROAD_HIGHLIGHT_FRACTION = 0.85
-MIN_HARD_SATURATED_PERIPHERAL_REGIONS = 2
+MIN_USABLE_PERIPHERAL_REGIONS = 4
+MIN_HARD_SATURATED_PERIPHERAL_REGIONS = 4
 SATURATION_CEILING_PROBE_S = 30.0
+HIGHLIGHT_RAISE_CONFIRM_FRAMES = 3
 
 
 @dataclass(frozen=True)
@@ -218,14 +224,34 @@ def collect_spatial_frame_sample(
 ) -> Optional[FrameExposureSample]:
     """Reduce one linear RAW frame to a sparse 3x3 spatial sample.
 
-    The connected-component test runs on the already sparse image.  It catches
-    a central moon/bloom without making a full-resolution mask in the camera's
-    latency-sensitive path.
+    The connected-component test runs on the already sparse image. For Bayer
+    RAW, each 2x2 CFA cell is reduced before spatial decimation; direct
+    ``raw[::stride, ::stride]`` sampling selects only one colour phase and made
+    exposure statistics change when the same frame was rotated for display.
+    The maximum of the four CFA samples keeps the measurement independent of
+    Bayer phase while retaining the brightest colour response and sensor
+    clipping; an average diluted exactly the headroom signal being controlled.
+    This keeps the fast path small and also catches a central moon/bloom without
+    making a full-resolution mask in the camera's latency-sensitive path.
     """
     image = np.asarray(raw)
     if image.ndim != 2 or min(image.shape) < 48 or stride < 1:
         return None
-    sparse = image[::stride, ::stride]
+    height = image.shape[0] - image.shape[0] % 2
+    width = image.shape[1] - image.shape[1] % 2
+    cell_stride = max(1, int(round(stride / 2)))
+    sample_step = 2 * cell_stride
+    # Reduce only CFA cells that survive the requested spatial stride. Building
+    # a full half-resolution CFA image first spent 18-28 ms per live frame and
+    # then discarded most of it at the default stride=4.
+    sparse = np.maximum.reduce(
+        (
+            image[0:height:sample_step, 0:width:sample_step],
+            image[0:height:sample_step, 1:width:sample_step],
+            image[1:height:sample_step, 0:width:sample_step],
+            image[1:height:sample_step, 1:width:sample_step],
+        )
+    )
     if min(sparse.shape) < 12:
         return None
     white_level = float(2 ** int(bit_depth) - 1)
@@ -391,6 +417,7 @@ class AutoStarFrameController:
         false_candidate_repeats: int = 3,
         gain_min_dwell_frames: int = 8,
         gain_retry_cooldown_s: float = 90.0,
+        highlight_raise_confirm_frames: int = HIGHLIGHT_RAISE_CONFIRM_FRAMES,
     ) -> None:
         self.allocator = allocator
         self.gain_locked = gain_locked
@@ -399,6 +426,9 @@ class AutoStarFrameController:
         self.false_candidate_repeats = false_candidate_repeats
         self.gain_min_dwell_frames = gain_min_dwell_frames
         self.gain_retry_cooldown_s = gain_retry_cooldown_s
+        self.highlight_raise_confirm_frames = max(
+            1, int(highlight_raise_confirm_frames)
+        )
         self.reset()
 
     def reset(self, *, gain_locked: Optional[bool] = None) -> None:
@@ -428,6 +458,15 @@ class AutoStarFrameController:
         self._last_applied_after_frames: Optional[int] = None
         self._direction_reversals = 0
         self._last_direction = 0
+        self._highlight_low_streak = 0
+
+    def _highlight_raise_confirmed(self) -> bool:
+        self._highlight_low_streak += 1
+        if self._highlight_low_streak < self.highlight_raise_confirm_frames:
+            self._reason = "highlight_headroom_low_confirm"
+            return False
+        self._highlight_low_streak = 0
+        return True
 
     @staticmethod
     def _matches(
@@ -462,14 +501,45 @@ class AutoStarFrameController:
         self._frames_by_id[sample.frame_id] = sample
 
     @staticmethod
-    def _peripheral_summary(sample: FrameExposureSample) -> dict[str, Optional[float]]:
-        regions = sample.peripheral()
+    def _region_is_broadly_saturated(
+        sample: FrameExposureSample, region: RegionExposureStats
+    ) -> bool:
+        return bool(
+            region.saturated_fraction >= PERIPHERAL_SATURATED_AREA_FRACTION
+            or (
+                region.p999_adu >= 0.94 * sample.white_level
+                and region.p99_adu
+                >= PERIPHERAL_BROAD_HIGHLIGHT_FRACTION * sample.white_level
+            )
+        )
+
+    @classmethod
+    def _peripheral_summary(
+        cls, sample: FrameExposureSample
+    ) -> dict[str, Optional[float]]:
+        all_regions = sample.peripheral()
+        regions = tuple(
+            region
+            for region in all_regions
+            if not cls._region_is_broadly_saturated(sample, region)
+        )
+        if not regions:
+            regions = all_regions
+
+        # One bright star or warm-pixel cluster can own a region's maximum.
+        # The upper quartile across spatial regions still follows widespread
+        # stellar headroom, while a local streetlight/horizon band is removed
+        # above. This is the statistic calibrated by the on-sky sweep.
+        p99_values = [r.p99_adu for r in regions]
+        p999_values = [r.p999_adu for r in regions]
         return {
             "p50": _robust_median([r.background_p50_adu for r in regions]),
-            "p99": max((r.p99_adu for r in regions), default=None),
-            "p999": max((r.p999_adu for r in regions), default=None),
+            "p99": (float(np.percentile(p99_values, 75)) if p99_values else None),
+            "p999": (float(np.percentile(p999_values, 75)) if p999_values else None),
             "sat": max((r.saturated_fraction for r in regions), default=None),
             "contrast": _robust_median([r.point_contrast for r in regions]),
+            "usable_regions": float(len(regions)),
+            "contaminated_regions": float(len(all_regions) - len(regions)),
         }
 
     @staticmethod
@@ -483,17 +553,16 @@ class AutoStarFrameController:
         bloom affects at least two peripheral regions; those cases retain the
         immediate safety response.
         """
-        white = sample.white_level
         saturated_regions = sum(
             1
             for region in sample.peripheral()
-            if region.saturated_fraction >= PERIPHERAL_SATURATED_AREA_FRACTION
-            or (
-                region.p999_adu >= 0.94 * white
-                and region.p99_adu >= PERIPHERAL_BROAD_HIGHLIGHT_FRACTION * white
-            )
+            if AutoStarFrameController._region_is_broadly_saturated(sample, region)
         )
-        return saturated_regions >= MIN_HARD_SATURATED_PERIPHERAL_REGIONS
+        usable_regions = len(sample.peripheral()) - saturated_regions
+        return bool(
+            saturated_regions >= MIN_HARD_SATURATED_PERIPHERAL_REGIONS
+            or usable_regions < MIN_USABLE_PERIPHERAL_REGIONS
+        )
 
     def _motion_limit(self, sample: FrameExposureSample) -> Optional[int]:
         if sample.motion_degrees <= 0.01:
@@ -602,7 +671,11 @@ class AutoStarFrameController:
         p999 = summary["p999"]
         hard_saturation = self._hard_peripheral_saturation(sample)
         if hard_saturation:
-            saturated_p999 = float(p999 if p999 is not None else sample.white_level)
+            self._highlight_low_streak = 0
+            saturated_p999 = max(
+                (region.p999_adu for region in sample.peripheral()),
+                default=sample.white_level,
+            )
             ratio = 0.82 * 0.90 * sample.white_level / max(saturated_p999, 1.0)
             ratio = min(0.75, max(0.10, ratio))
             exposure = self.allocator.clamp_exposure(sample.actual_exposure_us * ratio)
@@ -647,62 +720,83 @@ class AutoStarFrameController:
             return gain_target
 
         p50 = summary["p50"]
-        if p50 is None:
+        p99 = summary["p99"]
+        p999 = summary["p999"]
+        if p50 is None or p99 is None or p999 is None:
             self._reason = "no_usable_peripheral_regions"
             return None
-        signal = max(1.0, p50 - sample.pedestal_adu)
+        highlight_signal = max(1.0, p999 - sample.pedestal_adu)
+        usable_range = max(1.0, sample.white_level - sample.pedestal_adu)
+        highlight_fraction = highlight_signal / usable_range
+        p99_fraction = max(0.0, p99 - sample.pedestal_adu) / usable_range
+        background_fraction = max(0.0, p50 - sample.pedestal_adu) / usable_range
+
+        # A broad bright cloud has no need to reach the highlight limit: its
+        # median itself consumes dynamic range. Keep this independent of the
+        # local polluted-region filter so clean regions remain measurable.
+        if background_fraction > USABLE_BACKGROUND_HIGH_FRACTION:
+            self._highlight_low_streak = 0
+            return self._target(
+                sample,
+                sample.actual_exposure_us
+                * USABLE_BACKGROUND_TARGET_FRACTION
+                / background_fraction,
+                sample.actual_gain,
+                "bright_sky_exposure_down",
+                safety=True,
+            )
 
         # Before the first catalog-confirmed anchor, track a conservative
-        # peripheral background target.  This is acquisition, not the final
-        # stellar optimum: it exists so twilight fading can reveal the first
-        # catalog stars.  A single upward application is capped at +0.5 stop,
-        # while the existing 30% bright-sky/saturation paths remain faster.
+        # robust-highlight target. This lets twilight fading and a clean dark
+        # field climb until faint stars use most of the sensor range, without
+        # letting one polluted horizon band dictate the whole field. A single
+        # upward application remains capped at +0.5 stop.
         if self._anchor_sample is None:
-            bright_limit = 0.30 * (sample.white_level - sample.pedestal_adu)
-            if signal > bright_limit:
+            if (
+                highlight_fraction > USABLE_HIGHLIGHT_HIGH_FRACTION
+                and p99_fraction >= USABLE_HIGHLIGHT_DOWN_P99_FRACTION
+            ):
+                self._highlight_low_streak = 0
                 return self._target(
                     sample,
-                    sample.actual_exposure_us * bright_limit / signal,
+                    sample.actual_exposure_us
+                    * USABLE_HIGHLIGHT_TARGET_FRACTION
+                    / highlight_fraction,
                     sample.actual_gain,
-                    "bright_sky_exposure_down",
+                    "acquisition_highlight_exposure_down",
                     safety=True,
                 )
-            acquisition_target = ACQUISITION_BACKGROUND_FRACTION * (
-                sample.white_level - sample.pedestal_adu
-            )
-            acquisition_ratio = acquisition_target / signal
-            if acquisition_ratio > 1.0 + ACQUISITION_RATIO_DEADBAND:
+            if highlight_fraction < USABLE_HIGHLIGHT_LOW_FRACTION:
+                if not self._highlight_raise_confirmed():
+                    return None
+                acquisition_ratio = USABLE_HIGHLIGHT_TARGET_FRACTION / max(
+                    highlight_fraction, 1e-6
+                )
                 return self._target(
                     sample,
                     sample.actual_exposure_us * min(math.sqrt(2.0), acquisition_ratio),
                     sample.actual_gain,
-                    "acquisition_background_exposure_up",
+                    "acquisition_highlight_exposure_up",
                 )
-            if acquisition_ratio < 1.0 / (1.0 + ACQUISITION_RATIO_DEADBAND):
-                return self._target(
-                    sample,
-                    sample.actual_exposure_us * acquisition_ratio,
-                    sample.actual_gain,
-                    "acquisition_background_exposure_down",
-                )
+            self._highlight_low_streak = 0
             self._reason = "awaiting_peripheral_solve_anchor"
             return None
 
         anchor_summary = self._peripheral_summary(self._anchor_sample)
-        anchor_signal = max(
-            1.0,
-            float(anchor_summary["p50"] or self._anchor_sample.pedestal_adu + 1.0)
-            - self._anchor_sample.pedestal_adu,
-        )
-        ratio = anchor_signal / signal
-        if ratio < 0.72:
+        if (
+            highlight_fraction > USABLE_HIGHLIGHT_HIGH_FRACTION
+            and p99_fraction >= USABLE_HIGHLIGHT_DOWN_P99_FRACTION
+        ):
+            self._highlight_low_streak = 0
             return self._target(
                 sample,
-                sample.actual_exposure_us * ratio,
+                sample.actual_exposure_us
+                * USABLE_HIGHLIGHT_TARGET_FRACTION
+                / highlight_fraction,
                 sample.actual_gain,
-                "background_above_anchor_exposure_down",
+                "highlight_headroom_exposure_down",
             )
-        if ratio > 1.45:
+        if highlight_fraction < USABLE_HIGHLIGHT_LOW_FRACTION:
             anchor_fresh = sample.captured_at - self._anchor_at <= self.anchor_trust_s
             current_contrast = float(summary["contrast"] or 0.0)
             anchor_contrast = float(anchor_summary["contrast"] or 0.0)
@@ -728,16 +822,21 @@ class AutoStarFrameController:
                 and self._latest_quality.matched_stars > 0
             )
             if not anchor_fresh or not quality_fresh or cloud_like or missing_periphery:
+                self._highlight_low_streak = 0
                 self._reason = "dark_cloud_anchor_hold"
                 return None
+            if not self._highlight_raise_confirmed():
+                return None
             # Upward changes are limited to +0.5 stop per actual application.
+            ratio = USABLE_HIGHLIGHT_TARGET_FRACTION / max(highlight_fraction, 1e-6)
             return self._target(
                 sample,
                 sample.actual_exposure_us * min(math.sqrt(2.0), ratio),
                 sample.actual_gain,
-                "background_below_anchor_exposure_up",
+                "highlight_headroom_exposure_up",
             )
-        self._reason = "background_deadband"
+        self._highlight_low_streak = 0
+        self._reason = "highlight_headroom_deadband"
         return None
 
     def update_quality(self, quality: SolveExposureQuality) -> None:
@@ -748,8 +847,23 @@ class AutoStarFrameController:
             self._reason = "stale_quality_frame"
             return
 
+        summary = self._peripheral_summary(sample)
+        usable_range = max(1.0, sample.white_level - sample.pedestal_adu)
+        highlight_fraction = (
+            max(0.0, float(summary["p999"] or 0.0) - sample.pedestal_adu) / usable_range
+        )
+        background_fraction = (
+            max(0.0, float(summary["p50"] or 0.0) - sample.pedestal_adu) / usable_range
+        )
+        exposure_settled = bool(
+            USABLE_HIGHLIGHT_LOW_FRACTION
+            <= highlight_fraction
+            <= USABLE_HIGHLIGHT_HIGH_FRACTION
+            and background_fraction <= USABLE_BACKGROUND_HIGH_FRACTION
+            and not self._hard_peripheral_saturation(sample)
+        )
+
         if quality.solve_success and quality.peripheral and quality.matched_stars >= 3:
-            summary = self._peripheral_summary(sample)
             if (
                 float(summary["sat"] or 0.0) < 0.001
                 and float(summary["p999"] or sample.white_level)
@@ -802,14 +916,20 @@ class AutoStarFrameController:
             self._good_quality_streak = 0
             return
 
-        pressure_bad = (
-            quality.candidate_stars >= 20
+        pressure_bad = bool(
+            exposure_settled
+            and quality.candidate_stars >= 20
             and quality.candidate_pressure >= 4.0
             and (not quality.solve_success or quality.matched_stars < 3)
         )
-        self._pressure_streak = self._pressure_streak + 1 if pressure_bad else 0
+        if not exposure_settled:
+            self._pressure_streak = 0
+            self._good_quality_streak = 0
+        else:
+            self._pressure_streak = self._pressure_streak + 1 if pressure_bad else 0
         quality_good = bool(
-            quality.solve_success
+            exposure_settled
+            and quality.solve_success
             and quality.peripheral
             and quality.matched_stars >= 5
             and quality.candidate_pressure < 4.0
@@ -887,12 +1007,20 @@ class AutoStarFrameController:
                 else 0.0
             ),
             "direction_reversals": self._direction_reversals,
+            "highlight_low_streak": self._highlight_low_streak,
+            "highlight_raise_confirm_frames": self.highlight_raise_confirm_frames,
             "center_contaminated": latest.center_contaminated if latest else None,
             "peripheral_p50_adu": summary.get("p50"),
             "peripheral_p99_adu": summary.get("p99"),
             "peripheral_p999_adu": summary.get("p999"),
             "peripheral_saturation": summary.get("sat"),
             "peripheral_contrast": summary.get("contrast"),
+            "usable_peripheral_regions": summary.get("usable_regions"),
+            "contaminated_peripheral_regions": summary.get("contaminated_regions"),
+            "usable_highlight_target_fraction": USABLE_HIGHLIGHT_TARGET_FRACTION,
+            "usable_highlight_low_fraction": USABLE_HIGHLIGHT_LOW_FRACTION,
+            "usable_highlight_high_fraction": USABLE_HIGHLIGHT_HIGH_FRACTION,
+            "usable_background_high_fraction": USABLE_BACKGROUND_HIGH_FRACTION,
             "last_quality": (
                 {
                     "frame_id": self._latest_quality.frame_id,

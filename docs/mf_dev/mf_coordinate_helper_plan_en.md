@@ -92,13 +92,15 @@ Valid when:
 - `solution.has_pointing()` is true
 - `solve_source == CAM`
 - or `solve_source == IMU` with a plate-solve anchor
+- or `solve_source == CAM_FAILED` with a retained plate-solve anchor
 
 Behavior:
 
 - Use RA/Dec directly.
 - Do not perform J2000/JNow conversion.
-- An unanchored `solve_source == IMU` sample is treated as boot-time IMU
-  estimation, not as primary solved pointing.
+- Unanchored `IMU`/`CAM_FAILED` samples are not primary solved pointing.
+  Anchored `CAM_FAILED` means the latest attempt failed, not that the retained
+  coordinate became invalid, so it remains a medium-quality PiFinder estimate.
 
 ### 2. IMU Fallback Coordinate
 
@@ -128,6 +130,11 @@ IMU smoothing:
 - Moderate movement is followed gradually.
 - Large movement is treated as real telescope motion and followed quickly.
 - Both raw and smoothed values are written to the status JSON.
+
+Selection as an absolute coordinate requires either NDOF magnetometer heading
+or a session-only SkySafari alignment. An unaligned IMUPLUS quaternion is not
+an absolute heading; it is used only as a relative delta from a trusted plate
+solve or aligned mount anchor.
 
 Relevant metadata:
 
@@ -863,7 +870,7 @@ Common modes:
 
 ```text
 IMU_PRIMARY_UNSOLVED:
-  no solve, mount not synced, IMU fallback is current
+  no solve, mount not synced, magnetometer/aligned IMU fallback is current
 
 MOUNT_REFERENCE_PRIMARY:
   mount synced, mount stationary, mount anchor + IMU delta

@@ -25,6 +25,9 @@ class DummySolution:
         has_pointing=True,
         solve_source="CAM",
         has_plate_anchor=False,
+        alt_deg=None,
+        az_deg=None,
+        estimate_time=1000.0,
     ):
         aligned_solve = (
             SimpleNamespace(RA=ra_deg, Dec=dec_deg) if has_plate_anchor else None
@@ -35,7 +38,9 @@ class DummySolution:
                 estimate=SimpleNamespace(RA=ra_deg, Dec=dec_deg),
             )
         )
-        self.estimate_time = 1000.0
+        self.estimate_time = estimate_time
+        self.Alt = alt_deg
+        self.Az = az_deg
         self.solve_source = solve_source
         self.last_solve_success = 900.0 if has_plate_anchor else None
         self._has_pointing = has_pointing
@@ -111,6 +116,169 @@ def test_update_state_publishes_latest_coordinate_state():
     assert service.get_state() is None
 
 
+def _camera_sample(
+    ra_deg,
+    dec_deg,
+    timestamp,
+    *,
+    alt_deg=None,
+    az_deg=None,
+    solve_source="CAM",
+):
+    return CoordinateSample(
+        ra_deg=ra_deg,
+        dec_deg=dec_deg,
+        alt_deg=alt_deg,
+        az_deg=az_deg,
+        source=SOURCE_SOLVE,
+        quality="high",
+        timestamp=timestamp,
+        valid=True,
+        metadata={"solve_source": solve_source},
+    )
+
+
+def test_solve_average_starts_after_five_independent_camera_solves():
+    service = PointingCoordinateService()
+    imu = CoordinateSample.invalid(SOURCE_IMU, "test")
+
+    outputs = []
+    for timestamp, ra_deg in enumerate((100.0, 100.1, 99.9, 100.05, 99.95), start=1):
+        outputs.append(
+            service._stabilize_solved_sample(
+                _camera_sample(ra_deg, 20.0, float(timestamp)), imu
+            )
+        )
+    averaged = outputs[-1]
+
+    assert all(output.metadata.get("stabilized") is None for output in outputs[:4])
+    assert averaged.metadata["stabilized"] is True
+    assert averaged.metadata["stabilization_window"] == 5
+    assert averaged.metadata["stabilization_frame"] == "equatorial"
+    assert averaged.radec() == pytest.approx((100.0, 20.0000117), abs=1e-5)
+
+
+def test_solve_average_handles_ra_wrap_as_a_spherical_mean():
+    service = PointingCoordinateService()
+    imu = CoordinateSample.invalid(SOURCE_IMU, "test")
+
+    for timestamp, ra_deg in enumerate((359.9, 0.0, 0.1, 359.95, 0.05), start=1):
+        averaged = service._stabilize_solved_sample(
+            _camera_sample(ra_deg, 10.0, float(timestamp)), imu
+        )
+
+    assert averaged.ra_deg == pytest.approx(0.0, abs=1e-8)
+    assert averaged.dec_deg == pytest.approx(10.00001, abs=1e-5)
+
+
+def test_failed_solve_uses_existing_average_without_adding_duplicate():
+    service = PointingCoordinateService()
+    imu = CoordinateSample.invalid(SOURCE_IMU, "test")
+    for timestamp, ra_deg in enumerate((10.0, 10.1, 9.9, 10.05, 9.95), start=1):
+        service._stabilize_solved_sample(
+            _camera_sample(ra_deg, 30.0, float(timestamp)), imu
+        )
+
+    retained = service._stabilize_solved_sample(
+        _camera_sample(9.95, 30.0, 5.0, solve_source="CAM_FAILED"), imu
+    )
+
+    assert retained.metadata["stabilization_window"] == 5
+    assert len(service._solve_average_samples) == 5
+    assert retained.ra_deg == pytest.approx(10.0, abs=1e-5)
+
+
+def test_imu_motion_bypasses_and_resets_solve_average():
+    service = PointingCoordinateService()
+    stationary_imu = CoordinateSample.invalid(SOURCE_IMU, "test")
+    for timestamp, ra_deg in enumerate((10.0, 10.1, 9.9, 10.05, 9.95), start=1):
+        service._stabilize_solved_sample(
+            _camera_sample(ra_deg, 30.0, float(timestamp)), stationary_imu
+        )
+    moving_imu = CoordinateSample(
+        source=SOURCE_IMU,
+        valid=True,
+        metadata={"moving": True},
+    )
+    raw = _camera_sample(25.0, 35.0, 4.0)
+
+    output = service._stabilize_solved_sample(raw, moving_imu)
+
+    assert output is raw
+    assert service._solve_average_samples == []
+
+
+def test_large_confirmed_coordinate_change_resets_solve_average():
+    service = PointingCoordinateService()
+    imu = CoordinateSample.invalid(SOURCE_IMU, "test")
+    for timestamp, ra_deg in enumerate((10.0, 10.01, 9.99, 10.005, 9.995), start=1):
+        service._stabilize_solved_sample(
+            _camera_sample(ra_deg, 30.0, float(timestamp)), imu
+        )
+
+    moved = _camera_sample(11.0, 30.0, 4.0)
+    output = service._stabilize_solved_sample(moved, imu)
+
+    assert output is moved
+    assert service._solve_average_samples == [moved]
+
+
+def test_solve_average_selects_horizontal_frame_for_fixed_camera(monkeypatch):
+    service = PointingCoordinateService()
+    service._fusion_context = {
+        "dt": object(),
+        "location": SimpleNamespace(lat=1.0, lon=2.0, altitude=3.0),
+    }
+    monkeypatch.setattr(
+        "PiFinder.pointing_coordinate_service.sf_utils.set_location",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        "PiFinder.pointing_coordinate_service.sf_utils.altaz_to_radec",
+        lambda alt, az, _dt: (200.0 + az, 30.0 + alt),
+    )
+    imu = CoordinateSample.invalid(SOURCE_IMU, "test")
+
+    for timestamp, values in enumerate(
+        (
+            (100.0, 45.0, 180.000),
+            (100.1, 45.001, 180.001),
+            (100.2, 44.999, 179.999),
+            (100.3, 45.0005, 180.0005),
+            (100.4, 44.9995, 179.9995),
+        ),
+        start=1,
+    ):
+        ra_deg, alt_deg, az_deg = values
+        averaged = service._stabilize_solved_sample(
+            _camera_sample(
+                ra_deg,
+                20.0,
+                float(timestamp),
+                alt_deg=alt_deg,
+                az_deg=az_deg,
+            ),
+            imu,
+        )
+
+    assert averaged.metadata["stabilization_frame"] == "horizontal"
+    assert averaged.alt_deg == pytest.approx(45.0, abs=1e-6)
+    assert averaged.az_deg == pytest.approx(180.0, abs=1e-6)
+    assert averaged.radec() == pytest.approx((20.0, 75.0), abs=1e-6)
+
+
+def test_solve_average_keeps_selected_frame_until_reset():
+    service = PointingCoordinateService()
+    service._solve_average_frame = "horizontal"
+
+    selected = service._choose_solve_average_frame(
+        equatorial_scatter=0.0001,
+        horizontal_scatter=1.0,
+    )
+
+    assert selected == "horizontal"
+
+
 def test_unanchored_imu_solution_is_not_treated_as_trusted_pointing():
     service = PointingCoordinateService()
     dt = datetime.datetime(2026, 7, 1, 12, tzinfo=datetime.timezone.utc)
@@ -145,6 +313,88 @@ def test_anchored_imu_solution_can_supply_pifinder_estimate():
 
     assert state.solved.valid is True
     assert state.current.source == SOURCE_PIFINDER_IMU_ESTIMATE
+
+
+def test_anchored_failed_solve_keeps_last_pifinder_estimate():
+    service = PointingCoordinateService()
+    dt = datetime.datetime(2026, 7, 1, 12, tzinfo=datetime.timezone.utc)
+
+    state = service.current_state(
+        DummyState(
+            DummySolution(
+                120.0,
+                20.0,
+                solve_source="CAM_FAILED",
+                has_plate_anchor=True,
+            )
+        ),
+        dt,
+        config_get=disabled_config,
+    )
+
+    assert state.solved.valid is True
+    assert state.solved.metadata["has_plate_anchor"] is True
+    assert state.current.source == SOURCE_PIFINDER_IMU_ESTIMATE
+    assert state.current.radec() == pytest.approx((120.0, 20.0))
+
+
+def test_unanchored_failed_solve_is_not_trusted():
+    service = PointingCoordinateService()
+    dt = datetime.datetime(2026, 7, 1, 12, tzinfo=datetime.timezone.utc)
+
+    state = service.current_state(
+        DummyState(DummySolution(120.0, 20.0, solve_source="CAM_FAILED")),
+        dt,
+        config_get=disabled_config,
+    )
+
+    assert state.solved.valid is False
+    assert "no plate-solve anchor" in state.solved.reason
+    assert state.current.source == SOURCE_UNAVAILABLE
+
+
+def test_unaligned_imuplus_is_not_used_as_absolute_fallback():
+    service = PointingCoordinateService()
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    mount = CoordinateSample.invalid(SOURCE_MOUNT, "test")
+    imu = CoordinateSample(
+        ra_deg=250.0,
+        dec_deg=35.0,
+        source=SOURCE_IMU,
+        valid=True,
+        metadata={"uses_magnetometer": False, "alignment_applied": False},
+    )
+    health = CoordinateHealth()
+
+    current = service._select_current(solved, imu, mount, health)
+
+    assert current.source == SOURCE_UNAVAILABLE
+    assert any("absolute IMU fallback unavailable" in item for item in health.warnings)
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"uses_magnetometer": True, "alignment_applied": False},
+        {"uses_magnetometer": False, "alignment_applied": True},
+    ],
+)
+def test_absolute_or_aligned_imu_can_supply_fallback(metadata):
+    service = PointingCoordinateService()
+    solved = CoordinateSample.invalid(SOURCE_SOLVE, "test")
+    mount = CoordinateSample.invalid(SOURCE_MOUNT, "test")
+    imu = CoordinateSample(
+        ra_deg=250.0,
+        dec_deg=35.0,
+        source=SOURCE_IMU,
+        valid=True,
+        metadata=metadata,
+    )
+
+    current = service._select_current(solved, imu, mount, CoordinateHealth())
+
+    assert current.source == SOURCE_IMU
+    assert current.radec() == pytest.approx((250.0, 35.0))
 
 
 def test_unsynced_mount_readback_is_not_used_as_primary_coordinate():

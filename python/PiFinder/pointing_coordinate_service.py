@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import logging
 import math
+import statistics
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple, cast
 
 import numpy as np
 import quaternion
@@ -113,6 +114,16 @@ IMU_DELTA_POST_MOTION_QUIET_SECONDS = 1.5
 # the ill-conditioned atan2 of a tiny horizontal component, so daz is noise
 # while the boresight vector remains well-defined.
 ALTAZ_ROTATION_ZENITH_GUARD_ALT_DEG = 80.0
+
+# A 6 mm lens covers a wide field, so even a valid plate solve can move by a
+# few image pixels from one frame to the next. Keep the authoritative solve
+# and IMU anchor untouched, but stabilize the coordinate published to remote
+# consumers over a short window of independent camera solves. Fill all five
+# before selecting the frame: with only three, solve noise can hide the small
+# sidereal trend and lock a fixed camera to the wrong frame.
+SOLVE_AVERAGE_MIN_SAMPLES = 5
+SOLVE_AVERAGE_WINDOW = 5
+SOLVE_AVERAGE_RESET_DEGREES = 0.25
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -264,6 +275,8 @@ def _unit_vector_to_radec(vector: np.ndarray) -> Tuple[float, float]:
         raise ValueError("Cannot convert a zero vector to RA/Dec")
     x, y, z = vector / norm
     ra = math.degrees(math.atan2(y, x)) % 360.0
+    if ra >= 360.0 - 1e-12:
+        ra = 0.0
     dec = math.degrees(math.asin(max(-1.0, min(1.0, float(z)))))
     return ra, dec
 
@@ -370,6 +383,8 @@ class PointingCoordinateService:
         # for; a large move rebuilds them for the new site (see
         # FUSION_LOCATION_RESET_THRESHOLD_M).
         self._fusion_location: Optional[Tuple[float, float, float]] = None
+        self._solve_average_samples: list[CoordinateSample] = []
+        self._solve_average_frame: Optional[str] = None
         self._last_health_mount_radec: Optional[Tuple[float, float]] = None
         self._last_health_imu_altaz: Optional[Tuple[float, float]] = None
         self._state_lock = threading.RLock()
@@ -412,6 +427,7 @@ class PointingCoordinateService:
             self._last_mount_sample_ts = None
             self._imu_delta_applied_snapshot = None
             self._fusion_location = None
+            self._reset_solve_average()
 
     def solved_sample(self, shared_state: Any, dt: Any) -> CoordinateSample:
         try:
@@ -425,11 +441,12 @@ class PointingCoordinateService:
 
         solve_source = self._solution_source_value(solution)
         has_plate_anchor = self._solution_has_plate_anchor(solution)
-        if solve_source == "IMU" and not has_plate_anchor:
+        if solve_source in {"IMU", "CAM_FAILED"} and not has_plate_anchor:
             return CoordinateSample.invalid(
-                SOURCE_SOLVE, "IMU estimate has no plate-solve anchor"
+                SOURCE_SOLVE,
+                f"{solve_source} estimate has no plate-solve anchor",
             )
-        if solve_source not in {"CAM", "IMU"}:
+        if solve_source not in {"CAM", "CAM_FAILED", "IMU"}:
             return CoordinateSample.invalid(
                 SOURCE_SOLVE, f"untrusted solution source {solve_source or 'unknown'}"
             )
@@ -440,13 +457,20 @@ class PointingCoordinateService:
             return CoordinateSample.invalid(SOURCE_SOLVE, "invalid solved RA/Dec")
 
         timestamp = _as_float(getattr(solution, "estimate_time", None))
+        # CAM_FAILED does not mean that the retained estimate became invalid.
+        # The integrator deliberately keeps the last plate-anchored estimate
+        # (and its IMU anchor) when a later frame fails to solve.  Treat that
+        # retained value like the plate-anchored IMU estimate so consumers do
+        # not fall through to an unrelated absolute-IMU coordinate.
         sample_source = (
-            SOURCE_PIFINDER_IMU_ESTIMATE if solve_source == "IMU" else SOURCE_SOLVE
+            SOURCE_SOLVE if solve_source == "CAM" else SOURCE_PIFINDER_IMU_ESTIMATE
         )
         return CoordinateSample(
             ra_deg=radec[0],
             dec_deg=radec[1],
             epoch="session",
+            alt_deg=_as_float(getattr(solution, "Alt", None)),
+            az_deg=_as_float(getattr(solution, "Az", None)),
             source=sample_source,
             quality=QUALITY_HIGH if solve_source == "CAM" else QUALITY_MEDIUM,
             timestamp=timestamp,
@@ -456,7 +480,219 @@ class PointingCoordinateService:
                 "has_plate_anchor": has_plate_anchor,
                 "source_ra": radec[0],
                 "source_dec": radec[1],
+                "source_alt": _as_float(getattr(solution, "Alt", None)),
+                "source_az": _as_float(getattr(solution, "Az", None)),
             },
+        )
+
+    def _reset_solve_average(self) -> None:
+        self._solve_average_samples = []
+        self._solve_average_frame = None
+
+    @staticmethod
+    def _mean_radec(samples: list[CoordinateSample]) -> Tuple[float, float]:
+        vector = np.sum(
+            [
+                _radec_to_unit_vector(
+                    cast(float, sample.ra_deg), cast(float, sample.dec_deg)
+                )
+                for sample in samples
+            ],
+            axis=0,
+        )
+        return _unit_vector_to_radec(vector)
+
+    @staticmethod
+    def _mean_altaz(samples: list[CoordinateSample]) -> Tuple[float, float]:
+        vector = np.sum(
+            [
+                _altaz_unit_vector(
+                    cast(float, sample.alt_deg), cast(float, sample.az_deg)
+                )
+                for sample in samples
+            ],
+            axis=0,
+        )
+        norm = float(np.linalg.norm(vector))
+        if norm <= 0.0 or not math.isfinite(norm):
+            raise ValueError("Cannot average antipodal Alt/Az vectors")
+        return _unit_vector_altaz(vector / norm)
+
+    @staticmethod
+    def _radec_scatter(
+        samples: list[CoordinateSample], center: Tuple[float, float]
+    ) -> float:
+        return statistics.median(
+            angular_separation_degrees(
+                cast(float, sample.ra_deg),
+                cast(float, sample.dec_deg),
+                center[0],
+                center[1],
+            )
+            for sample in samples
+        )
+
+    @staticmethod
+    def _altaz_scatter(
+        samples: list[CoordinateSample], center: Tuple[float, float]
+    ) -> float:
+        return statistics.median(
+            altaz_separation_degrees(
+                cast(float, sample.alt_deg),
+                cast(float, sample.az_deg),
+                center[0],
+                center[1],
+            )
+            for sample in samples
+        )
+
+    def _choose_solve_average_frame(
+        self, equatorial_scatter: float, horizontal_scatter: Optional[float]
+    ) -> str:
+        if horizontal_scatter is None:
+            return "equatorial"
+        # Lock the frame selected by the first independent solve set. As the
+        # five-solve window slides, random noise can temporarily make the
+        # other frame appear quieter. Switching at that point is not harmless:
+        # the equatorial mean represents the window's middle epoch while the
+        # horizontal mean is converted at the current epoch, so the switch can
+        # expose the whole accumulated sidereal-time difference as a jump.
+        # Actual IMU motion, a large confirmed solve change, clear_state(), or
+        # a real observer relocation resets this lock and permits re-detection.
+        if self._solve_average_frame is not None:
+            return self._solve_average_frame
+        return "horizontal" if horizontal_scatter < equatorial_scatter else "equatorial"
+
+    def _stabilize_solved_sample(
+        self, solved: CoordinateSample, imu: CoordinateSample
+    ) -> CoordinateSample:
+        """Average accepted solves in the frame that best matches the mount.
+
+        A fixed alt/az camera has a constant horizontal coordinate while its
+        RA changes at sidereal rate. An equatorial tracking mount has the
+        opposite behaviour. Comparing recent scatter in both frames avoids
+        averaging away either kind of real tracking motion.
+        """
+        if bool((imu.metadata or {}).get("moving")):
+            self._reset_solve_average()
+            return solved
+        if not solved.valid:
+            return solved
+
+        solve_source = str((solved.metadata or {}).get("solve_source", ""))
+        if solve_source == "IMU":
+            self._reset_solve_average()
+            return solved
+
+        # Add only independent successful camera frames. CAM_FAILED republishes
+        # the last anchored estimate and must not overweight it by being polled
+        # repeatedly between solves.
+        if solve_source == "CAM":
+            is_new = not self._solve_average_samples or (
+                solved.timestamp is not None
+                and solved.timestamp != self._solve_average_samples[-1].timestamp
+            )
+            if is_new:
+                if self._solve_average_samples:
+                    previous = self._solve_average_samples[-1]
+                    separation = angular_separation_degrees(
+                        cast(float, previous.ra_deg),
+                        cast(float, previous.dec_deg),
+                        cast(float, solved.ra_deg),
+                        cast(float, solved.dec_deg),
+                    )
+                    if separation >= SOLVE_AVERAGE_RESET_DEGREES:
+                        self._reset_solve_average()
+                self._solve_average_samples.append(solved)
+                self._solve_average_samples = self._solve_average_samples[
+                    -SOLVE_AVERAGE_WINDOW:
+                ]
+
+        samples = self._solve_average_samples
+        if len(samples) < SOLVE_AVERAGE_MIN_SAMPLES:
+            return solved
+
+        equatorial_center = self._mean_radec(samples)
+        equatorial_scatter = self._radec_scatter(samples, equatorial_center)
+        horizontal_center: Optional[Tuple[float, float]] = None
+        horizontal_scatter: Optional[float] = None
+        horizontal_ready = all(
+            sample.alt_deg is not None and sample.az_deg is not None
+            for sample in samples
+        )
+        ctx = self._fusion_context or {}
+        if (
+            horizontal_ready
+            and ctx.get("dt") is not None
+            and ctx.get("location") is not None
+        ):
+            horizontal_center = self._mean_altaz(samples)
+            horizontal_scatter = self._altaz_scatter(samples, horizontal_center)
+
+        frame = self._choose_solve_average_frame(equatorial_scatter, horizontal_scatter)
+        averaged_ra, averaged_dec = equatorial_center
+        averaged_alt: Optional[float] = None
+        averaged_az: Optional[float] = None
+        if frame == "horizontal" and horizontal_center is not None:
+            location = ctx["location"]
+            try:
+                sf_utils.set_location(location.lat, location.lon, location.altitude)
+                averaged_ra, averaged_dec = sf_utils.altaz_to_radec(
+                    horizontal_center[0], horizontal_center[1], ctx["dt"]
+                )
+                averaged_ra %= 360.0
+                averaged_alt, averaged_az = horizontal_center
+            except Exception:
+                logger.debug(
+                    "Could not convert averaged Alt/Az to RA/Dec; using equatorial average",
+                    exc_info=True,
+                )
+                frame = "equatorial"
+
+        if frame == "equatorial":
+            location = ctx.get("location")
+            if location is not None and ctx.get("dt") is not None:
+                try:
+                    sf_utils.set_location(location.lat, location.lon, location.altitude)
+                    averaged_alt, averaged_az = sf_utils.radec_to_altaz(
+                        averaged_ra, averaged_dec, ctx["dt"]
+                    )
+                except Exception:
+                    logger.debug(
+                        "Could not derive Alt/Az for averaged RA/Dec", exc_info=True
+                    )
+
+        self._solve_average_frame = frame
+        metadata = dict(solved.metadata)
+        metadata.update(
+            {
+                "stabilized": True,
+                "stabilization_method": "spherical_moving_average",
+                "stabilization_frame": frame,
+                "stabilization_window": len(samples),
+                "stabilization_equatorial_scatter_arcmin": equatorial_scatter * 60.0,
+                "stabilization_horizontal_scatter_arcmin": (
+                    horizontal_scatter * 60.0
+                    if horizontal_scatter is not None
+                    else None
+                ),
+                "unstabilized_ra": solved.ra_deg,
+                "unstabilized_dec": solved.dec_deg,
+            }
+        )
+        return CoordinateSample(
+            ra_deg=averaged_ra,
+            dec_deg=averaged_dec,
+            epoch=solved.epoch,
+            alt_deg=averaged_alt,
+            az_deg=averaged_az,
+            source=solved.source,
+            quality=solved.quality,
+            timestamp=solved.timestamp,
+            valid=True,
+            reason=solved.reason,
+            aligned=solved.aligned,
+            metadata=metadata,
         )
 
     def _solution_source_value(self, solution: Any) -> str:
@@ -736,6 +972,7 @@ class PointingCoordinateService:
             "mount_type": str(config_get("mount_type", "Alt/Az")),
         }
         self._reset_fusion_on_location_change(fusion_location)
+        solved = self._stabilize_solved_sample(solved, imu)
 
         health = CoordinateHealth()
         current = self._select_current(solved, imu, mount, health)
@@ -811,12 +1048,22 @@ class PointingCoordinateService:
                     return fused
             return self._mount_readback_sample(mount)
 
-        if imu.valid:
+        if imu.valid and self._imu_can_supply_absolute_coordinate(imu):
             self._mount_imu_anchor = None
             if mount.valid and not mount.aligned:
                 health.mount_pre_alignment_only = True
                 health.warnings.append("mount readback ignored before sync/alignment")
             return imu
+
+        if imu.valid:
+            # IMUPLUS has no absolute heading. It remains useful as a relative
+            # delta after a plate solve (handled by the integrator) or after an
+            # aligned mount anchor (handled above), but selecting it directly
+            # here can put SkySafari tens of degrees away from the last solve.
+            self._mount_imu_anchor = None
+            health.warnings.append(
+                "absolute IMU fallback unavailable without magnetometer or alignment"
+            )
 
         if mount.valid and not mount.aligned:
             self._mount_imu_anchor = None
@@ -825,6 +1072,20 @@ class PointingCoordinateService:
 
         return CoordinateSample.invalid(
             SOURCE_UNAVAILABLE, "no valid solve, aligned mount, or IMU fallback"
+        )
+
+    @staticmethod
+    def _imu_can_supply_absolute_coordinate(imu: CoordinateSample) -> bool:
+        """Whether ``imu`` has an absolute heading suitable as a coordinate.
+
+        A magnetometer-backed sample has an absolute azimuth.  A session
+        alignment also turns the otherwise relative IMUPLUS heading into an
+        absolute direction.  Without either, the quaternion may only be used
+        as a delta from a trusted plate-solve or mount anchor.
+        """
+        metadata = imu.metadata or {}
+        return bool(
+            metadata.get("uses_magnetometer") or metadata.get("alignment_applied")
         )
 
     def _smooth_imu_altaz(
@@ -1624,6 +1885,7 @@ class PointingCoordinateService:
             self._mount_imu_anchor = None
             self._imu_delta_tracker = None
             self._imu_delta_applied_snapshot = None
+            self._reset_solve_average()
             logger.info(
                 "Observer location moved %.0f m; resetting mount+IMU fusion "
                 "anchor for the new site",

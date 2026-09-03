@@ -14,10 +14,11 @@ from typing import Any
 CONFIG_PREFIX = "livecam_"
 STACK_FRAME_LIMIT_MAX = 500
 
-# These opt-in processing switches are intentionally session-only: neither is
-# read from nor written to persisted config.  Both can be CPU-heavy and must
-# start OFF after an application restart.
-SESSION_ONLY_KEYS = {"processing_enabled", "solver_preprocess_enabled"}
+# LiveCam preview processing remains session-only because it can be CPU-heavy
+# and is only needed while that page is being inspected. Solver preprocessing
+# is a production solve setting: it is persisted separately and restored after
+# a restart.
+SESSION_ONLY_KEYS = {"processing_enabled"}
 SOURCE_ORIGINAL = "original_raw"
 SOURCE_CROPPED = "cropped_raw"
 # Post-processing pipeline stages between the cropped raw and the solver
@@ -57,7 +58,7 @@ VALID_COLOR_MODES = {COLOR_MODE_THEME, COLOR_MODE_COLOR, COLOR_MODE_MONO}
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "processing_enabled": False,
-    "solver_preprocess_enabled": False,
+    "solver_preprocess_enabled": True,
     "input_frame_source": SOURCE_ORIGINAL,
     "output_source": OUTPUT_LATEST,
     "stack_enabled": False,

@@ -192,6 +192,61 @@ def publish_selected_frame(
     shared_state.set_raw_live_frame({"frame": selected, "info": asdict(info)})
 
 
+def publish_solver_preprocessed_frame(
+    shared_state,
+    frame: np.ndarray,
+    profile,
+    camera_type: str,
+    metadata: dict[str, Any] | None = None,
+    *,
+    preprocess_frames: int,
+    display_rotation_degrees: int = 0,
+) -> None:
+    """Cache the exact star-only frame being consumed by Cedar+SEP.
+
+    This runs in the solver process, never the capture process. LiveCam can
+    therefore switch to the already-warm production preprocessor without
+    creating a duplicate five-frame accumulator or adding camera latency.
+    """
+
+    metadata = metadata or {}
+    display_rotation = int(display_rotation_degrees or 0) % 360
+    selected = _rotate_display(np.asarray(frame), display_rotation)
+    selected = np.ascontiguousarray(selected).copy()
+    timestamp = float(
+        metadata.get("timestamp") or metadata.get("exposure_end") or time.time()
+    )
+    frame_id = int(metadata.get("frame_id") or time.time_ns())
+    info = RawFrameInfo.from_array(
+        selected,
+        source=SOURCE_STAR_ONLY,
+        # The solver RAW was already rotated into the same orientation as the
+        # original LiveCam input before preprocessing.
+        rotation_90=0,
+        display_rotation_degrees=display_rotation,
+        raw_format=getattr(profile, "format", None),
+        camera_type=camera_type,
+        exposure_us=_optional_float(
+            metadata.get("actual_exposure_us", metadata.get("exposure_time"))
+        ),
+        gain=_optional_float(metadata.get("actual_gain", metadata.get("gain"))),
+        timestamp=timestamp,
+        frame_id=frame_id,
+        mono=bool(getattr(profile, "mono", False)),
+    )
+    info_payload = asdict(info)
+    info_payload.update(
+        {
+            "producer": "solver_preprocessor",
+            "preprocess_state": "ready",
+            "preprocess_frames": int(preprocess_frames),
+        }
+    )
+    shared_state.set_solver_preprocessed_frame(
+        {"frame": selected, "info": info_payload}
+    )
+
+
 class DisplayFrameBuilder:
     def __init__(
         self,
@@ -280,7 +335,12 @@ class RawLiveStackProcessor:
 
     def status(self, shared_state, settings: dict[str, Any]) -> dict[str, Any]:
         normalized = normalize_settings(settings)
-        info = _shared_info(shared_state) if normalized["processing_enabled"] else None
+        info = (
+            _shared_info(shared_state, normalized)
+            if normalized["processing_enabled"]
+            else None
+        )
+        preprocess = _shared_preprocess_status(shared_state, normalized)
         return {
             "settings": normalized,
             "frame": info,
@@ -304,6 +364,7 @@ class RawLiveStackProcessor:
             ),
             "enabled": normalized["processing_enabled"],
             "has_frame": bool(info),
+            "preprocess": preprocess,
         }
 
     def render_image(
@@ -323,7 +384,7 @@ class RawLiveStackProcessor:
         if color_mode is not None:
             normalized["color_mode"] = color_mode
 
-        entry = _shared_entry(shared_state)
+        entry = _shared_entry(shared_state, normalized)
         if not entry:
             self._last_reject_reason = "no-frame"
             return None
@@ -409,7 +470,7 @@ class RawLiveStackProcessor:
         normalized = normalize_settings(settings)
         if not normalized["processing_enabled"]:
             return None
-        entry = _shared_entry(shared_state)
+        entry = _shared_entry(shared_state, normalized)
         if not entry:
             self._last_reject_reason = "no-frame"
             return None
@@ -579,7 +640,7 @@ def download_image_format(settings: dict[str, Any]) -> str:
     return normalized["web_image_format"]
 
 
-def download_color_mode(shared_state) -> str:
+def download_color_mode(shared_state, settings: dict[str, Any] | None = None) -> str:
     """Grayscale for mono frames, real colour for declared colour variants.
 
     A mono sensor's Bayer label is a driver artifact: the RGB it debayers
@@ -588,7 +649,7 @@ def download_color_mode(shared_state) -> str:
     the real CFA variant (CameraProfile.mono False, carried on the published
     frame info) keeps its measured chroma. No frame info defaults to mono --
     the conservative side."""
-    info = _shared_info(shared_state) or {}
+    info = _shared_info(shared_state, settings) or {}
     return COLOR_MODE_MONO if info.get("mono", True) else COLOR_MODE_COLOR
 
 
@@ -683,7 +744,26 @@ def _rotate_display(frame: np.ndarray, degrees: int) -> np.ndarray:
     return frame
 
 
-def _shared_entry(shared_state) -> dict[str, Any] | None:
+def _solver_preprocessed_selected(settings: dict[str, Any] | None) -> bool:
+    if not settings:
+        return False
+    normalized = normalize_settings(settings)
+    return bool(
+        normalized["input_frame_source"] == SOURCE_STAR_ONLY
+        and normalized["solver_preprocess_enabled"]
+    )
+
+
+def _shared_entry(
+    shared_state, settings: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    if _solver_preprocessed_selected(settings) and hasattr(
+        shared_state, "solver_preprocessed_frame"
+    ):
+        entry = shared_state.solver_preprocessed_frame()
+        if not entry or not isinstance(entry, dict) or "frame" not in entry:
+            return None
+        return entry
     if not hasattr(shared_state, "raw_live_frame"):
         return None
     entry = shared_state.raw_live_frame()
@@ -692,20 +772,44 @@ def _shared_entry(shared_state) -> dict[str, Any] | None:
     return entry
 
 
-def _shared_info(shared_state) -> dict[str, Any] | None:
+def _shared_info(
+    shared_state, settings: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """Frame metadata only -- the cheap path for status polls.
 
     The dedicated accessor keeps the multi-MB frame out of the manager
     pickle; fall back to the full entry for shared-state doubles that
     don't implement it."""
+    if _solver_preprocessed_selected(settings) and hasattr(
+        shared_state, "solver_preprocessed_frame_info"
+    ):
+        try:
+            info = shared_state.solver_preprocessed_frame_info()
+            return info if isinstance(info, dict) else None
+        except Exception:
+            return None
     if hasattr(shared_state, "raw_live_frame_info"):
         try:
             info = shared_state.raw_live_frame_info()
             return info if isinstance(info, dict) else None
         except Exception:
             return None
-    entry = _shared_entry(shared_state)
+    entry = _shared_entry(shared_state, settings)
     return entry.get("info") if entry else None
+
+
+def _shared_preprocess_status(
+    shared_state, settings: dict[str, Any]
+) -> dict[str, Any] | None:
+    if not _solver_preprocessed_selected(settings) or not hasattr(
+        shared_state, "solver_preprocess_status"
+    ):
+        return None
+    try:
+        status = shared_state.solver_preprocess_status()
+    except Exception:
+        return None
+    return status if isinstance(status, dict) else None
 
 
 def _bit_depth_from_raw_format(raw_format: str | None) -> int | None:

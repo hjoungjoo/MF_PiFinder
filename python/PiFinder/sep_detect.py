@@ -85,6 +85,9 @@ class SepDetection:
     cloud_contrast: float = 0.0
     cloud_background_limit: Optional[float] = None
     cloud_directional_coherence: float = 1.0
+    # Optional larger, already-quality-filtered set for the LiveCam overlay.
+    # ``centroids`` remains the bounded set passed to tetra3.
+    overlay_centroids: Optional[np.ndarray] = None
 
 
 def warm_pixel_excess(frame: np.ndarray) -> np.ndarray:
@@ -161,6 +164,7 @@ def detect_stars(
     sigma: float = 3.5,
     minarea: int = 3,
     max_stars: int = 48,
+    overlay_max_stars: Optional[int] = None,
     edge_margin_px: int = 48,
     saturation_level: Optional[float] = None,
     warm_pixel_map: Optional[np.ndarray] = None,
@@ -187,6 +191,9 @@ def detect_stars(
         sigma: Extraction threshold in units of the local background RMS.
         minarea: Minimum connected pixels above threshold.
         max_stars: Keep at most this many, brightest (by flux) first.
+        overlay_max_stars: Optionally retain a larger filtered centroid set
+            for diagnostic display only. It never expands ``centroids`` and
+            therefore cannot increase tetra3 solve work.
         edge_margin_px: Drop detections within this many full-res pixels
             of the frame border (vignette / background-mesh edge zone).
         saturation_level: Sensor full scale (e.g. 4095 for 12-bit). When
@@ -332,7 +339,9 @@ def detect_stars(
 
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-    order = np.argsort(fluxes)[::-1][:max_stars]
+    ranked = np.argsort(fluxes)[::-1]
+    order = ranked[:max_stars]
+    overlay_order = ranked[: max(max_stars, int(overlay_max_stars or max_stars))]
     return SepDetection(
         centroids=np.column_stack((full_y[order], full_x[order])),
         fluxes=fluxes[order],
@@ -346,6 +355,9 @@ def detect_stars(
         cloud_contrast=cloud_selection.contrast,
         cloud_background_limit=cloud_selection.background_limit,
         cloud_directional_coherence=cloud_selection.directional_coherence,
+        overlay_centroids=np.column_stack(
+            (full_y[overlay_order], full_x[overlay_order])
+        ),
     )
 
 

@@ -297,10 +297,20 @@ def _advance_with_imu(
 ) -> bool:
     """Advance ``estimate``'s ``estimate`` cells via IMU dead-reckoning.
 
-    Returns ``True`` if cells were advanced, ``False`` if IMU motion
-    was below the deadband.
+    Returns ``True`` if cells were advanced, ``False`` if the IMU does
+    not report actual motion or motion was below the deadband.
     """
     if not imu.orientation_valid():
+        return False
+
+    # The BNO055's IMUPLUS heading slowly wanders even while the telescope is
+    # stationary. Measuring only from the persistent plate-solve anchor makes
+    # that drift eventually cross the angular deadband and look like a real
+    # move. The IMU process already applies a per-sample hysteresis detector;
+    # require that signal before changing the plate-anchored coordinate.
+    # During a real move predict() still uses the *latest successful solve* as
+    # its fixed origin, so failed solves never accumulate incremental error.
+    if not imu.moving:
         return False
 
     q_x2imu = imu.quat

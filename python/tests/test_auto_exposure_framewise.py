@@ -76,10 +76,66 @@ def _quality(
 
 
 def _controller(**kwargs) -> AutoStarFrameController:
+    kwargs.setdefault("highlight_raise_confirm_frames", 1)
     return AutoStarFrameController(
         ExposureGainAllocator(max_gain=30.0),
         gain_min_dwell_frames=0,
         **kwargs,
+    )
+
+
+def test_low_headroom_requires_three_consecutive_frames_before_raise():
+    controller = AutoStarFrameController(ExposureGainAllocator(max_gain=30.0))
+    low = _sample(1, exposure=400_000, p50=2000, p99=2900, p999=3100)
+
+    assert controller.on_frame(low) is None
+    assert controller.status()["highlight_low_streak"] == 1
+    assert (
+        controller.on_frame(_sample(2, exposure=400_000, p50=2000, p99=2900, p999=3100))
+        is None
+    )
+    target = controller.on_frame(
+        _sample(3, exposure=400_000, p50=2000, p99=2900, p999=3100)
+    )
+
+    assert target is not None
+    assert target.reason == "acquisition_highlight_exposure_up"
+    assert controller.status()["highlight_low_streak"] == 0
+
+
+def _settled_sample(sequence: int, **kwargs) -> FrameExposureSample:
+    kwargs.setdefault("p50", 1200)
+    kwargs.setdefault("p99", 3000)
+    kwargs.setdefault("p999", 3478)
+    return _sample(sequence, **kwargs)
+
+
+def _with_peripheral_regions(
+    sample: FrameExposureSample,
+    values: dict[str, tuple[float, float, float, float]],
+) -> FrameExposureSample:
+    regions = dict(sample.regions)
+    for name, (p50, p99, p999, saturated_fraction) in values.items():
+        regions[name] = RegionExposureStats(
+            background_p50_adu=p50,
+            background_mad_adu=10.0,
+            p90_adu=(p50 + p99) / 2,
+            p99_adu=p99,
+            p999_adu=p999,
+            saturated_fraction=saturated_fraction,
+            background_gradient_adu=3.0,
+        )
+    return FrameExposureSample(
+        frame_id=sample.frame_id,
+        frame_sequence=sample.frame_sequence,
+        captured_at=sample.captured_at,
+        actual_exposure_us=sample.actual_exposure_us,
+        actual_gain=sample.actual_gain,
+        white_level=sample.white_level,
+        pedestal_adu=sample.pedestal_adu,
+        regions=regions,
+        center_contaminated=sample.center_contaminated,
+        motion_degrees=sample.motion_degrees,
     )
 
 
@@ -101,6 +157,41 @@ def test_spatial_sample_excludes_central_moon_from_peripheral_statistics():
     assert sample.center_contaminated is True
     assert sample.regions["C"].saturated_fraction > 0
     assert max(region.p999_adu for region in sample.peripheral()) == 400
+
+
+def test_spatial_sample_headroom_is_independent_of_bayer_phase_after_rotation():
+    np = pytest.importorskip("numpy")
+    yy, xx = np.indices((240, 360))
+    raw = (350 + yy * 4 + xx * 2).astype("uint16")
+    raw[0::2, 0::2] += 600
+    raw[0::2, 1::2] += 300
+    raw[1::2, 0::2] += 100
+
+    original = collect_spatial_frame_sample(
+        raw,
+        frame_id=1,
+        frame_sequence=1,
+        actual_exposure_us=400_000,
+        actual_gain=30,
+        bit_depth=12,
+        pedestal_adu=238,
+    )
+    rotated = collect_spatial_frame_sample(
+        np.rot90(raw),
+        frame_id=2,
+        frame_sequence=2,
+        actual_exposure_us=400_000,
+        actual_gain=30,
+        bit_depth=12,
+        pedestal_adu=238,
+    )
+
+    assert original is not None and rotated is not None
+    original_summary = AutoStarFrameController._peripheral_summary(original)
+    rotated_summary = AutoStarFrameController._peripheral_summary(rotated)
+    assert rotated_summary["p50"] == pytest.approx(original_summary["p50"], abs=8)
+    assert rotated_summary["p99"] == pytest.approx(original_summary["p99"], abs=8)
+    assert rotated_summary["p999"] == pytest.approx(original_summary["p999"], abs=8)
 
 
 def test_matched_star_snr_uses_only_peripheral_raw_stars_around_central_moon():
@@ -130,18 +221,20 @@ def test_dark_clear_sky_keeps_profile_gain_and_steady_scene_deadband():
     frame = _sample(1)
     acquisition = controller.on_frame(frame)
     assert acquisition is not None
-    assert acquisition.reason == "acquisition_background_exposure_up"
+    assert acquisition.reason == "acquisition_highlight_exposure_up"
     controller.update_quality(_quality(1, matches=12, candidates=18, success=True))
 
     for sequence in range(2, 10):
-        assert controller.on_frame(_sample(sequence, p50=405)) is None
+        assert (
+            controller.on_frame(_sample(sequence, p50=405, p99=3000, p999=3478)) is None
+        )
 
-    assert controller.status()["reason"] == "background_deadband"
+    assert controller.status()["reason"] == "highlight_headroom_deadband"
 
 
 def test_bright_cloud_submits_down_on_first_frame_and_pending_prevents_windup():
     controller = _controller()
-    bright = _sample(1, exposure=400_000, p50=1800, p99=2500, p999=3000)
+    bright = _sample(1, exposure=400_000, p50=2800, p99=3000, p999=3300)
 
     target = controller.on_frame(bright)
 
@@ -170,7 +263,7 @@ def test_preanchor_twilight_fading_raises_exposure_without_manual_reset():
     target = controller.on_frame(frame)
 
     assert target is not None
-    assert target.reason == "acquisition_background_exposure_up"
+    assert target.reason == "acquisition_highlight_exposure_up"
     assert target.exposure_us > frame.actual_exposure_us
     assert target.exposure_us <= round(frame.actual_exposure_us * 2**0.5)
     assert target.gain == pytest.approx(frame.actual_gain)
@@ -194,31 +287,28 @@ def test_preanchor_acquisition_tracks_multiple_fading_frames():
     )
     target2 = controller.on_frame(applied)
     assert target2 is not None
-    assert target2.reason == "acquisition_background_exposure_up"
+    assert target2.reason == "acquisition_highlight_exposure_up"
     assert target2.exposure_us > target1.exposure_us
     assert controller.status()["applied_after_frames"] == 3
 
 
-def test_preanchor_acquisition_holds_in_background_deadband():
+def test_preanchor_acquisition_holds_at_calibrated_highlight_target():
     controller = _controller()
-    # 238 + 24% of the usable 12-bit range.
-    target_p50 = 238.0 + 0.24 * (4095.0 - 238.0)
+    target_p999 = 238.0 + 0.84 * (4095.0 - 238.0)
 
-    assert controller.on_frame(_sample(1, p50=target_p50)) is None
+    assert controller.on_frame(_sample(1, p50=1200, p99=3000, p999=target_p999)) is None
     assert controller.status()["reason"] == "awaiting_peripheral_solve_anchor"
 
 
 def test_isolated_peripheral_highlight_does_not_fight_acquisition_servo():
     controller = _controller()
-    target_p50 = 238.0 + 0.24 * (4095.0 - 238.0)
-
     # A star-sized highlight may raise p99.9 and clip roughly 0.1% of a
-    # region. It must not halve exposure while the broad sky is on target.
+    # region. It must not lower exposure while p99 shows broad headroom.
     assert (
         controller.on_frame(
             _sample(
                 1,
-                p50=target_p50,
+                p50=1200,
                 p99=1800,
                 p999=4095,
                 sat=0.001,
@@ -269,8 +359,72 @@ def test_single_broad_peripheral_highlight_does_not_control_whole_sky():
     target = controller.on_frame(sample)
 
     assert target is not None
-    assert target.reason == "acquisition_background_exposure_up"
+    assert target.reason == "acquisition_highlight_exposure_up"
     assert target.exposure_us > sample.actual_exposure_us
+
+
+def test_polluted_lower_band_is_excluded_at_on_sky_400ms_optimum():
+    controller = _controller()
+    sample = _with_peripheral_regions(
+        _sample(1, exposure=400_000),
+        {
+            "UL": (1404, 2274, 3511, 0.00007),
+            "U": (1497, 2048, 2245, 0.0),
+            "UR": (1509, 2076, 2218, 0.00014),
+            "L": (2133, 2823, 3014, 0.0),
+            "R": (2383, 3197, 3379, 0.0),
+            "DL": (3042, 4065, 4095, 0.0073),
+            "D": (3811, 4095, 4095, 0.324),
+            "DR": (4058, 4095, 4095, 0.487),
+        },
+    )
+
+    assert controller.on_frame(sample) is None
+    status = controller.status()
+    assert status["reason"] == "awaiting_peripheral_solve_anchor"
+    assert status["usable_peripheral_regions"] == 5
+    assert status["contaminated_peripheral_regions"] == 3
+    assert 0.78 * 4095 < status["peripheral_p999_adu"] < 0.90 * 4095
+
+
+def test_on_sky_560ms_saturation_spread_forces_immediate_reduction():
+    controller = _controller()
+    sample = _with_peripheral_regions(
+        _sample(1, exposure=560_000),
+        {
+            "UL": (1876, 3104, 4095, 0.0031),
+            "U": (2009, 2738, 2953, 0.0002),
+            "UR": (2021, 2793, 3001, 0.00007),
+            "L": (2898, 3857, 4095, 0.0013),
+            "R": (3290, 4095, 4095, 0.052),
+            "DL": (4095, 4095, 4095, 0.566),
+            "D": (4095, 4095, 4095, 0.907),
+            "DR": (4095, 4095, 4095, 0.955),
+        },
+    )
+
+    target = controller.on_frame(sample)
+
+    assert target is not None
+    assert target.safety is True
+    assert target.reason == "peripheral_saturation_exposure_down"
+    assert target.exposure_us < sample.actual_exposure_us
+
+
+def test_successful_low_exposure_anchor_still_climbs_toward_highlight_target():
+    controller = _controller()
+    low = _sample(1, exposure=160_000, p50=763, p99=1984, p999=2405)
+    assert controller.on_frame(low) is not None
+    controller.update_quality(_quality(1, matches=14, candidates=47, success=True))
+
+    target = controller.on_frame(
+        _sample(2, exposure=160_000, p50=763, p99=1984, p999=2405)
+    )
+
+    assert target is not None
+    assert target.reason == "highlight_headroom_exposure_up"
+    assert target.exposure_us > low.actual_exposure_us
+    assert target.exposure_us <= round(low.actual_exposure_us * 2**0.5)
 
 
 def test_hard_peripheral_saturation_overrides_only_with_safer_pending_target():
@@ -312,7 +466,7 @@ def test_saturation_ceiling_prevents_immediate_acquisition_rebound_then_probes()
 
     probe = controller.on_frame(_sample(32, exposure=target.exposure_us, p50=400))
     assert probe is not None
-    assert probe.reason == "acquisition_background_exposure_up"
+    assert probe.reason == "acquisition_highlight_exposure_up"
     assert probe.exposure_us > target.exposure_us
 
 
@@ -383,42 +537,63 @@ def test_center_moon_without_peripheral_solve_never_raises_gain_or_exposure():
 def test_candidate_pressure_low_gain_trial_is_kept_when_matches_improve():
     controller = _controller(false_candidate_repeats=3)
     for sequence in range(1, 4):
-        controller.on_frame(_sample(sequence, gain=30))
+        controller.on_frame(_settled_sample(sequence, gain=30))
         controller.update_quality(
             _quality(sequence, matches=0, candidates=100, success=False, snr=None)
         )
 
-    trial = controller.on_frame(_sample(4, gain=30))
+    trial = controller.on_frame(_settled_sample(4, gain=30))
     assert trial is not None
     assert trial.gain == 15
     assert trial.exposure_us == 400_000
     controller.mark_submitted(trial, 4)
-    controller.on_frame(_sample(7, exposure=400_000, gain=15))
+    controller.on_frame(_settled_sample(7, exposure=400_000, gain=15))
     controller.update_quality(_quality(7, matches=9, candidates=25, success=True))
 
     assert controller.status()["reason"] == "gain_trial_kept"
-    assert controller.on_frame(_sample(8, exposure=400_000, gain=15)) is None
+    assert (
+        controller.on_frame(_sample(8, exposure=400_000, gain=15, p99=3000, p999=3478))
+        is None
+    )
+
+
+def test_gain_trial_waits_until_exposure_headroom_is_settled():
+    controller = _controller(false_candidate_repeats=1)
+    low = _sample(1, exposure=250_000, gain=30, p50=1558, p99=2186, p999=2312)
+    assert controller.on_frame(low) is not None
+    controller.update_quality(
+        _quality(1, matches=0, candidates=100, success=False, snr=None)
+    )
+
+    target = controller.on_frame(
+        _sample(2, exposure=250_000, gain=30, p50=1558, p99=2186, p999=2312)
+    )
+
+    assert target is not None
+    assert target.gain == 30
+    assert target.reason == "acquisition_highlight_exposure_up"
+    assert controller.status()["gain_trial"] is None
 
 
 def test_lower_gain_rolls_back_when_it_only_reduces_false_candidates():
     controller = _controller(false_candidate_repeats=1)
-    controller.on_frame(_sample(1, gain=30))
+    controller.on_frame(_settled_sample(1, gain=30))
     controller.update_quality(
         _quality(1, matches=0, candidates=100, success=False, snr=None)
     )
-    trial = controller.on_frame(_sample(2, gain=30))
+    trial = controller.on_frame(_settled_sample(2, gain=30))
     assert trial is not None and trial.gain == 15
     controller.mark_submitted(trial, 2)
-    controller.on_frame(_sample(5, exposure=400_000, gain=15))
+    controller.on_frame(_settled_sample(5, exposure=400_000, gain=15))
     controller.update_quality(
         _quality(5, matches=0, candidates=20, success=False, snr=None)
     )
 
-    rollback = controller.on_frame(_sample(6, exposure=400_000, gain=15))
+    rollback = controller.on_frame(_settled_sample(6, exposure=400_000, gain=15))
     assert rollback is not None
     assert rollback.gain == 30
     controller.mark_submitted(rollback, 6)
-    controller.on_frame(_sample(9, exposure=200_000, gain=30))
+    controller.on_frame(_settled_sample(9, exposure=200_000, gain=30))
     for sequence in range(10, 20):
         controller.on_frame(_sample(sequence, exposure=200_000, gain=30))
         controller.update_quality(
@@ -426,25 +601,25 @@ def test_lower_gain_rolls_back_when_it_only_reduces_false_candidates():
         )
     acquisition = controller.on_frame(_sample(20, exposure=200_000, gain=30))
     assert acquisition is not None
-    assert acquisition.reason == "acquisition_background_exposure_up"
+    assert acquisition.reason == "acquisition_highlight_exposure_up"
     assert acquisition.gain == 30
     assert controller.status()["gain_retry_after_s"] > 0
 
 
 def test_low_gain_trial_rolls_back_when_match_quality_falls():
     controller = _controller(false_candidate_repeats=1)
-    controller.on_frame(_sample(1, gain=30))
+    controller.on_frame(_settled_sample(1, gain=30))
     controller.update_quality(_quality(1, matches=0, candidates=40, success=False))
-    trial = controller.on_frame(_sample(2, gain=30))
+    trial = controller.on_frame(_settled_sample(2, gain=30))
     assert trial is not None and trial.gain == 15
     controller.mark_submitted(trial, 2)
-    controller.on_frame(_sample(5, exposure=400_000, gain=15))
+    controller.on_frame(_settled_sample(5, exposure=400_000, gain=15))
 
     # Compare against a deliberately strong high-gain baseline: the lower
     # gain's 8 matches do not beat it and must queue rollback.
     controller._trial_baseline = _quality(1, matches=15, candidates=40, success=True)
     controller.update_quality(_quality(5, matches=8, candidates=18, success=True))
-    rollback = controller.on_frame(_sample(6, exposure=400_000, gain=15))
+    rollback = controller.on_frame(_settled_sample(6, exposure=400_000, gain=15))
     assert rollback is not None
     assert rollback.gain == 30
     assert rollback.exposure_us == 200_000
@@ -453,17 +628,17 @@ def test_low_gain_trial_rolls_back_when_match_quality_falls():
 def test_sustained_good_low_gain_quality_trials_profile_gain_again():
     controller = _controller()
     for sequence in range(1, 6):
-        controller.on_frame(_sample(sequence, exposure=400_000, gain=15))
+        controller.on_frame(_settled_sample(sequence, exposure=400_000, gain=15))
         controller.update_quality(
             _quality(sequence, matches=10, candidates=18, success=True)
         )
 
-    restore = controller.on_frame(_sample(6, exposure=400_000, gain=15))
+    restore = controller.on_frame(_settled_sample(6, exposure=400_000, gain=15))
     assert restore is not None
     assert restore.gain == 30
     assert restore.exposure_us == 200_000
     controller.mark_submitted(restore, 6)
-    controller.on_frame(_sample(9, exposure=200_000, gain=30))
+    controller.on_frame(_settled_sample(9, exposure=200_000, gain=30))
     controller.update_quality(_quality(9, matches=10, candidates=18, success=True))
     assert controller.status()["reason"] == "gain_trial_kept"
 

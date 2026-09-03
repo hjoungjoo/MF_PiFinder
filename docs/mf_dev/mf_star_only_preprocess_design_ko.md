@@ -1,6 +1,6 @@
 # MF 별빛 보존 RAW 전처리 및 중앙/전체 프레임 솔빙 설계
 
-최종 업데이트: 2026-08-26
+최종 업데이트: 2026-09-04
 
 ## 1. 결정과 목표
 
@@ -205,10 +205,39 @@ star-only 처리가 예외/NaN/shape 불일치를 만들면 광각에서는 fail
 LiveCam에는 원본/배경/star-only/mask를 전환해 볼 수 있는 진단 preview를 추가하되,
 기본 화면은 기존 영상을 유지한다.
 
-현재는 Input Frame의 `Star-only preprocessing (5 frames)` 항목으로 star-only 결과를
-직접 확인할 수 있다. 이 항목을 선택한 LiveCam 세션에서만 전처리를 실행하며, 다른
-Input Frame으로 바꾸면 temporal window를 초기화한다. 이는 확인용 진단 경로이고 기존
-solver의 입력이나 좌표 발행 경로는 아직 바꾸지 않는다.
+Input Frame의 `Star-only preprocessing (5 frames)` 항목으로 star-only 결과를 직접
+확인할 수 있다.
+
+2026-09-03 이후 solver 전처리는 기본 ON이다. LiveCam의 `Solver preprocessing`
+체크박스로 끌 수 있으며 변경값은 `livecam_solver_preprocess_enabled` 설정에 저장되어
+브라우저 새로고침과 서비스 재시작 뒤에도 마지막 상태를 복원한다. 이 설정은 preview
+processing ON/OFF와 독립적이다.
+
+### 7.1 2026-09-04 LiveCam 표시 경로 정합성
+
+solver 전처리가 ON이면 LiveCam의 star-only 입력은 카메라 프로세스에서 별도의 5프레임
+window를 만들지 않는다. solver가 Cedar/SEP에 실제로 넘긴 최신 star-only 16-bit frame을
+공유 상태에 게시하고, LiveCam은 그 동일한 frame과 다음 상태를 읽어 표시한다.
+
+- `warming`: 현재 누적 수가 5프레임보다 작음
+- `ready`: 최신 production star-only frame을 표시 중
+- `waiting_for_stars`: 누적은 됐지만 보존할 반복 별 증거가 아직 없음
+- `reset_moving`, `reset`, `fingerprint_changed`: 실제 전처리 window가 초기화됨
+- `error`, `preview_error`: 전처리 또는 진단용 frame 게시 오류
+- `disabled`: solver 전처리가 꺼짐
+
+따라서 원본/cropped/star-only 선택을 바꾸는 행위만으로 production temporal window를
+초기화하지 않는다. star-only를 선택한 첫 응답부터 이미 누적된 최신 상태와 frame을
+표시하며, frame ID가 같아도 producer/source가 바뀌면 브라우저가 이미지를 다시 읽는다.
+Live Stack이 켜져 있다면 서로 다른 입력 영상을 섞지 않기 위해 Live Stack 결과만
+초기화되며 solver 전처리 누적에는 영향을 주지 않는다.
+
+solver 전처리가 OFF일 때만 기존 카메라 측 star-only 누적기를 진단용 fallback으로
+사용한다. 이 경우에는 star-only 선택 직후 1/5부터 새로 누적되는 것이 정상이다. 반대로
+IMU 이동, RAW shape·노출·gain·회전·보정 변경, 전처리 오류처럼 production window가
+실제로 무효화되는 사건에서는 오래된 star-only frame을 즉시 지워 화면과 solver 상태가
+어긋나지 않게 한다. 공유 상태 게시 실패는 좌표 솔빙을 중단시키지 않도록 best-effort로
+격리한다.
 
 ## 8. 단계별 구현
 
@@ -284,3 +313,26 @@ SEP 3–8개로 솔빙에 필요한 실제 별이 부족했다. 이전 단일-fr
 solve 실패를 정직하게 유지했다. 같은 수정으로 2026-08-26 야간 corpus 네 묶음을
 재검증한 결과 중앙 solve 4/4를 유지했고 중앙 Matches 7–11, 전체 Matches 10–14였다.
 따라서 5프레임, 2회 반복, 2.5σ 약한 반복 기준은 유지하고 단일-frame 합성만 수정한다.
+
+### 10.2 2026-09-04 하단 강광해 별 복원
+
+현장 화면과 같은 조건의 원본/production star-only 및 연속 RAW 5장을
+`PiFinder_data/captures/mf_replay/20260904_lower_gradient_star_recovery`에 보존했다.
+하단의 육안 확인 별이 누락된 원인은 두 가지였다.
+
+- 이미 local RMS로 나눈 PSF SNR에 배경/노이즈 soft weight를 다시 곱해 광해 구간을
+  이중 감점했다. 대표 별의 응답은 5.3σ에서 1.5σ로 낮아졌다.
+- 4095 ADU에 닿은 9×8 px, 48 px 포화 별을 면적 16 px 이상이라는 이유만으로 큰
+  지상광과 함께 hard mask했다.
+
+PSF admission은 local RMS 정규화값만 사용하고, soft weight는 합성 출력 강도에만
+유지한다. 포화 성분은 면적뿐 아니라 bounding-box도 함께 검사하여 96 px 이하이면서
+가로·세로 16 px 이하인 compact 성분은 PSF/시간 반복 gate로 넘긴다. 큰 포화 하단
+영역은 계속 hard mask된다. SEP의 tetra3 입력 상한 48개는 유지하되 LiveCam 진단용
+마크만 필터 통과 후보 128개까지 별도로 보존한다.
+
+동일 5장 재생에서 production Cedar 후보 중앙값은 59→94.5, Matches 중앙값은
+19.5→53.5로 늘었고 solve 4/4 및 좌표 outlier 0을 유지했다. 해의 프레임 간 최대
+분리는 0.046°→0.008°로 줄었다. 기존 강광해 30장 전체 회귀에서도 solve는
+28/29→29/29, Matches 중앙값은 9.5→15, RMSE 중앙값은 66.3″→54.1″로 개선되었고
+2° 이상 오솔브는 0이었다.

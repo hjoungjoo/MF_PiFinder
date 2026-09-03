@@ -51,6 +51,33 @@ def test_large_saturated_light_is_masked_but_faint_cloud_star_survives():
     assert diagnostics.hard_mask_fraction > 0
 
 
+def test_compact_saturated_star_is_not_treated_as_extended_light():
+    frame = np.full((160, 200), 1500.0, dtype=np.float32)
+    _gaussian_star(frame, 80, 100, amplitude=4000, sigma=2.0)
+
+    signal, evidence, hard, _diagnostics = preprocess_star_evidence(
+        frame, saturation_level=4095
+    )
+
+    assert not hard[80, 100]
+    assert signal[80, 100] > 0
+    assert evidence[80, 100] > 2.5
+
+
+def test_local_snr_is_not_penalized_twice_on_bright_gradient():
+    yy, xx = np.indices((160, 200))
+    frame = (700.0 + 2500.0 * yy / 159.0 + 100.0 * np.sin(xx / 4.0)).astype(np.float32)
+    _gaussian_star(frame, 135, 100, amplitude=900, sigma=1.0)
+
+    signal, evidence, hard, _diagnostics = preprocess_star_evidence(
+        frame, saturation_level=4095
+    )
+
+    assert not hard[135, 100]
+    assert signal[135, 100] > 0
+    assert evidence[135, 100] > 2.5
+
+
 def test_bayer_phase_offsets_are_not_mistaken_for_point_sources():
     frame = np.empty((160, 200), dtype=np.float32)
     for row, column, value in (

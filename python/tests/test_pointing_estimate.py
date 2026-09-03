@@ -504,6 +504,33 @@ class TestIntegratorApplySuccess:
         _, _, q = idr.solve_calls[0]
         assert math.isnan(q.w)
 
+    def test_each_successful_solve_replaces_coordinate_and_imu_anchor(self):
+        from PiFinder.integrator import _apply_successful_solve
+
+        estimate = PointingEstimate()
+        idr = _FakeIdr()
+        first = self._make_result()
+        _apply_successful_solve(estimate, first, idr)
+
+        second = self._make_result()
+        second.camera = Pointing(RA=30.0, Dec=-10.0, Roll=4.0)
+        second.aligned = Pointing(RA=31.0, Dec=-9.0, Roll=4.0)
+        second.imu_anchor = quaternion.quaternion(0.5, 0.5, 0.5, 0.5)
+        second.last_solve_attempt = 600.0
+        second.last_solve_success = 600.0
+
+        merged = _apply_successful_solve(estimate, second, idr)
+
+        assert merged.pointing.camera.solve == second.camera
+        assert merged.pointing.aligned.estimate == second.aligned
+        assert merged.imu_anchor == second.imu_anchor
+        assert merged.estimate_time == pytest.approx(600.0)
+        assert len(idr.solve_calls) == 2
+        camera, aligned, anchor = idr.solve_calls[-1]
+        assert camera.get(deg=True) == pytest.approx((30.0, -10.0, 4.0))
+        assert aligned.get(deg=True) == pytest.approx((31.0, -9.0, 4.0))
+        assert anchor == second.imu_anchor
+
 
 class TestIntegratorFailedSolve:
     """The user-confirmed contract: integrator owns the anchor; on a

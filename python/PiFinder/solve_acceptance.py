@@ -32,6 +32,16 @@ TRUSTED_JUMP_DEG = 5.0
 CONFIRM_AGREEMENT_DEG = 2.0
 CONFIRM_MAX_AGE_S = 15.0
 
+# When the IMU says the instrument is stationary, consecutive pointings may
+# still move at the sidereal rate because a fixed Alt/Az direction sweeps
+# across RA/Dec.  Allow that physical rate plus a small measurement floor;
+# larger changes must agree on the next independent frame before replacing
+# pointing truth.  This suppresses one-frame centroid/fallback excursions
+# without freezing a fixed terrestrial instrument's legitimate sky drift.
+STATIONARY_BASE_ALLOWANCE_DEG = 0.025  # 1.5 arcmin
+SIDEREAL_RATE_DEG_PER_SECOND = 360.0 / 86164.0905
+STATIONARY_RATE_MARGIN = 1.25
+
 
 @dataclass(frozen=True)
 class SolveAcceptanceDecision:
@@ -101,12 +111,17 @@ class SolveContinuityGate:
         trusted_jump_deg: float = TRUSTED_JUMP_DEG,
         confirm_agreement_deg: float = CONFIRM_AGREEMENT_DEG,
         confirm_max_age_s: float = CONFIRM_MAX_AGE_S,
+        stationary_base_allowance_deg: float = STATIONARY_BASE_ALLOWANCE_DEG,
     ) -> None:
         self.trusted_jump_deg = float(trusted_jump_deg)
         self.confirm_agreement_deg = float(confirm_agreement_deg)
         self.confirm_max_age_s = float(confirm_max_age_s)
+        self.stationary_base_allowance_deg = float(stationary_base_allowance_deg)
         self._trusted: tuple[float, float] | None = None
+        self._trusted_time: float | None = None
+        self._trusted_path: str | None = None
         self._pending: tuple[float, float, float] | None = None
+        self._pending_kind: str | None = None
 
     @staticmethod
     def _coordinates(solution: Mapping[str, object]) -> tuple[float, float] | None:
@@ -124,6 +139,9 @@ class SolveContinuityGate:
         solution: Mapping[str, object],
         solve_path: str,
         timestamp: float,
+        *,
+        stationary: bool = False,
+        prefer_preprocessed: bool = False,
     ) -> SolveAcceptanceDecision:
         coords = self._coordinates(solution)
         if coords is None or not math.isfinite(timestamp):
@@ -133,36 +151,140 @@ class SolveContinuityGate:
         # The small, established production crop is allowed to establish the
         # first anchor immediately. Native full-frame matches need a second
         # frame because they are the path exposed to urban-light patterns.
-        if self._trusted is None and solve_path in {"cedar_512", "cedar_center"}:
-            self._trusted = coords
-            self._pending = None
+        established_path = solve_path in {"cedar_512", "cedar_center"}
+        if (
+            self._trusted is None
+            and established_path
+            and not (stationary and prefer_preprocessed)
+        ):
+            self._accept(coords, solve_path, timestamp)
             return SolveAcceptanceDecision(True, "initial_established_anchor")
 
         if self._trusted is not None:
             separation = angular_separation_deg(*self._trusted, ra, dec)
             if separation <= self.trusted_jump_deg:
-                self._trusted = coords
-                self._pending = None
-                return SolveAcceptanceDecision(True, "near_trusted", separation)
+                raw_fallback_transition = bool(
+                    stationary
+                    and prefer_preprocessed
+                    and (self._trusted_path or "").startswith("preprocessed_")
+                    and not solve_path.startswith("preprocessed_")
+                )
+                within_stationary_allowance = (
+                    not stationary
+                    or separation <= self._stationary_allowance(timestamp)
+                )
+                if within_stationary_allowance and not raw_fallback_transition:
+                    self._accept(coords, solve_path, timestamp)
+                    return SolveAcceptanceDecision(True, "near_trusted", separation)
+
+                confirmed = self._confirm_pending(
+                    coords,
+                    solve_path,
+                    timestamp,
+                    kind="stationary",
+                )
+                if confirmed is not None:
+                    return confirmed
+                self._set_pending(coords, timestamp, "stationary")
+                reason = (
+                    "raw_fallback_confirmation"
+                    if raw_fallback_transition
+                    else "stationary_change_confirmation"
+                )
+                return SolveAcceptanceDecision(False, reason, separation)
         else:
             separation = None
 
-        if self._pending is not None:
-            pending_ra, pending_dec, pending_time = self._pending
-            age = float(timestamp) - pending_time
-            agreement = angular_separation_deg(pending_ra, pending_dec, ra, dec)
-            if (
-                0.0 <= age <= self.confirm_max_age_s
-                and agreement <= self.confirm_agreement_deg
-            ):
-                self._trusted = coords
-                self._pending = None
-                return SolveAcceptanceDecision(True, "confirmed_jump", agreement)
+        if stationary and prefer_preprocessed and self._trusted is None:
+            confirmed = self._confirm_pending(
+                coords,
+                solve_path,
+                timestamp,
+                kind="stationary",
+            )
+            if confirmed is not None:
+                return confirmed
+            self._set_pending(coords, timestamp, "stationary")
+            return SolveAcceptanceDecision(
+                False, "initial_preferred_confirmation", separation
+            )
 
-        self._pending = (ra, dec, float(timestamp))
+        confirmed = self._confirm_pending(
+            coords,
+            solve_path,
+            timestamp,
+            kind="jump",
+        )
+        if confirmed is not None:
+            return confirmed
+
+        self._set_pending(coords, timestamp, "jump")
         reason = (
             "initial_fullframe_confirmation"
             if self._trusted is None
             else "jump_confirmation"
         )
         return SolveAcceptanceDecision(False, reason, separation)
+
+    def _stationary_allowance(self, timestamp: float) -> float:
+        if self._trusted_time is None:
+            return self.stationary_base_allowance_deg
+        age = max(0.0, float(timestamp) - self._trusted_time)
+        return self.stationary_base_allowance_deg + (
+            SIDEREAL_RATE_DEG_PER_SECOND * STATIONARY_RATE_MARGIN * age
+        )
+
+    def _pending_agreement(self, timestamp: float, kind: str) -> float:
+        if kind != "stationary" or self._pending is None:
+            return self.confirm_agreement_deg
+        age = max(0.0, float(timestamp) - self._pending[2])
+        return self.stationary_base_allowance_deg + (
+            SIDEREAL_RATE_DEG_PER_SECOND * STATIONARY_RATE_MARGIN * age
+        )
+
+    def _confirm_pending(
+        self,
+        coords: tuple[float, float],
+        solve_path: str,
+        timestamp: float,
+        *,
+        kind: str,
+    ) -> SolveAcceptanceDecision | None:
+        if self._pending is None or self._pending_kind != kind:
+            return None
+        pending_ra, pending_dec, pending_time = self._pending
+        age = float(timestamp) - pending_time
+        agreement = angular_separation_deg(*coords, pending_ra, pending_dec)
+        if (
+            0.0 <= age <= self.confirm_max_age_s
+            and agreement <= self._pending_agreement(timestamp, kind)
+        ):
+            self._accept(coords, solve_path, timestamp)
+            reason = (
+                "confirmed_stationary_change"
+                if kind == "stationary"
+                else "confirmed_jump"
+            )
+            return SolveAcceptanceDecision(True, reason, agreement)
+        return None
+
+    def _set_pending(
+        self,
+        coords: tuple[float, float],
+        timestamp: float,
+        kind: str,
+    ) -> None:
+        self._pending = (*coords, float(timestamp))
+        self._pending_kind = kind
+
+    def _accept(
+        self,
+        coords: tuple[float, float],
+        solve_path: str,
+        timestamp: float,
+    ) -> None:
+        self._trusted = coords
+        self._trusted_time = float(timestamp)
+        self._trusted_path = solve_path
+        self._pending = None
+        self._pending_kind = None

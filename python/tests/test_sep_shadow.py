@@ -166,13 +166,17 @@ def test_solver_preprocessor_requires_two_matching_frames(monkeypatch, tmp_path)
     frame = np.zeros((128, 128), dtype=np.uint16)
 
     assert runner.preprocess_frame(frame, fingerprint=("same",), frame_id=1) is None
+    assert runner.preprocess_status()["state"] == "warming"
+    assert runner.preprocess_status()["frame_count"] == 1
     run = runner.preprocess_frame(frame, fingerprint=("same",), frame_id=2)
 
     assert run is not None
     assert run.diagnostics.frame_count == 2
+    assert runner.preprocess_status()["state"] == "ready"
     assert run.frame_id == 2
     assert detected_frames[0][1]["cloud_window_gate"] is False
     assert detected_frames[0][1]["saturation_level"] is None
+    assert detected_frames[0][1]["overlay_max_stars"] == 128
     runner.use_preprocessed_overlay(run)
     assert runner._last_overlay["preprocessed"] is True
     assert runner._last_overlay["preprocess_frames"] == 2
@@ -180,6 +184,30 @@ def test_solver_preprocessor_requires_two_matching_frames(monkeypatch, tmp_path)
 
     # A changed exposure/lens/etc. fingerprint must start a fresh window.
     assert runner.preprocess_frame(frame, fingerprint=("changed",), frame_id=3) is None
+    assert runner.preprocess_status()["reset_reason"] == "fingerprint_changed"
+
+
+@pytest.mark.unit
+def test_solver_preprocessor_exposes_error_and_reset_state(monkeypatch, tmp_path):
+    runner = _runner(tmp_path)
+    monkeypatch.setattr(
+        runner._star_only,
+        "add",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad frame")),
+    )
+
+    assert (
+        runner.preprocess_frame(
+            np.zeros((8, 8), dtype=np.uint16), fingerprint=("same",), frame_id=1
+        )
+        is None
+    )
+    assert runner.preprocess_status()["state"] == "error"
+    assert "bad frame" in runner.preprocess_status()["error"]
+
+    runner.reset_preprocessor("reset_moving")
+    assert runner.preprocess_status()["state"] == "reset_moving"
+    assert runner.preprocess_status()["frame_count"] == 0
 
 
 @pytest.mark.unit

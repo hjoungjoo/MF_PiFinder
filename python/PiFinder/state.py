@@ -322,6 +322,16 @@ class SharedStateObj:
         # (dict: {"frame": uint16 ndarray, "exposure_end": float}). Only
         # published while solver_shadow_detect / solver_sep_fallback is on.
         self.__solver_raw = None
+        # Latest frame produced by the actual solver-side star-only
+        # preprocessor. LiveCam reads this cache instead of starting a second
+        # camera-side accumulator when solver preprocessing is enabled.
+        self.__solver_preprocessed_frame = None
+        self.__solver_preprocess_status: dict[str, Any] = {
+            "enabled": False,
+            "state": "disabled",
+            "frame_count": 0,
+            "error": None,
+        }
         self.__raw_live_frame = None
         # Latest SEP detection (small dict) for the LiveCam overlay
         self.__sep_overlay = None
@@ -610,6 +620,24 @@ class SharedStateObj:
 
     def set_solver_raw(self, v):
         self.__solver_raw = v
+
+    def solver_preprocessed_frame(self):
+        return self.__solver_preprocessed_frame
+
+    def solver_preprocessed_frame_info(self):
+        entry = self.__solver_preprocessed_frame
+        if not entry or not isinstance(entry, dict):
+            return None
+        return entry.get("info")
+
+    def set_solver_preprocessed_frame(self, v):
+        self.__solver_preprocessed_frame = v
+
+    def solver_preprocess_status(self):
+        return dict(self.__solver_preprocess_status)
+
+    def set_solver_preprocess_status(self, v):
+        self.__solver_preprocess_status = dict(v or {})
 
     def sep_overlay(self):
         return self.__sep_overlay

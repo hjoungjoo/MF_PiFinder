@@ -91,13 +91,15 @@ shared_state.solution().pointing.aligned.estimate.Dec
 - `solution.has_pointing()`이 true
 - `solve_source == CAM`
 - 또는 `solve_source == IMU`이지만 plate-solve anchor가 존재함
+- 또는 `solve_source == CAM_FAILED`이지만 보존된 plate-solve anchor가 존재함
 
 처리:
 
 - RA/Dec 값을 그대로 사용한다.
 - J2000/JNow 변환을 하지 않는다.
-- `solve_source == IMU`인데 plate-solve anchor가 없으면 부팅 직후 IMU 추정값으로
-  보고 primary solved 좌표로 쓰지 않는다.
+- `IMU`/`CAM_FAILED`인데 plate-solve anchor가 없으면 primary solved 좌표로 쓰지
+  않는다. Anchor가 있는 `CAM_FAILED`는 이번 시도의 실패일 뿐 보존 좌표의 무효가
+  아니므로 medium-quality PiFinder estimate로 유지한다.
 
 ### 2. IMU fallback 좌표
 
@@ -128,6 +130,11 @@ IMU smoothing:
 - 중간 변화는 완만하게 따라간다.
 - 큰 변화는 사용자가 실제로 망원경을 움직인 것으로 보고 빠르게 반영한다.
 - smoothing 전후 값은 모두 status JSON에 기록한다.
+
+절대 좌표 후보로 선택하려면 NDOF magnetometer 방위 또는 session-only SkySafari
+alignment가 필요하다. 정렬되지 않은 IMUPLUS quaternion은 절대 방위가 아니므로
+단독 fallback에는 쓰지 않고, 정상 plate solve 또는 정렬된 mount 기준의 상대 이동에만
+사용한다.
 
 관련 status metadata:
 
@@ -813,7 +820,7 @@ jq . /home/pifinder/PiFinder_data/mount_control_status.json
 
 ```text
 IMU_PRIMARY_UNSOLVED:
-  solve 없음, mount sync 전, IMU fallback이 현재 좌표
+  solve 없음, mount sync 전, magnetometer/정렬된 IMU fallback이 현재 좌표
 
 MOUNT_REFERENCE_PRIMARY:
   mount sync 이후, mount 정지 상태, mount anchor + IMU delta 사용

@@ -374,7 +374,7 @@ def test_livecam_zoom_keeps_the_whole_frame_in_the_scroll_range():
     assert "margin: auto" in placeholder
 
 
-def test_livecam_has_session_solver_preprocess_control_below_stack():
+def test_livecam_has_persistent_solver_preprocess_control_below_stack():
     livecam_html = (VIEWS_DIR / "livecam.html").read_text()
 
     assert livecam_html.index('id="stackEnabled"') < livecam_html.index(
@@ -382,6 +382,11 @@ def test_livecam_has_session_solver_preprocess_control_below_stack():
     )
     assert "solver_preprocess_enabled: controls.solver_preprocess_enabled.checked" in (
         livecam_html
+    )
+    assert 'id="statusPreprocess"' in livecam_html
+    assert "const preprocess = data.preprocess || {};" in livecam_html
+    assert (
+        "frame.producer || frame.source || settings.input_frame_source" in livecam_html
     )
 
 
