@@ -128,7 +128,9 @@ def test_matched_star_snr_uses_only_peripheral_raw_stars_around_central_moon():
 def test_dark_clear_sky_keeps_profile_gain_and_steady_scene_deadband():
     controller = _controller()
     frame = _sample(1)
-    assert controller.on_frame(frame) is None
+    acquisition = controller.on_frame(frame)
+    assert acquisition is not None
+    assert acquisition.reason == "acquisition_background_exposure_up"
     controller.update_quality(_quality(1, matches=12, candidates=18, success=True))
 
     for sequence in range(2, 10):
@@ -151,6 +153,126 @@ def test_bright_cloud_submits_down_on_first_frame_and_pending_prevents_windup():
     assert controller.status()["pending"] is True
 
 
+def test_preanchor_twilight_fading_raises_exposure_without_manual_reset():
+    controller = _controller()
+    # Reproduce the live 2026-09-03 hold: 36.2 ms / gain 29.51, p50 1093,
+    # pedestal 238.  The old controller stayed at this point indefinitely
+    # with reason=awaiting_peripheral_solve_anchor.
+    frame = _sample(
+        1,
+        exposure=36_222,
+        gain=29.5121,
+        p50=1093.5,
+        p99=2100,
+        p999=2258.3,
+    )
+
+    target = controller.on_frame(frame)
+
+    assert target is not None
+    assert target.reason == "acquisition_background_exposure_up"
+    assert target.exposure_us > frame.actual_exposure_us
+    assert target.exposure_us <= round(frame.actual_exposure_us * 2**0.5)
+    assert target.gain == pytest.approx(frame.actual_gain)
+
+
+def test_preanchor_acquisition_tracks_multiple_fading_frames():
+    controller = _controller()
+    first = _sample(1, exposure=50_000, p50=650, p99=900, p999=1050)
+    target1 = controller.on_frame(first)
+    assert target1 is not None
+    controller.mark_submitted(target1, first.frame_sequence)
+
+    # Metadata confirms application, but twilight has faded again. The same
+    # frame can request the next bounded increase; no mode toggle is needed.
+    applied = _sample(
+        4,
+        exposure=target1.exposure_us,
+        p50=650,
+        p99=900,
+        p999=1050,
+    )
+    target2 = controller.on_frame(applied)
+    assert target2 is not None
+    assert target2.reason == "acquisition_background_exposure_up"
+    assert target2.exposure_us > target1.exposure_us
+    assert controller.status()["applied_after_frames"] == 3
+
+
+def test_preanchor_acquisition_holds_in_background_deadband():
+    controller = _controller()
+    # 238 + 24% of the usable 12-bit range.
+    target_p50 = 238.0 + 0.24 * (4095.0 - 238.0)
+
+    assert controller.on_frame(_sample(1, p50=target_p50)) is None
+    assert controller.status()["reason"] == "awaiting_peripheral_solve_anchor"
+
+
+def test_isolated_peripheral_highlight_does_not_fight_acquisition_servo():
+    controller = _controller()
+    target_p50 = 238.0 + 0.24 * (4095.0 - 238.0)
+
+    # A star-sized highlight may raise p99.9 and clip roughly 0.1% of a
+    # region. It must not halve exposure while the broad sky is on target.
+    assert (
+        controller.on_frame(
+            _sample(
+                1,
+                p50=target_p50,
+                p99=1800,
+                p999=4095,
+                sat=0.001,
+            )
+        )
+        is None
+    )
+    assert controller.status()["reason"] == "awaiting_peripheral_solve_anchor"
+
+
+def test_broad_near_white_peripheral_highlight_remains_immediate_safety_event():
+    controller = _controller()
+
+    target = controller.on_frame(
+        _sample(1, exposure=400_000, p99=3800, p999=4095, sat=0.001)
+    )
+
+    assert target is not None
+    assert target.safety is True
+    assert target.reason == "peripheral_saturation_exposure_down"
+    assert target.exposure_us < 400_000
+
+
+def test_single_broad_peripheral_highlight_does_not_control_whole_sky():
+    controller = _controller()
+    sample = _sample(1)
+    regions = dict(sample.regions)
+    regions["UL"] = RegionExposureStats(
+        background_p50_adu=400,
+        background_mad_adu=10,
+        p90_adu=2000,
+        p99_adu=3900,
+        p999_adu=4095,
+        saturated_fraction=0.02,
+        background_gradient_adu=3,
+    )
+    sample = FrameExposureSample(
+        frame_id=sample.frame_id,
+        frame_sequence=sample.frame_sequence,
+        captured_at=sample.captured_at,
+        actual_exposure_us=sample.actual_exposure_us,
+        actual_gain=sample.actual_gain,
+        white_level=sample.white_level,
+        pedestal_adu=sample.pedestal_adu,
+        regions=regions,
+    )
+
+    target = controller.on_frame(sample)
+
+    assert target is not None
+    assert target.reason == "acquisition_background_exposure_up"
+    assert target.exposure_us > sample.actual_exposure_us
+
+
 def test_hard_peripheral_saturation_overrides_only_with_safer_pending_target():
     controller = _controller()
     saturated = _sample(1, exposure=400_000, p999=4095, sat=0.02)
@@ -166,6 +288,32 @@ def test_hard_peripheral_saturation_overrides_only_with_safer_pending_target():
     override = controller.on_frame(_sample(3, exposure=300_000, p999=4095, sat=0.10))
     assert override is not None
     assert override.exposure_us * override.gain < target.exposure_us * target.gain
+
+
+def test_saturation_ceiling_prevents_immediate_acquisition_rebound_then_probes():
+    controller = _controller()
+    saturated = _sample(
+        1,
+        exposure=100_000,
+        p50=400,
+        p99=3900,
+        p999=4095,
+        sat=0.02,
+    )
+    target = controller.on_frame(saturated)
+    assert target is not None
+    controller.mark_submitted(target, saturated.frame_sequence)
+
+    applied = _sample(2, exposure=target.exposure_us, p50=400)
+    assert controller.on_frame(applied) is None
+    status = controller.status()
+    assert status["reason"] == "saturation_ceiling_hold"
+    assert status["saturation_probe_after_s"] > 0
+
+    probe = controller.on_frame(_sample(32, exposure=target.exposure_us, p50=400))
+    assert probe is not None
+    assert probe.reason == "acquisition_background_exposure_up"
+    assert probe.exposure_us > target.exposure_us
 
 
 def test_pending_is_cleared_by_quantized_driver_metadata():
@@ -276,7 +424,10 @@ def test_lower_gain_rolls_back_when_it_only_reduces_false_candidates():
         controller.update_quality(
             _quality(sequence, matches=0, candidates=100, success=False, snr=None)
         )
-    assert controller.on_frame(_sample(20, exposure=200_000, gain=30)) is None
+    acquisition = controller.on_frame(_sample(20, exposure=200_000, gain=30))
+    assert acquisition is not None
+    assert acquisition.reason == "acquisition_background_exposure_up"
+    assert acquisition.gain == 30
     assert controller.status()["gain_retry_after_s"] > 0
 
 

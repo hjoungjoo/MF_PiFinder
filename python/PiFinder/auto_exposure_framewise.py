@@ -23,6 +23,20 @@ GAIN_LADDER = (30.0, 15.0, 8.0, 4.0, 2.0, 1.0)
 REGION_NAMES = ("UL", "U", "UR", "L", "C", "R", "DL", "D", "DR")
 PERIPHERAL_REGIONS = frozenset(REGION_NAMES) - {"C"}
 
+# Before the first catalog-confirmed solve there is no stellar SNR anchor.
+# A purely fail-closed controller used to stop forever after twilight's bright
+# sky guard lowered exposure.  Maintain a conservative peripheral background
+# during acquisition instead: as twilight fades, exposure follows it upward
+# and the first stars become detectable without a manual mode toggle.  The
+# upper edge remains below the 30% bright-sky guard and upward applications
+# are still capped at +0.5 stop.
+ACQUISITION_BACKGROUND_FRACTION = 0.24
+ACQUISITION_RATIO_DEADBAND = 0.05
+PERIPHERAL_SATURATED_AREA_FRACTION = 0.005
+PERIPHERAL_BROAD_HIGHLIGHT_FRACTION = 0.85
+MIN_HARD_SATURATED_PERIPHERAL_REGIONS = 2
+SATURATION_CEILING_PROBE_S = 30.0
+
 
 @dataclass(frozen=True)
 class RegionExposureStats:
@@ -400,6 +414,8 @@ class AutoStarFrameController:
         self._pressure_streak = 0
         self._good_quality_streak = 0
         self._saturation_at_min_streak = 0
+        self._saturation_light_ceiling: Optional[float] = None
+        self._saturation_ceiling_at = 0.0
         self._gain_action: Optional[tuple[str, float, Optional[float]]] = None
         self._trial_baseline: Optional[SolveExposureQuality] = None
         self._trial_gain: Optional[float] = None
@@ -450,10 +466,34 @@ class AutoStarFrameController:
         regions = sample.peripheral()
         return {
             "p50": _robust_median([r.background_p50_adu for r in regions]),
+            "p99": max((r.p99_adu for r in regions), default=None),
             "p999": max((r.p999_adu for r in regions), default=None),
             "sat": max((r.saturated_fraction for r in regions), default=None),
             "contrast": _robust_median([r.point_contrast for r in regions]),
         }
+
+    @staticmethod
+    def _hard_peripheral_saturation(sample: FrameExposureSample) -> bool:
+        """Return true only when a meaningful peripheral area is clipped.
+
+        A p99.9 spike or 0.1% clipped fraction can be produced by a bright
+        star or hot pixels, while one broadly bright region can be a local
+        lamp. Treating either as a bright sky caused a 0.5x safety correction
+        which immediately fought the background servo. A sky-wide cloud or
+        bloom affects at least two peripheral regions; those cases retain the
+        immediate safety response.
+        """
+        white = sample.white_level
+        saturated_regions = sum(
+            1
+            for region in sample.peripheral()
+            if region.saturated_fraction >= PERIPHERAL_SATURATED_AREA_FRACTION
+            or (
+                region.p999_adu >= 0.94 * white
+                and region.p99_adu >= PERIPHERAL_BROAD_HIGHLIGHT_FRACTION * white
+            )
+        )
+        return saturated_regions >= MIN_HARD_SATURATED_PERIPHERAL_REGIONS
 
     def _motion_limit(self, sample: FrameExposureSample) -> Optional[int]:
         if sample.motion_degrees <= 0.01:
@@ -473,6 +513,32 @@ class AutoStarFrameController:
         reason: str,
         safety: bool = False,
     ) -> Optional[ExposureGainTarget]:
+        requested_light = exposure * gain
+        held_by_ceiling = False
+        saturation_ceiling = self._saturation_light_ceiling
+        ceiling_active = bool(
+            not safety
+            and saturation_ceiling is not None
+            and sample.captured_at - self._saturation_ceiling_at
+            < SATURATION_CEILING_PROBE_S
+        )
+        if (
+            ceiling_active
+            and saturation_ceiling is not None
+            and requested_light > saturation_ceiling
+        ):
+            exposure = saturation_ceiling / max(self.allocator.min_gain, gain)
+            reason = "saturation_ceiling_hold"
+            held_by_ceiling = True
+        elif (
+            self._saturation_light_ceiling is not None
+            and sample.captured_at - self._saturation_ceiling_at
+            >= SATURATION_CEILING_PROBE_S
+        ):
+            # Probe at the ordinary controller's bounded step. A repeated
+            # saturation re-establishes the ceiling; a clear probe lets the
+            # fading twilight continue to move exposure upward.
+            self._saturation_light_ceiling = None
         exposure_i = self.allocator.clamp_exposure(exposure, self._motion_limit(sample))
         gain_f = self.allocator.clamp_gain(gain)
         if self._matches(
@@ -480,7 +546,7 @@ class AutoStarFrameController:
             sample.actual_gain,
             ExposureGainTarget(exposure_i, gain_f, reason, safety),
         ):
-            self._reason = "deadband"
+            self._reason = reason if held_by_ceiling else "deadband"
             return None
         direction = (
             1
@@ -534,15 +600,11 @@ class AutoStarFrameController:
                 self._reason = "control_apply_timeout"
 
         p999 = summary["p999"]
-        saturation = summary["sat"] or 0.0
-        hard_saturation = bool(
-            p999 is not None
-            and (p999 >= 0.94 * sample.white_level or saturation >= 0.001)
-        )
+        hard_saturation = self._hard_peripheral_saturation(sample)
         if hard_saturation:
             saturated_p999 = float(p999 if p999 is not None else sample.white_level)
             ratio = 0.82 * 0.90 * sample.white_level / max(saturated_p999, 1.0)
-            ratio = min(0.50, max(0.10, ratio))
+            ratio = min(0.75, max(0.10, ratio))
             exposure = self.allocator.clamp_exposure(sample.actual_exposure_us * ratio)
             if exposure <= self.allocator.min_exposure_us * 1.02:
                 self._saturation_at_min_streak += 1
@@ -560,6 +622,8 @@ class AutoStarFrameController:
                 reason = "peripheral_saturation_gain_down"
             target = self._target(sample, exposure, gain, reason, safety=True)
             if target is not None:
+                self._saturation_light_ceiling = target.exposure_us * target.gain
+                self._saturation_ceiling_at = sample.captured_at
                 if self.pending is None:
                     return target
                 pending_light = (
@@ -588,8 +652,11 @@ class AutoStarFrameController:
             return None
         signal = max(1.0, p50 - sample.pedestal_adu)
 
-        # Before the first catalog-confirmed anchor, only a conservative bright
-        # sky guard is allowed.  Darkness alone is not evidence to increase.
+        # Before the first catalog-confirmed anchor, track a conservative
+        # peripheral background target.  This is acquisition, not the final
+        # stellar optimum: it exists so twilight fading can reveal the first
+        # catalog stars.  A single upward application is capped at +0.5 stop,
+        # while the existing 30% bright-sky/saturation paths remain faster.
         if self._anchor_sample is None:
             bright_limit = 0.30 * (sample.white_level - sample.pedestal_adu)
             if signal > bright_limit:
@@ -599,6 +666,24 @@ class AutoStarFrameController:
                     sample.actual_gain,
                     "bright_sky_exposure_down",
                     safety=True,
+                )
+            acquisition_target = ACQUISITION_BACKGROUND_FRACTION * (
+                sample.white_level - sample.pedestal_adu
+            )
+            acquisition_ratio = acquisition_target / signal
+            if acquisition_ratio > 1.0 + ACQUISITION_RATIO_DEADBAND:
+                return self._target(
+                    sample,
+                    sample.actual_exposure_us * min(math.sqrt(2.0), acquisition_ratio),
+                    sample.actual_gain,
+                    "acquisition_background_exposure_up",
+                )
+            if acquisition_ratio < 1.0 / (1.0 + ACQUISITION_RATIO_DEADBAND):
+                return self._target(
+                    sample,
+                    sample.actual_exposure_us * acquisition_ratio,
+                    sample.actual_gain,
+                    "acquisition_background_exposure_down",
                 )
             self._reason = "awaiting_peripheral_solve_anchor"
             return None
@@ -784,6 +869,16 @@ class AutoStarFrameController:
             ),
             "applied_after_frames": self._last_applied_after_frames,
             "control_fault": self._control_fault,
+            "saturation_ceiling_light": self._saturation_light_ceiling,
+            "saturation_probe_after_s": max(
+                0.0,
+                SATURATION_CEILING_PROBE_S
+                - (
+                    self._frames[-1].captured_at - self._saturation_ceiling_at
+                    if self._frames and self._saturation_light_ceiling is not None
+                    else SATURATION_CEILING_PROBE_S
+                ),
+            ),
             "gain_locked": self.gain_locked,
             "gain_trial": self._trial_gain,
             "gain_retry_after_s": (
@@ -794,6 +889,7 @@ class AutoStarFrameController:
             "direction_reversals": self._direction_reversals,
             "center_contaminated": latest.center_contaminated if latest else None,
             "peripheral_p50_adu": summary.get("p50"),
+            "peripheral_p99_adu": summary.get("p99"),
             "peripheral_p999_adu": summary.get("p999"),
             "peripheral_saturation": summary.get("sat"),
             "peripheral_contrast": summary.get("contrast"),
