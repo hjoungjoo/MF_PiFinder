@@ -11,6 +11,7 @@ from __future__ import annotations
 from time import monotonic, sleep
 import libinput
 from PiFinder.keyboard_interface import KeyboardInterface
+from PiFinder import keyboard_mapping
 import RPi.GPIO as GPIO
 import logging
 from PiFinder.multiproclogging import MultiprocLogging
@@ -271,7 +272,7 @@ class KeyboardPi(KeyboardInterface):
             return None
         return self.text_from_keycode(mapped_key)
 
-    def _get_physical_hold_key(self) -> int:
+    def _get_physical_hold_key(self) -> int | dict:
         now = monotonic()
         held_keys = sorted(
             self.physical_pressed,
@@ -300,7 +301,9 @@ class KeyboardPi(KeyboardInterface):
                 last_repeat = self.physical_last_repeat_times.get(key)
                 if last_repeat is None or now - last_repeat >= PHYSICAL_REPEAT_SECONDS:
                     self.physical_last_repeat_times[key] = now
-                    return self.physical_key_mapping[key]
+                    return keyboard_mapping.make_event(
+                        key, True, self.physical_key_mapping[key], repeat=True
+                    )
                 continue
 
             if key in self.physical_hold_sent:
@@ -309,11 +312,11 @@ class KeyboardPi(KeyboardInterface):
             mapped_key = self.long_physical_key_mapping.get(key)
             if mapped_key is not None:
                 self.physical_hold_sent.add(key)
-                return mapped_key
+                return keyboard_mapping.make_event(key, True, mapped_key, repeat=True)
 
         return 0
 
-    def get_keyboard_key(self) -> int:
+    def get_keyboard_key(self) -> int | dict:
         """
         Checks libinput keyboard and maps key events to PiFinder keycodes.
 
@@ -338,13 +341,17 @@ class KeyboardPi(KeyboardInterface):
                         if number is not None and not self._physical_key_modifiers(
                             kbev.key
                         ):
-                            return self.number_press_key(number)
+                            return keyboard_mapping.make_event(
+                                kbev.key, True, self.number_press_key(number)
+                            )
                         text_char = self._physical_text_char(kbev.key)
                         if text_char is not None and not self._physical_key_modifiers(
                             kbev.key
                         ):
-                            return self.text_press_key(text_char)
-                        continue
+                            return keyboard_mapping.make_event(
+                                kbev.key, True, self.text_press_key(text_char)
+                            )
+                        return keyboard_mapping.make_event(kbev.key, True)
                     if kbev.key_state != libinput.constant.KeyState.RELEASED:
                         continue
 
@@ -356,35 +363,57 @@ class KeyboardPi(KeyboardInterface):
                     self._forget_physical_press(kbev.key)
 
                     if kbev.key in PHYSICAL_MODIFIER_KEYS:
-                        continue
+                        # Modifiers have no ordinary PiFinder keycode, but they
+                        # remain bindable mount keys and therefore need a raw
+                        # release event to stop held motion safely.
+                        return keyboard_mapping.make_event(kbev.key, False)
                     if was_hold_sent:
-                        continue
+                        # The long-press action already replaced the ordinary
+                        # release action. Preserve a raw release for a mapped
+                        # mount key while suppressing any legacy UI keycode.
+                        return keyboard_mapping.make_event(kbev.key, False)
 
                     alt_pressed = bool(PHYSICAL_ALT_KEYS & release_modifiers)
                     if alt_pressed:
                         mapped_key = self.alt_physical_key_mapping.get(kbev.key)
-                        return mapped_key if mapped_key is not None else 0
+                        return keyboard_mapping.make_event(
+                            kbev.key, False, mapped_key or 0
+                        )
 
                     ctrl_pressed = bool(PHYSICAL_CTRL_KEYS & release_modifiers)
                     shift_pressed = bool(PHYSICAL_SHIFT_KEYS & release_modifiers)
                     if ctrl_pressed or shift_pressed:
                         mapped_key = self.long_physical_key_mapping.get(kbev.key)
                         if mapped_key is not None:
-                            return mapped_key
+                            return keyboard_mapping.make_event(
+                                kbev.key, False, mapped_key
+                            )
                         if ctrl_pressed:
-                            return 0
-                        return self.shift_text_physical_key_mapping.get(kbev.key, 0)
+                            return keyboard_mapping.make_event(kbev.key, False)
+                        return keyboard_mapping.make_event(
+                            kbev.key,
+                            False,
+                            self.shift_text_physical_key_mapping.get(kbev.key, 0),
+                        )
 
                     number = self._physical_direction_number_key(kbev.key)
                     if number is not None:
-                        return self.number_release_key(number)
+                        return keyboard_mapping.make_event(
+                            kbev.key, False, self.number_release_key(number)
+                        )
 
                     text_char = self._physical_text_char(kbev.key)
                     if text_char is not None:
-                        return self.text_release_key(text_char)
+                        return keyboard_mapping.make_event(
+                            kbev.key, False, self.text_release_key(text_char)
+                        )
 
-                    return self.physical_key_mapping.get(
-                        kbev.key, self.text_physical_key_mapping.get(kbev.key, 0)
+                    return keyboard_mapping.make_event(
+                        kbev.key,
+                        False,
+                        self.physical_key_mapping.get(
+                            kbev.key, self.text_physical_key_mapping.get(kbev.key, 0)
+                        ),
                     )
 
     def run_keyboard(self, log_queue):

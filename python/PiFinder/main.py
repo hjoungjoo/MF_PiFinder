@@ -538,6 +538,14 @@ def main(
     except Exception:
         logger.exception("Joystick input unavailable")
 
+    # Physical-keyboard events arrive from keyboard_pi with their raw Linux
+    # key identity. The main-process manager provides configurable mount
+    # shortcuts plus the Settings > Advanced > Keyboard capture/test UI.
+    from PiFinder import keyboard_mapping
+
+    keyboard_mapping_manager = keyboard_mapping.manager()
+    keyboard_mapping_manager.start(keyboard_queue, mountcontrol_queue, cfg)
+
     # init screen
     screen_brightness = cfg.get_option("display_brightness")
     set_brightness(screen_brightness, cfg)
@@ -1021,11 +1029,18 @@ def main(
                 except queue.Empty:
                     pass
 
+                keyboard_mapping_manager.tick()
+                keyboard_activity = keycode is not None
+                if keyboard_mapping.is_keyboard_event(keycode):
+                    keycode = keyboard_mapping_manager.handle_event(keycode)
+
                 # Register activity here will return True if the power
                 # state changes.  If so, we DO NOT process this keystroke
-                if keycode is not None and power_manager.register_activity() is False:
+                if keyboard_activity and power_manager.register_activity() is False:
                     # ignore keystroke if we have been asleep
-                    if keyboard_base.is_number_press_key(keycode):
+                    if keycode is None:
+                        pass
+                    elif keyboard_base.is_number_press_key(keycode):
                         menu_manager.key_number_press(
                             keyboard_base.number_from_press_keycode(keycode)
                         )

@@ -23,6 +23,7 @@ from PiFinder.ui.radec_entry import UIRADecEntry
 from PiFinder.ui.telemetry_list import UITelemetryList
 from PiFinder.ui.bluetooth_keyboard import UIBluetoothKeyboard
 from PiFinder.ui.joystick import UIJoystick
+from PiFinder.ui.keyboard_mapping import UIKeyboardMapping
 from PiFinder.ui.indi import (
     UIIndiBacklash,
     UIIndiGuide,
@@ -1615,6 +1616,11 @@ pifinder_menu = {
                             "name": _("Joystick"),
                             "class": UIJoystick,
                             "label": "joystick_settings",
+                        },
+                        {
+                            "name": _("Keyboard"),
+                            "class": UIKeyboardMapping,
+                            "label": "keyboard_mapping_settings",
                         },
                         {
                             # MF: reload the Wi-Fi driver after a BT-coex
