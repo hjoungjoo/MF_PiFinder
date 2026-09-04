@@ -260,6 +260,7 @@ def test_manual_motion_publishes_mount_readback_while_active(monkeypatch):
     assert mount.statuses[-1][0] == "manual_motion"
     assert mount.statuses[-1][1] == "Manual north motion in progress"
     assert mount.statuses[-1][2]["manual_motion_direction"] == "north"
+    assert mount.statuses[-1][2]["manual_motion_origin"] == "user"
     assert mount.statuses[-1][2]["mount_motion_active"] is True
     assert mount.statuses[-1][2]["mount_motion_type"] == "manual"
     assert mount.statuses[-1][2]["mount_readback_priority"] is True
@@ -1101,10 +1102,16 @@ def test_guide_fallback_manual_move_keeps_polluted_guide_rate():
 
     # The guide-correction fallback nudge opts out: its duration was computed
     # for the slow guide rate, so the user rate must NOT come back first.
-    assert mount.manual_move("north", lease_seconds=1.0, reassert_slew_rate=False)
+    assert mount.manual_move(
+        "north",
+        lease_seconds=1.0,
+        reassert_slew_rate=False,
+        origin="guide_correction",
+    )
 
     assert ("LX200 OnStep", "TELESCOPE_SLEW_RATE", "6") not in mount.client.switches
     assert mount._slew_rate_polluted is True
+    assert mount._manual_motion_origin == "guide_correction"
 
 
 def test_set_slew_rate_clears_pending_reassert():

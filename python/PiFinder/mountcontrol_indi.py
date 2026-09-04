@@ -486,6 +486,11 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._last_position_status_at = 0.0
         self._last_status_heartbeat_at = 0.0
         self._manual_motion_direction: Optional[str] = None
+        # Identifies who initiated the low-level manual-move primitive.  User
+        # controls (keypad/keyboard/joystick/web/SkySafari) use ``user``;
+        # Tracking Guide's driver fallback uses ``guide_correction`` so it can
+        # never be mistaken for an intentional re-target.
+        self._manual_motion_origin: Optional[str] = None
         self._manual_motion_deadline: Optional[float] = None
         self._manual_motion_started_at: Optional[float] = None
         self._manual_motion_stop_retry_at = 0.0
@@ -656,6 +661,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         payload.update(self._home_park_status_fields())
         if self._manual_motion_direction is not None:
             payload["manual_motion_direction"] = self._manual_motion_direction
+            payload["manual_motion_origin"] = self._manual_motion_origin or "user"
             if self._manual_motion_deadline is not None:
                 payload["manual_motion_lease_remaining"] = max(
                     0.0, self._manual_motion_deadline - time.monotonic()
@@ -1057,15 +1063,20 @@ class MountControlIndi(BacklashCalibrationMixin):
 
     def _clear_manual_motion_deadline(self) -> None:
         self._manual_motion_direction = None
+        self._manual_motion_origin = None
         self._manual_motion_deadline = None
         self._manual_motion_started_at = None
         self._manual_motion_stop_retry_at = 0.0
 
     def _arm_manual_motion_deadline(
-        self, direction: str, lease_seconds: Any = None
+        self,
+        direction: str,
+        lease_seconds: Any = None,
+        origin: str = "user",
     ) -> None:
         now = time.monotonic()
         self._manual_motion_direction = direction
+        self._manual_motion_origin = origin
         self._manual_motion_deadline = now + self._manual_motion_lease(lease_seconds)
         self._manual_motion_started_at = now
         self._manual_motion_stop_retry_at = 0.0
@@ -1145,6 +1156,7 @@ class MountControlIndi(BacklashCalibrationMixin):
 
         extra: dict[str, Any] = {
             "manual_motion_direction": self._manual_motion_direction,
+            "manual_motion_origin": self._manual_motion_origin or "user",
         }
         if self._manual_motion_started_at is not None:
             extra["manual_motion_elapsed"] = round(
@@ -3163,6 +3175,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             direction,
             lease_seconds=GUIDE_CORRECTION_PULSE_SECONDS,
             reassert_slew_rate=False,
+            origin="guide_correction",
         ):
             self._write_controller_status(
                 "guide_correction",
@@ -3525,6 +3538,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         direction: str,
         lease_seconds: Any = None,
         reassert_slew_rate: bool = True,
+        origin: str = "user",
     ) -> bool:
         direction = direction.lower()
         # A guide-rate write may have just dragged the shared :R<n># selector
@@ -3571,7 +3585,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             self._console("INDI motion\nfailed")
             return False
 
-        self._arm_manual_motion_deadline(direction, lease_seconds)
+        self._arm_manual_motion_deadline(direction, lease_seconds, origin)
         self._publish_manual_motion_progress(force=True)
         logger.info("Manual %s motion sent", direction)
         self._console(f"INDI move\n{direction}")

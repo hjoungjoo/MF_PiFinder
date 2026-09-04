@@ -1222,9 +1222,10 @@ def handle_guide_stop(_shared_state, _input_str: str):
     command = extract_command(_input_str)
     # SkySafari sends Qn/Qs/Qe/Qw (and some versions send a bare Q) when a
     # direction button is released.  That must stop the motor without erasing
-    # the tracking target; the guide service will then treat the displacement
-    # as a disturbance and return to the target.  A bare Q with no active
-    # direction remains an explicit GoTo/Guide abort and clears the target.
+    # the tracking target; the guide service then classifies it as a user
+    # manual move and may adopt the stopped position as the new target. A bare
+    # Q with no active direction remains an explicit GoTo/Guide abort and
+    # clears the target.
     explicit_abort = command == "Q" and not had_active_motion
     if goto_guide_queue is not None and explicit_abort:
         goto_guide_queue.put({"type": "stop_movement"})

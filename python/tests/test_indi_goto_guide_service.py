@@ -130,7 +130,7 @@ def test_recovery_starts_after_settle_when_motion_ends(monkeypatch):
     assert service.tracking_guide_state == "settling"
 
     # Stationary, IMU quiet: settle completes after 4 s, recovery fires.
-    for _ in range(4):
+    for _ in range(5):
         clock[0] += 1.0
         service._tick_tracking_guide()
 
@@ -248,6 +248,78 @@ def test_large_recovery_error_still_recovers(monkeypatch):
 
     assert service.tracking_guide_state == "recovering_goto"
     assert service.tracking_target_ra is not None
+
+
+def test_user_manual_move_retargets_even_when_guide_was_enabled(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service.config_values["indi_tracking_guide_manual_retarget_enabled"] = True
+    # Reproduce normal tracking: correction is armed before the user presses a
+    # keypad/keyboard/joystick/web direction control.
+    service.tracking_guide_active_sent = True
+    mount_status = {
+        "available": True,
+        "state": "manual_motion",
+        "manual_motion_direction": "north",
+        "manual_motion_origin": "user",
+    }
+    monkeypatch.setattr(service, "_mount_status_summary", lambda: mount_status)
+
+    service._tick_tracking_guide()
+
+    assert service.manual_retarget_pending is True
+    assert service.tracking_guide_state == "manual_move"
+
+    mount_status.clear()
+    mount_status.update({"available": True, "state": "connected"})
+    for _ in range(5):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+
+    assert service.manual_retarget_pending is False
+    assert service.tracking_target_ra == 100.0
+    assert service.tracking_target_dec == 22.0
+    assert service.tracking_guide_state == "enabled"
+    assert service.manual_retarget_count == 1
+    assert not any(
+        command["type"] == "goto_target"
+        for command in service.mountcontrol_queue.commands
+    )
+
+
+def test_guide_fallback_motion_never_retargets(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service.config_values["indi_tracking_guide_manual_retarget_enabled"] = True
+    mount_status = {
+        "available": True,
+        "state": "guide_correction",
+        "manual_motion_direction": "north",
+        "manual_motion_origin": "guide_correction",
+    }
+    monkeypatch.setattr(service, "_mount_status_summary", lambda: mount_status)
+
+    service._tick_tracking_guide()
+
+    assert service.manual_retarget_pending is False
+    assert service.tracking_target_ra == 100.0
+    assert service.tracking_target_dec == 20.0
+
+
+def test_external_disturbance_recovers_with_manual_retarget_enabled(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service.config_values["indi_tracking_guide_manual_retarget_enabled"] = True
+
+    service._tick_tracking_guide()
+    for _ in range(4):
+        clock[0] += 1.0
+        service._tick_tracking_guide()
+
+    assert service.manual_retarget_pending is False
+    assert service.tracking_guide_state == "recovering_goto"
+    assert service.tracking_target_ra == 100.0
+    assert service.tracking_target_dec == 20.0
 
 
 def test_indi_mount_mode_deactivates_tracking_guide_entirely(monkeypatch):

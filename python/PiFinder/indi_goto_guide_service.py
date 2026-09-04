@@ -968,19 +968,17 @@ class IndiGotoGuideService:
 
         # Any other slew/manual motion (not our recovery) suspends correction.
         if self._mount_summary_reports_motion(mount_status):
-            # A guide-correction pulse also shows up as manual motion, so only a
-            # USER manual move (mount reports manual motion while OUR guide
-            # correction was NOT the one driving it) arms a re-target. A real
-            # pulse is sub-tick and clears before the next tick, so it never
-            # persists across ticks the way a held/nudged manual move does.
-            guide_was_active = self.tracking_guide_active_sent
+            # Low-level guide fallback pulses use the same INDI direction
+            # primitive as user controls, but mount-control tags their origin.
+            # Arm re-target for explicit USER commands regardless of whether
+            # guide correction was already enabled; that enabled flag describes
+            # the tracking policy, not who caused this particular movement.
             self._disable_tracking_guide("mount motion")
             self.tracking_motion_ra = None
             self.tracking_motion_dec = None
             self.tracking_last_motion_at = time.monotonic()
             if (
                 self._mount_summary_reports_manual_motion(mount_status)
-                and not guide_was_active
             ):
                 self.manual_retarget_pending = True
                 self.tracking_guide_state = "manual_move"
@@ -1578,6 +1576,16 @@ class IndiGotoGuideService:
         return any(token in state for token in ("slew", "goto", "moving", "motion"))
 
     def _mount_summary_reports_manual_motion(self, status: dict[str, Any]) -> bool:
+        origin = str(status.get("manual_motion_origin", "")).strip().lower()
+        if origin == "guide_correction":
+            return False
+        if origin == "user":
+            return True
+        # Backward compatibility for a mount-control process/status file from
+        # before origin tagging: guide_correction is automatic; all other
+        # explicit manual-direction reports came from user input.
+        if str(status.get("state", "")).strip().lower() == "guide_correction":
+            return False
         if status.get("manual_motion_direction"):
             return True
         return "manual_motion" in str(status.get("state", "")).strip().lower()
@@ -1686,6 +1694,7 @@ class IndiGotoGuideService:
             "mount_motion_active": status.get("mount_motion_active"),
             "goto_motion_active": status.get("goto_motion_active"),
             "manual_motion_direction": status.get("manual_motion_direction"),
+            "manual_motion_origin": status.get("manual_motion_origin"),
             "target_ra": status.get("target_ra"),
             "target_dec": status.get("target_dec"),
         }
