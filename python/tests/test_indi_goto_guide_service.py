@@ -2,6 +2,8 @@
 
 from multiprocessing import Queue
 
+import pytest
+
 import PiFinder.indi_goto_guide_service as iggs
 from PiFinder.indi_goto_guide_service import IndiGotoGuideService
 
@@ -60,6 +62,44 @@ def test_runtime_goto_type_changes_without_config_write(monkeypatch):
 
     assert service.runtime_goto_method == "indi_mount"
     assert service.config_values["indi_goto_method"] == "indi_mount"
+
+
+def test_pulse_align_threshold_is_capped_to_reachable_error(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+    service.config_values["indi_pifinder_goto_near_threshold_deg"] = 1.0
+    service.config_values["indi_goto_refine_accuracy_arcmin"] = 6.0
+
+    assert (
+        service._pulse_align_threshold_arcmin()
+        == iggs.PIFINDER_PULSE_ALIGN_MAX_ERROR_ARCMIN
+    )
+
+
+def test_lower_configured_pulse_align_threshold_is_preserved(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+    service.config_values["indi_pifinder_goto_near_threshold_deg"] = 0.2
+    service.config_values["indi_goto_refine_accuracy_arcmin"] = 6.0
+
+    assert service._pulse_align_threshold_arcmin() == pytest.approx(12.0)
+
+
+def test_arrival_solve_must_be_captured_after_mount_became_idle(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+    service.solve_anchor_required_after_wall = 500.0
+
+    stale = {
+        "source": "solve",
+        "quality": "high",
+        "timestamp": 499.9,
+    }
+    fresh = {
+        "source": "solve",
+        "quality": "high",
+        "timestamp": 500.1,
+    }
+
+    assert service._is_fresh_arrival_solve(stale) is False
+    assert service._is_fresh_arrival_solve(fresh) is True
 
 
 def test_persistent_config_reload_clears_runtime_goto_type(monkeypatch):
@@ -260,6 +300,21 @@ def test_clear_tracking_target_command(monkeypatch):
     assert service.tracking_target_dec is None
     service._tick_tracking_guide()
     assert service.tracking_guide_state == "waiting_target"
+
+
+def test_set_tracking_target_rearms_recovery(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+    service.tracking_guide_suspended = True
+    service.manual_retarget_pending = True
+
+    assert service.handle_command(
+        {"type": "set_tracking_target", "ra": 123.0, "dec": -22.0}
+    )
+
+    assert service.tracking_target_ra == 123.0
+    assert service.tracking_target_dec == -22.0
+    assert service.tracking_guide_suspended is False
+    assert service.manual_retarget_pending is False
 
 
 def test_suspend_blocks_corrections_until_new_goto(monkeypatch):

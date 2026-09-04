@@ -58,6 +58,61 @@ def test_count_in_crop_uses_centred_window():
 
 
 @pytest.mark.unit
+def test_post_motion_raw_fast_path_releases_two_stationary_solves():
+    bypass, remaining = solver._post_motion_raw_fast_path(
+        frame_moving=True, raw_solved=False, remaining=0
+    )
+    assert bypass is False
+    assert remaining == solver.POST_MOTION_RAW_FAST_FRAMES
+
+    bypass, remaining = solver._post_motion_raw_fast_path(
+        frame_moving=False, raw_solved=True, remaining=remaining
+    )
+    assert bypass is True
+    assert remaining == 1
+
+    bypass, remaining = solver._post_motion_raw_fast_path(
+        frame_moving=False, raw_solved=True, remaining=remaining
+    )
+    assert bypass is True
+    assert remaining == 0
+
+    bypass, remaining = solver._post_motion_raw_fast_path(
+        frame_moving=False, raw_solved=True, remaining=remaining
+    )
+    assert bypass is False
+
+
+@pytest.mark.unit
+def test_post_motion_fast_budget_waits_for_a_valid_raw_solve():
+    bypass, remaining = solver._post_motion_raw_fast_path(
+        frame_moving=False,
+        raw_solved=False,
+        remaining=solver.POST_MOTION_RAW_FAST_FRAMES,
+    )
+    assert bypass is False
+    assert remaining == solver.POST_MOTION_RAW_FAST_FRAMES
+
+
+@pytest.mark.unit
+def test_fresh_mount_motion_status_marks_solver_frame_moving():
+    status = {
+        "updated": 100.0,
+        "mount_motion_active": True,
+        "goto_motion_active": True,
+    }
+
+    assert solver._mount_status_reports_motion(status, now=101.0) is True
+
+
+@pytest.mark.unit
+def test_stale_mount_motion_status_is_ignored():
+    status = {"updated": 100.0, "mount_motion_active": True}
+
+    assert solver._mount_status_reports_motion(status, now=106.0) is False
+
+
+@pytest.mark.unit
 def test_solve_cedar_fullframe_maps_like_sep_path():
     fake = _FakeT3(
         {

@@ -449,19 +449,20 @@ class CameraPI(CameraInterface):
         star_only_raw = None
         if camera_star_only_selected:
             try:
-                from PiFinder.mf_star_only_preprocess import MFStarOnlyAccumulator
+                from PiFinder.mf_star_only_preprocess import (
+                    MFStarOnlyAccumulator,
+                    preprocess_geometry_fingerprint,
+                )
 
                 accumulator = getattr(self, "_mf_star_only_accumulator", None)
                 if accumulator is None:
                     accumulator = MFStarOnlyAccumulator()
                     self._mf_star_only_accumulator = accumulator
-                fingerprint = (
-                    self.camera_type,
-                    self.profile.format,
-                    tuple(sensor_raw.shape),
-                    metadata.get("ExposureTime"),
-                    metadata.get("AnalogueGain"),
-                    self.profile.rotation_90,
+                fingerprint = preprocess_geometry_fingerprint(
+                    camera_type=self.camera_type,
+                    pixel_format=self.profile.format,
+                    frame_shape=tuple(sensor_raw.shape),
+                    rotation_deg=self.profile.rotation_90,
                 )
                 star_only_raw = accumulator.add(
                     sensor_raw,

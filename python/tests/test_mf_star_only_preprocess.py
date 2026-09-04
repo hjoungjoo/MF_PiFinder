@@ -7,6 +7,7 @@ from PiFinder.mf_star_only_preprocess import (
     MFStarOnlyAccumulator,
     MFStarOnlyConfig,
     _single_frame_component_mask,
+    preprocess_geometry_fingerprint,
     preprocess_star_evidence,
     robust_cell_maps,
 )
@@ -173,3 +174,43 @@ def test_fingerprint_change_resets_temporal_window():
 
     assert accumulator.frame_count == 1
     assert result.diagnostics.reset_reason == "fingerprint_changed"
+
+
+def test_auto_exposure_change_does_not_reset_geometry_window():
+    accumulator = MFStarOnlyAccumulator(MFStarOnlyConfig(temporal_frames=5))
+    fingerprint = preprocess_geometry_fingerprint(
+        camera_type="imx462_color",
+        pixel_format="SRGGB12_CSI2P",
+        lens_key="6mm",
+        frame_shape=(120, 160),
+        rotation_deg=0,
+    )
+    dim_frame = np.full((120, 160), 500, dtype=np.uint16)
+    bright_frame = np.full((120, 160), 900, dtype=np.uint16)
+
+    accumulator.add(dim_frame, saturation_level=4095, fingerprint=fingerprint)
+    result = accumulator.add(
+        bright_frame, saturation_level=4095, fingerprint=fingerprint
+    )
+
+    assert accumulator.frame_count == 2
+    assert result.diagnostics.reset_reason is None
+
+
+def test_geometry_change_still_changes_preprocess_fingerprint():
+    base = preprocess_geometry_fingerprint(
+        camera_type="imx462_color",
+        pixel_format="SRGGB12_CSI2P",
+        lens_key="6mm",
+        frame_shape=(1080, 1920),
+        rotation_deg=0,
+    )
+    rotated = preprocess_geometry_fingerprint(
+        camera_type="imx462_color",
+        pixel_format="SRGGB12_CSI2P",
+        lens_key="6mm",
+        frame_shape=(1080, 1920),
+        rotation_deg=180,
+    )
+
+    assert rotated != base

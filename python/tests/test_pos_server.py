@@ -7,7 +7,12 @@ import pytz
 import quaternion
 
 from PiFinder import nonsidereal, pos_server, track_freq_policy
-from PiFinder.types.positioning import ImuSample
+from PiFinder.types.positioning import (
+    AlignCancel,
+    AlignOnRaDec,
+    AlignedResult,
+    ImuSample,
+)
 
 
 class DummyLocation:
@@ -223,6 +228,9 @@ class DummyConfig:
     def load_config(self):
         return None
 
+    def set_option(self, option, value):
+        self.options[option] = value
+
 
 @pytest.mark.unit
 def test_skysafari_guide_move_queues_indi_manual_motion(monkeypatch):
@@ -266,7 +274,9 @@ def test_skysafari_guide_move_sends_keepalive_until_stop(monkeypatch):
                 self.function(*self.args)
 
     commands = queue.Queue()
+    guide_commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
     monkeypatch.setattr(pos_server.threading, "Timer", FakeTimer)
     monkeypatch.setattr(
         pos_server, "pos_server_config", DummyConfig({"mount_control": True})
@@ -300,6 +310,8 @@ def test_skysafari_guide_move_sends_keepalive_until_stop(monkeypatch):
 
     assert pos_server.handle_guide_stop(None, ":Qn#") is None
     assert commands.get_nowait() == {"type": "stop_movement"}
+    with pytest.raises(queue.Empty):
+        guide_commands.get_nowait()
     assert FakeTimer.timers[-1].cancelled
 
 
@@ -382,7 +394,9 @@ def test_skysafari_status_reports_configured_mount_mode(monkeypatch, options, ex
 @pytest.mark.unit
 def test_skysafari_guide_stop_queues_indi_stop(monkeypatch):
     commands = queue.Queue()
+    guide_commands = queue.Queue()
     monkeypatch.setattr(pos_server, "mountcontrol_queue", commands)
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
     monkeypatch.setattr(
         pos_server, "pos_server_config", DummyConfig({"mount_control": True})
     )
@@ -390,6 +404,42 @@ def test_skysafari_guide_stop_queues_indi_stop(monkeypatch):
     assert pos_server.handle_guide_stop(None, ":Q#") is None
 
     assert commands.get_nowait() == {"type": "stop_movement"}
+    assert guide_commands.get_nowait() == {"type": "stop_movement"}
+
+
+@pytest.mark.unit
+def test_skysafari_sync_arms_tracking_target_in_pifinder_mode(monkeypatch):
+    mount_commands = queue.Queue()
+    guide_commands = queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", mount_commands)
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide_commands)
+    monkeypatch.setattr(pos_server, "align_command_queue", None)
+    monkeypatch.setattr(pos_server, "align_response_queue", None)
+    monkeypatch.setattr(pos_server, "last_target_coordinates", (42.0, 15.5))
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig(
+            {
+                "mount_control": True,
+                "indi_goto_method": "pifinder",
+                "skysafari_pifinder_align": False,
+            }
+        ),
+    )
+
+    assert pos_server.handle_sync_command(DummyState(None), ":CM#") == (
+        "Coordinates matched."
+    )
+
+    assert mount_commands.get_nowait()["type"] == "sync"
+    assert guide_commands.get_nowait() == {
+        "type": "set_tracking_target",
+        "ra": 42.0,
+        "dec": 15.5,
+    }
 
 
 @pytest.mark.unit
@@ -1039,6 +1089,73 @@ def test_skysafari_sync_returns_no_target_without_coordinates(monkeypatch):
     )
 
     assert pos_server.handle_sync_command(DummyState(None), ":CM#") == "No target."
+
+
+class _AlignResponseQueue:
+    def __init__(self, response=None):
+        self.response = response
+        self.calls = []
+
+    def get(self, block=True, timeout=None):
+        self.calls.append((block, timeout))
+        if block is False or self.response is None:
+            raise queue.Empty
+        return self.response
+
+
+class _AlignState:
+    def __init__(self):
+        self.target_pixel = None
+
+    def set_target_pixel(self, value):
+        self.target_pixel = value
+
+
+@pytest.mark.unit
+def test_skysafari_align_waits_for_solver_without_polling(monkeypatch):
+    commands = queue.Queue()
+    responses = _AlignResponseQueue(AlignedResult(123.0, 234.0))
+    console = queue.Queue()
+    ui = queue.Queue()
+    cfg = DummyConfig({"skysafari_pifinder_align": True})
+    state = _AlignState()
+    monkeypatch.setattr(pos_server, "align_command_queue", commands)
+    monkeypatch.setattr(pos_server, "align_response_queue", responses)
+    monkeypatch.setattr(pos_server, "console_queue", console)
+    monkeypatch.setattr(pos_server, "ui_queue", ui, raising=False)
+    monkeypatch.setattr(pos_server, "pos_server_config", cfg)
+
+    assert pos_server._align_pifinder_if_enabled(state, 12.3, 45.6)
+
+    assert responses.calls == [
+        (False, None),
+        (True, pos_server._ALIGN_TIMEOUT_SECONDS),
+    ]
+    assert commands.get_nowait() == AlignOnRaDec(12.3, 45.6)
+    assert console.get_nowait() == "SkySafari Alignment Set"
+    assert ui.get_nowait() == "reload_config"
+    assert state.target_pixel == (123.0, 234.0)
+    assert cfg.options["target_pixel"] == (123.0, 234.0)
+
+
+@pytest.mark.unit
+def test_skysafari_align_cancels_after_solver_timeout(monkeypatch):
+    commands = queue.Queue()
+    responses = _AlignResponseQueue()
+    console = queue.Queue()
+    cfg = DummyConfig({"skysafari_pifinder_align": True})
+    monkeypatch.setattr(pos_server, "_ALIGN_TIMEOUT_SECONDS", 0.25)
+    monkeypatch.setattr(pos_server, "align_command_queue", commands)
+    monkeypatch.setattr(pos_server, "align_response_queue", responses)
+    monkeypatch.setattr(pos_server, "console_queue", console)
+    monkeypatch.setattr(pos_server, "pos_server_config", cfg)
+
+    assert not pos_server._align_pifinder_if_enabled(_AlignState(), 12.3, 45.6)
+
+    assert responses.calls == [(False, None), (True, 0.25)]
+    assert commands.get_nowait() == AlignOnRaDec(12.3, 45.6)
+    assert commands.get_nowait() == AlignCancel()
+    assert console.get_nowait() == "SkySafari Align Timeout"
 
 
 class _MutableLocation:

@@ -294,14 +294,11 @@ GOTO_COMPLETE_STABLE_SECONDS = 2.5
   harden ~1.2 s after the stop, ~1 s margin). Min wait
   GOTO_COMPLETE_MIN_SECONDS=1.0; hard fallback when status is unreadable
   GOTO_COMPLETE_FALLBACK_SECONDS=180.0.
-GUIDE_CORRECTION_INTERVAL_SECONDS = 6.0
+GUIDE_CORRECTION_INTERVAL_SECONDS = 3.0
   Closed-loop guide-correction cadence. It only pulses when a fresh plate solve
-  is available (never twice off the same solve), so this is a damping/settle
-  floor on top of the solve rate (~0.5-1 s on-sky at the 400 ms default
-  exposure). Lowered 10.0 -> 6.0 (~2x faster convergence). It is a
-  proportional-control cadence (gain 0.5); going shorter risks oscillation on
-  solve noise / backlash, so verify monotonic on-sky convergence before reducing
-  further.
+  is available (never twice off the same solve), and the floor remains longer
+  than the maximum 2.5 s timed pulse. Lowered 6.0 -> 3.0 so each fresh
+  post-pulse solve can drive the next correction without pulse overlap.
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4
   Manual-move fallback lease length for drivers without timed guide pulses.
 SIDEREAL_ARCSEC_PER_SEC = 15.041
@@ -358,9 +355,8 @@ indi_guide_pulse_invert_ns = false | true
 
 indi_pifinder_goto_near_threshold_deg = 1.0
   The boundary where PiFinder GoTo stops the sync + mount GoTo loop and switches
-  to pulse-guide fine correction. Errors at or above this repeat sync + GoTo;
-  below it, pulse guide takes over and aligns down to the target accuracy
-  (0.1 deg).
+  to pulse-guide fine correction. The effective boundary is capped at 0.25 deg
+  (15 arcmin) to match pulse capacity; larger errors repeat sync + GoTo.
 
 indi_pifinder_goto_max_gotos = 10
   Maximum number of sync + mount GoTo iterations (including the initial GoTo) in

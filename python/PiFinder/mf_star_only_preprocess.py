@@ -15,6 +15,35 @@ import numpy as np
 from scipy import ndimage
 
 
+def preprocess_geometry_fingerprint(
+    *,
+    camera_type: str,
+    pixel_format: str,
+    frame_shape: tuple[int, ...],
+    rotation_deg: int,
+    lens_key: str = "",
+    manual_focal: float | None = None,
+    calibration_key: Hashable = (),
+) -> tuple[Hashable, ...]:
+    """Return the stable geometry identity for a temporal RAW window.
+
+    Exposure and gain are deliberately excluded.  Every frame is normalized
+    against its own local background and noise, so framewise auto-exposure
+    changes do not invalidate the temporal coordinate system.  Including
+    those controls here repeatedly reintroduced the initial warm-up delay.
+    """
+
+    return (
+        str(camera_type),
+        str(pixel_format),
+        str(lens_key or ""),
+        manual_focal,
+        tuple(int(value) for value in frame_shape),
+        int(rotation_deg),
+        calibration_key,
+    )
+
+
 @dataclass(frozen=True)
 class MFStarOnlyConfig:
     local_cell_px: int = 10

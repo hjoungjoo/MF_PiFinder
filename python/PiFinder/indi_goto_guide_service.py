@@ -79,8 +79,14 @@ PIFINDER_DEFAULT_MAX_GOTOS = 10
 # A sync + GoTo step must cut the error by at least this much versus the previous
 # step, otherwise the loop stops rather than slewing without converging.
 PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN = 1.0
+# A 1x sidereal, 2.5 s capped guide pulse moves at most about 0.625 arcmin per
+# axis.  With a 3 s fresh-solve cadence and the 90 s pulse-align timeout, an
+# initial error above 15 arcmin cannot reliably reach the 6 arcmin target.
+# Keep larger errors in the sync+GoTo loop instead of handing an impossible
+# correction to the fine pulse stage.
+PIFINDER_PULSE_ALIGN_MAX_ERROR_ARCMIN = 15.0
 # Give the pulse-guide fine-alignment stage this long to reach the final accuracy
-# before giving up (mount-control pulses about every 10 s off a fresh solve).
+# before giving up (mount-control pulses every 3 s off a fresh solve).
 PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
 # After a GoTo settles, wait up to this long for a high-quality plate-solve
 # coordinate before measuring the arrival error. IMU estimates right after a
@@ -176,6 +182,10 @@ class IndiGotoGuideService:
         # Monotonic timestamp of the first post-settle tick that found no
         # high-quality solve coordinate; bounds the solve-anchor wait.
         self.solve_anchor_wait_since = 0.0
+        # A high-quality solve from before the mount became idle is stale for
+        # arrival-error decisions even when PointingCoordinateService still
+        # publishes it. This wall-clock boundary is set on the first idle tick.
+        self.solve_anchor_required_after_wall = 0.0
         # Same bounded wait for the tracking-recovery goto's sync anchor.
         self.recovery_anchor_wait_since = 0.0
         self.last_action = "startup"
@@ -273,7 +283,15 @@ class IndiGotoGuideService:
             try:
                 self.tracking_target_ra = float(command["ra"]) % 360.0
                 self.tracking_target_dec = float(command["dec"])
+                self.tracking_guide_suspended = False
+                self.manual_retarget_pending = False
+                self._reset_tracking_recovery()
                 self.last_action = "tracking target set"
+                logger.info(
+                    "Tracking target set: RA %.4f Dec %.4f",
+                    self.tracking_target_ra,
+                    self.tracking_target_dec,
+                )
             except (KeyError, TypeError, ValueError):
                 logger.warning("Invalid set_tracking_target command: %r", command)
             return True
@@ -430,7 +448,8 @@ class IndiGotoGuideService:
             "error_arcmin": self.last_error_arcmin,
             "current_source": current.get("source"),
             "current_quality": current.get("quality"),
-            "near_threshold_degrees": self.config_values.get(
+            "near_threshold_degrees": self._pulse_align_threshold_arcmin() / 60.0,
+            "configured_near_threshold_degrees": self.config_values.get(
                 "indi_pifinder_goto_near_threshold_deg", 1.0
             ),
             "max_gotos": self._max_gotos(),
@@ -516,6 +535,31 @@ class IndiGotoGuideService:
             value = 6.0
         return max(0.1, value)
 
+    def _pulse_align_threshold_arcmin(self) -> float:
+        """Return the configured near threshold capped to pulse capacity."""
+
+        try:
+            configured = float(
+                self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0)
+            ) * 60.0
+        except (TypeError, ValueError):
+            configured = PIFINDER_PULSE_ALIGN_MAX_ERROR_ARCMIN
+        return min(
+            max(self._final_accuracy_arcmin(), configured),
+            PIFINDER_PULSE_ALIGN_MAX_ERROR_ARCMIN,
+        )
+
+    def _is_fresh_arrival_solve(self, current: dict[str, Any]) -> bool:
+        """Require a high-quality solve captured after the mount became idle."""
+
+        timestamp = self._finite_float(current.get("timestamp"))
+        return bool(
+            current.get("source") == "solve"
+            and current.get("quality") == "high"
+            and timestamp is not None
+            and timestamp >= self.solve_anchor_required_after_wall
+        )
+
     def _send_sync_and_goto(self, *, first: bool) -> None:
         """Sync the mount to the current PiFinder coordinate, then GoTo target.
 
@@ -553,6 +597,7 @@ class IndiGotoGuideService:
         self.final_goto_sent_at = time.monotonic()
         self.final_goto_idle_since = 0.0
         self.solve_anchor_wait_since = 0.0
+        self.solve_anchor_required_after_wall = 0.0
         self.service_state = "running"
         self.phase = "pifinder_goto"
         self.wait_reason = ""
@@ -730,6 +775,7 @@ class IndiGotoGuideService:
             return
         if self.final_goto_idle_since == 0.0:
             self.final_goto_idle_since = now
+            self.solve_anchor_required_after_wall = time.time()
             return
         if now - self.final_goto_idle_since < PIFINDER_FINAL_GOTO_SETTLE_SECONDS:
             return
@@ -742,14 +788,15 @@ class IndiGotoGuideService:
             return
 
         current = pointing.get("current") or {}
-        if not (current.get("source") == "solve" and current.get("quality") == "high"):
+        if not self._is_fresh_arrival_solve(current):
             if self.solve_anchor_wait_since == 0.0:
                 self.solve_anchor_wait_since = now
             if now - self.solve_anchor_wait_since < PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS:
                 self.last_action = "waiting for solve anchor"
                 return
             logger.warning(
-                "No solve anchor within %.0fs after GoTo; using %s/%s coordinate",
+                "No post-idle solve anchor within %.0fs after GoTo; "
+                "using %s/%s coordinate",
                 PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS,
                 current.get("source"),
                 current.get("quality"),
@@ -768,10 +815,7 @@ class IndiGotoGuideService:
             return
 
         self._update_goto_plan()
-        near_threshold_arcmin = (
-            float(self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0))
-            * 60.0
-        )
+        near_threshold_arcmin = self._pulse_align_threshold_arcmin()
         final_accuracy_arcmin = self._final_accuracy_arcmin()
 
         if self.last_error_arcmin <= final_accuracy_arcmin:

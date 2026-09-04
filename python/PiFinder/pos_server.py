@@ -48,7 +48,9 @@ pos_server_config: Optional[config.Config] = None
 
 _POINTING_UPDATE_SECONDS = 0.2
 _CONFIG_RELOAD_SECONDS = 1.0
-_ALIGN_TIMEOUT_SECONDS = 2.0
+# Match the on-device Align wait. Native full-frame solving and continuity
+# confirmation commonly span more than the legacy two-second allowance.
+_ALIGN_TIMEOUT_SECONDS = 15.0
 _GUIDE_LEASE_SECONDS = 1.2
 _GUIDE_KEEPALIVE_SECONDS = 0.4
 _GUIDE_RESTART_SECONDS = 8.0
@@ -1058,19 +1060,14 @@ def _align_pifinder_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> b
 
     align_command_queue.put(AlignOnRaDec(ra=ra_deg, dec=dec_deg))
 
-    response = None
-    start = time.time()
-    while response is None:
-        if time.time() - start > _ALIGN_TIMEOUT_SECONDS:
-            align_command_queue.put(AlignCancel())
-            if console_queue is not None:
-                console_queue.put("SkySafari Align Timeout")
-            logger.warning("SkySafari PiFinder align timed out")
-            return False
-        try:
-            response = align_response_queue.get(block=False)
-        except queue_module.Empty:
-            time.sleep(0.05)
+    try:
+        response = align_response_queue.get(timeout=_ALIGN_TIMEOUT_SECONDS)
+    except queue_module.Empty:
+        align_command_queue.put(AlignCancel())
+        if console_queue is not None:
+            console_queue.put("SkySafari Align Timeout")
+        logger.warning("SkySafari PiFinder align timed out")
+        return False
 
     target_pixel = response.as_target_pixel()
     if target_pixel[0] == -1:
@@ -1222,13 +1219,24 @@ def handle_guide_move(_shared_state, input_str: str):
 
 def handle_guide_stop(_shared_state, _input_str: str):
     had_active_motion = _stop_skysafari_guide_keepalive()
-    if goto_guide_queue is not None:
+    command = extract_command(_input_str)
+    # SkySafari sends Qn/Qs/Qe/Qw (and some versions send a bare Q) when a
+    # direction button is released.  That must stop the motor without erasing
+    # the tracking target; the guide service will then treat the displacement
+    # as a disturbance and return to the target.  A bare Q with no active
+    # direction remains an explicit GoTo/Guide abort and clears the target.
+    explicit_abort = command == "Q" and not had_active_motion
+    if goto_guide_queue is not None and explicit_abort:
         goto_guide_queue.put({"type": "stop_movement"})
     if (
         _mount_control_enabled() or had_active_motion
     ) and mountcontrol_queue is not None:
         _queue_mountcontrol_command({"type": "stop_movement"})
-        logger.debug("SkySafari guide stop queued")
+        logger.info(
+            "SkySafari %s queued; tracking target %s",
+            "abort" if explicit_abort else "guide release",
+            "cleared" if explicit_abort else "preserved",
+        )
     else:
         logger.debug("SkySafari guide stop ignored; INDI mount control is disabled")
     return None
@@ -1324,14 +1332,26 @@ def handle_sync_command(shared_state, _input_str: str):
             shared_state, ra_deg, dec_deg
         )
     indi_synced = _queue_indi_sync_if_enabled(ra_deg, dec_deg)
+    tracking_target_set = False
+    if (
+        goto_method == "pifinder"
+        and goto_guide_queue is not None
+        and (pifinder_aligned or imu_aligned or indi_synced)
+    ):
+        goto_guide_queue.put(
+            {"type": "set_tracking_target", "ra": ra_deg, "dec": dec_deg}
+        )
+        tracking_target_set = True
     logger.info(
         "SkySafari sync handled: target_source=%s goto_method=%s "
-        "pifinder_aligned=%s imu_aligned=%s indi_synced=%s target=%.4f,%.4f",
+        "pifinder_aligned=%s imu_aligned=%s indi_synced=%s "
+        "tracking_target=%s target=%.4f,%.4f",
         target_source,
         goto_method,
         pifinder_aligned,
         imu_aligned,
         indi_synced,
+        tracking_target_set,
         ra_deg,
         dec_deg,
     )

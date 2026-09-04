@@ -24,6 +24,12 @@ from PiFinder.ui.chart import get_chart_rotation_angle
 # preview/align screens scale it down to the display resolution.
 CAMERA_NATIVE_RES = 512
 
+# A solve used to complete comfortably inside the original two-second wait.
+# The native full-frame cascade can now try Cedar and SEP centre/full stages,
+# and the continuity gate may require the following frame to confirm a lock.
+# Keep the request armed long enough for those normal paths to finish.
+ALIGN_TIMEOUT_SECONDS = 15.0
+
 
 def align_on_radec(ra, dec, command_queues, config_object, shared_state) -> bool:
     """
@@ -44,18 +50,17 @@ def align_on_radec(ra, dec, command_queues, config_object, shared_state) -> bool
     # Send command to solver to work out the camera pixel for this target
     command_queues["align_command"].put(AlignOnRaDec(ra=ra, dec=dec))
 
-    response: AlignedResult | None = None
-    start_time = time.time()
-    while response is None:
-        if time.time() - start_time > 2:
-            command_queues["align_command"].put(AlignCancel())
-            command_queues["console"].put(_("Align Timeout"))
-            return False
-
-        try:
-            response = command_queues["align_response"].get(block=False)
-        except queue.Empty:
-            response = None
+    try:
+        # Block on the response instead of burning a CPU core while the solver
+        # is doing its most expensive work.  multiprocessing.Queue and the
+        # in-process queue used by tests share this timeout contract.
+        response: AlignedResult = command_queues["align_response"].get(
+            timeout=ALIGN_TIMEOUT_SECONDS
+        )
+    except queue.Empty:
+        command_queues["align_command"].put(AlignCancel())
+        command_queues["console"].put(_("Align Timeout"))
+        return False
 
     target_pixel = response.as_target_pixel()
     if target_pixel[0] == -1:

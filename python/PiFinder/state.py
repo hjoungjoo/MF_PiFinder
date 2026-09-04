@@ -514,8 +514,12 @@ class SharedStateObj:
         """
         if self.__datetime is None:
             return self.__datetime
+        # Elapsed time must not use the civil wall clock.  On boot, chrony can
+        # step a Raspberry Pi from an untrusted RTC value to the real time;
+        # adding that wall-clock jump here advances the astronomical epoch a
+        # second time.  monotonic() advances continuously across clock syncs.
         return self.__datetime + datetime.timedelta(
-            seconds=time.time() - self.__datetime_time
+            seconds=time.monotonic() - self.__datetime_time
         )
 
     def local_datetime(self):
@@ -563,7 +567,7 @@ class SharedStateObj:
             dt = dt.astimezone(pytz.utc)
 
         if force:
-            self.__datetime_time = time.time()
+            self.__datetime_time = time.monotonic()
             self.__datetime = dt
             self.__datetime_manual = True
             return
@@ -573,17 +577,17 @@ class SharedStateObj:
             return
 
         if self.__datetime is None:
-            self.__datetime_time = time.time()
+            self.__datetime_time = time.monotonic()
             self.__datetime = dt
         else:
             # only reset if there is some significant diff
             # as some gps recievers send multiple updates that can
             # rewind and fastforward the clock
             curtime = self.__datetime + datetime.timedelta(
-                seconds=time.time() - self.__datetime_time
+                seconds=time.monotonic() - self.__datetime_time
             )
             if curtime < dt:
-                self.__datetime_time = time.time()
+                self.__datetime_time = time.monotonic()
                 self.__datetime = dt
 
     def datetime_is_manual(self):

@@ -10,6 +10,7 @@ This module is the solver
 
 from PiFinder.multiproclogging import MultiprocLogging
 from concurrent.futures import ThreadPoolExecutor
+import json
 import queue
 import numpy as np
 import time
@@ -39,6 +40,7 @@ from PiFinder.mf_distortion_calibration import (
 )
 from PiFinder.mf_manual_lens import manual_focal_from_state
 from PiFinder.mf_livecam_tiles import active_focal_length_mm
+from PiFinder.mf_star_only_preprocess import preprocess_geometry_fingerprint
 from PiFinder.mf_wide_calibration import CalibrationProfileStore
 from PiFinder.mf_wide_distortion import active_coefficients, undistort_global_centroids
 from PiFinder.mf_wide_solver import (
@@ -92,6 +94,59 @@ SQM_STELLAR_DIAGNOSTIC_INTERVAL_SECONDS = 10.0
 # timeout dropped the attempt rate to 0.4 Hz and starved the SEP rescue tier
 # (LP ascent test 2026-08-03, plan doc section 9-1).
 CEDAR_FF_SOLVE_TIMEOUT_MS = 300
+
+# A motorized slew invalidates the temporal star-only window, but a valid raw
+# solve is already available before the expensive rebuild.  Release up to two
+# stationary raw solves immediately: one handles an ordinary near correction,
+# while the second can confirm a >5-degree continuity jump.  Normal temporal
+# preprocessing resumes on the following frame.
+POST_MOTION_RAW_FAST_FRAMES = 2
+MOUNT_STATUS_MAX_AGE_SECONDS = 5.0
+
+
+def _post_motion_raw_fast_path(
+    *, frame_moving: bool, raw_solved: bool, remaining: int
+) -> tuple[bool, int]:
+    """Return whether this frame should bypass preprocessing and new budget."""
+
+    if frame_moving:
+        return False, POST_MOTION_RAW_FAST_FRAMES
+    if raw_solved and remaining > 0:
+        return True, remaining - 1
+    return False, remaining
+
+
+def _mount_status_reports_motion(
+    status: object, *, now: float | None = None
+) -> bool:
+    """Return a fresh mount-driven motion flag from the runtime status."""
+
+    if not isinstance(status, dict):
+        return False
+    timestamp = time.time() if now is None else float(now)
+    try:
+        updated = float(status.get("updated") or 0.0)
+    except (TypeError, ValueError):
+        return False
+    if updated <= 0.0 or timestamp - updated > MOUNT_STATUS_MAX_AGE_SECONDS:
+        return False
+    return bool(
+        status.get("mount_motion_active")
+        or status.get("goto_motion_active")
+        or status.get("manual_motion_direction")
+    )
+
+
+def _mount_motion_active() -> bool:
+    """Read the mount status from tmpfs without coupling solver processes."""
+
+    try:
+        with (utils.runtime_dir / "mount_control_status.json").open(
+            "r", encoding="utf-8"
+        ) as status_file:
+            return _mount_status_reports_motion(json.load(status_file))
+    except (OSError, ValueError, TypeError):
+        return False
 
 
 def _solver_preprocess_enabled(shared_state) -> bool:
@@ -1319,6 +1374,7 @@ def solver(
     last_solve_attempt: float = 0.0
     last_solve_success = None  # exposure_end of most recent successful solve
     solve_continuity = SolveContinuityGate()
+    post_motion_raw_fast_frames = 0
 
     centroids = []
     log_no_stars_found = True
@@ -1597,6 +1653,7 @@ def solver(
                         )
                     except (TypeError, ValueError):
                         frame_moving = True
+                    frame_moving = frame_moving or _mount_motion_active()
 
                     fullframe_base_fov = (
                         _optical_crop_fov(shared_state)
@@ -2234,6 +2291,7 @@ def solver(
                     # a valid solve it is preferred. The exact frame and its
                     # warm/reset/error state are cached for LiveCam; selecting
                     # that view never starts a second accumulator.
+                    fast_raw_after_motion = False
                     if not solver_preprocess_enabled:
                         if sep_shadow is not None:
                             sep_shadow.reset_preprocessor("disabled")
@@ -2250,6 +2308,14 @@ def solver(
                         and ff_frame is not None
                     ):
                         raw_solved = bool(solution and solution.get("RA") is not None)
+                        (
+                            fast_raw_after_motion,
+                            post_motion_raw_fast_frames,
+                        ) = _post_motion_raw_fast_path(
+                            frame_moving=frame_moving,
+                            raw_solved=raw_solved,
+                            remaining=post_motion_raw_fast_frames,
+                        )
                         if frame_moving:
                             sep_shadow.reset_preprocessor("reset_moving")
                             _publish_solver_preprocess_status(
@@ -2259,6 +2325,21 @@ def solver(
                                 frame_id=last_image_metadata.get("frame_id"),
                                 reset_reason="moving",
                                 clear_frame=True,
+                            )
+                        elif fast_raw_after_motion:
+                            _publish_solver_preprocess_status(
+                                shared_state,
+                                enabled=True,
+                                state="fast_raw_after_motion",
+                                frame_id=last_image_metadata.get("frame_id"),
+                                reset_reason="moving",
+                                clear_frame=True,
+                            )
+                            logger.info(
+                                "Post-motion fast RAW solve frame %s; "
+                                "preprocessing resumes after %d more fast frame(s)",
+                                last_image_metadata.get("frame_id"),
+                                post_motion_raw_fast_frames,
                             )
                         else:
                             lens_key = getattr(
@@ -2272,15 +2353,15 @@ def solver(
                                     ).items()
                                 )
                             )
-                            preprocess_fingerprint = (
-                                shared_state.camera_type(),
-                                str(lens_key or ""),
-                                manual_focal_from_state(shared_state),
-                                tuple(ff_frame.shape),
-                                last_image_metadata.get("exposure_time"),
-                                last_image_metadata.get("gain"),
-                                cedar_ff_geometry["rotation_deg"],
-                                calibration_key,
+                            camera_type = shared_state.camera_type()
+                            preprocess_fingerprint = preprocess_geometry_fingerprint(
+                                camera_type=camera_type,
+                                pixel_format=get_camera_profile(camera_type).format,
+                                lens_key=str(lens_key or ""),
+                                manual_focal=manual_focal_from_state(shared_state),
+                                frame_shape=tuple(ff_frame.shape),
+                                rotation_deg=cedar_ff_geometry["rotation_deg"],
+                                calibration_key=calibration_key,
                             )
                             preprocess_started = precision_timestamp()
                             preprocessed_run = sep_shadow.preprocess_frame(
@@ -2514,7 +2595,10 @@ def solver(
                             solve_path,
                             last_solve_attempt,
                             stationary=not frame_moving,
-                            prefer_preprocessed=solver_preprocess_enabled,
+                            prefer_preprocessed=(
+                                solver_preprocess_enabled
+                                and not fast_raw_after_motion
+                            ),
                         )
                         if continuity.accepted and continuity.reason in {
                             "confirmed_jump",

@@ -175,8 +175,10 @@ flowchart TD
     N -->|실패| O[FailedSolve]
 ```
 
-window fingerprint에는 camera type, lens/manual focal, RAW shape, exposure,
-gain, rotation, active calibration ID가 포함된다. 하나라도 바뀌면 즉시 reset한다.
+window fingerprint에는 camera type/format, lens/manual focal, RAW shape, rotation,
+active calibration ID가 포함된다. 좌표계가 달라지는 항목이 바뀌면 즉시 reset한다.
+노출과 gain은 각 프레임의 local background/noise 정규화로 흡수하므로 fingerprint에서
+제외한다. 따라서 framewise auto exposure가 동작해도 최초 warm-up을 반복하지 않는다.
 
 ## 6. 기존 솔버 연결
 
@@ -234,7 +236,7 @@ Live Stack이 켜져 있다면 서로 다른 입력 영상을 섞지 않기 위�
 
 solver 전처리가 OFF일 때만 기존 카메라 측 star-only 누적기를 진단용 fallback으로
 사용한다. 이 경우에는 star-only 선택 직후 1/5부터 새로 누적되는 것이 정상이다. 반대로
-IMU 이동, RAW shape·노출·gain·회전·보정 변경, 전처리 오류처럼 production window가
+IMU 이동, RAW shape·format·회전·보정 변경, 전처리 오류처럼 production window가
 실제로 무효화되는 사건에서는 오래된 star-only frame을 즉시 지워 화면과 solver 상태가
 어긋나지 않게 한다. 공유 상태 게시 실패는 좌표 솔빙을 중단시키지 않도록 best-effort로
 격리한다.
@@ -284,7 +286,7 @@ SEP 단계이며, 실시간 연결 시에도 Cedar 성공을 필수 조건으로
 - 구름 사이 반복 별은 2프레임 이상이면 hard mask 때문에 일괄 삭제되지 않음
 - star-only 전후 catalog-matched centroid 이동 median <0.1px, p95 <0.25px
 - 중앙 우선 및 전체 fallback 순서 유지
-- IMU 이동/렌즈/노출/회전 변경 즉시 window reset
+- IMU 이동/렌즈/RAW 좌표계/회전 변경 즉시 window reset; 노출/gain 변경은 누적 유지
 - 처리+solve latency가 관측용 허용 범위 안이며 메모리 상한 고정
 
 ## 10. 현재 결론

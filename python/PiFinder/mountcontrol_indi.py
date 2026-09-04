@@ -102,15 +102,10 @@ GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
 # when a caller does not pass an explicit accuracy.
 DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 6.0
 # Cadence of the closed-loop pulse-guide correction. The loop also gates on a
-# FRESH plate solve (it never pulses twice off the same solve), so this is a
-# damping/settle floor on top of the solve rate (~0.5-1 s on-sky at the 400 ms
-# default exposure). Lowered 10.0 -> 6.0 to roughly halve tracking-correction and
-# PiFinder pulse-align convergence time while keeping comfortable margin over the
-# solve latency and post-pulse settle. This is a proportional-control cadence
-# (gain GUIDE_PULSE_AGGRESSIVENESS = 0.5); going much shorter risks oscillation
-# on solve noise / mount backlash, so verify convergence stays monotonic on-sky
-# before reducing further.
-GUIDE_CORRECTION_INTERVAL_SECONDS = 6.0
+# FRESH plate solve (it never pulses twice off the same solve), and the 3 s
+# floor is longer than the 2.5 s maximum timed pulse. This lets every fresh
+# post-pulse solve drive the next correction without overlapping a pulse.
+GUIDE_CORRECTION_INTERVAL_SECONDS = 3.0
 # Manual-move fallback lease used only when the driver does not expose the INDI
 # timed guide-pulse interface.
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4

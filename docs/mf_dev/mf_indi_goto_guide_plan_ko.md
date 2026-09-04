@@ -268,11 +268,10 @@ GOTO_COMPLETE_STABLE_SECONDS = 2.5
   4.0→2.5 하향(조건이 정지 후 ~1.2초에 굳음, ~1초 마진). 최소 대기
   GOTO_COMPLETE_MIN_SECONDS=1.0, 상태 못 읽을 때의 하드 폴백
   GOTO_COMPLETE_FALLBACK_SECONDS=180.0.
-GUIDE_CORRECTION_INTERVAL_SECONDS = 6.0
+GUIDE_CORRECTION_INTERVAL_SECONDS = 3.0
   guide correction 닫힌 루프 주기. fresh plate solve가 있을 때만 펄스(같은 solve로
-  두 번 안 쏨)이므로 solve 속도(온스카이 ~0.5~1초) 위의 댐핑/정착 마진이다.
-  10.0→6.0 하향(수렴 ~2배 가속). 비례 제어(gain 0.5) 주기라 더 줄이면 solve
-  노이즈·백래시 진동 위험 → 추가 하향 전 온스카이 단조 수렴 검증 필요.
+  두 번 안 쏨)이며 최대 timed pulse 2.5초보다 긴 정착 마진이다. 6.0→3.0으로
+  하향해 새 solve마다 다음 보정을 걸되 펄스가 겹치지 않게 한다.
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4
   timed guide pulse 미지원 드라이버의 manual-move fallback lease 길이.
 SIDEREAL_ARCSEC_PER_SEC = 15.041
@@ -324,8 +323,8 @@ indi_guide_pulse_invert_ns = false | true
 
 indi_pifinder_goto_near_threshold_deg = 1.0
   PiFinder GoTo에서 sync + 마운트 GoTo 반복을 끝내고 pulse guide 미세 보정으로
-  전환하는 경계. 오차가 이 값 이상이면 sync + GoTo를 반복하고, 미만이면 pulse
-  guide로 넘어가 목표 정확도(0.1도)까지 정렬한다.
+  전환하는 설정 경계. 실제 전환은 펄스 용량에 맞춰 최대 0.25도(15분각)로 제한한다.
+  그보다 큰 오차는 sync + GoTo를 반복하고, 이내이면 pulse guide로 넘어간다.
 
 indi_pifinder_goto_max_gotos = 10
   PiFinder GoTo에서 sync + 마운트 GoTo 반복(초기 GoTo 포함)의 최대 횟수. 이 횟수

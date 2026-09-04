@@ -25,13 +25,13 @@ BRUSSELS_LAT, BRUSSELS_LON = 50.85, 4.35
 
 @pytest.fixture
 def frozen_clock(monkeypatch):
-    """Freeze the wall clock state.datetime() uses for drift.
+    """Freeze the monotonic clock state.datetime() uses for drift.
 
-    datetime() returns __datetime + (time.time() - __datetime_time); pinning
-    time.time() makes that drift exactly zero so stored == read-back and the
-    assertions below are deterministic instead of off by the test's runtime.
+    datetime() returns __datetime + monotonic elapsed time; pinning monotonic
+    makes that drift exactly zero so stored == read-back and the assertions
+    below are deterministic instead of off by the test's runtime.
     """
-    monkeypatch.setattr(state_mod.time, "time", lambda: 1_700_000_000.0)
+    monkeypatch.setattr(state_mod.time, "monotonic", lambda: 1_000.0)
 
 
 def _state_at(lat=0.0, lon=0.0):
@@ -164,3 +164,23 @@ def test_datetime_is_manual_tracks_forced_sets():
     # Reset clears the manual override (service restart / reboot semantics).
     shared_state.reset_datetime()
     assert shared_state.datetime_is_manual() is False
+
+
+@pytest.mark.unit
+def test_datetime_ignores_wall_clock_steps(monkeypatch):
+    """Chrony correcting the boot clock must not advance sky time twice."""
+    wall_time = [1_700_000_000.0]
+    monotonic_time = [1_000.0]
+    monkeypatch.setattr(state_mod.time, "time", lambda: wall_time[0])
+    monkeypatch.setattr(state_mod.time, "monotonic", lambda: monotonic_time[0])
+
+    shared_state = SharedStateObj()
+    initial = datetime.datetime(2026, 9, 4, 11, 43, 0, tzinfo=UTC)
+    shared_state.set_datetime(initial)
+
+    # Simulate chrony stepping an RTC that was 17 hours behind.  Only the five
+    # seconds of monotonic elapsed time belong in the astronomical epoch.
+    wall_time[0] += 17 * 60 * 60
+    monotonic_time[0] += 5
+
+    assert shared_state.utc_datetime() == initial + datetime.timedelta(seconds=5)
