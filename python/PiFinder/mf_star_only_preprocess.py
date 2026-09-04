@@ -8,6 +8,7 @@ is performed, so output centroids remain in the input RAW coordinate system.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Hashable
 
@@ -67,6 +68,10 @@ class MFStarOnlyConfig:
     single_frame_permission: float = 0.20
     output_pedestal_adu: int = 64
     output_dither_adu: int = 3
+    # The three background scales are independent and their NumPy/SciPy
+    # kernels release the GIL. One preserves the historical serial path;
+    # larger values allow a pixel-identical multi-core field A/B test.
+    parallel_scale_workers: int = 1
 
 
 @dataclass(frozen=True)
@@ -307,6 +312,7 @@ def preprocess_star_evidence(
     *,
     saturation_level: float,
     config: MFStarOnlyConfig = MFStarOnlyConfig(),
+    scale_executor: ThreadPoolExecutor | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, MFStarOnlyDiagnostics]:
     """Return signal, PSF evidence, hard mask and diagnostics for one RAW."""
 
@@ -314,15 +320,38 @@ def preprocess_star_evidence(
     if arr.ndim != 2 or min(arr.shape) < config.coarse_cell_px:
         raise ValueError("invalid RAW shape for star-only preprocessing")
 
-    background_local, rms_local = _cfa_cell_maps(
-        arr, config.local_cell_px, config.cfa_period_px
-    )
-    background_medium = _cfa_background_map(
-        arr, config.medium_cell_px, config.cfa_period_px
-    )
-    background_coarse = _cfa_background_map(
-        arr, config.coarse_cell_px, config.cfa_period_px
-    )
+    if scale_executor is None:
+        background_local, rms_local = _cfa_cell_maps(
+            arr, config.local_cell_px, config.cfa_period_px
+        )
+        background_medium = _cfa_background_map(
+            arr, config.medium_cell_px, config.cfa_period_px
+        )
+        background_coarse = _cfa_background_map(
+            arr, config.coarse_cell_px, config.cfa_period_px
+        )
+    else:
+        local_future = scale_executor.submit(
+            _cfa_cell_maps,
+            arr,
+            config.local_cell_px,
+            config.cfa_period_px,
+        )
+        medium_future = scale_executor.submit(
+            _cfa_background_map,
+            arr,
+            config.medium_cell_px,
+            config.cfa_period_px,
+        )
+        coarse_future = scale_executor.submit(
+            _cfa_background_map,
+            arr,
+            config.coarse_cell_px,
+            config.cfa_period_px,
+        )
+        background_local, rms_local = local_future.result()
+        background_medium = medium_future.result()
+        background_coarse = coarse_future.result()
     background = np.median(
         np.stack((background_local, background_medium, background_coarse)), axis=0
     ).astype(np.float32)
@@ -383,6 +412,15 @@ class MFStarOnlyAccumulator:
         self._signals: list[np.ndarray] = []
         self._evidence: list[np.ndarray] = []
         self._last_diagnostics: MFStarOnlyDiagnostics | None = None
+        workers = max(1, min(4, int(config.parallel_scale_workers)))
+        self._scale_executor = (
+            ThreadPoolExecutor(
+                max_workers=workers,
+                thread_name_prefix="star-preprocess-scale",
+            )
+            if workers > 1
+            else None
+        )
 
     @property
     def frame_count(self) -> int:
@@ -409,6 +447,7 @@ class MFStarOnlyAccumulator:
             raw_frame,
             saturation_level=saturation_level,
             config=self.config,
+            scale_executor=self._scale_executor,
         )
         # float16 halves the fixed five-frame buffer to about 20 MiB for an
         # IMX462 frame; arithmetic is promoted back to float32 below.
@@ -472,3 +511,8 @@ class MFStarOnlyAccumulator:
         )
         self._last_diagnostics = final_diagnostics
         return MFStarOnlyResult(output, combined_evidence, final_diagnostics)
+
+    def close(self) -> None:
+        if self._scale_executor is not None:
+            self._scale_executor.shutdown(wait=True, cancel_futures=True)
+            self._scale_executor = None

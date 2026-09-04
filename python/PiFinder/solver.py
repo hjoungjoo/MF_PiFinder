@@ -52,8 +52,14 @@ from PiFinder.mf_wide_solver import (
 )
 from PiFinder.mf_wide_tiles import migrate_legacy_tile_ids
 from PiFinder.optics import OpticalTrainResolver, build_optical_train
+from PiFinder.latest_frame_worker import LatestFrameWorker
+from PiFinder.preprocess_bias import PreprocessBiasTracker
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
-from PiFinder.solve_acceptance import SolveContinuityGate, solution_quality_decision
+from PiFinder.solve_acceptance import (
+    SolveContinuityGate,
+    angular_separation_deg,
+    solution_quality_decision,
+)
 from PiFinder.sqm import SQM as SQMCalculator
 from PiFinder.sqm.camera_profiles import get_camera_profile
 from PiFinder.sqm.black_level import BlackLevelTracker
@@ -116,9 +122,7 @@ def _post_motion_raw_fast_path(
     return False, remaining
 
 
-def _mount_status_reports_motion(
-    status: object, *, now: float | None = None
-) -> bool:
+def _mount_status_reports_motion(status: object, *, now: float | None = None) -> bool:
     """Return a fresh mount-driven motion flag from the runtime status."""
 
     if not isinstance(status, dict):
@@ -157,6 +161,66 @@ def _solver_preprocess_enabled(shared_state) -> bool:
         return bool(settings.get("solver_preprocess_enabled", False))
     except (AttributeError, BrokenPipeError, ConnectionResetError):
         return False
+
+
+def _read_matching_solver_inputs(shared_state, attempts: int = 2):
+    """Read the newest 512 frame envelope and its matching full RAW.
+
+    The camera publishes full RAW first and the 512 envelope second. Reading
+    those manager values far apart can pair neighbouring frames. A short,
+    bounded retry closes that race without ever accepting mismatched RAW.
+    The latest valid 512 frame is still returned when no pair is available,
+    preserving the established safe fallback path.
+    """
+
+    latest_frame = None
+    for _ in range(max(1, int(attempts))):
+        candidate_frame = shared_state.solver_frame()
+        if not (
+            isinstance(candidate_frame, dict)
+            and "image" in candidate_frame
+            and isinstance(candidate_frame.get("metadata"), dict)
+        ):
+            continue
+        latest_frame = candidate_frame
+        candidate_raw = shared_state.solver_raw()
+        frame_id = candidate_frame["metadata"].get("frame_id")
+        if (
+            isinstance(candidate_raw, dict)
+            and "frame" in candidate_raw
+            and frame_id is not None
+            and candidate_raw.get("frame_id") == frame_id
+        ):
+            return candidate_frame, candidate_raw
+    return latest_frame, None
+
+
+def _preprocessed_fast_path_allowed(
+    *,
+    enabled: bool,
+    trusted: bool,
+    moving: bool,
+    aligning: bool,
+) -> bool:
+    """Whether a trusted preprocessed path may replace slow RAW fallbacks."""
+
+    return bool(enabled and trusted and not moving and not aligning)
+
+
+def _solution_coordinate_snapshot(solution: dict) -> Optional[dict]:
+    """Copy only coordinate fields needed by asynchronous bias calibration."""
+
+    if not solution or solution.get("RA") is None:
+        return None
+    snapshot = {
+        "RA": float(solution["RA"]),
+        "Dec": float(solution["Dec"]),
+    }
+    for key in ("RA_target", "Dec_target"):
+        value = solution.get(key)
+        if value is not None:
+            snapshot[key] = float(value)
+    return snapshot
 
 
 def _publish_solver_preprocess_status(
@@ -1375,6 +1439,17 @@ def solver(
     last_solve_success = None  # exposure_end of most recent successful solve
     solve_continuity = SolveContinuityGate()
     post_motion_raw_fast_frames = 0
+    preprocessed_fast_trusted = False
+    async_preprocess_worker = None
+    async_preprocess_runner = None
+    async_preprocess_generation = 0
+    async_motion_seen = False
+    async_preprocess_mode_active = False
+    preprocess_bias = PreprocessBiasTracker(
+        max_agreement_deg=0.12,
+        required_samples=2,
+        alpha=0.25,
+    )
 
     centroids = []
     log_no_stars_found = True
@@ -1449,6 +1524,13 @@ def solver(
     # coordinate subset first, full set on failure, then SEP the same way;
     # SEP detection runs concurrently with the cedar tiers to hide its cost.
     center_first_wanted = bool(_sep_cfg.get_option("solver_center_first"))
+    timing_debug_wanted = bool(_sep_cfg.get_option("solver_timing_debug", False))
+    skip_slow_raw_fallbacks_wanted = bool(
+        _sep_cfg.get_option("solver_preprocess_skip_slow_raw_fallbacks", False)
+    )
+    async_preprocess_wanted = bool(
+        _sep_cfg.get_option("solver_preprocess_async", False)
+    )
     if cedar_fullframe_wanted:
         logger.info(
             "Cedar full-frame primary path enabled "
@@ -1565,16 +1647,13 @@ def solver(
                 # reject images started before the last solve
                 # which might be from the IMU
                 solver_frame_entry = None
+                solver_raw_entry = None
                 try:
                     solver_frame_getter = getattr(shared_state, "solver_frame", None)
                     if callable(solver_frame_getter):
-                        candidate_entry = solver_frame_getter()
-                        if (
-                            isinstance(candidate_entry, dict)
-                            and "image" in candidate_entry
-                            and isinstance(candidate_entry.get("metadata"), dict)
-                        ):
-                            solver_frame_entry = candidate_entry
+                        solver_frame_entry, solver_raw_entry = (
+                            _read_matching_solver_inputs(shared_state)
+                        )
                     if solver_frame_entry is not None:
                         last_image_metadata = solver_frame_entry["metadata"]
                     else:
@@ -1654,6 +1733,15 @@ def solver(
                     except (TypeError, ValueError):
                         frame_moving = True
                     frame_moving = frame_moving or _mount_motion_active()
+                    if frame_moving:
+                        if not async_motion_seen:
+                            async_preprocess_generation += 1
+                            preprocess_bias.reset()
+                            if async_preprocess_worker is not None:
+                                async_preprocess_worker.clear_pending()
+                        async_motion_seen = True
+                    else:
+                        async_motion_seen = False
 
                     fullframe_base_fov = (
                         _optical_crop_fov(shared_state)
@@ -1675,6 +1763,12 @@ def solver(
                             )
                         cedar_ff_geometry = None
                         cedar_ff_geometry_key = fullframe_geometry_key
+                        preprocessed_fast_trusted = False
+                        preprocess_bias.reset()
+                        if async_preprocess_worker is not None:
+                            async_preprocess_worker.close(wait=False)
+                            async_preprocess_worker = None
+                            async_preprocess_runner = None
                         # The runner has cached the old base FOV too.  It is
                         # cheap and safe to recreate on the following use.
                         sep_shadow = None
@@ -1701,11 +1795,14 @@ def solver(
                     sep_thread = None
                     sep_thread_result = {}
                     ff_entry = None
+                    prefer_preprocessed_fast = False
                     if cedar_detect is not None:
                         if (
                             cedar_fullframe_wanted or solver_preprocess_enabled
                         ) and cedar_ff_geometry is not None:
-                            ff_entry = shared_state.solver_raw()
+                            ff_entry = solver_raw_entry
+                            if ff_entry is None and solver_frame_entry is None:
+                                ff_entry = shared_state.solver_raw()
                             if (
                                 not ff_entry
                                 or "frame" not in ff_entry
@@ -1741,11 +1838,21 @@ def solver(
                                 getattr(shared_state, "camera_lens", lambda: "")(),
                                 force_create=solver_preprocess_enabled,
                             )
+                        prefer_preprocessed_fast = _preprocessed_fast_path_allowed(
+                            enabled=(
+                                solver_preprocess_enabled
+                                and skip_slow_raw_fallbacks_wanted
+                            ),
+                            trusted=preprocessed_fast_trusted,
+                            moving=frame_moving,
+                            aligning=align_ra != 0 and align_dec != 0,
+                        )
                         if (
                             center_first_wanted
                             and ff_entry is not None
                             and sep_shadow is not None
                             and sep_shadow_wanted
+                            and not prefer_preprocessed_fast
                         ):
 
                             def _sep_detect_bg():
@@ -2179,8 +2286,10 @@ def solver(
                             )
                             wide_result = None
 
-                    if center_first_wanted and (
-                        not solution or solution.get("RA") is None
+                    if (
+                        center_first_wanted
+                        and not prefer_preprocessed_fast
+                        and (not solution or solution.get("RA") is None)
                     ):
                         # Global centre-first policy (2026-08-12): after the
                         # parallel Cedar-centre attempt, try SEP centre before
@@ -2262,7 +2371,7 @@ def solver(
                                 sep_fallback_used,
                                 len(sep_run.detection.centroids),
                             )
-                    elif sep_can_solve:
+                    elif sep_can_solve and not prefer_preprocessed_fast:
                         # Legacy non-centre mode: Cedar full/512 has already
                         # failed, so only the SEP full fallback remains.
                         solution = sep_shadow.solve(
@@ -2285,6 +2394,17 @@ def solver(
                         if sep_fallback_used:
                             solve_path = "sep_full"
 
+                    raw_cascade_ms = (precision_timestamp() - t0) * 1000.0
+                    raw_solution_diagnostic = None
+                    if solution and solution.get("RA") is not None:
+                        raw_solution_diagnostic = {
+                            "ra": float(solution["RA"]),
+                            "dec": float(solution["Dec"]),
+                            "path": solve_path,
+                            "matches": int(solution.get("Matches") or 0),
+                            "rmse": solution.get("RMSE"),
+                        }
+
                     # Production star-only path controlled from LiveCam. The
                     # raw cascade remains available while the temporal window
                     # warms and as a fallback, but once preprocessing produces
@@ -2293,6 +2413,13 @@ def solver(
                     # that view never starts a second accumulator.
                     fast_raw_after_motion = False
                     if not solver_preprocess_enabled:
+                        preprocessed_fast_trusted = False
+                        preprocess_bias.reset()
+                        if async_preprocess_mode_active:
+                            async_preprocess_generation += 1
+                            async_preprocess_mode_active = False
+                        if async_preprocess_worker is not None:
+                            async_preprocess_worker.clear_pending()
                         if sep_shadow is not None:
                             sep_shadow.reset_preprocessor("disabled")
                         _publish_solver_preprocess_status(
@@ -2317,6 +2444,7 @@ def solver(
                             remaining=post_motion_raw_fast_frames,
                         )
                         if frame_moving:
+                            preprocessed_fast_trusted = False
                             sep_shadow.reset_preprocessor("reset_moving")
                             _publish_solver_preprocess_status(
                                 shared_state,
@@ -2364,19 +2492,109 @@ def solver(
                                 calibration_key=calibration_key,
                             )
                             preprocess_started = precision_timestamp()
-                            preprocessed_run = sep_shadow.preprocess_frame(
-                                ff_frame,
-                                fingerprint=preprocess_fingerprint,
-                                frame_id=last_image_metadata.get("frame_id"),
+                            async_preprocess_active = bool(
+                                async_preprocess_wanted
+                                and align_ra == 0
+                                and align_dec == 0
+                                and distortion_calibration_session is None
                             )
-                            t_extract += (
-                                precision_timestamp() - preprocess_started
-                            ) * 1000
+                            if async_preprocess_active != async_preprocess_mode_active:
+                                async_preprocess_generation += 1
+                                preprocess_bias.reset()
+                                if async_preprocess_worker is not None:
+                                    async_preprocess_worker.clear_pending()
+                                async_preprocess_mode_active = async_preprocess_active
+                            preprocess_context = None
+                            if async_preprocess_active:
+                                if async_preprocess_worker is None:
+                                    async_preprocess_runner = (
+                                        sep_shadow.preprocessing_clone()
+                                    )
+                                    preprocess_runner = async_preprocess_runner
+
+                                    def _process_async_preprocess(
+                                        job, runner=preprocess_runner
+                                    ):
+                                        return runner.preprocess_frame(
+                                            job["frame"],
+                                            fingerprint=job["fingerprint"],
+                                            frame_id=job["metadata"].get("frame_id"),
+                                        )
+
+                                    async_preprocess_worker = LatestFrameWorker(
+                                        _process_async_preprocess,
+                                        thread_name="solver-preprocess",
+                                    )
+                                    logger.info(
+                                        "Asynchronous latest-frame preprocessing enabled"
+                                    )
+
+                                completed_preprocess = async_preprocess_worker.poll()
+                                async_preprocess_worker.offer(
+                                    {
+                                        "frame": ff_frame,
+                                        "metadata": dict(last_image_metadata),
+                                        "fingerprint": (
+                                            preprocess_fingerprint,
+                                            async_preprocess_generation,
+                                        ),
+                                        "generation": async_preprocess_generation,
+                                        "raw_solution": _solution_coordinate_snapshot(
+                                            solution
+                                        ),
+                                        "imu_sample": imu_sample,
+                                    }
+                                )
+                                if (
+                                    completed_preprocess is not None
+                                    and completed_preprocess.error is None
+                                    and completed_preprocess.item["generation"]
+                                    == async_preprocess_generation
+                                ):
+                                    preprocessed_run = completed_preprocess.value
+                                    preprocess_context = completed_preprocess.item
+                                    preprocess_ms = completed_preprocess.elapsed_ms
+                                else:
+                                    preprocessed_run = None
+                                    preprocess_ms = 0.0
+                                    if (
+                                        completed_preprocess is not None
+                                        and completed_preprocess.error is not None
+                                    ):
+                                        logger.error(
+                                            "Asynchronous preprocessing failed: %s",
+                                            completed_preprocess.error,
+                                        )
+                            else:
+                                preprocessed_run = sep_shadow.preprocess_frame(
+                                    ff_frame,
+                                    fingerprint=preprocess_fingerprint,
+                                    frame_id=last_image_metadata.get("frame_id"),
+                                )
+                                preprocess_ms = (
+                                    precision_timestamp() - preprocess_started
+                                ) * 1000.0
+                            # Background wall time is diagnostic only. Adding
+                            # it to the foreground extraction duration would
+                            # falsely report a long solve even though RAW
+                            # solving continued every camera frame.
+                            if not async_preprocess_active:
+                                t_extract += preprocess_ms
                             if preprocessed_run is not None:
+                                preprocess_metadata = (
+                                    preprocess_context["metadata"]
+                                    if preprocess_context is not None
+                                    else last_image_metadata
+                                )
+                                preprocess_imu_sample = (
+                                    preprocess_context["imu_sample"]
+                                    if preprocess_context is not None
+                                    else imu_sample
+                                )
                                 _publish_solver_preprocessed_preview(
                                     shared_state,
                                     preprocessed_run,
-                                    last_image_metadata,
+                                    preprocess_metadata,
                                 )
                                 raw_overlay = sep_shadow._last_overlay
                                 sep_shadow.use_preprocessed_overlay(preprocessed_run)
@@ -2409,7 +2627,7 @@ def solver(
                                             preprocessed_cedar,
                                             preprocessed_run.frame_hw,
                                             cedar_ff_geometry["rotation_deg"],
-                                            imu_sample,
+                                            preprocess_imu_sample,
                                             cedar_ff_geometry["screen_direction"],
                                             cedar_ff_geometry["crop_width_px"],
                                         )
@@ -2524,18 +2742,62 @@ def solver(
                                     _solve_center_first_remainder(preprocess_stages)
                                 )
                                 if selected_path:
-                                    solution = preprocessed_solution
-                                    solve_path = selected_path
-                                    sep_fallback_used = "_sep_" in selected_path
-                                    if sep_fallback_used:
-                                        sep_run = preprocessed_run
+                                    preprocessed_fast_trusted = True
+                                    if async_preprocess_active:
+                                        bias_accepted = bool(
+                                            preprocess_context is not None
+                                            and preprocess_context.get("raw_solution")
+                                            and preprocess_bias.update(
+                                                preprocess_context["raw_solution"],
+                                                preprocessed_solution,
+                                            )
+                                        )
+                                        bias_status = preprocess_bias.status()
+                                        if raw_solved:
+                                            solution = preprocess_bias.apply(solution)
+                                        else:
+                                            # The completed result belongs to
+                                            # an older frame. Never publish it
+                                            # after a newer camera attempt.
+                                            solution = {}
+                                        logger.info(
+                                            "Async preprocess calibration frame %s: "
+                                            "accepted=%s ready=%s samples=%d "
+                                            "rejected=%d separation=%s skipped=%d",
+                                            preprocess_context["metadata"].get(
+                                                "frame_id"
+                                            ),
+                                            bias_accepted,
+                                            bias_status.ready,
+                                            bias_status.accepted_samples,
+                                            bias_status.rejected_samples,
+                                            (
+                                                f"{bias_status.last_separation_deg:.5f}deg"
+                                                if bias_status.last_separation_deg
+                                                is not None
+                                                else "none"
+                                            ),
+                                            async_preprocess_worker.stats().skipped,
+                                        )
+                                    else:
+                                        solution = preprocessed_solution
+                                        solve_path = selected_path
+                                        sep_fallback_used = "_sep_" in selected_path
+                                        if sep_fallback_used:
+                                            sep_run = preprocessed_run
                                 elif raw_solved:
                                     # The auxiliary path found no valid
                                     # pattern; retain both the raw pointing and
                                     # the overlay that belongs to that solve.
                                     sep_shadow._last_overlay = raw_overlay
+                                    if async_preprocess_active:
+                                        solution = preprocess_bias.apply(solution)
+                                else:
+                                    preprocessed_fast_trusted = False
 
-                                if selected_path or not raw_solved:
+                                if not async_preprocess_active and (
+                                    selected_path or not raw_solved
+                                ):
                                     used_fullframe = True
                                     centroids = preprocessed_cedar
                                     ff_frame_hw = preprocessed_run.frame_hw
@@ -2551,30 +2813,103 @@ def solver(
                                 logger.info(
                                     "Solver preprocessing frame %s: window=%d "
                                     "Cedar=%d->%d SEP=%d selected=%s",
-                                    last_image_metadata.get("frame_id"),
+                                    preprocess_metadata.get("frame_id"),
                                     preprocessed_run.diagnostics.frame_count,
                                     preprocessed_raw_count,
                                     len(preprocessed_cedar),
                                     preprocessed_sep_count,
                                     selected_path or "none",
                                 )
+                                if timing_debug_wanted:
+                                    raw_preprocessed_separation = None
+                                    preprocess_raw_diagnostic = raw_solution_diagnostic
+                                    if (
+                                        preprocess_context is not None
+                                        and preprocess_context.get("raw_solution")
+                                    ):
+                                        raw_snapshot = preprocess_context[
+                                            "raw_solution"
+                                        ]
+                                        preprocess_raw_diagnostic = {
+                                            "ra": float(raw_snapshot["RA"]),
+                                            "dec": float(raw_snapshot["Dec"]),
+                                            "path": "cedar_512",
+                                        }
+                                    if preprocess_raw_diagnostic and selected_path:
+                                        raw_preprocessed_separation = (
+                                            angular_separation_deg(
+                                                preprocess_raw_diagnostic["ra"],
+                                                preprocess_raw_diagnostic["dec"],
+                                                float(preprocessed_solution["RA"]),
+                                                float(preprocessed_solution["Dec"]),
+                                            )
+                                        )
+                                    logger.info(
+                                        "Solver stage timing frame %s: "
+                                        "raw_cascade=%.1fms preprocess_detect=%.1fms "
+                                        "through_preprocess=%.1fms raw_solved=%s "
+                                        "raw_path=%s raw_pre_sep_deg=%s",
+                                        preprocess_metadata.get("frame_id"),
+                                        raw_cascade_ms,
+                                        preprocess_ms,
+                                        (precision_timestamp() - t0) * 1000.0,
+                                        preprocess_raw_diagnostic is not None,
+                                        (
+                                            preprocess_raw_diagnostic["path"]
+                                            if preprocess_raw_diagnostic
+                                            else "none"
+                                        ),
+                                        (
+                                            f"{raw_preprocessed_separation:.5f}"
+                                            if raw_preprocessed_separation is not None
+                                            else "none"
+                                        ),
+                                    )
                             else:
-                                preprocess_status = sep_shadow.preprocess_status()
-                                _publish_solver_preprocess_status(
-                                    shared_state,
-                                    enabled=True,
-                                    state=str(
-                                        preprocess_status.get("state") or "warming"
-                                    ),
-                                    frame_count=int(
-                                        preprocess_status.get("frame_count") or 0
-                                    ),
-                                    frame_id=last_image_metadata.get("frame_id"),
-                                    reset_reason=preprocess_status.get("reset_reason"),
-                                    error=preprocess_status.get("error"),
-                                    clear_frame=True,
-                                )
+                                if async_preprocess_active:
+                                    if raw_solved:
+                                        solution = preprocess_bias.apply(solution)
+                                    worker_stats = async_preprocess_worker.stats()
+                                    _publish_solver_preprocess_status(
+                                        shared_state,
+                                        enabled=True,
+                                        state="background_processing",
+                                        frame_count=preprocess_bias.status().accepted_samples,
+                                        frame_id=last_image_metadata.get("frame_id"),
+                                        clear_frame=False,
+                                    )
+                                    if timing_debug_wanted:
+                                        logger.info(
+                                            "Async preprocessing busy frame %s: "
+                                            "submitted=%d completed=%d skipped=%d "
+                                            "raw_solved=%s",
+                                            last_image_metadata.get("frame_id"),
+                                            worker_stats.submitted,
+                                            worker_stats.completed,
+                                            worker_stats.skipped,
+                                            raw_solved,
+                                        )
+                                else:
+                                    preprocessed_fast_trusted = False
+                                    preprocess_status = sep_shadow.preprocess_status()
+                                    _publish_solver_preprocess_status(
+                                        shared_state,
+                                        enabled=True,
+                                        state=str(
+                                            preprocess_status.get("state") or "warming"
+                                        ),
+                                        frame_count=int(
+                                            preprocess_status.get("frame_count") or 0
+                                        ),
+                                        frame_id=last_image_metadata.get("frame_id"),
+                                        reset_reason=preprocess_status.get(
+                                            "reset_reason"
+                                        ),
+                                        error=preprocess_status.get("error"),
+                                        clear_frame=True,
+                                    )
                     elif solver_preprocess_enabled:
+                        preprocessed_fast_trusted = False
                         _publish_solver_preprocess_status(
                             shared_state,
                             enabled=True,
@@ -2596,8 +2931,7 @@ def solver(
                             last_solve_attempt,
                             stationary=not frame_moving,
                             prefer_preprocessed=(
-                                solver_preprocess_enabled
-                                and not fast_raw_after_motion
+                                solver_preprocess_enabled and not fast_raw_after_motion
                             ),
                         )
                         if continuity.accepted and continuity.reason in {

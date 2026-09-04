@@ -214,3 +214,33 @@ def test_geometry_change_still_changes_preprocess_fingerprint():
     )
 
     assert rotated != base
+
+
+def test_parallel_background_scales_are_pixel_identical():
+    rng = np.random.default_rng(20260905)
+    frames = [
+        rng.integers(100, 3500, size=(192, 256), dtype=np.uint16) for _ in range(5)
+    ]
+    serial = MFStarOnlyAccumulator(MFStarOnlyConfig(parallel_scale_workers=1))
+    parallel = MFStarOnlyAccumulator(MFStarOnlyConfig(parallel_scale_workers=3))
+    try:
+        for frame in frames:
+            serial_result = serial.add(
+                frame,
+                saturation_level=4095,
+                fingerprint=("same",),
+            )
+            parallel_result = parallel.add(
+                frame,
+                saturation_level=4095,
+                fingerprint=("same",),
+            )
+            np.testing.assert_array_equal(serial_result.frame, parallel_result.frame)
+            np.testing.assert_array_equal(
+                serial_result.evidence,
+                parallel_result.evidence,
+            )
+            assert serial_result.diagnostics == parallel_result.diagnostics
+    finally:
+        serial.close()
+        parallel.close()

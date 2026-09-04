@@ -46,6 +46,7 @@ from PiFinder.mf_cloud_gate import wide_cloud_gate_enabled
 from PiFinder.mf_manual_lens import manual_focal_from_state
 from PiFinder.mf_star_only_preprocess import (
     MFStarOnlyAccumulator,
+    MFStarOnlyConfig,
     MFStarOnlyDiagnostics,
 )
 from PiFinder.mf_wide_calibration import CalibrationProfileStore
@@ -129,6 +130,7 @@ class SepShadowRunner:
         warm_pixel_map: Optional[np.ndarray] = None,
         base_fov_degrees: float = sfm.SOLVER_FOV_DEG,
         distortion_coefficients: Optional[dict[str, float]] = None,
+        preprocess_scale_workers: int = 1,
     ):
         self.shadow_enabled = shadow_enabled
         self.fallback_enabled = fallback_enabled
@@ -152,7 +154,10 @@ class SepShadowRunner:
         self._last_failed_sep_count: Optional[int] = None
         # Overlay entry for the in-flight attempt (see publish_overlay)
         self._last_overlay: Optional[dict] = None
-        self._star_only = MFStarOnlyAccumulator()
+        self.preprocess_scale_workers = max(1, min(4, int(preprocess_scale_workers)))
+        self._star_only = MFStarOnlyAccumulator(
+            MFStarOnlyConfig(parallel_scale_workers=self.preprocess_scale_workers)
+        )
         self._preprocess_status: dict = {
             "state": "idle",
             "frame_count": 0,
@@ -161,7 +166,8 @@ class SepShadowRunner:
         }
         logger.info(
             "SEP shadow runner: shadow=%s fallback=%s sigma=%.1f "
-            "rotation=%.0f° crop_width=%dpx warm_pixels=%d distortion=%s log=%s",
+            "rotation=%.0f° crop_width=%dpx warm_pixels=%d distortion=%s "
+            "preprocess_workers=%d log=%s",
             shadow_enabled,
             fallback_enabled,
             sigma,
@@ -169,6 +175,7 @@ class SepShadowRunner:
             crop_width_px,
             0 if warm_pixel_map is None else len(warm_pixel_map),
             "active" if distortion_coefficients is not None else "off",
+            self.preprocess_scale_workers,
             self.csv_path,
         )
 
@@ -224,6 +231,9 @@ class SepShadowRunner:
                 warm_pixel_map=warm_map,
                 base_fov_degrees=base_fov_degrees,
                 distortion_coefficients=active_coefficients(calibration),
+                preprocess_scale_workers=int(
+                    cfg.get_option("solver_preprocess_scale_workers", 1) or 1
+                ),
             )
         except Exception:
             logger.exception("SEP shadow runner init failed; disabled")
@@ -250,6 +260,24 @@ class SepShadowRunner:
         ):
             return True
         return self._attempt_counter >= self._fallback_skip_until
+
+    def preprocessing_clone(self):
+        """Return an isolated runner whose mutable state belongs to a worker."""
+
+        return type(self)(
+            shadow_enabled=False,
+            fallback_enabled=self.fallback_enabled,
+            sigma=self.sigma,
+            rotation_deg=self.rotation_deg,
+            crop_width_px=self.crop_width_px,
+            min_fallback_stars=self.min_fallback_stars,
+            saturation_level=self.saturation_level,
+            csv_path=self.csv_path,
+            warm_pixel_map=self.warm_pixel_map,
+            base_fov_degrees=self.base_fov_degrees,
+            distortion_coefficients=self.distortion_coefficients,
+            preprocess_scale_workers=self.preprocess_scale_workers,
+        )
 
     def record_fallback_result(self, solved: bool, sep_count: int) -> None:
         if solved:
