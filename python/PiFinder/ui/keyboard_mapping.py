@@ -36,7 +36,11 @@ class UIKeyboardMapping(UITextMenu):
         if config is None:
             return {}
         mapping = config.get_option(keyboard_mapping.CONFIG_KEY) or {}
-        return {str(k): str(v) for k, v in mapping.items()}
+        return {
+            str(k): str(v)
+            for k, v in mapping.items()
+            if keyboard_mapping.is_assignable_key(str(v))
+        }
 
     def _create_menu_definition(self):
         mapping = self._mapping()
@@ -61,6 +65,8 @@ class UIKeyboardMapping(UITextMenu):
         return action
 
     def _save_binding(self, action: str, identifier: str):
+        if not keyboard_mapping.is_assignable_key(identifier):
+            return False
         mapping = self._mapping()
         for existing_action in list(mapping):
             if mapping[existing_action] == identifier:
@@ -68,6 +74,7 @@ class UIKeyboardMapping(UITextMenu):
         mapping[action] = identifier
         self.config_object.set_option(keyboard_mapping.CONFIG_KEY, mapping)
         self.manager.reload_mapping()
+        return True
 
     def _draw_lines(self, lines: list[str]):
         self.clear_screen()
@@ -86,7 +93,12 @@ class UIKeyboardMapping(UITextMenu):
     def _draw_capture(self):
         captured = self.manager.take_captured()
         if captured is not None and self.capture_action is not None:
-            self._save_binding(self.capture_action, captured)
+            if not self._save_binding(self.capture_action, captured):
+                self.mode = "menu"
+                self.capture_action = None
+                self._rebuild_menu()
+                self.message(_("Arrow/Enter unavailable"), 1)
+                return self.update(force=True)
             self.mode = "menu"
             self.capture_action = None
             self._rebuild_menu()
@@ -132,7 +144,9 @@ class UIKeyboardMapping(UITextMenu):
         value = selected.get("value")
         if value == "__test__":
             self.mode = "test"
-            self.manager.start_capture()
+            # Keyboard Left remains a real UI Left key in test mode so it can
+            # return to this menu, while all other keys are only displayed.
+            self.manager.start_capture(allow_left=True)
             return
         if value == "__clear__":
             self.config_object.set_option(keyboard_mapping.CONFIG_KEY, {})

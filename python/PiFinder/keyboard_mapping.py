@@ -35,6 +35,20 @@ ACTIONS: tuple[tuple[str, str], ...] = (
     ("tracking_off", "Tracking Off"),
 )
 
+# Keep the keys needed to operate menus available at all times. In particular,
+# Left must be able to leave Test Keys, and Enter/arrow keys must retain their
+# normal UI navigation behavior instead of becoming global mount shortcuts.
+RESERVED_KEY_IDS = frozenset(
+    {
+        "KEY_28",  # Enter
+        "KEY_96",  # Keypad Enter
+        "KEY_103",  # Up
+        "KEY_105",  # Left
+        "KEY_106",  # Right
+        "KEY_108",  # Down
+    }
+)
+
 _MOUNT_DIRECTIONS = {
     "mount_up": "north",
     "mount_down": "south",
@@ -128,6 +142,10 @@ def key_label(identifier: str) -> str:
     return _KEY_LABELS.get(code, f"Key {code}")
 
 
+def is_assignable_key(identifier: str) -> bool:
+    return str(identifier) not in RESERVED_KEY_IDS
+
+
 def make_event(
     code: int, pressed: bool, keycode: int = 0, *, repeat: bool = False
 ) -> dict[str, Any]:
@@ -167,7 +185,7 @@ class KeyboardDispatcher:
         actions = {action for action, _label in ACTIONS}
         inverted: dict[str, str] = {}
         for action, identifier in (mapping or {}).items():
-            if action in actions and identifier:
+            if action in actions and identifier and is_assignable_key(str(identifier)):
                 inverted[str(identifier)] = action
         # A binding may be cleared/reassigned while its direction key is held.
         # Stop first so the old held key cannot keep renewing motion after its
@@ -269,6 +287,7 @@ class KeyboardMappingManager:
         self.last_key_code: Optional[int] = None
         self.last_key_at = 0.0
         self._capturing = False
+        self._capture_allows_left = False
         self._captured: Optional[str] = None
         self._suppressed_until_release: set[str] = set()
 
@@ -286,14 +305,16 @@ class KeyboardMappingManager:
         )
         self.reload_mapping()
 
-    def start_capture(self) -> None:
+    def start_capture(self, *, allow_left: bool = False) -> None:
         with self._lock:
             self._capturing = True
+            self._capture_allows_left = allow_left
             self._captured = None
 
     def cancel_capture(self) -> None:
         with self._lock:
             self._capturing = False
+            self._capture_allows_left = False
             self._captured = None
 
     def take_captured(self) -> Optional[str]:
@@ -301,6 +322,7 @@ class KeyboardMappingManager:
             captured = self._captured
             if captured is not None:
                 self._capturing = False
+                self._capture_allows_left = False
                 self._captured = None
             return captured
 
@@ -319,14 +341,19 @@ class KeyboardMappingManager:
         event_now = time.monotonic() if now is None else now
 
         with self._lock:
+            pass_through_left = (
+                self._capturing
+                and self._capture_allows_left
+                and identifier == "KEY_105"
+            )
             if pressed and not repeat:
                 self.last_key = identifier
                 self.last_key_code = code
                 self.last_key_at = time.time()
-                if self._capturing:
+                if self._capturing and not pass_through_left:
                     self._captured = identifier
                     self._suppressed_until_release.add(identifier)
-            capturing = self._capturing
+            capturing = self._capturing and not pass_through_left
             suppressed = identifier in self._suppressed_until_release
             if suppressed and not pressed:
                 self._suppressed_until_release.discard(identifier)

@@ -41,11 +41,11 @@ def test_actions_are_exactly_the_requested_mount_functions():
 @pytest.mark.unit
 def test_direction_key_holds_with_keepalive_and_stops_on_release():
     dispatcher, _, mount = _dispatcher()
-    dispatcher.set_mapping({"mount_up": "KEY_103"})
+    dispatcher.set_mapping({"mount_up": "KEY_17"})  # W
 
-    assert dispatcher.handle_key("KEY_103", True, 10.0)
+    assert dispatcher.handle_key("KEY_17", True, 10.0)
     dispatcher.tick(10.0 + keyboard_mapping.MANUAL_MOTION_KEEPALIVE_INTERVAL + 0.01)
-    assert dispatcher.handle_key("KEY_103", False, 11.0)
+    assert dispatcher.handle_key("KEY_17", False, 11.0)
 
     assert _drain(mount) == [
         {
@@ -69,12 +69,12 @@ def test_speed_tracking_and_goto_dispatch():
         {
             "speed_up": "KEY_78",
             "speed_down": "KEY_74",
-            "goto_start": "KEY_28",
+            "goto_start": "KEY_34",
             "tracking_off": "KEY_20",
         }
     )
 
-    for identifier in ("KEY_78", "KEY_74", "KEY_28", "KEY_20"):
+    for identifier in ("KEY_78", "KEY_74", "KEY_34", "KEY_20"):
         dispatcher.handle_key(identifier, True, 0.0)
         dispatcher.handle_key(identifier, False, 0.1)
 
@@ -149,8 +149,8 @@ def test_repeat_is_consumed_but_release_still_stops_mapped_motion():
 @pytest.mark.unit
 def test_clearing_mapping_stops_a_held_direction():
     dispatcher, _, mount = _dispatcher()
-    dispatcher.set_mapping({"mount_down": "KEY_108"})
-    dispatcher.handle_key("KEY_108", True, 1.0)
+    dispatcher.set_mapping({"mount_down": "KEY_31"})  # S
+    dispatcher.handle_key("KEY_31", True, 1.0)
 
     dispatcher.set_mapping({})
     dispatcher.tick(10.0)
@@ -162,3 +162,39 @@ def test_clearing_mapping_stops_a_held_direction():
 def test_key_labels_are_human_readable_with_unknown_fallback():
     assert keyboard_mapping.key_label("KEY_103") == "Up"
     assert keyboard_mapping.key_label("KEY_999") == "Key 999"
+
+
+@pytest.mark.unit
+def test_arrow_and_enter_keys_cannot_be_mapped():
+    dispatcher, _, mount = _dispatcher()
+    dispatcher.set_mapping(
+        {
+            "mount_up": "KEY_103",
+            "mount_down": "KEY_108",
+            "mount_left": "KEY_105",
+            "mount_right": "KEY_106",
+            "goto_start": "KEY_28",
+            "tracking_off": "KEY_96",
+        }
+    )
+
+    assert dispatcher.key_actions == {}
+    for identifier in keyboard_mapping.RESERVED_KEY_IDS:
+        assert dispatcher.handle_key(identifier, True, 1.0) is False
+    assert _drain(mount) == []
+
+
+@pytest.mark.unit
+def test_keyboard_left_exits_test_mode_instead_of_being_captured():
+    manager = keyboard_mapping.KeyboardMappingManager()
+    manager.start(queue.Queue(), queue.Queue(), _Config())
+    manager.start_capture(allow_left=True)
+
+    assert manager.handle_event(keyboard_mapping.make_event(105, True), 1.0) is None
+    assert (
+        manager.handle_event(
+            keyboard_mapping.make_event(105, False, KeyboardInterface.LEFT), 1.1
+        )
+        == KeyboardInterface.LEFT
+    )
+    assert manager.take_captured() is None
