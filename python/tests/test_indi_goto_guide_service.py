@@ -75,6 +75,12 @@ def test_pulse_align_threshold_is_capped_to_reachable_error(monkeypatch):
     )
 
 
+def test_refine_accuracy_falls_back_to_three_arcmin(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+
+    assert service._final_accuracy_arcmin() == pytest.approx(3.0)
+
+
 def test_lower_configured_pulse_align_threshold_is_preserved(monkeypatch):
     service = _make_service(monkeypatch, [1000.0])
     service.config_values["indi_pifinder_goto_near_threshold_deg"] = 0.2

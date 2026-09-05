@@ -2220,6 +2220,21 @@ def test_guide_rate_boosts_to_fast_for_large_error(monkeypatch):
     assert mount._guide_rate_writable is True
 
 
+def test_three_arcmin_refine_uses_fast_rate_for_observed_near_error(monkeypatch):
+    """A roughly 0.1-degree miss should no longer enter the slow fine band."""
+    mount = DummyConnectedMount()
+    mount._guide_correction_accuracy_arcmin = 3.0
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (0.5, 0.5))
+
+    mount._select_guide_rate_for_error(8.0)
+
+    assert mount.client.numbers[-1][2] == {
+        "GUIDE_RATE_WE": mci.GUIDE_RATE_FAST_X,
+        "GUIDE_RATE_NS": mci.GUIDE_RATE_FAST_X,
+    }
+    assert mount._guide_rate_boosted
+
+
 def test_guide_rate_drops_to_fine_inside_fast_band(monkeypatch):
     mount = DummyConnectedMount()
     mount._guide_correction_accuracy_arcmin = 6.0

@@ -35,7 +35,7 @@
     "skysafari_indi_sync": true,
     "skysafari_planet_track_freq": true,
     "skysafari_pifinder_align": true,
-    "indi_goto_refine_accuracy_arcmin": 6.0,
+    "indi_goto_refine_accuracy_arcmin": 3.0,
     "indi_goto_method": "pifinder",
     "indi_tracking_guide_enabled": true,
     "indi_pifinder_goto_near_threshold_deg": 1.0,

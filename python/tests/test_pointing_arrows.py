@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from PiFinder.ui import object_list
-from PiFinder.ui.ui_utils import pointing_arrows
+from PiFinder.ui.ui_utils import draw_pointing_instructions, pointing_arrows
 
 pytestmark = pytest.mark.unit
 
@@ -128,3 +128,36 @@ def test_object_list_locate_text_keeps_zero_axis(monkeypatch):
     monkeypatch.setattr(object_list, "aim_degrees", lambda *_args: (0.0, 2.5))
 
     assert ui.create_locate_text(target) == "RA0.0 DEC2.5"
+
+
+def test_push_display_shows_fine_guide_steps_below_point_two_degrees():
+    """Near-target values need 0.001-degree resolution to expose 0.005-degree pulses."""
+    rendered = []
+    ui = make_ui()
+    ui.display_class = SimpleNamespace(resY=128)
+    ui.fonts = SimpleNamespace(huge=SimpleNamespace(height=20, font=object()))
+    ui.colors = SimpleNamespace(get=lambda brightness: brightness)
+    ui.draw = SimpleNamespace(
+        text=lambda _anchor, value, **_kwargs: rendered.append(value)
+    )
+
+    draw_pointing_instructions(ui, 0.10, 0.055, mount_type="Alt/Az")
+
+    assert rendered[0].endswith("0.100")
+    assert rendered[1].endswith("0.055")
+
+
+def test_push_display_keeps_compact_precision_away_from_target():
+    rendered = []
+    ui = make_ui()
+    ui.display_class = SimpleNamespace(resY=128)
+    ui.fonts = SimpleNamespace(huge=SimpleNamespace(height=20, font=object()))
+    ui.colors = SimpleNamespace(get=lambda brightness: brightness)
+    ui.draw = SimpleNamespace(
+        text=lambda _anchor, value, **_kwargs: rendered.append(value)
+    )
+
+    draw_pointing_instructions(ui, 0.25, 1.25, mount_type="Alt/Az")
+
+    assert rendered[0].endswith("0.25")
+    assert rendered[1].endswith("1.2")

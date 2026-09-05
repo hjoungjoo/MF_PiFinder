@@ -444,8 +444,10 @@ def draw_pointing_instructions(
         (az_anchor, az_arrow, point_az),
         (alt_anchor, alt_arrow, point_alt),
     ):
-        # Change decimal points when within 1 degree
-        decimals = 2 if value < 1 else 1
+        # A capped fine-guide pulse moves only about 0.005 degrees at 0.5x.
+        # Show one more decimal near the target so each correction is visible
+        # instead of making the Push screen appear stalled.
+        decimals = 3 if value < 0.2 else 2 if value < 1 else 1
         ui.draw.text(
             anchor,
             f"{arrow}{value : >5.{decimals}f}",

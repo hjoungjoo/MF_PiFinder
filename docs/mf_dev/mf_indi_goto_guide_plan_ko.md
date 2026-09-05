@@ -287,8 +287,8 @@ GUIDE_PULSE_MIN_MS = 20 / GUIDE_PULSE_MAX_MS = 2500
   한 펄스 지속시간(ms) clamp 범위.
 component_threshold = max(0.5, accuracy_arcmin / 2.0)
   축별(NS/WE) 데드밴드. 이보다 작은 축 오차에는 그 축 펄스를 보내지 않는다.
-DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 6.0
-  caller가 정확도를 안 주면 쓰는 solve 보정 목표 정확도(= 0.1도).
+DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 3.0
+  caller가 정확도를 안 주면 쓰는 solve 보정 목표 정확도(= 0.05도).
 GOTO_REFINE_DELAY_SECONDS = 8.0 / GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
   INDI Mount refine(1회 solve 보정)의 대기/솔브 타임아웃.
 ```
@@ -306,9 +306,9 @@ indi_goto_method = "indi_mount" | "pifinder"
 indi_tracking_guide_enabled = false | true
   기본값: true (2026-07-19에 false에서 변경)
 
-indi_goto_refine_accuracy_arcmin = 6.0
-  solve 기반 정밀 보정의 목표 정확도(분각). 기본 6′ = 0.1도로 문서와 일치시켰다
-  (이전 10′에서 하향). 공유 사용처: PiFinder GoTo 최종 pulse guide 정렬, LCD 수동
+indi_goto_refine_accuracy_arcmin = 3.0
+  solve 기반 정밀 보정의 목표 정확도(분각). 실장비 아이피스 중앙 정렬 결과에 따라
+  6′에서 3′ = 0.05도로 하향했다. 공유 사용처: PiFinder GoTo 최종 pulse guide 정렬, LCD 수동
   "Guide Correction". (`indi_goto_refine_once` 기반 INDI Mount refine은
   2026-07-19에 제거. 자동 추적 가이드 밴드는 별도 키
   `indi_tracking_guide_threshold_arcmin` 사용.)
@@ -516,7 +516,7 @@ flowchart TD
 ## GoTo Type: PiFinder
 
 PiFinder가 `PointingCoordinateService` 좌표를 기준으로, mount sync와 INDI GoTo를
-반복해 target에 접근하고, 마지막 1도 이내에서는 pulse guide로 0.1도 미만까지
+반복해 target에 접근하고, 마지막 1도 이내에서는 pulse guide로 0.05도 미만까지
 정밀 정렬하는 모드다.
 
 이전 초안은 target이 멀 때 "거리별 수동 이동(manual approach)"으로 접근했으나,
@@ -532,7 +532,7 @@ flowchart TD
     E --> F[target과 현재 좌표 오차 계산]
     F --> G{오차 >= 1도?}
     G -->|yes| B
-    G -->|no| H{오차 >= 0.1도?}
+    G -->|no| H{오차 >= 0.05도?}
     H -->|yes| I[pulse guide 미세 보정]
     I --> J[좌표 갱신 대기]
     J --> E
@@ -560,14 +560,14 @@ flowchart TD
   제한한다. sync가 mount 좌표계를 PiFinder 좌표계에 다시 맞추므로, 다음 GoTo가 남은
   오차만큼만 이동한다.
 - **오차 < 1도**: 마운트 슬루 대신 pulse guide로 전환해, 목표 정확도
-  (`indi_goto_refine_accuracy_arcmin`, 0.1도 = 6분각) 미만이 될 때까지 미세
+  (`indi_goto_refine_accuracy_arcmin`, 0.05도 = 3분각) 미만이 될 때까지 미세
   보정한다. 이 pulse guide 보정은 추적 가이드와 같은 보정 로직을 재사용한다.
   이 단계는 `PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS`(90초) 제한이 있고, 그 안에
   수렴하지 못하면 `pulse align did not converge` error로 중단한다(마운트 펄스가
   fresh solve마다 ~6초 간격이라 정상 수렴에는 몇 번의 펄스면 충분하다).
-- **완료 직후 오차가 이미 목표 정확도(0.1도) 미만**이면 pulse guide 단계를 건너뛰고
+- **완료 직후 오차가 이미 목표 정확도(0.05도) 미만**이면 pulse guide 단계를 건너뛰고
   바로 final sync로 넘어간다.
-- **오차 < 목표 정확도(0.1도)**: 최종 target 좌표로 다시 sync/alignment하고
+- **오차 < 목표 정확도(0.05도)**: 최종 target 좌표로 다시 sync/alignment하고
   `complete`로 넘어간다. 이 마지막 동기화는 이후 tracking 정밀도를 높이기 위한
   절차다.
 - 각 GoTo를 시작할 때 per-GoTo 진행 플래그(`final_sync_sent`, `correction_count`
@@ -1164,7 +1164,7 @@ tracking_guide_manual_retarget    (신규) 마지막 재타겟 발생 여부/시
 
 목표:
 
-- 오차가 1도 미만이 된 뒤, pulse guide로 목표 정확도(0.1도 = 6분각) 미만까지
+- 오차가 1도 미만이 된 뒤, pulse guide로 목표 정확도(0.05도 = 3분각) 미만까지
   미세 정렬한다.
 - pulse guide 보정은 추적 가이드와 같은 보정 로직을 재사용한다.
 
@@ -1172,7 +1172,7 @@ tracking_guide_manual_retarget    (신규) 마지막 재타겟 발생 여부/시
 
 - 오차 < 1도에서 마운트 슬루(GoTo) 대신 pulse guide로 전환되는가.
 - pulse guide 보정 방향/duration이 오차 방향과 크기에 맞게 계산되는가.
-- 목표 정확도(0.1도) 미만이 되면 반복을 멈추는가.
+- 목표 정확도(0.05도) 미만이 되면 반복을 멈추는가.
 - pulse guide 실패 시 fallback 여부가 status에 표시되는가.
 - 미세 정렬 중 GoTo가 다시 끼어들지 않는가(1도 이내에서는 슬루 없음).
 
@@ -1180,7 +1180,7 @@ tracking_guide_manual_retarget    (신규) 마지막 재타겟 발생 여부/시
 
 목표:
 
-- 오차가 목표 정확도(0.1도) 미만이 되면 최종 target 좌표로 mount sync/alignment를
+- 오차가 목표 정확도(0.05도) 미만이 되면 최종 target 좌표로 mount sync/alignment를
   한 번 수행하고 `complete`로 넘어간다.
 - 각 GoTo 시작 시 per-GoTo 진행 플래그를 리셋해 최종 sync가 no-op이 되지 않게 한다.
 

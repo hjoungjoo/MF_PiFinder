@@ -97,10 +97,10 @@ MANUAL_MOTION_POLL_SECONDS = 0.1
 MANUAL_MOTION_STOP_RETRY_SECONDS = 0.5
 GOTO_REFINE_DELAY_SECONDS = 8.0
 GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
-# Solve-based fine-correction target accuracy (arcmin). 6' = 0.1 deg, matching
-# the documented PiFinder GoTo final-alignment accuracy; used as the fallback
-# when a caller does not pass an explicit accuracy.
-DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 6.0
+# Solve-based fine-correction target accuracy (arcmin). The 3' default matches
+# the tracking-guide hold band and the field-tested eyepiece centering needed
+# below the older 6' threshold. Used when a caller does not pass an accuracy.
+DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 3.0
 # Cadence of the closed-loop pulse-guide correction. The loop also gates on a
 # FRESH plate solve (it never pulses twice off the same solve), and the 3 s
 # floor is longer than the 2.5 s maximum timed pulse. This lets every fresh

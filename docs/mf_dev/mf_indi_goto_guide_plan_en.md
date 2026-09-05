@@ -316,8 +316,8 @@ GUIDE_PULSE_MIN_MS = 20 / GUIDE_PULSE_MAX_MS = 2500
   Clamp range for a single pulse duration (ms).
 component_threshold = max(0.5, accuracy_arcmin / 2.0)
   Per-axis (NS/WE) deadband; no pulse is sent on an axis whose error is smaller.
-DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 6.0
-  Solve-refine target accuracy when a caller passes none (= 0.1 deg).
+DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 3.0
+  Solve-refine target accuracy when a caller passes none (= 0.05 deg).
 GOTO_REFINE_DELAY_SECONDS = 8.0 / GOTO_REFINE_SOLVE_TIMEOUT_SECONDS = 45.0
   Wait / solve timeout for the INDI Mount one-shot refine.
 ```
@@ -335,9 +335,9 @@ indi_goto_method = "indi_mount" | "pifinder"
 indi_tracking_guide_enabled = false | true
   default: true (changed from false on 2026-07-19)
 
-indi_goto_refine_accuracy_arcmin = 6.0
-  Target accuracy (arcmin) for solve-based fine correction. Default 6' = 0.1 deg
-  to match the docs (lowered from 10'). Shared by: PiFinder GoTo final
+indi_goto_refine_accuracy_arcmin = 3.0
+  Target accuracy (arcmin) for solve-based fine correction. Lowered from 6' to
+  3' = 0.05 deg following field-tested eyepiece centering. Shared by: PiFinder GoTo final
   pulse-guide alignment and the LCD manual "Guide Correction". (The
   `indi_goto_refine_once`-based INDI Mount refine was removed on 2026-07-19.
   The automatic tracking guide band uses a separate key,
@@ -551,7 +551,7 @@ Behavior:
 
 In this mode, PiFinder uses `PointingCoordinateService` coordinates and repeats
 mount sync + INDI GoTo to approach the target, then within the last 1 degree
-switches to pulse guide to align down to under 0.1 degree.
+switches to pulse guide to align down to under 0.05 degree.
 
 The earlier draft approached a far target with distance-based manual movement,
 but hardware testing surfaced several problems (coordinate-frame mismatch, motion
@@ -567,7 +567,7 @@ flowchart TD
     E --> F[Calculate target error]
     F --> G{error >= 1 degree?}
     G -->|yes| B
-    G -->|no| H{error >= 0.1 degree?}
+    G -->|no| H{error >= 0.05 degree?}
     H -->|yes| I[pulse-guide fine correction]
     I --> J[Wait for coordinate update]
     J --> E
@@ -598,15 +598,15 @@ Detailed procedure:
   frame to PiFinder's, each following GoTo only moves the remaining error.
 - **error < 1 degree**: switch from mount slew to pulse guide, correcting until
   the error is below the target accuracy (`indi_goto_refine_accuracy_arcmin`,
-  0.1 deg = 6 arcmin). This pulse-guide correction reuses the same correction
+  0.05 deg = 3 arcmin). This pulse-guide correction reuses the same correction
   logic as Tracking Guide. This stage has a
   `PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS` (90 s) limit; if it does not converge
   in that time it stops in error (`pulse align did not converge`) — the mount
   pulses roughly every ~6 s off each fresh solve, so a few pulses normally
   suffice.
-- **error already below the target accuracy (0.1 deg) right off the slew**: skip
+- **error already below the target accuracy (0.05 deg) right off the slew**: skip
   the pulse-guide stage and go straight to the final sync.
-- **error < target accuracy (0.1 deg)**: sync/align the mount once more to the
+- **error < target accuracy (0.05 deg)**: sync/align the mount once more to the
   final target coordinate and advance to `complete`. This final sync improves
   tracking precision afterward.
 - At the start of every GoTo, reset the per-GoTo progress flags
@@ -1259,14 +1259,14 @@ Checklist:
 Goal:
 
 - After the error is below 1 degree, use pulse guide to align to below the target
-  accuracy (0.1 deg = 6 arcmin).
+  accuracy (0.05 deg = 3 arcmin).
 - The pulse-guide correction reuses the same logic as Tracking Guide.
 
 Checklist:
 
 - Below 1 degree, control switches from mount slew (GoTo) to pulse guide.
 - Pulse-guide direction/duration is computed from the error direction and size.
-- The loop stops once the error is below the target accuracy (0.1 deg).
+- The loop stops once the error is below the target accuracy (0.05 deg).
 - Pulse-guide failure/fallback is visible in status.
 - No GoTo intervenes during fine alignment (no slew within 1 degree).
 
@@ -1274,7 +1274,7 @@ Checklist:
 
 Goal:
 
-- Once the error is below the target accuracy (0.1 deg), run a single
+- Once the error is below the target accuracy (0.05 deg), run a single
   sync/alignment to the final target coordinate and advance to `complete`.
 - Reset the per-GoTo progress flags at the start of every GoTo so the final sync
   is not a no-op.

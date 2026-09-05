@@ -529,10 +529,10 @@ class IndiGotoGuideService:
     def _final_accuracy_arcmin(self) -> float:
         try:
             value = float(
-                self.config_values.get("indi_goto_refine_accuracy_arcmin", 6.0)
+                self.config_values.get("indi_goto_refine_accuracy_arcmin", 3.0)
             )
         except (TypeError, ValueError):
-            value = 6.0
+            value = 3.0
         return max(0.1, value)
 
     def _pulse_align_threshold_arcmin(self) -> float:
@@ -1644,7 +1644,7 @@ class IndiGotoGuideService:
                 )
             ),
             "indi_goto_refine_accuracy_arcmin": float(
-                cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
+                cfg.get_option("indi_goto_refine_accuracy_arcmin", 3.0)
             ),
             "indi_tracking_guide_threshold_arcmin": float(
                 cfg.get_option("indi_tracking_guide_threshold_arcmin", 3.0)

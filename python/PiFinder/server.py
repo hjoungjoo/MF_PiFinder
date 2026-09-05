@@ -1200,7 +1200,7 @@ class Server:
                     cfg.get_option("skysafari_planet_track_freq", True)
                 ),
                 "indi_goto_refine_accuracy_arcmin": float(
-                    cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
+                    cfg.get_option("indi_goto_refine_accuracy_arcmin", 3.0)
                 ),
                 "indi_goto_method": cfg.get_option("indi_goto_method", "pifinder"),
                 "indi_tracking_guide_enabled": bool(
@@ -1848,7 +1848,7 @@ class Server:
 
             try:
                 refine_accuracy_arcmin = float(
-                    request.form.get("indi_goto_refine_accuracy_arcmin") or "6.0"
+                    request.form.get("indi_goto_refine_accuracy_arcmin") or "3.0"
                 )
                 if refine_accuracy_arcmin <= 0:
                     raise ValueError("Refine accuracy must be greater than zero")
