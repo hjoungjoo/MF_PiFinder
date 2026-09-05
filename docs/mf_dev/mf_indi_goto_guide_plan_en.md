@@ -367,7 +367,7 @@ indi_pifinder_goto_max_gotos = 10
   `PIFINDER_MIN_ERROR_IMPROVEMENT_ARCMIN` (1 arcmin), it stops early so the mount
   does not keep slewing without converging.
 
-indi_tracking_guide_threshold_arcmin = 10.0
+indi_tracking_guide_threshold_arcmin = 3.0
   The target accuracy band Tracking Guide hands to pulse guide. mountcontrol's
   guide correction pulses while the error exceeds this and reports "settled"
   (stops pulsing) at or below it. So it is both the precision pulse guide holds
@@ -435,9 +435,9 @@ indi_tracking_guide_goto_recovery_enabled = false | true
   When Off, Tracking Guide corrects with pulse-guide only, regardless of
   error size (large errors are reported in status); it never slews the mount.
 
-indi_tracking_guide_goto_threshold_deg = 0.5
-  Pulse-guide handles post-settle errors up to this size (default 0.5 deg =
-  30 arcmin; menu INDI Setting > Goto/Guide > Recovery Range offers 0.25-3 deg).
+indi_tracking_guide_goto_threshold_deg = 0.25
+  Pulse-guide handles post-settle errors up to this size (default 0.25 deg =
+  15 arcmin; menu INDI Setting > Goto/Guide > Recovery Range offers 0.25-3 deg).
   Errors strictly ABOVE this use the sync + GoTo recovery (when goto
   recovery is enabled); at/below it, pulse-guide corrects directly.
   This single boundary is also the practical pulse-guide envelope.
@@ -513,7 +513,7 @@ Max GoTos                          select  -> indi_pifinder_goto_max_gotos
 Note: the web has no `Recovery Range` (goto_threshold_deg) control — that is
 LCD-only. The web `GoTo Recovery` checkbox label "re-slew when off target by more
 than 3 deg" is fixed helper text; the actual re-slew boundary follows Recovery
-Range (default 0.5 deg). (The label text is due for cleanup.)
+Range (default 0.25 deg). (The label text is due for cleanup.)
 
 Read-only `GoTo / Guide Status` panel: reads `indi_goto_guide_status.json`
 through the `/indi/current_values` poll and shows service_state/phase,

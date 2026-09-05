@@ -334,7 +334,7 @@ indi_pifinder_goto_max_gotos = 10
   (1분각) 이상 줄지 않으면 상한 도달 전이라도 조기 중단해 마운트가 수렴하지 못하는
   채로 계속 슬루하는 것을 막는다.
 
-indi_tracking_guide_threshold_arcmin = 10.0
+indi_tracking_guide_threshold_arcmin = 3.0
   추적 가이드가 pulse guide에 넘겨주는 목표 정확도(accuracy) 밴드. mountcontrol의
   guide correction은 오차가 이 값을 넘으면 펄스를 쏘고, 이하이면 "정착"으로 보고
   펄스를 멈춘다. 즉 pulse guide가 타겟을 유지하는 정밀도이자 보정 발동 경계다.
@@ -404,8 +404,8 @@ indi_tracking_guide_goto_recovery_enabled = false | true
   Off이면 오차 크기와 관계없이 pulse guide로만 보정하고(큰 오차는 상태에
   표시), 마운트를 절대 슬루하지 않는다.
 
-indi_tracking_guide_goto_threshold_deg = 0.5
-  pulse guide는 정착 후 오차를 이 크기까지 담당한다 (기본 0.5도 = 30 arcmin;
+indi_tracking_guide_goto_threshold_deg = 0.25
+  pulse guide는 정착 후 오차를 이 크기까지 담당한다 (기본 0.25도 = 15 arcmin;
   메뉴 INDI Setting > Goto/Guide > Recovery Range에서 0.25~3도 선택).
   이 값을 "초과"하는 오차는 (복구가 켜져 있을 때) pulse guide 대신
   sync + GoTo 복구를 사용하고, 이하이면 pulse guide로 직접 보정한다.
@@ -478,7 +478,7 @@ Max GoTos                          select  -> indi_pifinder_goto_max_gotos
 
 주의: 웹에는 `Recovery Range`(goto_threshold_deg) 선택이 없다 — LCD 메뉴에서만
 바꾼다. 웹 `GoTo Recovery` 체크박스 라벨의 "re-slew when off target by more than
-3 deg" 문구는 고정 안내 텍스트로, 실제 재슬루 경계는 Recovery Range(기본 0.5도)를
+3 deg" 문구는 고정 안내 텍스트로, 실제 재슬루 경계는 Recovery Range(기본 0.25도)를
 따른다. (라벨 문구는 정리 대상.)
 
 읽기전용 상태 패널 `GoTo / Guide Status`: `indi_goto_guide_status.json`을

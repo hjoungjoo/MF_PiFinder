@@ -1113,7 +1113,7 @@ class IndiGotoGuideService:
                 # first forces _enable_pulse_correction to re-send with it).
                 self._disable_tracking_guide("manual re-target")
                 accuracy = float(
-                    self.config_values.get("indi_tracking_guide_threshold_arcmin", 10.0)
+                    self.config_values.get("indi_tracking_guide_threshold_arcmin", 3.0)
                 )
                 self._enable_pulse_correction(accuracy)
                 self.tracking_guide_state = "enabled"
@@ -1145,7 +1145,7 @@ class IndiGotoGuideService:
             return
 
         goto_threshold_arcmin = (
-            float(self.config_values.get("indi_tracking_guide_goto_threshold_deg", 0.5))
+            float(self.config_values.get("indi_tracking_guide_goto_threshold_deg", 0.25))
             * 60.0
         )
         goto_recovery_enabled = bool(
@@ -1191,7 +1191,7 @@ class IndiGotoGuideService:
         # the error; with recovery Off it is the only tool and pulses slowly
         # toward the target without any mount slew.
         accuracy = float(
-            self.config_values.get("indi_tracking_guide_threshold_arcmin", 10.0)
+            self.config_values.get("indi_tracking_guide_threshold_arcmin", 3.0)
         )
         self._enable_pulse_correction(accuracy)
         self.tracking_recovery_attempts = 0
@@ -1647,7 +1647,7 @@ class IndiGotoGuideService:
                 cfg.get_option("indi_goto_refine_accuracy_arcmin", 6.0)
             ),
             "indi_tracking_guide_threshold_arcmin": float(
-                cfg.get_option("indi_tracking_guide_threshold_arcmin", 10.0)
+                cfg.get_option("indi_tracking_guide_threshold_arcmin", 3.0)
             ),
             "indi_tracking_guide_settle_seconds": float(
                 cfg.get_option("indi_tracking_guide_settle_seconds", 1.0)
@@ -1659,7 +1659,7 @@ class IndiGotoGuideService:
                 cfg.get_option("indi_tracking_guide_goto_recovery_enabled", True)
             ),
             "indi_tracking_guide_goto_threshold_deg": float(
-                cfg.get_option("indi_tracking_guide_goto_threshold_deg", 0.5)
+                cfg.get_option("indi_tracking_guide_goto_threshold_deg", 0.25)
             ),
             "indi_tracking_guide_min_target_alt_deg": float(
                 cfg.get_option(
