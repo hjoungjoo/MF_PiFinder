@@ -91,6 +91,32 @@ A few things are worth knowing about the connection today:
    SkySafari appears to freeze.  When you are relying on SkySafari, lengthen or turn off
    the sleep timer (see :ref:`quick_start:adjusting brightness`).
 
+Stellarium Mobile Plus (MF fork)
+-------------------------------
+
+Connect to the same network as the PiFinder and configure an LX200-compatible TCP
+telescope connection to ``pifinder.local`` (or its numeric IP), port **4030**. Only one
+planetarium connection is served at a time.
+
+Stellarium can read the pointing and send a target. In this fork, receiving target
+coordinates does not itself start motion: the subsequent LX200 GoTo command does.
+This preserves the existing SkySafari Align and INDI routing. With mount control
+enabled, a GoTo can move the mount according to the configured MF GoTo method;
+with it disabled, it only adds the object to PiFinder's recent/Push-To view.
+The existing SkySafari-named GoTo/Align settings also govern this connection.
+
+The client's site setters are echoed only within that connection. Its site and
+clock never replace the PiFinder GPS/manual location, system time or mount site.
+After disconnect, echoed site values are discarded. Target coordinates survive
+successive connections from the same client IP, since SkySafari can send each
+coordinate and GoTo/Align command on a separate connection. A different client IP
+or a communication gap of 60 seconds clears the previous target.
+The existing MF coordinate convention is unchanged; no additional epoch conversion
+is introduced by this port.
+
+Protocol tests cover both apps' framing and replies, but a physical Mobile Plus
+session and mount motion still need field verification before relying on this port.
+
 Troubleshooting
 ---------------
 

@@ -13,7 +13,7 @@ from PiFinder.composite_object import MagnitudeObject
 from PiFinder.ui.marking_menus import MarkingMenuOption, MarkingMenu
 from PiFinder.obj_types import OBJ_TYPES
 from PiFinder.ui.align import align_on_radec
-from PiFinder.ui.base import UIModule
+from PiFinder.ui.base import INDI_PROBLEM_STATES, UIModule
 from PiFinder.ui.log import UILog
 from PiFinder.ui.ui_utils import (
     TextLayouterScroll,
@@ -24,9 +24,11 @@ from PiFinder.ui.ui_utils import (
     name_deduplicate,
     draw_pointing_instructions,
 )
-from PiFinder import calc_utils
+from PiFinder import calc_utils, utils
 import functools
+import json
 import logging
+import math
 
 from PiFinder.db.observations_db import ObservationsDatabase
 from PiFinder.db.objects_db import ObjectsDatabase
@@ -405,13 +407,97 @@ class UIObjectDetails(UIModule):
 
     def active(self):
         self.activation_time = time.time()
+        self._push_status_next_read = 0.0
+        self._push_mount_status = {}
+        self._push_guide_status = {}
+        self._push_last_attempt = None
+        self._push_solve_interval = None
+
+    def _render_push_status(self):
+        now = time.time()
+        if time.monotonic() >= self._push_status_next_read:
+            self._push_status_next_read = time.monotonic() + 0.5
+            for attr, filename in (
+                ("_push_mount_status", "mount_control_status.json"),
+                ("_push_guide_status", "indi_goto_guide_status.json"),
+            ):
+                try:
+                    status = json.loads((utils.runtime_dir / filename).read_text())
+                    updated = float(status.get("updated", 0))
+                    if not math.isfinite(updated) or not 0 <= now - updated < 5:
+                        status = {}
+                except (OSError, ValueError, TypeError, AttributeError):
+                    status = {}
+                setattr(self, attr, status)
+
+        mount, guide = self._push_mount_status, self._push_guide_status
+        phase = guide.get("phase")
+        imu = self.shared_state.imu()
+        moving = bool(imu and imu.is_usable() and imu.moving)
+        if (
+            mount.get("mount_motion_active")
+            or mount.get("state") in {"moving", "slewing"}
+            or moving
+        ):
+            movement = _("Moving")
+        elif (
+            phase == "error"
+            or mount.get("state") in INDI_PROBLEM_STATES
+            or str(mount.get("state", "")).endswith("_failed")
+        ):
+            movement = _("Error")
+        elif phase == "pifinder_pulse_align":
+            movement = _("Adjusting")
+        elif (guide.get("tracking_guide_settle_remaining") or 0) > 0:
+            movement = _("Settling")
+        elif phase in {"pifinder_goto", "pifinder_goto_blocked"}:
+            movement = _("WAIT")
+        elif phase == "stopped":
+            movement = _("Stopped")
+        elif phase == "complete":
+            movement = _("Complete")
+        elif mount or (imu and imu.is_usable()):
+            movement = _("Idle")
+        else:
+            movement = _("No status")
+
+        attempt = self.shared_state.solution().last_solve_attempt
+        if isinstance(attempt, (int, float)) and math.isfinite(attempt) and attempt > 0:
+            if attempt != self._push_last_attempt:
+                previous = self._push_last_attempt
+                self._push_solve_interval = (
+                    attempt - previous
+                    if previous is not None and attempt > previous
+                    else None
+                )
+                self._push_last_attempt = attempt
+        else:
+            self._push_last_attempt = None
+            self._push_solve_interval = None
+        interval = "--"
+        if self._push_last_attempt is not None:
+            age = max(0.0, now - self._push_last_attempt)
+            if age > max(5.0, 2 * (self._push_solve_interval or 0)):
+                interval = f">{min(age, 999):.0f}s"
+            elif self._push_solve_interval is not None:
+                seconds = min(self._push_solve_interval, 999)
+                interval = f"{seconds:.1f}s" if seconds < 100 else f"{seconds:.0f}s"
+        text = movement + " | " + _("Solve {interval}").format(interval=interval)
+        self.draw.text(
+            (1, self.display_class.resY - self.fonts.small.height - 1),
+            text,
+            font=self.fonts.small.font,
+            fill=self.colors.get(192),
+            anchor="lt",
+        )
 
     def _check_catalog_initialized(self):
         code = self.object.catalog_code
         if code in ["PUSH", "USER", "OBS"]:
-            # In-memory objects with no backing catalog: pushed from SkySafari
-            # (PUSH), user-created (USER), or observing-list coordinate objects
-            # (OBS).  They're always "ready"; there's no catalog to initialize.
+            # In-memory objects with no backing catalog: pushed from a
+            # planetarium app such as SkySafari or Stellarium (PUSH),
+            # user-created (USER), or observing-list coordinate objects (OBS).
+            # They're always "ready"; there's no catalog to initialize.
             return True
         catalog = self.catalogs.get_catalog_by_code(code)
         return catalog and catalog.initialized
@@ -505,7 +591,12 @@ class UIObjectDetails(UIModule):
             return
 
         draw_pointing_instructions(
-            self, point_az, point_alt, indicator_color, self.mount_type
+            self,
+            point_az,
+            point_alt,
+            indicator_color,
+            self.mount_type,
+            bottom_padding=self.fonts.small.height + 2,
         )
 
     def update(self, force=True):
@@ -534,6 +625,7 @@ class UIObjectDetails(UIModule):
 
         if self.object_display_mode == DM_LOCATE:
             self._render_pointing_instructions()
+            self._render_push_status()
 
         elif self.object_display_mode == DM_DESC:
             # Object Magnitude and size i.e. 'Mag:4.0   Sz:7"'

@@ -40,8 +40,17 @@ PERIPHERAL_SATURATED_AREA_FRACTION = 0.005
 PERIPHERAL_BROAD_HIGHLIGHT_FRACTION = 0.85
 MIN_USABLE_PERIPHERAL_REGIONS = 4
 MIN_HARD_SATURATED_PERIPHERAL_REGIONS = 4
+# Three clean peripheral tiles still provide a sky sample when nearby lamps
+# occupy the other tiles. This exception requires background and highlight
+# headroom in the remaining sky; broad sky glow/bloom retains its guard.
+MIN_LOCAL_LIGHT_SKY_REGIONS = 3
 SATURATION_CEILING_PROBE_S = 30.0
 HIGHLIGHT_RAISE_CONFIRM_FRAMES = 3
+# A lost solve must not permanently prevent the exposure needed to reacquire
+# stars. Hold transient obscuration, then probe slowly using measured RAW
+# headroom. These timers affect exposure controls, not solver preprocessing.
+REACQUISITION_HOLD_S = 10.0
+REACQUISITION_PROBE_S = 5.0
 
 
 @dataclass(frozen=True)
@@ -459,6 +468,40 @@ class AutoStarFrameController:
         self._direction_reversals = 0
         self._last_direction = 0
         self._highlight_low_streak = 0
+        self._reacquisition_since: Optional[float] = None
+        self._reacquisition_probe_at: Optional[float] = None
+
+    def _reset_reacquisition(self) -> None:
+        self._reacquisition_since = None
+        self._reacquisition_probe_at = None
+
+    def _reacquisition_target(
+        self, sample: FrameExposureSample, highlight_fraction: float
+    ) -> Optional[ExposureGainTarget]:
+        if self._reacquisition_since is None:
+            self._reacquisition_since = sample.captured_at
+        if sample.captured_at - self._reacquisition_since < REACQUISITION_HOLD_S:
+            self._highlight_low_streak = 0
+            return None
+        if (
+            self._reacquisition_probe_at is not None
+            and sample.captured_at - self._reacquisition_probe_at
+            < REACQUISITION_PROBE_S
+        ):
+            self._highlight_low_streak = 0
+            return None
+        if not self._highlight_raise_confirmed():
+            return None
+        ratio = USABLE_HIGHLIGHT_TARGET_FRACTION / max(highlight_fraction, 1e-6)
+        target = self._target(
+            sample,
+            sample.actual_exposure_us * min(math.sqrt(2.0), ratio),
+            sample.actual_gain,
+            "reacquisition_exposure_up",
+        )
+        if target is not None:
+            self._reacquisition_probe_at = sample.captured_at
+        return target
 
     def _highlight_raise_confirmed(self) -> bool:
         self._highlight_low_streak += 1
@@ -546,19 +589,32 @@ class AutoStarFrameController:
     def _hard_peripheral_saturation(sample: FrameExposureSample) -> bool:
         """Return true only when a meaningful peripheral area is clipped.
 
-        A p99.9 spike or 0.1% clipped fraction can be produced by a bright
-        star or hot pixels, while one broadly bright region can be a local
-        lamp. Treating either as a bright sky caused a 0.5x safety correction
-        which immediately fought the background servo. A sky-wide cloud or
-        bloom affects at least two peripheral regions; those cases retain the
-        immediate safety response.
+        Several nearby lamps can each clip a small part of separate tiles.
+        Counting those tiles alone drove a dark low-altitude sky down to 3 ms.
+        With at least three clean sky tiles and headroom in their statistics,
+        let the filtered sky statistics drive exposure. Broad sky glow/bloom
+        and a field with too little clean sky retain the immediate reduction.
         """
+        regions = sample.peripheral()
         saturated_regions = sum(
             1
-            for region in sample.peripheral()
+            for region in regions
             if AutoStarFrameController._region_is_broadly_saturated(sample, region)
         )
-        usable_regions = len(sample.peripheral()) - saturated_regions
+        usable_regions = len(regions) - saturated_regions
+        if usable_regions >= MIN_LOCAL_LIGHT_SKY_REGIONS:
+            sky = AutoStarFrameController._peripheral_summary(sample)
+            usable_range = max(1.0, sample.white_level - sample.pedestal_adu)
+            p50, p99 = sky["p50"], sky["p99"]
+            if (
+                p50 is not None
+                and p99 is not None
+                and (p50 - sample.pedestal_adu) / usable_range
+                < USABLE_BACKGROUND_TARGET_FRACTION
+                and (p99 - sample.pedestal_adu) / usable_range
+                < USABLE_HIGHLIGHT_DOWN_P99_FRACTION
+            ):
+                return False
         return bool(
             saturated_regions >= MIN_HARD_SATURATED_PERIPHERAL_REGIONS
             or usable_regions < MIN_USABLE_PERIPHERAL_REGIONS
@@ -583,6 +639,26 @@ class AutoStarFrameController:
         safety: bool = False,
     ) -> Optional[ExposureGainTarget]:
         requested_light = exposure * gain
+        current_light = sample.actual_exposure_us * sample.actual_gain
+        held_by_background = False
+        if not safety and requested_light > current_light:
+            summary = self._peripheral_summary(sample)
+            p50 = summary["p50"]
+            if p50 is not None:
+                background_fraction = max(0.0, p50 - sample.pedestal_adu) / max(
+                    1.0, sample.white_level - sample.pedestal_adu
+                )
+                # In diffuse sky glow the highlight target can be unreachable
+                # before the background guard fires. Limit an upward step by
+                # both, avoiding repeated 350 -> 420 -> 350 ms oscillation.
+                background_limit = current_light * max(
+                    1.0,
+                    USABLE_BACKGROUND_TARGET_FRACTION / max(background_fraction, 1e-6),
+                )
+                if requested_light > background_limit:
+                    requested_light = background_limit
+                    exposure = requested_light / max(self.allocator.min_gain, gain)
+                    held_by_background = True
         held_by_ceiling = False
         saturation_ceiling = self._saturation_light_ceiling
         ceiling_active = bool(
@@ -615,7 +691,13 @@ class AutoStarFrameController:
             sample.actual_gain,
             ExposureGainTarget(exposure_i, gain_f, reason, safety),
         ):
-            self._reason = reason if held_by_ceiling else "deadband"
+            self._reason = (
+                reason
+                if held_by_ceiling
+                else "background_headroom_hold"
+                if held_by_background
+                else "deadband"
+            )
             return None
         direction = (
             1
@@ -671,6 +753,7 @@ class AutoStarFrameController:
         p999 = summary["p999"]
         hard_saturation = self._hard_peripheral_saturation(sample)
         if hard_saturation:
+            self._reset_reacquisition()
             self._highlight_low_streak = 0
             saturated_p999 = max(
                 (region.p999_adu for region in sample.peripheral()),
@@ -723,6 +806,7 @@ class AutoStarFrameController:
         p99 = summary["p99"]
         p999 = summary["p999"]
         if p50 is None or p99 is None or p999 is None:
+            self._reset_reacquisition()
             self._reason = "no_usable_peripheral_regions"
             return None
         highlight_signal = max(1.0, p999 - sample.pedestal_adu)
@@ -735,6 +819,7 @@ class AutoStarFrameController:
         # median itself consumes dynamic range. Keep this independent of the
         # local polluted-region filter so clean regions remain measurable.
         if background_fraction > USABLE_BACKGROUND_HIGH_FRACTION:
+            self._reset_reacquisition()
             self._highlight_low_streak = 0
             return self._target(
                 sample,
@@ -752,6 +837,7 @@ class AutoStarFrameController:
         # letting one polluted horizon band dictate the whole field. A single
         # upward application remains capped at +0.5 stop.
         if self._anchor_sample is None:
+            self._reset_reacquisition()
             if (
                 highlight_fraction > USABLE_HIGHLIGHT_HIGH_FRACTION
                 and p99_fraction >= USABLE_HIGHLIGHT_DOWN_P99_FRACTION
@@ -787,6 +873,7 @@ class AutoStarFrameController:
             highlight_fraction > USABLE_HIGHLIGHT_HIGH_FRACTION
             and p99_fraction >= USABLE_HIGHLIGHT_DOWN_P99_FRACTION
         ):
+            self._reset_reacquisition()
             self._highlight_low_streak = 0
             return self._target(
                 sample,
@@ -822,9 +909,21 @@ class AutoStarFrameController:
                 and self._latest_quality.matched_stars > 0
             )
             if not anchor_fresh or not quality_fresh or cloud_like or missing_periphery:
-                self._highlight_low_streak = 0
                 self._reason = "dark_cloud_anchor_hold"
+                if (
+                    (not anchor_fresh or not quality_fresh)
+                    and not sample.center_contaminated
+                    and sample.motion_degrees <= 0.01
+                    and float(summary["usable_regions"] or 0)
+                    >= MIN_USABLE_PERIPHERAL_REGIONS
+                    and background_fraction < USABLE_BACKGROUND_TARGET_FRACTION
+                    and p99_fraction < USABLE_HIGHLIGHT_DOWN_P99_FRACTION
+                ):
+                    return self._reacquisition_target(sample, highlight_fraction)
+                self._reset_reacquisition()
+                self._highlight_low_streak = 0
                 return None
+            self._reset_reacquisition()
             if not self._highlight_raise_confirmed():
                 return None
             # Upward changes are limited to +0.5 stop per actual application.
@@ -836,6 +935,7 @@ class AutoStarFrameController:
                 "highlight_headroom_exposure_up",
             )
         self._highlight_low_streak = 0
+        self._reset_reacquisition()
         self._reason = "highlight_headroom_deadband"
         return None
 
@@ -872,6 +972,7 @@ class AutoStarFrameController:
                 self._anchor_sample = sample
                 self._anchor_quality = quality
                 self._anchor_at = sample.captured_at
+                self._reset_reacquisition()
 
         if self._trial_gain is not None and abs(
             sample.actual_gain - self._trial_gain
@@ -1009,6 +1110,24 @@ class AutoStarFrameController:
             "direction_reversals": self._direction_reversals,
             "highlight_low_streak": self._highlight_low_streak,
             "highlight_raise_confirm_frames": self.highlight_raise_confirm_frames,
+            "reacquisition_wait_s": (
+                max(
+                    0.0,
+                    REACQUISITION_HOLD_S
+                    - (latest.captured_at - self._reacquisition_since),
+                )
+                if latest and self._reacquisition_since is not None
+                else None
+            ),
+            "reacquisition_probe_after_s": (
+                max(
+                    0.0,
+                    REACQUISITION_PROBE_S
+                    - (latest.captured_at - self._reacquisition_probe_at),
+                )
+                if latest and self._reacquisition_probe_at is not None
+                else None
+            ),
             "center_contaminated": latest.center_contaminated if latest else None,
             "peripheral_p50_adu": summary.get("p50"),
             "peripheral_p99_adu": summary.get("p99"),

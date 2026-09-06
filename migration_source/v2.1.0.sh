@@ -5,5 +5,4 @@ source "${PIFINDER_REPO_DIR}/pifinder_paths.sh"
 git submodule sync
 git submodule update --init --recursive
 
-# Set up symlink
-ln -sfn "${PIFINDER_REPO_DIR}/python/PiFinder/tetra3/tetra3" "${PIFINDER_REPO_DIR}/python/tetra3"
+# The post-update script now owns the import alias after submodule setup.

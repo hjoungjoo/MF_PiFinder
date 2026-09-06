@@ -247,6 +247,7 @@ def _apply_successful_solve(
     estimate.last_solve_success = result.last_solve_success
     estimate.diagnostics = result.diagnostics
     estimate.alignment = result.alignment
+    estimate.alignment_projection = result.diagnostics.AlignmentProjection
     estimate.matched_centroids = result.matched_centroids
     estimate.matched_stars = result.matched_stars
     estimate.matched_catID = result.matched_catID

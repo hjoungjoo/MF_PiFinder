@@ -166,3 +166,6 @@ python/telemetry_analysis/
 # on every Wi-Fi mode change. Seeded by pifinder_setup.sh; PiFinder falls back
 # to "Client" when it is absent (utils.read_wifi_mode).
 wifi_status.txt
+# Runtime import alias; setup/post-update/CI create it after submodule init.
+/python/tetra3
+/python/tetra3.backup.*/

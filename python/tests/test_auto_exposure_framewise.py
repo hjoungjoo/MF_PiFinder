@@ -300,6 +300,42 @@ def test_preanchor_acquisition_holds_at_calibrated_highlight_target():
     assert controller.status()["reason"] == "awaiting_peripheral_solve_anchor"
 
 
+@pytest.mark.parametrize("anchored", [False, True])
+def test_highlight_raise_respects_diffuse_background_headroom(anchored):
+    controller = _controller()
+    if anchored:
+        controller.on_frame(_sample(1, exposure=350_000, p50=2100, p99=2600, p999=2900))
+        controller.update_quality(_quality(1, matches=12, candidates=18, success=True))
+    target = controller.on_frame(
+        _sample(2, exposure=350_000, p50=2100, p99=2600, p999=2900)
+    )
+    assert target is not None
+    expected = round(350_000 * 0.52 * (4095 - 238) / (2100 - 238))
+    assert target.exposure_us == expected
+    # Linear RAW background after applying the bounded step reaches 52%,
+    # not the 60% guard which would immediately reverse the change.
+    assert (
+        controller.on_frame(
+            _sample(
+                3, exposure=expected, p50=238 + 0.52 * (4095 - 238), p99=2800, p999=3000
+            )
+        )
+        is None
+    )
+    assert controller.status()["reason"] == "background_headroom_hold"
+
+
+def test_reacquisition_stops_before_background_guard_would_reverse_probe():
+    controller = _lost_low_altitude_controller()
+    assert controller.on_frame(_sample(3, exposure=350_000)) is None
+    target = controller.on_frame(
+        _sample(13, exposure=350_000, p50=2100, p99=2600, p999=2900)
+    )
+    assert target is not None
+    assert target.reason == "reacquisition_exposure_up"
+    assert target.exposure_us == round(350_000 * 0.52 * (4095 - 238) / (2100 - 238))
+
+
 def test_isolated_peripheral_highlight_does_not_fight_acquisition_servo():
     controller = _controller()
     # A star-sized highlight may raise p99.9 and clip roughly 0.1% of a
@@ -385,6 +421,81 @@ def test_polluted_lower_band_is_excluded_at_on_sky_400ms_optimum():
     assert status["usable_peripheral_regions"] == 5
     assert status["contaminated_peripheral_regions"] == 3
     assert 0.78 * 4095 < status["peripheral_p999_adu"] < 0.90 * 4095
+
+
+@pytest.mark.parametrize("lamp_count", (4, 5))
+def test_local_lamps_across_tiles_do_not_starve_dark_sky(lamp_count):
+    controller = _controller()
+    # Low-altitude field: small clipped light sources in otherwise dark tiles.
+    # Three or four uncontaminated tiles remain available for star acquisition.
+    lamp_tiles = ("UL", "U", "L", "DL", "D")[:lamp_count]
+    sample = _with_peripheral_regions(
+        _sample(1, exposure=3500, p50=280, p99=400, p999=650),
+        {name: (350, 4095, 4095, 0.02) for name in lamp_tiles},
+    )
+
+    target = controller.on_frame(sample)
+
+    assert target is not None
+    assert target.reason == "acquisition_highlight_exposure_up"
+    assert target.exposure_us > sample.actual_exposure_us
+    assert controller.status()["saturation_ceiling_light"] is None
+
+
+def test_local_lights_still_reduce_when_too_little_clean_sky_remains():
+    controller = _controller()
+    sample = _with_peripheral_regions(
+        _sample(1, exposure=100_000),
+        {name: (350, 4095, 4095, 0.02) for name in ("UL", "U", "UR", "L", "DL", "D")},
+    )
+
+    target = controller.on_frame(sample)
+
+    assert target is not None
+    assert target.reason == "peripheral_saturation_exposure_down"
+    assert target.safety
+
+
+def test_low_altitude_field_capture_preserves_usable_sky_at_100ms():
+    controller = _controller()
+    # 2026-09-06 IMX462 cropped RAW (the controller input): five contaminated
+    # peripheral tiles, with
+    # three dark sky tiles on the right. The previous guard requested 73.8 ms
+    # and kept stepping down to ~3 ms despite the clean sky's low signal.
+    sample = _with_peripheral_regions(
+        _sample(1, exposure=100_000),
+        {
+            "UL": (3553, 4095, 4095, 0.4563),
+            "U": (1500, 4095, 4095, 0.0714),
+            "UR": (1152, 1478, 1734, 0.0),
+            "L": (4095, 4095, 4095, 0.7541),
+            "R": (1168, 1628, 2135, 0.0),
+            "DL": (4095, 4095, 4095, 0.5288),
+            "D": (1252, 4095, 4095, 0.0232),
+            "DR": (1089, 1357, 1470, 0.0),
+        },
+    )
+
+    target = controller.on_frame(sample)
+
+    assert target is not None
+    assert target.reason == "acquisition_highlight_exposure_up"
+    assert target.exposure_us > sample.actual_exposure_us
+    assert controller.status()["usable_peripheral_regions"] == 3
+
+
+def test_broad_bright_background_keeps_four_tile_saturation_guard():
+    controller = _controller()
+    sample = _with_peripheral_regions(
+        _sample(1, exposure=100_000, p50=2800, p99=3300, p999=3600),
+        {name: (3000, 4095, 4095, 0.02) for name in ("UL", "U", "L", "DL")},
+    )
+
+    target = controller.on_frame(sample)
+
+    assert target is not None
+    assert target.reason == "peripheral_saturation_exposure_down"
+    assert target.safety
 
 
 def test_on_sky_560ms_saturation_spread_forces_immediate_reduction():
@@ -532,6 +643,112 @@ def test_center_moon_without_peripheral_solve_never_raises_gain_or_exposure():
     moon = _sample(2, p50=280, p99=400, center_contaminated=True)
     assert controller.on_frame(moon) is None
     assert controller.status()["reason"] == "dark_cloud_anchor_hold"
+
+
+def _lost_low_altitude_controller(**kwargs):
+    controller = _controller(**kwargs)
+    controller.on_frame(_settled_sample(1, exposure=400_000))
+    controller.update_quality(_quality(1, matches=12, candidates=18, success=True))
+    controller.on_frame(_sample(2, exposure=38_548))
+    controller.update_quality(_quality(2, matches=0, candidates=1, success=False))
+    return controller
+
+
+def test_low_altitude_lost_solve_recovers_with_confirmed_spaced_half_stop_probes():
+    controller = _lost_low_altitude_controller(highlight_raise_confirm_frames=3)
+
+    # Measured low-altitude RAW summary: short exposure, no clipping, no match.
+    def sky(sequence, exposure=38_548):
+        return _sample(sequence, exposure=exposure, p50=500.5, p99=713.5, p999=874.8)
+
+    assert controller.on_frame(sky(3)) is None
+    assert controller.on_frame(sky(12)) is None
+    assert controller.on_frame(sky(13)) is None
+    assert controller.on_frame(sky(14)) is None
+    target = controller.on_frame(sky(15))
+    assert target is not None
+    assert target.reason == "reacquisition_exposure_up"
+    assert target.exposure_us == round(38_548 * 2**0.5)
+    assert target.gain == 30
+    controller.mark_submitted(target, 15)
+    assert controller.on_frame(sky(16)) is None  # Sensor has not applied it yet.
+    assert controller.on_frame(sky(17, target.exposure_us)) is None
+    assert controller.status()["pending"] is False
+    assert controller.on_frame(sky(19, target.exposure_us)) is None
+    assert controller.on_frame(sky(20, target.exposure_us)) is None
+    assert controller.on_frame(sky(21, target.exposure_us)) is None
+    second = controller.on_frame(sky(22, target.exposure_us))
+    assert second is not None
+    assert second.exposure_us == round(target.exposure_us * 2**0.5)
+
+
+def test_reacquisition_retains_recent_saturation_ceiling():
+    controller = _lost_low_altitude_controller()
+    down = controller.on_frame(_sample(3, exposure=100_000, p999=4095, sat=0.02))
+    assert down is not None and down.safety
+    controller.mark_submitted(down, 3)
+    assert controller.on_frame(_sample(4, exposure=down.exposure_us)) is None
+    assert controller.on_frame(_sample(14, exposure=down.exposure_us)) is None
+    assert controller.status()["reason"] == "saturation_ceiling_hold"
+    probe = controller.on_frame(_sample(34, exposure=down.exposure_us))
+    assert probe is not None
+    assert probe.reason == "reacquisition_exposure_up"
+    controller.mark_submitted(probe, 34)
+    safer = controller.on_frame(
+        _sample(35, exposure=probe.exposure_us, p999=4095, sat=0.02)
+    )
+    assert safer is not None and safer.safety
+    assert safer.exposure_us < probe.exposure_us
+
+
+@pytest.mark.parametrize(
+    "blocked",
+    [
+        {"center_contaminated": True},
+        {"motion": 0.2},
+        {"p50": 2300, "p99": 2500, "p999": 2700},
+    ],
+)
+def test_reacquisition_does_not_probe_contaminated_moving_or_bright_sky(blocked):
+    controller = _lost_low_altitude_controller()
+    for sequence in (3, 13, 33, 100):
+        assert (
+            controller.on_frame(_sample(sequence, exposure=38_548, **blocked)) is None
+        )
+    assert controller.status()["reacquisition_wait_s"] is None
+
+
+def test_reacquisition_stops_at_highlight_target_and_resets_wait():
+    controller = _lost_low_altitude_controller()
+    assert controller.on_frame(_sample(3)) is None
+    assert controller.on_frame(_sample(12)) is None
+    assert controller.on_frame(_settled_sample(13)) is None
+    assert controller.status()["reacquisition_wait_s"] is None
+    assert controller.on_frame(_sample(14)) is None
+    assert controller.on_frame(_sample(23)) is None
+    assert controller.on_frame(_sample(24)) is not None
+
+
+def test_new_success_cancels_reacquisition_and_restores_normal_exposure_control():
+    controller = _lost_low_altitude_controller()
+    assert controller.on_frame(_sample(3)) is None
+    assert controller.on_frame(_sample(13)) is not None
+    controller.update_quality(_quality(13, matches=12, candidates=18, success=True))
+    assert controller.status()["reacquisition_wait_s"] is None
+    target = controller.on_frame(_sample(14))
+    assert target is not None
+    assert target.reason == "highlight_headroom_exposure_up"
+
+
+def test_long_loss_with_evicted_anchor_frame_can_still_reacquire():
+    controller = _lost_low_altitude_controller()
+    # A stale/evicted successful frame must not create a permanent hold either.
+    for sequence in range(3, 100):
+        controller.on_frame(_settled_sample(sequence))
+    assert controller.on_frame(_sample(100)) is None
+    target = controller.on_frame(_sample(110))
+    assert target is not None
+    assert target.reason == "reacquisition_exposure_up"
 
 
 def test_candidate_pressure_low_gain_trial_is_kept_when_matches_improve():

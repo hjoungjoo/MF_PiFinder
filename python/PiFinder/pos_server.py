@@ -6,13 +6,13 @@ server to accept socket connections
 and report telescope position
 Protocol based on Meade LX200
 
-This is used by SkySafari (iOS, iPadOS)
+This is used by SkySafari and Stellarium Mobile Plus. MF keeps target
+coordinate receipt separate from GoTo/Align and routes motor control via INDI.
 """
 
 import socket
 import logging
 import math
-import queue as queue_module
 import re
 import datetime
 import json
@@ -21,13 +21,13 @@ import threading
 from multiprocessing import Queue
 from typing import Any, Optional, Tuple, Union
 from PiFinder import config, gps_time_sync, utils
+from PiFinder.alignment_projection import cached_target_pixel, projection_context
 from PiFinder.calc_utils import FastAltAz, ra_to_deg, sf_utils
 from PiFinder.composite_object import CompositeObject, MagnitudeObject, SizeObject
 from PiFinder.multiproclogging import MultiprocLogging
 from PiFinder.pointing_coordinate_service import PointingCoordinateService
 from PiFinder.state import Location as StateLocation
 from PiFinder.track_freq_policy import track_freq_command_for_coordinates
-from PiFinder.types.positioning import AlignCancel, AlignOnRaDec
 import sys
 import time
 
@@ -44,13 +44,16 @@ align_command_queue: Optional[Queue] = None
 align_response_queue: Optional[Queue] = None
 console_queue: Optional[Queue] = None
 is_stellarium = False
+# Client site echoes are session-local, never applied to GPS or the mount.
+stellarium_latitude = ""
+stellarium_longitude = ""
+_lx200_target_host: Optional[str] = None
+_lx200_target_last_seen = 0.0
+_LX200_TARGET_RECONNECT_SECONDS = 60.0
 pos_server_config: Optional[config.Config] = None
 
 _POINTING_UPDATE_SECONDS = 0.2
 _CONFIG_RELOAD_SECONDS = 1.0
-# Match the on-device Align wait. Native full-frame solving and continuity
-# confirmation commonly span more than the legacy two-second allowance.
-_ALIGN_TIMEOUT_SECONDS = 15.0
 _GUIDE_LEASE_SECONDS = 1.2
 _GUIDE_KEEPALIVE_SECONDS = 0.4
 _GUIDE_RESTART_SECONDS = 8.0
@@ -1049,29 +1052,24 @@ def _set_imu_alignment_from_target_if_no_solve(
 def _align_pifinder_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> bool:
     if not _get_config_option("skysafari_pifinder_align", True):
         return False
-    if align_command_queue is None or align_response_queue is None:
-        return False
-
-    while True:
-        try:
-            align_response_queue.get(block=False)
-        except queue_module.Empty:
-            break
-
-    align_command_queue.put(AlignOnRaDec(ra=ra_deg, dec=dec_deg))
-
+    started = time.monotonic()
     try:
-        response = align_response_queue.get(timeout=_ALIGN_TIMEOUT_SECONDS)
-    except queue_module.Empty:
-        align_command_queue.put(AlignCancel())
+        mount = _mount_control_status()
+        if mount.get("mount_motion_active") or mount.get("goto_motion_active"):
+            raise ValueError("mount is moving")
+        estimate = shared_state.solution()
+        target_pixel = cached_target_pixel(
+            estimate,
+            shared_state.imu(),
+            ra_deg,
+            dec_deg,
+            now=time.time(),
+            context=projection_context(shared_state, pos_server_config),
+        )
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
         if console_queue is not None:
-            console_queue.put("SkySafari Align Timeout")
-        logger.warning("SkySafari PiFinder align timed out")
-        return False
-
-    target_pixel = response.as_target_pixel()
-    if target_pixel[0] == -1:
-        logger.warning("SkySafari PiFinder align failed")
+            console_queue.put("SkySafari Align: fresh stationary solve needed")
+        logger.warning("SkySafari cached align unavailable: %s", exc)
         return False
 
     shared_state.set_target_pixel(target_pixel)
@@ -1080,7 +1078,12 @@ def _align_pifinder_if_enabled(shared_state, ra_deg: float, dec_deg: float) -> b
     if console_queue is not None:
         console_queue.put("SkySafari Alignment Set")
     ui_queue.put("reload_config")
-    logger.info("SkySafari PiFinder align set target pixel: %s", target_pixel)
+    logger.info(
+        "SkySafari PiFinder align set target pixel: %s (cached solve age %.3fs, %.1fms)",
+        target_pixel,
+        time.time() - estimate.last_solve_success,
+        (time.monotonic() - started) * 1000,
+    )
     return True
 
 
@@ -1248,6 +1251,12 @@ def not_implemented(shared_state, input_str):
     return respond_none(shared_state, input_str)
 
 
+def abort_slew(shared_state, input_str: str) -> Optional[str]:
+    """Keep MF's real stop/guide-release behavior; only ACK clients get a reply."""
+    handle_guide_stop(shared_state, input_str)
+    return "1" if is_stellarium else None
+
+
 def _match_to_hms(pattern: str, input_str: str) -> Union[Tuple[int, int, int], None]:
     match = re.match(pattern, input_str)
     if match:
@@ -1260,11 +1269,13 @@ def _match_to_hms(pattern: str, input_str: str) -> Union[Tuple[int, int, int], N
 
 
 def parse_sr_command(_, input_str: str):
-    global sr_result
-    pattern = r":Sr([-+]?\d{2}):(\d{2}):(\d{2})#"
+    global sr_result, sd_result
+    pattern = r"#?:Sr(\d{2}):(\d{2}):(\d{2})#$"
     match = _match_to_hms(pattern, input_str)
     logger.debug("Parsing sr command, match: %s", match)
-    if match:
+    # A new RA begins a fresh pair; never combine it with an old Dec.
+    sr_result = sd_result = None
+    if match and 0 <= match[0] < 24 and 0 <= match[1] < 60 and 0 <= match[2] < 60:
         sr_result = match
         return "1"
     else:
@@ -1275,11 +1286,19 @@ def parse_sd_command(shared_state, input_str: str):
     global sd_result
     # Capture the sign separately: int("-00") loses it, which flipped every
     # -1 deg < Dec < 0 deg target (e.g. M2) to the northern hemisphere.
-    pattern = r":Sd([-+]?)(\d{2})\*(\d{2}):(\d{2})#"
-    match = re.match(pattern, input_str)
+    pattern = r"#?:Sd([-+]?)(\d{2})[*:](\d{2}):(\d{2})#"
+    match = re.fullmatch(pattern, input_str)
     logger.debug("Parsing sd command, match: %s, sr_result: %s", match, sr_result)
+    sd_result = None
     if match and sr_result:
         sign = -1 if match.group(1) == "-" else 1
+        degrees, minutes, seconds = map(int, match.groups()[1:])
+        if (
+            minutes >= 60
+            or seconds >= 60
+            or degrees + minutes / 60 + seconds / 3600 > 90
+        ):
+            return "0"
         sd_result = (
             sign,
             int(match.group(2)),
@@ -1328,6 +1347,13 @@ def handle_sync_command(shared_state, _input_str: str):
         # (target_pixel) changes through the LCD menu alone.
         if goto_method == "pifinder":
             pifinder_aligned = _align_pifinder_if_enabled(shared_state, ra_deg, dec_deg)
+            if (
+                _get_config_option("skysafari_pifinder_align", True)
+                and not pifinder_aligned
+            ):
+                # Do not partially sync the mount or arm tracking after a
+                # rejected local alignment. No delayed solver command exists.
+                return "Alignment unavailable."
     else:
         imu_aligned = _set_imu_alignment_from_target_if_no_solve(
             shared_state, ra_deg, dec_deg
@@ -1390,7 +1416,7 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
             "mag": MagnitudeObject([]),
             "catalog_code": "PUSH",
             "sequence": sequence,
-            "description": f"Skysafari object nr {sequence}",
+            "description": f"Pushed object nr {sequence}",
         }
     )
     logger.debug("handle_goto_command: Pushing object: %s", obj)
@@ -1399,6 +1425,138 @@ def handle_goto_command(shared_state, ra_parsed, dec_parsed):
     ui_queue.put("push_object")
     _queue_indi_goto_if_enabled(shared_state, target_ra, target_dec)
     return "1"
+
+
+# Site and clock commands.  Stellarium runs through these during its connection
+# handshake and gives up on the push if they go unanswered.
+
+
+def set_current_date(_shared_state, _input_str) -> str:
+    """:SCMM/DD/YY# -- accept and discard the client's date.
+
+    PiFinder takes its civil time from GPS or manual entry, so the value is
+    dropped.  The reply shape is fixed by the protocol: "1" followed by the
+    already-terminated status string a Meade mount sends while it rebuilds
+    planetary data.
+    """
+    return "1Updating Planetary Data#                         #"
+
+
+def get_current_date(shared_state, _input_str) -> Optional[str]:
+    """:GC# -- local calendar date as MM/DD/YY.
+
+    Hardcoded rather than %x: LX200 fixes this format, while %x follows the
+    process locale, which the i18n work can change out from under us.
+    """
+    dt = shared_state.local_datetime()
+    if dt is None:
+        return None
+    return dt.strftime("%m/%d/%y")
+
+
+def get_current_time(shared_state, _input_str) -> Optional[str]:
+    """:GL# -- local civil time as 24-hour HH:MM:SS.
+
+    LX200 defines this as *local* time, so read the observer's zone directly
+    (ADR-0018) rather than offsetting UTC by hand.  %X is avoided for the same
+    locale reason as %x above.
+    """
+    dt = shared_state.local_datetime()
+    if dt is None:
+        return None
+    return dt.strftime("%H:%M:%S")
+
+
+def get_utc_offset(shared_state, _input_str) -> Optional[str]:
+    """:GG# -- hours to ADD to local time to reach UTC, as sHH (or sHH.H).
+
+    Note the inverted sign: LX200 asks for the correction *towards* UTC, so US
+    Eastern (UTC-5) answers "+05" and Berlin in winter (UTC+1) answers "-01".
+    Half-hour zones use the sHH.H form; zones on a quarter hour round to the
+    nearest tenth, which is as fine as the protocol goes.
+    """
+    dt = shared_state.local_datetime()
+    if dt is None:
+        return None
+    offset = dt.utcoffset()
+    if offset is None:
+        return None
+    hours = -offset.total_seconds() / 3600.0
+    sign = "-" if hours < 0 else "+"
+    magnitude = abs(hours)
+    if magnitude == int(magnitude):
+        return f"{sign}{int(magnitude):02d}"
+    return f"{sign}{magnitude:04.1f}"
+
+
+# The site setters keep the sign and the degree width the client used so :Gt#
+# and :Gg# can echo it back unchanged; only the seconds field, which the
+# getters have no room for, is dropped.
+_SITE_LAT_PATTERN = r"#?:St([-+]?)(\d{1,2})\*(\d{2})"
+_SITE_LON_PATTERN = r"#?:Sg([-+]?)(\d{1,3})\*(\d{2})"
+
+
+def set_latitude(_shared_state, input_str: str) -> str:
+    """:StsDD*MM# -- remember the client's site latitude for :Gt# to echo."""
+    global stellarium_latitude
+    match = re.search(_SITE_LAT_PATTERN, input_str)
+    if not match:
+        logger.debug("set_latitude: no match in %s", input_str)
+        return "0"
+    sign, degrees, minutes = match.groups()
+    stellarium_latitude = f"{sign or '+'}{int(degrees):02d}*{minutes}"
+    return "1"
+
+
+def set_longitude(_shared_state, input_str: str) -> str:
+    """:SgDDD*MM# -- remember the client's site longitude for :Gg# to echo."""
+    global stellarium_longitude
+    match = re.search(_SITE_LON_PATTERN, input_str)
+    if not match:
+        logger.debug("set_longitude: no match in %s", input_str)
+        return "0"
+    sign, degrees, minutes = match.groups()
+    stellarium_longitude = f"{sign}{int(degrees):03d}*{minutes}"
+    return "1"
+
+
+def _deg_to_dm(value: float, degree_len: int) -> str:
+    """Format signed decimal degrees as the LX200 sDD*MM form.
+
+    Rounds to whole arcminutes and carries into the degrees field, so 42.999
+    formats as "+43*00" rather than the out-of-range "+42*60".
+    """
+    sign = "-" if value < 0 else "+"
+    degrees, minutes = divmod(round(abs(value) * 60), 60)
+    return f"{sign}{degrees:0{degree_len}d}*{minutes:02d}"
+
+
+def _lon_to_meade_dm(value: float) -> str:
+    """Format signed east-positive longitude as Meade's unsigned DDD*MM.
+
+    Meade counts site longitude positive *westward* across 000-359 -- the same
+    convention :Sg# accepts -- while PiFinder stores it signed and
+    east-positive.  Negating and wrapping converts between the two: Boston
+    (-71.06) becomes 071*04 and Berlin (+13.4) becomes 346*36.  The wrap is
+    applied after rounding to minutes so a site just east of Greenwich cannot
+    round up into a nonexistent 360*00.
+    """
+    degrees, minutes = divmod(round(-value * 60) % (360 * 60), 60)
+    return f"{degrees:03d}*{minutes:02d}"
+
+
+def get_latitude(shared_state, _input_str) -> str:
+    """:Gt# -- current site latitude as sDD*MM."""
+    if stellarium_latitude:
+        return stellarium_latitude
+    return _deg_to_dm(shared_state.location().lat, 2)
+
+
+def get_longitude(shared_state, _input_str) -> str:
+    """:Gg# -- current site longitude as DDD*MM."""
+    if stellarium_longitude:
+        return stellarium_longitude
+    return _lon_to_meade_dm(shared_state.location().lon)
 
 
 # Function to extract command
@@ -1429,7 +1587,11 @@ def _pop_lx200_message(buffer: str) -> Tuple[Optional[str], str]:
 
 def _format_lx200_response(out_data: str) -> bytes:
     is_bare_status = bool(re.fullmatch(r"[APG]T\d", out_data))
-    response = out_data if out_data in ("0", "1") or is_bare_status else out_data + "#"
+    response = (
+        out_data
+        if out_data in ("0", "1") or is_bare_status or out_data.endswith("#")
+        else out_data + "#"
+    )
     return response.encode()
 
 
@@ -1456,10 +1618,21 @@ lx_command_dict = {
     "RC": respond_none,  # Set slew rate to center
     "RG": respond_none,  # Set slew rate to guide
     "MS": handle_slew_command,  # Slew to object
-    "Q": handle_guide_stop,  # Abort
+    "Q": abort_slew,  # Actual MF stop, plus Stellarium-only acknowledgement
     "U": respond_none,  # Precision toggle
     "Sd": parse_sd_command,  # Set declination
     "Sr": parse_sr_command,  # Set RA
+    # Handshake-only setters: never steer MF's GPS clock or observing site.
+    "SG": respond_one,
+    "SL": respond_one,
+    "SC": set_current_date,
+    "St": set_latitude,
+    "Sg": set_longitude,
+    "GC": get_current_date,
+    "GL": get_current_time,
+    "GG": get_utc_offset,
+    "Gt": get_latitude,
+    "Gg": get_longitude,
 }
 
 
@@ -1471,48 +1644,93 @@ def setup_server_socket():
     return server_socket
 
 
-def handle_client(client_socket, shared_state):
-    global is_stellarium
-    client_socket.settimeout(60)
-    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+def _reset_lx200_session(*, preserve_target: bool = False) -> None:
+    """Clear socket-local state, optionally retaining a reconnecting target."""
+    global is_stellarium, stellarium_latitude, stellarium_longitude
+    global sr_result, sd_result, last_target_coordinates
+    global _lx200_target_host, _lx200_target_last_seen
     is_stellarium = False
-    input_buffer = ""
+    stellarium_latitude = stellarium_longitude = ""
+    if not preserve_target:
+        sr_result = sd_result = last_target_coordinates = None
+        _lx200_target_host = None
+        _lx200_target_last_seen = 0.0
 
-    while True:
-        try:
-            in_data = client_socket.recv(1024).decode()
+
+def handle_frame(frame: str, shared_state) -> Optional[str]:
+    """Dispatch one complete frame; the socket loop owns stream reassembly."""
+    global is_stellarium
+    if frame.lstrip("#") == "\x06":
+        is_stellarium = True
+        # Upstream's Mobile Plus compatibility handshake. This is only an ACK
+        # reply; :GW# still reports MF's configured mount geometry truthfully.
+        return "P"
+    command = extract_command(frame)
+    # A malformed alphabetical payload (e.g. :Srbad#) is still a target
+    # setter. Send it through validation so it invalidates a stale target,
+    # rather than treating 'Srbad' as an unrelated unknown command.
+    target_setter = re.match(r"#?:(Sr|Sd)", frame)
+    if target_setter is not None:
+        command = target_setter.group(1)
+    if not command:
+        return None
+    handler = lx_command_dict.get(command, not_implemented)
+    payload = handler(shared_state, frame)
+    return None if payload is None else _format_lx200_response(payload).decode()
+
+
+def handle_client(client_socket, shared_state, client_host: Optional[str] = None):
+    global _lx200_target_host, _lx200_target_last_seen
+    # SkySafari can send Sr, Sd and MS/CM on separate TCP connections. Retain
+    # its target across those connections, including intervening GR/GD polls.
+    # A different host or an idle gap starts a fresh target transaction.
+    preserve_target = (
+        client_host is not None
+        and client_host == _lx200_target_host
+        and time.monotonic() - _lx200_target_last_seen < _LX200_TARGET_RECONNECT_SECONDS
+    )
+    _reset_lx200_session(preserve_target=preserve_target)
+    _lx200_target_host = client_host
+    input_buffer = ""
+    try:
+        client_socket.settimeout(60)
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        while True:
+            # LX200 is byte-oriented; an unexpected high byte must not crash
+            # the entire position server. Command validators reject bad data.
+            in_data = client_socket.recv(1024).decode("latin-1")
             if not in_data:
                 break
-
+            _lx200_target_last_seen = time.monotonic()
             input_buffer += in_data
-            logging.debug("Received from skysafari: %s", in_data)
+            if len(input_buffer) > 4096:
+                logger.warning("LX200 unterminated command too long; closing client")
+                break
+            logger.debug("Received from planetarium client: %s", in_data)
             while input_buffer:
                 message, input_buffer = _pop_lx200_message(input_buffer)
                 if message is None:
                     break
-
-                # Special case for the ACK command in the LX200 protocol sent by Stellarium.
-                if message == "\x06":
-                    is_stellarium = True
-                    # A indicates alt-az mode.
-                    client_socket.send("A".encode())
-                    continue
-
-                command = extract_command(message)
-                if not command:
-                    continue
-                command_handler = lx_command_dict.get(command, not_implemented)
-                out_data = command_handler(shared_state, message)
-                if out_data is not None:
-                    client_socket.send(_format_lx200_response(out_data))
-        except socket.timeout:
-            logging.warning("Connection timed out.")
-            break
-        except ConnectionResetError:
-            logging.warning("Client disconnected unexpectedly.")
-            break
-
-    client_socket.close()
+                command_started = time.monotonic()
+                response = handle_frame(message, shared_state)
+                if response is not None:
+                    client_socket.sendall(response.encode())
+                if extract_command(message) == "CM":
+                    logger.info(
+                        "SkySafari CM response sent in %.1fms: %s",
+                        (time.monotonic() - command_started) * 1000,
+                        response,
+                    )
+    except socket.timeout:
+        logger.warning("Connection timed out.")
+    except (ConnectionResetError, BrokenPipeError):
+        logger.warning("Client disconnected unexpectedly.")
+    finally:
+        # MF guide buttons may use short-lived command connections. Keep their
+        # motion/keepalive state across sockets; Q/Qn/... and the existing
+        # lease/max-hold safeguards own the stop, not a socket close.
+        _reset_lx200_session(preserve_target=client_host is not None)
+        client_socket.close()
 
 
 def run_server(
@@ -1547,7 +1765,7 @@ def run_server(
                 while True:
                     client_socket, address = server_socket.accept()
                     logger.debug("New connection from %s", address)
-                    handle_client(client_socket, shared_state)
+                    handle_client(client_socket, shared_state, address[0])
         except Exception:
             logger.exception("Unexpected server error")
             logger.info("Attempting to restart server in 5 seconds...")

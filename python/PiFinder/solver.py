@@ -34,6 +34,7 @@ from PiFinder import timez
 from PiFinder import horizon_mask, sep_detect
 from PiFinder import solver_frame_map as sfm
 from PiFinder.auto_exposure_framewise import matched_star_exposure_quality
+from PiFinder.alignment_projection import make_projection, projection_context
 from PiFinder.mf_distortion_calibration import (
     DistortionCalibrationSession,
     measure_distortion_frame,
@@ -54,6 +55,7 @@ from PiFinder.mf_wide_tiles import migrate_legacy_tile_ids
 from PiFinder.optics import OpticalTrainResolver, build_optical_train
 from PiFinder.latest_frame_worker import LatestFrameWorker
 from PiFinder.preprocess_bias import PreprocessBiasTracker
+from PiFinder.solver_scheduling import SolverSchedulingPolicy
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
 from PiFinder.solve_acceptance import (
     SolveContinuityGate,
@@ -221,6 +223,18 @@ def _solution_coordinate_snapshot(solution: dict) -> Optional[dict]:
         if value is not None:
             snapshot[key] = float(value)
     return snapshot
+
+
+def _publish_solver_scheduling_status(status: dict) -> None:
+    """Keep field diagnostics in RAM, independently of the selected preview."""
+    try:
+        path = utils.runtime_dir / "solver_scheduling_status.json"
+        temporary = path.with_suffix(".tmp")
+        with temporary.open("w", encoding="utf-8") as status_file:
+            json.dump(status, status_file)
+        temporary.replace(path)
+    except OSError:
+        logger.debug("Could not publish solver scheduling status", exc_info=True)
 
 
 def _publish_solver_preprocess_status(
@@ -1089,6 +1103,7 @@ def _build_successful_solve(
     tile_scores: tuple[dict[str, object], ...] = (),
     frame_id: Optional[int] = None,
     exposure_quality: Optional[dict[str, object]] = None,
+    alignment_context: Optional[tuple] = None,
 ) -> SuccessfulSolve:
     """Fold a successful tetra3 ``solution`` dict into a
     :class:`SuccessfulSolve` message.
@@ -1140,6 +1155,9 @@ def _build_successful_solve(
             TileScores=tile_scores,
             FrameId=frame_id,
             ExposureQuality=exposure_quality,
+            AlignmentProjection=make_projection(
+                solution, last_solve_success, alignment_context
+            ),
         ),
         alignment=AlignmentResult(
             x_target=solution.get("x_target"),
@@ -1390,6 +1408,8 @@ def _solve_cedar_fullframe(
                 crop_width_px,
             )
             solution["y_target"], solution["x_target"] = ty, tx
+        if solution and solution.get("RA") is not None:
+            solution["_alignment_frame"] = (*canvas, crop_width_px)
         return solution or {}
     except Exception:
         logger.exception("cedar full-frame solve failed")
@@ -1443,6 +1463,7 @@ def solver(
     async_preprocess_worker = None
     async_preprocess_runner = None
     async_preprocess_generation = 0
+    preprocess_target_pixel = None
     async_motion_seen = False
     async_preprocess_mode_active = False
     preprocess_bias = PreprocessBiasTracker(
@@ -1528,9 +1549,16 @@ def solver(
     skip_slow_raw_fallbacks_wanted = bool(
         _sep_cfg.get_option("solver_preprocess_skip_slow_raw_fallbacks", False)
     )
-    async_preprocess_wanted = bool(
-        _sep_cfg.get_option("solver_preprocess_async", False)
-    )
+    scheduling_mode = _sep_cfg.get_option("solver_preprocess_mode")
+    if scheduling_mode is None:
+        scheduling_mode = (
+            "auto" if _sep_cfg.get_option("solver_preprocess_async", False) else "sync"
+        )
+    if scheduling_mode not in {"auto", "sync"}:
+        logger.warning("Invalid preprocessing mode %r; using auto", scheduling_mode)
+        scheduling_mode = "auto"
+    solve_scheduling = SolverSchedulingPolicy(scheduling_mode)
+    logger.info("Solver preprocessing scheduling: %s", scheduling_mode)
     if cedar_fullframe_wanted:
         logger.info(
             "Cedar full-frame primary path enabled "
@@ -1722,6 +1750,14 @@ def solver(
                     last_solve_attempt = last_image_metadata["exposure_end"]
 
                     solver_preprocess_enabled = _solver_preprocess_enabled(shared_state)
+                    target_pixel_key = tuple(shared_state.target_pixel())
+                    if target_pixel_key != preprocess_target_pixel:
+                        preprocess_target_pixel = target_pixel_key
+                        async_preprocess_generation += 1
+                        preprocess_bias.reset()
+                        solve_scheduling.reset("target_pixel_changed")
+                        if async_preprocess_worker is not None:
+                            async_preprocess_worker.clear_pending()
                     imu_sample = last_image_metadata.get("imu")
                     frame_moving = bool(getattr(imu_sample, "moving", False))
                     try:
@@ -1737,6 +1773,7 @@ def solver(
                         if not async_motion_seen:
                             async_preprocess_generation += 1
                             preprocess_bias.reset()
+                            solve_scheduling.reset("moving")
                             if async_preprocess_worker is not None:
                                 async_preprocess_worker.clear_pending()
                         async_motion_seen = True
@@ -1765,6 +1802,7 @@ def solver(
                         cedar_ff_geometry_key = fullframe_geometry_key
                         preprocessed_fast_trusted = False
                         preprocess_bias.reset()
+                        solve_scheduling.reset("optics_changed")
                         if async_preprocess_worker is not None:
                             async_preprocess_worker.close(wait=False)
                             async_preprocess_worker = None
@@ -2013,6 +2051,8 @@ def solver(
                                 solve_timeout=1000,
                                 **_solver_args,
                             )
+                            if solution and solution.get("RA") is not None:
+                                solution["_alignment_frame"] = (512, 512, 512)
 
                     ff_matched_for_overlay = None
                     ff_in_crop_count = 0
@@ -2415,6 +2455,7 @@ def solver(
                     if not solver_preprocess_enabled:
                         preprocessed_fast_trusted = False
                         preprocess_bias.reset()
+                        solve_scheduling.reset("disabled")
                         if async_preprocess_mode_active:
                             async_preprocess_generation += 1
                             async_preprocess_mode_active = False
@@ -2492,17 +2533,31 @@ def solver(
                                 calibration_key=calibration_key,
                             )
                             preprocess_started = precision_timestamp()
-                            async_preprocess_active = bool(
-                                async_preprocess_wanted
-                                and align_ra == 0
-                                and align_dec == 0
-                                and distortion_calibration_session is None
+                            forced_sync = bool(
+                                align_ra != 0
+                                or align_dec != 0
+                                or distortion_calibration_session is not None
                             )
+                            execution = solve_scheduling.choose(
+                                raw_solved=raw_solved, forced_sync=forced_sync
+                            )
+                            async_preprocess_active = execution == "async"
+                            if forced_sync:
+                                preprocess_bias.reset()
                             if async_preprocess_active != async_preprocess_mode_active:
                                 async_preprocess_generation += 1
-                                preprocess_bias.reset()
                                 if async_preprocess_worker is not None:
                                     async_preprocess_worker.clear_pending()
+                                if not async_preprocess_active:
+                                    # The synchronous accumulator has not seen
+                                    # intervening frames during background mode.
+                                    sep_shadow.reset_preprocessor("sync_recovery")
+                                logger.info(
+                                    "Solver scheduling -> %s: %s (raw streak=%d)",
+                                    execution,
+                                    solve_scheduling.reason,
+                                    solve_scheduling.raw_success_streak,
+                                )
                                 async_preprocess_mode_active = async_preprocess_active
                             preprocess_context = None
                             if async_preprocess_active:
@@ -2753,6 +2808,14 @@ def solver(
                                             )
                                         )
                                         bias_status = preprocess_bias.status()
+                                        if (
+                                            preprocess_context.get("raw_solution")
+                                            and not bias_accepted
+                                        ):
+                                            preprocess_bias.reset()
+                                            solve_scheduling.reset(
+                                                "raw_preprocessed_disagreement"
+                                            )
                                         if raw_solved:
                                             solution = preprocess_bias.apply(solution)
                                         else:
@@ -2780,6 +2843,19 @@ def solver(
                                             async_preprocess_worker.stats().skipped,
                                         )
                                     else:
+                                        # Calibrate on paired synchronous
+                                        # frames before handing over to RAW.
+                                        # Keep the correction across ordinary
+                                        # scheduling changes, but not motion,
+                                        # alignment or an optics change.
+                                        if raw_solved and not forced_sync:
+                                            if not preprocess_bias.update(
+                                                solution, preprocessed_solution
+                                            ):
+                                                preprocess_bias.reset()
+                                                solve_scheduling.reset(
+                                                    "raw_preprocessed_disagreement"
+                                                )
                                         solution = preprocessed_solution
                                         solve_path = selected_path
                                         sep_fallback_used = "_sep_" in selected_path
@@ -2969,6 +3045,36 @@ def solver(
                                     )
                             solution = {}
                             sep_fallback_used = False
+
+                    published_solution = bool(
+                        solution and solution.get("RA") is not None
+                    )
+                    if (
+                        solver_preprocess_enabled
+                        and not frame_moving
+                        and not fast_raw_after_motion
+                    ):
+                        solve_scheduling.record_publication(accepted=published_solution)
+                        if solve_scheduling.reason == "raw_publication_stalled":
+                            preprocess_bias.reset()
+                    _publish_solver_scheduling_status(
+                        {
+                            **solve_scheduling.status(),
+                            "updated": time.time(),
+                            "frame_id": last_image_metadata.get("frame_id"),
+                            "exposure_end": last_solve_attempt,
+                            "preprocessing_enabled": solver_preprocess_enabled,
+                            "frame_moving": frame_moving,
+                            "fast_raw_after_motion": fast_raw_after_motion,
+                            "async_active": async_preprocess_mode_active,
+                            "raw_solved": raw_solution_diagnostic is not None,
+                            "accepted": published_solution,
+                            "solve_path": solve_path,
+                            "processing_ms": (precision_timestamp() - t0) * 1000.0,
+                            "bias_ready": preprocess_bias.ready,
+                            "generation": async_preprocess_generation,
+                        }
+                    )
 
                     # Consume full-frame matched coordinates while they still
                     # exist.  Published pointing keeps its existing 512-space
@@ -3176,6 +3282,17 @@ def solver(
                             )
                         solve_fail_streak = 0
                         last_solve_success = last_solve_attempt
+                        alignment_context = None
+                        if not frame_moving:
+                            try:
+                                alignment_context = projection_context(
+                                    shared_state, _sep_cfg
+                                )
+                            except Exception:
+                                logger.debug(
+                                    "Alignment projection context unavailable",
+                                    exc_info=True,
+                                )
                         if sep_shadow is not None and not sep_fallback_used:
                             # Production solve: sky is workable, clear the
                             # fallback backoff so the next cedar failure gets
@@ -3237,6 +3354,7 @@ def solver(
                             ),
                             frame_id=last_image_metadata.get("frame_id"),
                             exposure_quality=exposure_quality,
+                            alignment_context=alignment_context,
                         )
                         # Popped only now: _build_successful_solve above needs
                         # it for the Gaia-G reference band.

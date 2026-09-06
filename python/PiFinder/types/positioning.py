@@ -290,6 +290,7 @@ class SolveDiagnostics:
     # RAW and matched arrays stay inside the solver process.
     FrameId: Optional[int] = None
     ExposureQuality: Optional[dict[str, object]] = None
+    AlignmentProjection: Optional[dict] = None
 
 
 @dataclass
@@ -395,6 +396,8 @@ class PointingEstimate:
     # --- Sub-records ---
     diagnostics: SolveDiagnostics = field(default_factory=SolveDiagnostics)
     alignment: AlignmentResult = field(default_factory=AlignmentResult)
+    # Last accepted projection survives failed attempts, with its original epoch.
+    alignment_projection: Optional[dict] = None
 
     # --- Raw tetra3 output kept for SQM replay ---
     # ``matched_centroids``: list of (y, x) tuples for stars tetra3

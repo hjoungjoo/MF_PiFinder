@@ -549,6 +549,7 @@ class SepShadowRunner:
                     self.crop_width_px,
                 )
                 solution["y_target"], solution["x_target"] = ty, tx
+            solution["_alignment_frame"] = (*canvas, self.crop_width_px)
             self._attach_matched_overlay(solution)
             return solution
         except Exception:

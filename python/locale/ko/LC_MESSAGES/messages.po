@@ -5953,3 +5953,36 @@ msgstr "시리얼 자동찾기"
 #: PiFinder/server.py
 msgid "OnStep serial port and communication-speed discovery started"
 msgstr "OnStep 시리얼 포트와 통신속도 자동찾기를 시작했습니다"
+
+#: PiFinder/ui/object_details.py
+msgid "Moving"
+msgstr "이동 중"
+
+#: PiFinder/ui/object_details.py
+msgid "Adjusting"
+msgstr "보정 중"
+
+#: PiFinder/ui/object_details.py
+msgid "Settling"
+msgstr "안정 대기"
+
+#: PiFinder/ui/object_details.py
+msgid "Waiting for solve"
+msgstr "솔빙 대기"
+
+#: PiFinder/ui/object_details.py
+msgid "WAIT"
+msgstr "대기"
+
+#: PiFinder/ui/object_details.py
+msgid "Stopped"
+msgstr "정지"
+
+#: PiFinder/ui/object_details.py
+msgid "Complete"
+msgstr "완료"
+
+#: PiFinder/ui/object_details.py
+#, python-brace-format
+msgid "Solve {interval}"
+msgstr "솔빙 {interval}"

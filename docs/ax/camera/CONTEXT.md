@@ -26,7 +26,7 @@ The regime where the user fixes the exposure time. Any manual adjustment (includ
 ### Controllers
 
 **Controller**:
-The feedback loop inside solver-driven auto-exposure that turns the latest solve result into an exposure adjustment. Exactly one is active: the **match-count controller** (Camera Exp "Auto", the default), the **star-count controller** (Camera Exp "Star"), or the **background controller** (SQM screen only, overrides the other two while active).
+The feedback loop inside solver-driven auto-exposure that turns the latest solve result into an exposure adjustment. Exactly one is active: the **match-count controller** (Camera Exp "Auto"), the **star-count controller** (Camera Exp "Star", the MF fresh-install default), or the **background controller** (SQM screen only, overrides the other two while active).
 _Avoid_: mode (see flagged ambiguities), algorithm.
 
 **Match-count controller**:
@@ -34,7 +34,7 @@ Drives exposure toward a target `Matches` count, adjusting gently downward and a
 _Avoid_: PID controller, PID mode (the code/wire name — it names the algorithm, not the job).
 
 **Star-count controller**:
-The opt-in alternative to the match-count controller (Camera Exp menu "Star", `camera_exp = "auto_star"` — a sibling of "Auto", so it is reachable from the focus screen's marking menu). Drives exposure toward a target count of **detected centroids** (`Centroids`) with a division step, an asymmetric deadband (act on shortfall below 0.8×, tolerate excess to 1.6×), a bright-sky guard, and a <4-star slewing fallback. Delegates to zero-match recovery only on zero *detections* — a star-filled but unsolvable frame does not walk the ladder. Control law and defaults come from cedar-server's exposure servo.
+The MF fresh-install default since 2026-09-06; an alternative to the match-count controller (Camera Exp menu "Star", `camera_exp = "auto_star"` — a sibling of "Auto", so it is reachable from the focus screen's marking menu). Drives exposure toward a target count of **detected centroids** (`Centroids`) with a division step, an asymmetric deadband (act on shortfall below 0.8×, tolerate excess to 1.6×), a bright-sky guard, and a <4-star slewing fallback. Delegates to zero-match recovery only on zero *detections* — a star-filled but unsolvable frame does not walk the ladder. The MF default enables framewise quality control, including local-light rejection and bounded reacquisition probes; the solver-feedback variant derives from cedar-server's exposure servo.
 _Avoid_: cedar controller (provenance, not the job), detection mode ("mode" is overloaded).
 
 **Anchor exposure**:

@@ -88,7 +88,12 @@ solver keeps matching a healthy number of stars.
   and anti-windup backs out the integral contribution when the output
   clamps to `[min_exposure, max_exposure]` = [25 ms, 1 s].
 
-## 3b. Star-count controller (opt-in)
+## 3b. Star-count controller
+
+MF fresh installs select Star with framewise quality control as of 2026-09-06.
+See [the observing defaults](../mf_report/mf_observing_defaults_20260906_ko.md)
+for the current shipped settings. The solver-feedback variant below remains
+available when framewise control is disabled.
 
 `ExposureStarCountController` (`auto_exposure_starcount.py`). An
 alternative to the match-count controller, selected as a fourth Camera

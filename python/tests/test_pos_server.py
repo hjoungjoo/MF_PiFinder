@@ -1,6 +1,7 @@
 import datetime
 import queue
 import time
+from types import SimpleNamespace
 
 import pytest
 import pytz
@@ -8,9 +9,6 @@ import quaternion
 
 from PiFinder import nonsidereal, pos_server, track_freq_policy
 from PiFinder.types.positioning import (
-    AlignCancel,
-    AlignOnRaDec,
-    AlignedResult,
     ImuSample,
 )
 
@@ -347,7 +345,7 @@ def test_skysafari_guide_move_survives_short_command_connection(monkeypatch):
         def recv(self, _size):
             return self.reads.pop(0)
 
-        def send(self, _data):
+        def sendall(self, _data):
             return None
 
         def close(self):
@@ -774,7 +772,7 @@ def test_handle_client_sends_empty_lx200_response(monkeypatch):
         def recv(self, _size):
             return self.recv_values.pop(0)
 
-        def send(self, data):
+        def sendall(self, data):
             self.sent.append(data)
 
         def close(self):
@@ -804,7 +802,7 @@ def test_handle_client_processes_multiple_lx200_commands_in_one_packet(monkeypat
         def recv(self, _size):
             return self.recv_values.pop(0)
 
-        def send(self, data):
+        def sendall(self, data):
             self.sent.append(data)
 
         def close(self):
@@ -841,7 +839,7 @@ def test_handle_client_processes_split_lx200_command(monkeypatch):
         def recv(self, _size):
             return self.recv_values.pop(0)
 
-        def send(self, data):
+        def sendall(self, data):
             self.sent.append(data)
 
         def close(self):
@@ -1091,18 +1089,6 @@ def test_skysafari_sync_returns_no_target_without_coordinates(monkeypatch):
     assert pos_server.handle_sync_command(DummyState(None), ":CM#") == "No target."
 
 
-class _AlignResponseQueue:
-    def __init__(self, response=None):
-        self.response = response
-        self.calls = []
-
-    def get(self, block=True, timeout=None):
-        self.calls.append((block, timeout))
-        if block is False or self.response is None:
-            raise queue.Empty
-        return self.response
-
-
 class _AlignState:
     def __init__(self):
         self.target_pixel = None
@@ -1110,13 +1096,16 @@ class _AlignState:
     def set_target_pixel(self, value):
         self.target_pixel = value
 
+    def solution(self):
+        return SimpleNamespace(last_solve_success=time.time() - 1)
+
+    def imu(self):
+        return None
+
 
 @pytest.mark.unit
-def test_skysafari_align_waits_for_solver_without_polling(monkeypatch):
-    commands = queue.Queue()
-    responses = _AlignResponseQueue(AlignedResult(123.0, 234.0))
-    console = queue.Queue()
-    ui = queue.Queue()
+def test_skysafari_align_uses_cached_projection_without_solver_queue(monkeypatch):
+    commands, responses, console, ui = (queue.Queue() for _ in range(4))
     cfg = DummyConfig({"skysafari_pifinder_align": True})
     state = _AlignState()
     monkeypatch.setattr(pos_server, "align_command_queue", commands)
@@ -1124,14 +1113,19 @@ def test_skysafari_align_waits_for_solver_without_polling(monkeypatch):
     monkeypatch.setattr(pos_server, "console_queue", console)
     monkeypatch.setattr(pos_server, "ui_queue", ui, raising=False)
     monkeypatch.setattr(pos_server, "pos_server_config", cfg)
+    monkeypatch.setattr(pos_server, "_mount_control_status", lambda: {})
+    monkeypatch.setattr(pos_server, "projection_context", lambda *_: ("optics",))
+    calls = []
+
+    def cached(estimate, imu, ra, dec, **kwargs):
+        calls.append((ra, dec, kwargs["context"]))
+        return 123.0, 234.0
+
+    monkeypatch.setattr(pos_server, "cached_target_pixel", cached)
 
     assert pos_server._align_pifinder_if_enabled(state, 12.3, 45.6)
-
-    assert responses.calls == [
-        (False, None),
-        (True, pos_server._ALIGN_TIMEOUT_SECONDS),
-    ]
-    assert commands.get_nowait() == AlignOnRaDec(12.3, 45.6)
+    assert commands.empty() and responses.empty()
+    assert calls == [(12.3, 45.6, ("optics",))]
     assert console.get_nowait() == "SkySafari Alignment Set"
     assert ui.get_nowait() == "reload_config"
     assert state.target_pixel == (123.0, 234.0)
@@ -1139,23 +1133,50 @@ def test_skysafari_align_waits_for_solver_without_polling(monkeypatch):
 
 
 @pytest.mark.unit
-def test_skysafari_align_cancels_after_solver_timeout(monkeypatch):
-    commands = queue.Queue()
-    responses = _AlignResponseQueue()
-    console = queue.Queue()
+@pytest.mark.parametrize("moving", [False, True])
+def test_skysafari_align_refuses_bad_cache_without_delayed_command(monkeypatch, moving):
+    commands, responses, console = (queue.Queue() for _ in range(3))
     cfg = DummyConfig({"skysafari_pifinder_align": True})
-    monkeypatch.setattr(pos_server, "_ALIGN_TIMEOUT_SECONDS", 0.25)
     monkeypatch.setattr(pos_server, "align_command_queue", commands)
     monkeypatch.setattr(pos_server, "align_response_queue", responses)
     monkeypatch.setattr(pos_server, "console_queue", console)
     monkeypatch.setattr(pos_server, "pos_server_config", cfg)
+    monkeypatch.setattr(
+        pos_server, "_mount_control_status", lambda: {"mount_motion_active": moving}
+    )
+    monkeypatch.setattr(pos_server, "projection_context", lambda *_: ("optics",))
 
-    assert not pos_server._align_pifinder_if_enabled(_AlignState(), 12.3, 45.6)
+    def unavailable(*args, **kwargs):
+        raise ValueError("last solve is too old")
 
-    assert responses.calls == [(False, None), (True, 0.25)]
-    assert commands.get_nowait() == AlignOnRaDec(12.3, 45.6)
-    assert commands.get_nowait() == AlignCancel()
-    assert console.get_nowait() == "SkySafari Align Timeout"
+    monkeypatch.setattr(pos_server, "cached_target_pixel", unavailable)
+    state = _AlignState()
+    assert not pos_server._align_pifinder_if_enabled(state, 12.3, 45.6)
+    assert commands.empty() and responses.empty()
+    assert state.target_pixel is None
+    assert "target_pixel" not in cfg.options
+
+
+@pytest.mark.unit
+def test_rejected_cached_align_does_not_partially_sync_mount(monkeypatch):
+    mount, guide = queue.Queue(), queue.Queue()
+    monkeypatch.setattr(pos_server, "mountcontrol_queue", mount)
+    monkeypatch.setattr(pos_server, "goto_guide_queue", guide)
+    monkeypatch.setattr(pos_server, "last_target_coordinates", (12.3, 45.6))
+    monkeypatch.setattr(pos_server, "sr_result", None)
+    monkeypatch.setattr(pos_server, "sd_result", None)
+    monkeypatch.setattr(pos_server, "_multipoint_align_active", lambda: False)
+    monkeypatch.setattr(
+        pos_server,
+        "pos_server_config",
+        DummyConfig({"mount_control": True, "skysafari_pifinder_align": True}),
+    )
+    monkeypatch.setattr(pos_server, "_align_pifinder_if_enabled", lambda *_: False)
+    assert (
+        pos_server.handle_sync_command(DummyState(None, DummySolution(True)), ":CM#")
+        == "Alignment unavailable."
+    )
+    assert mount.empty() and guide.empty()
 
 
 class _MutableLocation:
