@@ -539,9 +539,12 @@ class IndiGotoGuideService:
         """Return the configured near threshold capped to pulse capacity."""
 
         try:
-            configured = float(
-                self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0)
-            ) * 60.0
+            configured = (
+                float(
+                    self.config_values.get("indi_pifinder_goto_near_threshold_deg", 1.0)
+                )
+                * 60.0
+            )
         except (TypeError, ValueError):
             configured = PIFINDER_PULSE_ALIGN_MAX_ERROR_ARCMIN
         return min(
@@ -977,9 +980,7 @@ class IndiGotoGuideService:
             self.tracking_motion_ra = None
             self.tracking_motion_dec = None
             self.tracking_last_motion_at = time.monotonic()
-            if (
-                self._mount_summary_reports_manual_motion(mount_status)
-            ):
+            if self._mount_summary_reports_manual_motion(mount_status):
                 self.manual_retarget_pending = True
                 self.tracking_guide_state = "manual_move"
                 self.tracking_guide_last_action = "manual move in progress"
@@ -1145,7 +1146,9 @@ class IndiGotoGuideService:
             return
 
         goto_threshold_arcmin = (
-            float(self.config_values.get("indi_tracking_guide_goto_threshold_deg", 0.25))
+            float(
+                self.config_values.get("indi_tracking_guide_goto_threshold_deg", 0.25)
+            )
             * 60.0
         )
         goto_recovery_enabled = bool(

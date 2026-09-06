@@ -70,7 +70,7 @@ def test_set_options_rejects_special_namespaces(config_dir):
 @pytest.mark.unit
 def test_get_stored_option_does_not_use_default_config(config_dir):
     cfg = config.Config()
-    assert cfg.get_option("camera_exp") == "auto"
+    assert cfg.get_option("camera_exp") == "auto_star"
     assert cfg.get_stored_option("camera_exp") is None
 
 
@@ -156,11 +156,11 @@ def test_read_picks_up_another_process_write(config_dir, monkeypatch):
     """The UI must see an exposure the web/camera process just saved."""
     monkeypatch.setattr(config, "REFRESH_INTERVAL", 0)
     ui_cfg = config.Config()  # loaded when the main process started
-    assert ui_cfg.get_option("camera_exp") == "auto"  # default_config value
+    assert ui_cfg.get_option("camera_exp") == "auto_star"  # default_config value
 
-    config.Config().set_option("camera_exp", "auto_star")
+    config.Config().set_option("camera_exp", "auto")
 
-    assert ui_cfg.get_option("camera_exp") == "auto_star"
+    assert ui_cfg.get_option("camera_exp") == "auto"
 
 
 @pytest.mark.unit
@@ -174,7 +174,7 @@ def test_read_is_not_rechecked_within_the_interval(config_dir, monkeypatch):
 
     # Still the value from our last read: the file is only re-checked once
     # the interval has passed.
-    assert ui_cfg.get_option("camera_exp") == "auto"
+    assert ui_cfg.get_option("camera_exp") == "auto_star"
 
 
 @pytest.mark.unit
