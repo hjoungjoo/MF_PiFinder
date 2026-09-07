@@ -26,6 +26,30 @@ following differences matter:
   `nox -s <session>` works on Bookworm's 3.11 (the old `--force-python 3.11`
   advice is no longer needed).
 
+## Wireless Keyboard Power Key
+
+Versions of `pifinder_setup.sh` and `pifinder_post_update.sh` containing this
+change automatically disable the power-off key on the XING WEI 2.4G USB
+keyboard (USB ID `1915:1025`). Installation also works with the keyboard
+disconnected; the mapping applies on subsequent hotplug and boot. Other keys,
+including sleep/wake, the Pi's onboard power button, and menu shutdown are
+unchanged. This is a device-specific mapping, not a blanket keyboard policy.
+
+For the manual installation below, or to apply only this setting to an existing
+device, run from a checkout containing this change:
+
+```bash
+bash scripts/install_keyboard_power_ignore.sh
+```
+
+The helper uses sudo when needed, installs
+`pi_config_files/90-pifinder-keyboard-power-ignore.hwdb` into `/etc/udev/hwdb.d/`,
+rebuilds the database, and reapplies the mapping to the connected receiver.
+It is repeatable and does not restart PiFinder or logind. To undo it, remove
+only `/etc/udev/hwdb.d/90-pifinder-keyboard-power-ignore.hwdb`, run
+`sudo systemd-hwdb update`, and reconnect the keyboard. A subsequent install
+or update will apply the setting again.
+
 ## Current Installation State On This Device
 
 - Source directory: `/home/pifinder/PiFinder`

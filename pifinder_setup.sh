@@ -169,6 +169,9 @@ if [[ -f /etc/avahi/avahi-daemon.conf ]]; then
         || sudo sed -i '/^\[publish\]/a publish-aaaa-on-ipv4=no' /etc/avahi/avahi-daemon.conf
 fi
 
+# Disable the supported wireless keyboard's power key, including on hotplug.
+bash "${PIFINDER_REPO_DIR}/scripts/install_keyboard_power_ignore.sh"
+
 # Bluetooth HID keyboards
 if [[ -f /etc/bluetooth/input.conf ]]; then
     sudo sed -i \

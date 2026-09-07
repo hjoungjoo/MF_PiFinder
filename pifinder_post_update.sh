@@ -93,5 +93,9 @@ then
     touch "${PIFINDER_DATA_DIR}/migrations/mf_removeipc"
 fi
 
+# Keep the device-specific power-key mapping in sync on existing installs too.
+# Idempotent; also installs the rule when the keyboard is not connected.
+bash "${PIFINDER_REPO_DIR}/scripts/install_keyboard_power_ignore.sh" || return $?
+
 # DONE
 echo "Post Update Complete"

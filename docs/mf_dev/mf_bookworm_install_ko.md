@@ -22,6 +22,28 @@ Raspberry Pi OS Legacy Bullseye를 기준으로 작성되어 있습니다. CM5 B
   실행 인터프리터로 자동 폴백하므로 Bookworm 3.11에서 `nox -s <session>`이
   그대로 동작합니다(구버전 안내였던 `--force-python 3.11`은 더 이상 불필요).
 
+## 무선 키보드 전원 키 차단
+
+이 변경을 포함한 `pifinder_setup.sh`와 `pifinder_post_update.sh`는
+XING WEI 2.4G USB 키보드(USB ID `1915:1025`)의 전원 종료 키를 자동으로
+무효화합니다. 설치 시 키보드가 없어도 되며 재부팅·USB 재연결 후에도 유지됩니다.
+일반 키, 절전/깨우기 키, Raspberry Pi 본체 전원 버튼 및 메뉴 종료는 변경하지 않습니다.
+다른 모델의 키보드까지 일괄 차단하는 설정은 아닙니다.
+
+아래 수동 설치 절차를 따르거나 기존 장치에 이 설정만 적용할 때는,
+이 변경이 포함된 저장소에서 다음을 실행합니다.
+
+```bash
+bash scripts/install_keyboard_power_ignore.sh
+```
+
+스크립트는 필요 시 sudo를 사용해 저장소의
+`pi_config_files/90-pifinder-keyboard-power-ignore.hwdb`를
+`/etc/udev/hwdb.d/`에 설치하고 DB 갱신 및 연결된 해당 키보드에 즉시 적용합니다.
+PiFinder나 logind를 재시작하지 않으며 반복 실행해도 같은 설정이 유지됩니다.
+원복하려면 해당 `/etc/udev/hwdb.d/90-pifinder-keyboard-power-ignore.hwdb`만 삭제하고
+`sudo systemd-hwdb update` 후 키보드를 재연결합니다. 후속 설치/업데이트는 다시 적용합니다.
+
 ## 현재 장비에 적용한 설치 상태
 
 - 소스 위치: `/home/pifinder/PiFinder`

@@ -1,0 +1,13 @@
+# Disable only KEY_POWER on the XING WEI 2.4G USB keyboard (1915:1025).
+# Match interface event capabilities, not event numbers or mutable key bits.
+# Main keyboard: HID Keyboard Power.
+evdev:input:b0003v1915p1025*-e0,1,4,11,14,*
+ KEYBOARD_KEY_70066=reserved
+
+# Consumer control: HID Consumer Power.
+evdev:input:b0003v1915p1025*-e0,1,2,3,4,*
+ KEYBOARD_KEY_c0030=reserved
+
+# System control: HID System Power Down.
+evdev:input:b0003v1915p1025*-e0,1,4,k*
+ KEYBOARD_KEY_10081=reserved
