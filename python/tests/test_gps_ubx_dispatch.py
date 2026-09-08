@@ -224,22 +224,28 @@ def test_markers_are_published_like_any_other_event():
     """A frame we cannot decode is exactly the case the row exists for, so it
     must reach the queue even though the dispatch chain ignores it."""
     published = run_messages(
-        [{"class": "?CKSUM"}, {"class": "?0122"}],
+        [{"class": "?CKSUM"}, {"class": "?0122"}, {"class": "?NMEA"}],
         clock=TickingClock(),
         tag="comms",
     )
 
-    assert published == ["?CKSUM", "?0122"]
+    assert published == ["?CKSUM", "?0122", "?NMEA"]
 
 
 @pytest.mark.unit
 def test_markers_do_not_disturb_the_satellite_counts():
     published = run_messages(
-        [svinfo(11, 8), {"class": "?CKSUM"}, {"class": "?0122"}],
+        [svinfo(11, 8), {"class": "?CKSUM"}, {"class": "?0122"}, {"class": "?NMEA"}],
         clock=TickingClock(),
     )
 
     assert published == [(11, 8)]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("tag", ["fix", "time", "time_sample", "satellites"])
+def test_nmea_marker_does_not_supply_navigation_data(tag):
+    assert run_messages([{"class": "?NMEA"}], tag=tag) == []
 
 
 @pytest.mark.unit

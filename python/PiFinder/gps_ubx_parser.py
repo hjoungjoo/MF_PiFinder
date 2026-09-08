@@ -4,7 +4,9 @@ import sys
 import json
 import math
 import logging
+import time
 from PiFinder.multiproclogging import MultiprocLogging
+from PiFinder.gps_ubx_recovery import UBXRecovery
 import asyncio
 import aiofiles
 from typing import Dict, Callable, Optional, Tuple
@@ -64,6 +66,7 @@ class UBXParser:
         reader: Optional[asyncio.StreamReader] = None,
         writer: Optional[asyncio.StreamWriter] = None,
         file_path: Optional[str] = None,
+        clock: Callable[[], float] = time.monotonic,
     ):
         if log_queue is not None:
             MultiprocLogging.configurer(log_queue)
@@ -73,6 +76,8 @@ class UBXParser:
         self.config = ParserConfig()
         self.message_parsers: Dict[Tuple[int, int], Callable[[bytes], dict]] = {}
         self.buffer = bytearray()
+        self._clock = clock
+        self._recovery = UBXRecovery()
         self._poll_task = None  # Store polling task for cleanup
         self._running = True  # Control flag for polling loop
         self._initialize_parsers()
@@ -120,9 +125,8 @@ class UBXParser:
         logger.debug(f"Sending WATCH command: {watch_command}")
         self.writer.write(watch_command.encode())
         await self.writer.drain()
-        # Optional: Read response to confirm
-        response = await self.reader.read(1024)
-        logger.debug(f"WATCH response: {response.decode('utf-8', errors='ignore')}")
+        # Let parse_messages consume the response: gpsd can coalesce its
+        # DEVICES report and the first navigation frames into the same read.
 
     async def _poll_messages(self):
         # while self._running and self.writer and not self.writer.is_closing():
@@ -207,13 +211,19 @@ class UBXParser:
                     break
 
                 self.buffer.extend(data)
+                now = self._clock()
+                nmea_seen = False
                 while len(self.buffer) >= 6:  # Minimum UBX header size
                     start = self.buffer.find(b"\xb5\x62")  # UBX sync chars
                     if start == -1:
-                        logger.debug("No UBX header found, clearing buffer")
-                        self.buffer.clear()
+                        # Preserve a split UBX sync prefix across TCP reads.
+                        keep = 1 if self.buffer[-1] == 0xB5 else 0
+                        end = len(self.buffer) - keep
+                        nmea_seen |= self._recovery.feed_text(self.buffer[:end], now)
+                        del self.buffer[:end]
                         break
                     if start > 0:
+                        nmea_seen |= self._recovery.feed_text(self.buffer[:start], now)
                         self.buffer = self.buffer[start:]
                     length = int.from_bytes(self.buffer[4:6], "little")
                     total_length = 8 + length  # Header (6) + checksum (2) + payload
@@ -225,6 +235,7 @@ class UBXParser:
                         ck_a = (ck_a + b) & 0xFF
                         ck_b = (ck_b + ck_a) & 0xFF
                     if msg_data[-2] == ck_a and msg_data[-1] == ck_b:
+                        self._recovery.observe_ubx(now)
                         parsed = self._parse_ubx(bytes(msg_data))
                         if "class" in parsed:
                             logger.debug(f"Parsed UBX message: {parsed}")
@@ -238,6 +249,22 @@ class UBXParser:
                         # See docs/adr/0032.
                         yield {"class": CHECKSUM_MARKER}
                     self.buffer = self.buffer[total_length:]
+                if nmea_seen and self._recovery.last_ubx != now:
+                    yield {"class": "?NMEA"}
+                    # No polling on silence, noise, file replay, or a closed
+                    # writer. Normal UBX in this batch suppresses the probe.
+                    if (
+                        self.writer
+                        and not self.file_path
+                        and not self.writer.is_closing()
+                    ):
+                        command = self._recovery.next_probe(self._clock())
+                        if command is not None:
+                            self.writer.write(command)
+                            try:
+                                await asyncio.wait_for(self.writer.drain(), timeout=2.0)
+                            except asyncio.TimeoutError:
+                                logger.warning("MON-VER probe drain timed out")
             except (ConnectionResetError, BrokenPipeError):
                 logger.exception("Connection error")
                 break

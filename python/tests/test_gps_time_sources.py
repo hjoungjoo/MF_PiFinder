@@ -131,6 +131,7 @@ def test_ubx_process_messages_emits_nav_pvt_time_before_position_fix():
         )
     )
 
+    assert gps_queue.get_nowait() == ("comms", "NAV-PVT")
     gps_msg, gps_content = gps_queue.get_nowait()
     assert gps_msg == "time"
     assert gps_content["time"] == gps_time
@@ -161,6 +162,7 @@ def test_ubx_process_messages_emits_invalid_nav_pvt_time_as_sample():
         )
     )
 
+    assert gps_queue.get_nowait() == ("comms", "NAV-PVT")
     gps_msg, gps_content = gps_queue.get_nowait()
     assert gps_msg == "time_sample"
     assert gps_content["time"] == gps_time

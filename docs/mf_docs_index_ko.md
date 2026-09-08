@@ -61,6 +61,7 @@
 | [pifinder_rpi4_pi5_compatibility](mf_dev/mf_pifinder_rpi4_pi5_compatibility_ko.md) | 둘 다 | living | Pi4/5/CM5 보드·GPS/UART 호환성. |
 | [wifi_apsta](mf_dev/mf_wifi_apsta_ko.md) | 둘 다 | living | AP+STA 동시 Wi-Fi 모드. |
 | [time_sync](mf_dev/mf_time_sync_ko.md) | 둘 다 | living | GPS/NTP/RTC/PPS 통합 시간 동기화(시스템 클럭). |
+| [gps_ubx_recovery_20260909](mf_report/mf_gps_ubx_recovery_20260909_ko.md) | ko | **장애·변경 검증 보고서** | u-blox가 NMEA0183로 남는 간헐 장애의 실측, MON-VER 제한 재시도, 회귀·TCP·실장 검증. |
 | [i2c_clock_stretching_fix](mf_dev/mf_i2c_clock_stretching_fix_ko.md) | 둘 다 | living | I2C 클럭 스트레칭 수정. |
 
 ## 입력 · UI · 센서
