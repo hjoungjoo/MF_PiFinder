@@ -35,6 +35,7 @@ import math
 import os
 import queue
 import time
+import uuid
 from multiprocessing import Queue
 from typing import Any, Optional
 
@@ -92,8 +93,10 @@ PIFINDER_PULSE_ALIGN_TIMEOUT_SECONDS = 90.0
 # coordinate before measuring the arrival error. IMU estimates right after a
 # slew can be degrees off, which poisons both the error measurement and the
 # next sync anchor (observed 2026-08-02: attempt error 127' -> 400' off a
-# medium-quality estimate). On timeout the current coordinate is used as-is.
+# medium-quality estimate). A timeout must not authorize an estimated anchor.
 PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS = 12.0
+# Status-file freshness does not bound the age of the underlying exposure.
+PIFINDER_SOLVE_ANCHOR_MAX_AGE_SECONDS = 12.0
 TRACKING_GUIDE_MAX_RECOVERY_GOTOS = 5
 # Once the tracking target sinks below this altitude the guide must never move
 # the mount toward it (overnight targets set below the horizon; a recovery slew
@@ -131,6 +134,7 @@ class IndiGotoGuideService:
         # only, avoiding repeated config.json writes to the SD card.
         self.runtime_goto_method: Optional[str] = None
         self.last_command: Optional[str] = None
+        self.sync_goto_request_id: Optional[str] = None
         self.service_state = "starting"
         self.phase = "idle"
         self.wait_reason = ""
@@ -552,13 +556,22 @@ class IndiGotoGuideService:
             PIFINDER_PULSE_ALIGN_MAX_ERROR_ARCMIN,
         )
 
-    def _is_fresh_arrival_solve(self, current: dict[str, Any]) -> bool:
-        """Require a high-quality solve captured after the mount became idle."""
-
+    def _is_recent_solve(self, current: dict[str, Any]) -> bool:
+        """Require a camera solve with a recent, finite observation epoch."""
         timestamp = self._finite_float(current.get("timestamp"))
         return bool(
             current.get("source") == "solve"
             and current.get("quality") == "high"
+            and timestamp is not None
+            and 0.0 <= time.time() - timestamp <= PIFINDER_SOLVE_ANCHOR_MAX_AGE_SECONDS
+        )
+
+    def _is_fresh_arrival_solve(self, current: dict[str, Any]) -> bool:
+        """Require a recent camera solve captured after the mount became idle."""
+
+        timestamp = self._finite_float(current.get("timestamp"))
+        return bool(
+            self._is_recent_solve(current)
             and timestamp is not None
             and timestamp >= self.solve_anchor_required_after_wall
         )
@@ -579,20 +592,16 @@ class IndiGotoGuideService:
             self._stop_with_error("pifinder GoTo coordinates unavailable")
             return
 
+        self.sync_goto_request_id = uuid.uuid4().hex
         self._forward_to_mountcontrol(
             {
-                "type": "sync",
-                "ra": self.current_ra,
-                "dec": self.current_dec,
-                **self._sync_context("pifinder_goto"),
-            }
-        )
-        self._forward_to_mountcontrol(
-            {
-                "type": "goto_target",
+                "type": "sync_and_goto",
+                "request_id": self.sync_goto_request_id,
+                "sync_ra": self.current_ra,
+                "sync_dec": self.current_dec,
                 "ra": self.active_target_ra,
                 "dec": self.active_target_dec,
-                "refine_after_goto": False,
+                **self._sync_context("pifinder_goto"),
             }
         )
         self.correction_count = 1 if first else self.correction_count + 1
@@ -768,6 +777,9 @@ class IndiGotoGuideService:
             self._stop_with_error("mount parked during GoTo")
             return
 
+        if not self._verified_sync_goto_ready(mount_status, recovery=False):
+            return
+
         now = time.monotonic()
         if now - self.final_goto_sent_at < PIFINDER_FINAL_GOTO_SETTLE_SECONDS:
             return
@@ -799,11 +811,13 @@ class IndiGotoGuideService:
                 return
             logger.warning(
                 "No post-idle solve anchor within %.0fs after GoTo; "
-                "using %s/%s coordinate",
+                "refusing %s/%s coordinate",
                 PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS,
                 current.get("source"),
                 current.get("quality"),
             )
+            self._stop_with_error("No fresh plate solve after GoTo")
+            return
         self.solve_anchor_wait_since = 0.0
         self.current_ra = self._finite_float(current.get("ra"))
         self.current_dec = self._finite_float(current.get("dec"))
@@ -1164,9 +1178,7 @@ class IndiGotoGuideService:
             self.tracking_guide_error_arcmin > goto_threshold_arcmin
             and goto_recovery_enabled
         ):
-            if not (
-                current.get("source") == "solve" and current.get("quality") == "high"
-            ):
+            if not self._is_recent_solve(current):
                 if self.recovery_anchor_wait_since == 0.0:
                     self.recovery_anchor_wait_since = now
                 if (
@@ -1174,17 +1186,20 @@ class IndiGotoGuideService:
                     < PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS
                 ):
                     self.tracking_guide_state = "settling"
-                    self.tracking_guide_last_action = (
-                        "recovery waiting for solve anchor"
-                    )
+                    self._disable_tracking_guide("recovery waiting for solve anchor")
                     return
-                logger.warning(
-                    "No solve anchor within %.0fs before recovery goto; "
-                    "using %s/%s coordinate",
-                    PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS,
-                    current.get("source"),
-                    current.get("quality"),
-                )
+                wait_action = "recovery waiting: no fresh solve"
+                if self.tracking_guide_last_action != wait_action:
+                    logger.warning(
+                        "No fresh solve anchor within %.0fs before recovery goto; "
+                        "holding correction instead of using %s/%s coordinate",
+                        PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS,
+                        current.get("source"),
+                        current.get("quality"),
+                    )
+                self._disable_tracking_guide(wait_action)
+                self.tracking_guide_state = "waiting_coordinate"
+                return
             self.recovery_anchor_wait_since = 0.0
             self._begin_tracking_recovery_goto(current_ra, current_dec)
             return
@@ -1334,20 +1349,16 @@ class IndiGotoGuideService:
             return
 
         self._disable_tracking_guide("starting goto recovery")
+        self.sync_goto_request_id = uuid.uuid4().hex
         self._forward_to_mountcontrol(
             {
-                "type": "sync",
-                "ra": current_ra,
-                "dec": current_dec,
-                **self._sync_context("tracking_recovery"),
-            }
-        )
-        self._forward_to_mountcontrol(
-            {
-                "type": "goto_target",
+                "type": "sync_and_goto",
+                "request_id": self.sync_goto_request_id,
+                "sync_ra": current_ra,
+                "sync_dec": current_dec,
                 "ra": self.tracking_target_ra,
                 "dec": self.tracking_target_dec,
-                "refine_after_goto": False,
+                **self._sync_context("tracking_recovery"),
             }
         )
         self.tracking_recovery_attempts += 1
@@ -1377,6 +1388,8 @@ class IndiGotoGuideService:
 
     def _tick_tracking_recovery_goto(self, mount_status: dict[str, Any]) -> None:
         self.tracking_guide_state = "recovering_goto"
+        if not self._verified_sync_goto_ready(mount_status, recovery=True):
+            return
         now = time.monotonic()
         if (
             now - self.tracking_recovery_goto_sent_at
@@ -1402,6 +1415,41 @@ class IndiGotoGuideService:
         self.tracking_motion_dec = None
         self.tracking_last_motion_at = now
         self.tracking_guide_last_action = "recovery goto complete"
+
+    def _verified_sync_goto_ready(self, mount_status, *, recovery: bool) -> bool:
+        if self.sync_goto_request_id is None:
+            return True
+        receipt = mount_status.get("sync_goto") or {}
+        matches = receipt.get("request_id") == self.sync_goto_request_id
+        state = receipt.get("state") if matches else None
+        sent_at = (
+            self.tracking_recovery_goto_sent_at if recovery else self.final_goto_sent_at
+        )
+        reason = str(receipt.get("reason") or "Mount sync verification failed")
+        if state == "failed" or time.monotonic() - sent_at > 25.0:
+            if state != "failed":
+                reason = "No verified sync+GoTo acknowledgement"
+            # A failed alignment must not lead to an automatic recovery retry
+            # based on the same unconfirmed mount frame.
+            self.tracking_guide_suspended = True
+            self._disable_tracking_guide(reason)
+            self._stop_with_error(reason)
+            self.tracking_recovery_state = "idle"
+            self.sync_goto_request_id = None
+            return False
+        if state != "goto_sent":
+            self.last_action = "waiting for mount sync verification"
+            self.tracking_guide_last_action = self.last_action
+            return False
+        actual_sent = self._finite_float(receipt.get("goto_sent_monotonic"))
+        if actual_sent is None:
+            return False
+        if recovery:
+            self.tracking_recovery_goto_sent_at = actual_sent
+        else:
+            self.final_goto_sent_at = actual_sent
+        self.sync_goto_request_id = None
+        return True
 
     def _reset_tracking_recovery(self) -> None:
         self.recovery_anchor_wait_since = 0.0
@@ -1459,6 +1507,8 @@ class IndiGotoGuideService:
             return "mount is parked"
 
         current = pointing.get("current") or {}
+        if not self._is_recent_solve(current):
+            return "PiFinder GoTo requires a recent plate solve"
         if self._finite_float(current.get("ra")) is None:
             return "current RA unavailable"
         if self._finite_float(current.get("dec")) is None:
@@ -1700,6 +1750,7 @@ class IndiGotoGuideService:
             "manual_motion_origin": status.get("manual_motion_origin"),
             "target_ra": status.get("target_ra"),
             "target_dec": status.get("target_dec"),
+            "sync_goto": status.get("sync_goto"),
         }
 
     def _status_payload(self) -> dict[str, Any]:

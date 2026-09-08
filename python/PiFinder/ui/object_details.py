@@ -482,11 +482,43 @@ class UIObjectDetails(UIModule):
             elif self._push_solve_interval is not None:
                 seconds = min(self._push_solve_interval, 999)
                 interval = f"{seconds:.1f}s" if seconds < 100 else f"{seconds:.0f}s"
-        text = movement + " | " + _("Solve {interval}").format(interval=interval)
+
+        def speed_text(value, minimum, maximum):
+            try:
+                value = float(value)
+                if math.isfinite(value) and minimum <= value <= maximum:
+                    return f"{value:g}"
+            except (TypeError, ValueError):
+                pass
+            return "--"
+
+        manual = speed_text(mount.get("manual_slew_rate"), 0, 9)
+        saved_guide = speed_text(mount.get("pulse_guide_rate"), 0.25, 1)
+        waiting = bool(mount.get("guide_rate_waiting"))
+        applied_guide = speed_text(
+            mount.get(
+                "pulse_guide_rate_requested" if waiting else "pulse_guide_rate_active"
+            ),
+            0.25,
+            1,
+        )
+        guide_speed = saved_guide
+        if applied_guide != "--" and applied_guide != saved_guide:
+            guide_speed += ">" + applied_guide
+        if waiting:
+            guide_speed += "?"
+        suffix = f" S{interval} M{manual} G{guide_speed}"
+        # Retain the numerical fields on narrow displays / long translations.
+        # Only the movement label is shortened when the small font won't fit.
+        font = self.fonts.small.font
+        width = self.display_class.resX - 2
+        while movement and self.draw.textlength(movement + suffix, font=font) > width:
+            movement = movement[:-1]
+        text = movement + suffix
         self.draw.text(
             (1, self.display_class.resY - self.fonts.small.height - 1),
             text,
-            font=self.fonts.small.font,
+            font=font,
             fill=self.colors.get(192),
             anchor="lt",
         )

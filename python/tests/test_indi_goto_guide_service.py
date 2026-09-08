@@ -8,6 +8,9 @@ import PiFinder.indi_goto_guide_service as iggs
 from PiFinder.indi_goto_guide_service import IndiGotoGuideService
 
 
+pytestmark = pytest.mark.unit
+
+
 class DummyMountQueue:
     def __init__(self):
         self.commands = []
@@ -18,6 +21,7 @@ class DummyMountQueue:
 
 def _make_service(monkeypatch, clock):
     monkeypatch.setattr(iggs.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(iggs.time, "time", lambda: clock[0])
     service = IndiGotoGuideService(Queue(), DummyMountQueue(), None)
     service.config_values = {
         # B4: the tracking guide only runs in pifinder mode.
@@ -46,7 +50,14 @@ def _make_service(monkeypatch, clock):
         "current": {"ra": 100.0, "dec": 22.0, "source": "solve", "quality": "high"},
         "imu": {"metadata": {"moving": False}},
     }
-    monkeypatch.setattr(service, "_refresh_pointing_status", lambda: service._pointing)
+    monkeypatch.setattr(
+        service,
+        "_refresh_pointing_status",
+        lambda: {
+            **service._pointing,
+            "current": {"timestamp": clock[0], **service._pointing["current"]},
+        },
+    )
     monkeypatch.setattr(service, "_write_status", lambda **kwargs: None)
     return service
 
@@ -91,17 +102,17 @@ def test_lower_configured_pulse_align_threshold_is_preserved(monkeypatch):
 
 def test_arrival_solve_must_be_captured_after_mount_became_idle(monkeypatch):
     service = _make_service(monkeypatch, [1000.0])
-    service.solve_anchor_required_after_wall = 500.0
+    service.solve_anchor_required_after_wall = 999.0
 
     stale = {
         "source": "solve",
         "quality": "high",
-        "timestamp": 499.9,
+        "timestamp": 998.9,
     }
     fresh = {
         "source": "solve",
         "quality": "high",
-        "timestamp": 500.1,
+        "timestamp": 999.1,
     }
 
     assert service._is_fresh_arrival_solve(stale) is False
@@ -142,14 +153,69 @@ def test_recovery_starts_after_settle_when_motion_ends(monkeypatch):
 
     assert service.tracking_guide_state == "recovering_goto"
     commands = service.mountcontrol_queue.commands
-    assert [c["type"] for c in commands[-2:]] == ["sync", "goto_target"]
+    assert [c["type"] for c in commands] == ["sync_and_goto"]
     assert commands[-1]["ra"] == 100.0
     assert commands[-1]["dec"] == 20.0
     # B5 visibility: the recovery sync is tagged with its origin and the
     # coordinate source that fed the value.
-    sync_command = commands[-2]
+    sync_command = commands[-1]
     assert sync_command["origin"] == "tracking_recovery"
     assert sync_command["pointing_source"] == "mount_imu_delta"
+
+
+def test_goto_waits_for_matching_sync_ack_before_arrival_checks(monkeypatch):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service.pointing_status = service._refresh_pointing_status()
+    service._handle_goto_target({"type": "goto_target", "ra": 100.0, "dec": 20.0})
+    command = service.mountcontrol_queue.commands[-1]
+    assert command["type"] == "sync_and_goto"
+    assert command["sync_ra"] == 100.0
+    assert command["sync_dec"] == 22.0
+    assert command["request_id"] == service.sync_goto_request_id
+    clock[0] += 10.0
+    service._tick_goto_wait()
+    assert service.final_goto_idle_since == 0.0
+    assert service.last_action == "waiting for mount sync verification"
+    receipt = {"request_id": "old", "state": "goto_sent", "goto_sent_monotonic": 1001.0}
+    assert not service._verified_sync_goto_ready({"sync_goto": receipt}, recovery=False)
+    receipt.update(request_id=command["request_id"], goto_sent_monotonic=1009.0)
+    assert service._verified_sync_goto_ready({"sync_goto": receipt}, recovery=False)
+    assert service.final_goto_sent_at == 1009.0
+
+
+def test_sync_failure_stops_goto_and_suspends_automatic_recovery(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+    service.pointing_status = service._refresh_pointing_status()
+    service._handle_goto_target({"type": "goto_target", "ra": 100.0, "dec": 20.0})
+    receipt = {
+        "request_id": service.sync_goto_request_id,
+        "state": "failed",
+        "reason": "coordinate mismatch",
+    }
+    assert not service._verified_sync_goto_ready({"sync_goto": receipt}, recovery=False)
+    assert service.phase == "error"
+    assert service.wait_reason == "coordinate mismatch"
+    assert service.tracking_guide_suspended is True
+    assert service.mountcontrol_queue.commands[-1]["type"] == "stop_movement"
+
+
+@pytest.mark.parametrize(
+    "source,quality,timestamp",
+    [("pifinder_imu_estimate", "medium", 999.0), ("solve", "high", 900.0)],
+)
+def test_first_goto_requires_recent_camera_anchor(
+    monkeypatch, source, quality, timestamp
+):
+    service = _make_service(monkeypatch, [1000.0])
+    service._pointing["current"].update(
+        source=source, quality=quality, timestamp=timestamp
+    )
+    service._handle_goto_target({"type": "goto_target", "ra": 100.0, "dec": 20.0})
+    assert service.phase == "pifinder_goto_blocked"
+    assert not any(
+        c["type"] == "sync_and_goto" for c in service.mountcontrol_queue.commands
+    )
 
 
 def test_lingering_imu_flag_cannot_delay_recovery_indefinitely(monkeypatch):
@@ -436,10 +502,9 @@ def test_suspend_lifts_after_manual_move_settles(monkeypatch):
     assert service.tracking_guide_state == "recovering_goto"
 
 
-def test_recovery_waits_for_solve_anchor_then_falls_back(monkeypatch):
+def test_recovery_waits_for_solve_anchor_then_recovers(monkeypatch):
     # An IMU-estimate anchor must not start the recovery goto immediately:
-    # the gate holds until a solve arrives or the bounded wait expires,
-    # then falls back so solve-less targets (e.g. the Moon) still recover.
+    # the gate holds until a recent camera solve arrives.
     clock = [1000.0]
     service = _make_service(monkeypatch, clock)
     service._pointing["current"]["source"] = "pifinder_imu_estimate"
@@ -463,11 +528,20 @@ def test_recovery_waits_for_solve_anchor_then_falls_back(monkeypatch):
     assert service.tracking_guide_state == "recovering_goto"
 
 
-def test_recovery_solve_anchor_wait_times_out_to_current(monkeypatch):
+@pytest.mark.parametrize(
+    "sample",
+    [
+        {"source": "pifinder_imu_estimate", "quality": "medium"},
+        {"source": "solve", "quality": "high", "timestamp": 900.0},
+        {"source": "solve", "quality": "high", "timestamp": 1100.0},
+        {"source": "solve", "quality": "high", "timestamp": None},
+    ],
+)
+def test_recovery_does_not_use_untrusted_anchor_after_timeout(monkeypatch, sample):
     clock = [1000.0]
     service = _make_service(monkeypatch, clock)
-    service._pointing["current"]["source"] = "pifinder_imu_estimate"
-    service._pointing["current"]["quality"] = "medium"
+    service._pointing["current"].update(sample)
+    service.tracking_guide_active_sent = True
 
     service._tick_tracking_guide()
     for _ in range(4):
@@ -477,4 +551,61 @@ def test_recovery_solve_anchor_wait_times_out_to_current(monkeypatch):
 
     clock[0] += iggs.PIFINDER_SOLVE_ANCHOR_WAIT_SECONDS + 1.0
     service._tick_tracking_guide()
+    assert service.tracking_guide_state == "waiting_coordinate"
+    assert service.tracking_guide_last_action == "recovery waiting: no fresh solve"
+    clock[0] += 20.0
+    service._tick_tracking_guide()
+    assert service.tracking_guide_state == "waiting_coordinate"
+    commands = service.mountcontrol_queue.commands
+    assert {"type": "toggle_guide_correction", "enabled": False} in commands
+    assert not any(c["type"] in {"goto_target", "sync"} for c in commands)
+
+    # The existing recovery proceeds immediately when a real solve returns.
+    service._pointing["current"].update(
+        source="solve", quality="high", timestamp=clock[0]
+    )
+    service._tick_tracking_guide()
     assert service.tracking_guide_state == "recovering_goto"
+
+
+@pytest.mark.parametrize(
+    "source,quality", [("pifinder_imu_estimate", "medium"), ("solve", "high")]
+)
+def test_arrival_timeout_does_not_sync_estimate_or_pre_idle_solve(
+    monkeypatch, source, quality
+):
+    clock = [1000.0]
+    service = _make_service(monkeypatch, clock)
+    service.active_target_ra = 100.0
+    service.active_target_dec = 22.0
+    service.phase = "pifinder_goto"
+    service.final_goto_sent_at = 990.0
+    service.final_goto_idle_since = 995.0
+    service.solve_anchor_required_after_wall = 995.0
+    service.solve_anchor_wait_since = 985.0
+    service._pointing["current"].update(source=source, quality=quality, timestamp=994.0)
+    service._tick_goto_wait()
+    assert service.phase == "error"
+    assert service.wait_reason == "No fresh plate solve after GoTo"
+    assert service.final_sync_sent is False
+    assert not any(
+        c["type"] in {"goto_target", "sync"}
+        for c in service.mountcontrol_queue.commands
+    )
+
+
+def test_recent_post_idle_solve_can_finish_goto_without_extra_wait(monkeypatch):
+    service = _make_service(monkeypatch, [1000.0])
+    service.active_target_ra = 100.0
+    service.active_target_dec = 22.0
+    service.phase = "pifinder_goto"
+    service.final_goto_sent_at = 990.0
+    service.final_goto_idle_since = 995.0
+    service.solve_anchor_required_after_wall = 995.0
+    service._pointing["current"]["timestamp"] = 999.0
+
+    service._tick_goto_wait()
+
+    assert service.phase == "complete"
+    assert service.final_sync_sent is True
+    assert [c["type"] for c in service.mountcontrol_queue.commands] == ["sync"]

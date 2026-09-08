@@ -15,6 +15,7 @@ import math
 import os
 import queue
 import re
+import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -106,6 +107,9 @@ DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN = 3.0
 # floor is longer than the 2.5 s maximum timed pulse. This lets every fresh
 # post-pulse solve drive the next correction without overlapping a pulse.
 GUIDE_CORRECTION_INTERVAL_SECONDS = 3.0
+GUIDE_CORRECTION_MAX_SOLVE_AGE_SECONDS = 12.0
+SYNC_GOTO_STAGE_TIMEOUT_SECONDS = 5.0
+SYNC_GOTO_COORD_TOLERANCE_ARCMIN = 0.5
 # Manual-move fallback lease used only when the driver does not expose the INDI
 # timed guide-pulse interface.
 GUIDE_CORRECTION_PULSE_SECONDS = 0.4
@@ -373,7 +377,15 @@ if PyIndi is not None:
                 self.telescope_device = None
 
         def newNumber(self, nvp):
-            if nvp.name != "EQUATORIAL_EOD_COORD":
+            if nvp.name not in {"EQUATORIAL_EOD_COORD", "GUIDE_RATE"}:
+                return
+            self._record_sync_property(
+                nvp.name,
+                nvp.s,
+                {widget.name: widget.value for widget in nvp},
+                getattr(nvp, "device", None),
+            )
+            if nvp.name == "GUIDE_RATE":
                 return
 
             ra_hours = None
@@ -391,6 +403,30 @@ if PyIndi is not None:
             ):
                 self.mount_control.receive_current_position(ra_hours * 15.0, dec_deg)
 
+        def _record_sync_property(self, name, state, values, device_name):
+            if self.mount_control is None:
+                return
+            if device_name != self.mount_control._indi_device_name():
+                return
+            state_name = {
+                PyIndi.IPS_IDLE: "idle",
+                PyIndi.IPS_OK: "ok",
+                PyIndi.IPS_BUSY: "busy",
+                PyIndi.IPS_ALERT: "alert",
+            }.get(state, "unknown")
+            self.mount_control.receive_sync_property(
+                name, state_name, values, self.generation
+            )
+
+        def newSwitch(self, svp):
+            if svp.name == "ON_COORD_SET":
+                self._record_sync_property(
+                    svp.name,
+                    svp.s,
+                    {widget.name: widget.s == PyIndi.ISS_ON for widget in svp},
+                    getattr(svp, "device", None),
+                )
+
         def newText(self, tvp):
             if (
                 self.mount_control is not None
@@ -405,13 +441,31 @@ if PyIndi is not None:
             # advances on the 5 s status heartbeat — far too slow for the
             # pointing fusion to attribute slew motion to the mount.
             try:
+                # Snapshot only server callbacks. set_number/set_switch mutate
+                # the local property cache before sending and cannot be ACKs.
+                if prop.getName() == "ON_COORD_SET":
+                    svp = PyIndi.PropertySwitch(prop)
+                    self._record_sync_property(
+                        prop.getName(),
+                        prop.getState(),
+                        {w.getName(): w.getState() == PyIndi.ISS_ON for w in svp},
+                        prop.getDeviceName(),
+                    )
                 if prop.getName() == "OnStep Status" and self.mount_control is not None:
                     self.mount_control.receive_onstep_status()
                 if prop.getType() != PyIndi.INDI_NUMBER:
                     return
-                if prop.getName() != "EQUATORIAL_EOD_COORD":
+                if prop.getName() not in {"EQUATORIAL_EOD_COORD", "GUIDE_RATE"}:
                     return
                 nvp = PyIndi.PropertyNumber(prop)
+                self._record_sync_property(
+                    prop.getName(),
+                    prop.getState(),
+                    {w.getName(): w.getValue() for w in nvp},
+                    prop.getDeviceName(),
+                )
+                if prop.getName() == "GUIDE_RATE":
+                    return
                 ra_widget = nvp.findWidgetByName("RA")
                 dec_widget = nvp.findWidgetByName("DEC")
                 if (
@@ -480,6 +534,13 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._client_generation = 0
         self.device = None
         self.slew_rate = 5
+        self.guide_rate_we = GUIDE_RATE_FINE_X
+        self.guide_rate_ns = GUIDE_RATE_FINE_X
+        self._load_motion_rates()
+        self._guide_rate_needs_reassert = True
+        self._guide_pulse_until = 0.0
+        self._pending_guide_rate: Optional[dict[str, Any]] = None
+        self._confirmed_guide_rates: Optional[tuple[float, float]] = None
         self.current_ra: Optional[float] = None
         self.current_dec: Optional[float] = None
         self.connected = False
@@ -501,6 +562,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._guide_correction_target: Optional[tuple[float, float]] = None
         self._guide_correction_accuracy_arcmin = DEFAULT_GOTO_REFINE_ACCURACY_ARCMIN
         self._guide_correction_next_at = 0.0
+        self._guide_correction_observation: dict[str, Any] = {}
         self._guide_correction_last_solve_time = 0.0
         # Cached result of INDI timed-guide-pulse capability detection (None =
         # not yet probed). When False, guide correction uses the manual-move
@@ -521,6 +583,11 @@ class MountControlIndi(BacklashCalibrationMixin):
         self._multipoint_align_controller = MultiPointAlignController()
         self._multipoint_align: Optional[dict[str, Any]] = None
         self._coordinate_sync: Optional[dict[str, Any]] = None
+        self._sync_property_lock = threading.Lock()
+        self._sync_property_sequence = 0
+        self._sync_property_receipts: dict[str, dict[str, Any]] = {}
+        self._pending_sync_goto: Optional[dict[str, Any]] = None
+        self._sync_goto_status: Optional[dict[str, Any]] = None
         # Non-sidereal tracking frequency (None = sidereal firmware default).
         # The target is kept so the frequency can be re-asserted after a
         # driver reconnect resets it (see _reassert_track_frequency).
@@ -655,6 +722,23 @@ class MountControlIndi(BacklashCalibrationMixin):
     def _status_fields(self, state: str = "", **extra: Any) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "slew_rate": self.slew_rate,
+            "manual_slew_rate": self.slew_rate,
+            "pulse_guide_rate": self.guide_rate_we,
+            "pulse_guide_rate_active": (
+                self._confirmed_guide_rates[0]
+                if not self._guide_rate_needs_reassert
+                and self._confirmed_guide_rates is not None
+                else None
+            ),
+            "pulse_guide_rate_requested": (
+                self._pending_guide_rate["rate"]
+                if self._pending_guide_rate is not None
+                else None
+            ),
+            "pulse_guide_rate_we": self.guide_rate_we,
+            "pulse_guide_rate_ns": self.guide_rate_ns,
+            "guide_rate_waiting": self._pending_guide_rate is not None,
+            "guide_rate_confirmed": not self._guide_rate_needs_reassert,
             "ra": self.current_ra,
             "dec": self.current_dec,
         }
@@ -701,6 +785,8 @@ class MountControlIndi(BacklashCalibrationMixin):
             payload["multipoint_align"] = self._multipoint_align
         if self._coordinate_sync is not None:
             payload["coordinate_sync"] = self._coordinate_sync
+        if self._sync_goto_status is not None:
+            payload["sync_goto"] = dict(self._sync_goto_status)
         payload.update(self._connection_config_status)
         payload.update(self._usb_recovery_status)
         payload.update(self._serial_discovery_status)
@@ -948,9 +1034,8 @@ class MountControlIndi(BacklashCalibrationMixin):
             ):
                 return
             self._read_cached_current_position()
-            driver_slew = self._read_driver_slew_rate()
-            if driver_slew is not None:
-                self.slew_rate = driver_slew
+            # Driver readback may be a temporary guide selector. It must not
+            # overwrite the user's separately saved manual speed.
             self._write_controller_status("connected", "INDI mount connected")
         elif not self.connected:
             health = self._usb_recovery_status.get("connection_health")
@@ -1105,6 +1190,8 @@ class MountControlIndi(BacklashCalibrationMixin):
         return True
 
     def _manual_motion_queue_timeout(self) -> float:
+        if self._pending_sync_goto is not None or self._pending_guide_rate is not None:
+            return MANUAL_MOTION_POLL_SECONDS
         if self._manual_motion_deadline is None:
             return 1.0
         return max(
@@ -1405,7 +1492,14 @@ class MountControlIndi(BacklashCalibrationMixin):
         was_connected = self.connected
         self.connected = False
         self.device = None
+        self._guide_rate_needs_reassert = True
+        self._guide_rate_writable = None
+        self._pending_guide_rate = None
+        self._confirmed_guide_rates = None
+        self._slew_rate_polluted = True
+        self._guide_pulse_until = 0.0
         self._coordinate_sync = None
+        self._cancel_sync_goto("INDI disconnected")
         if was_connected:
             # A connected->disconnected transition is a state change: let the
             # first reconnect attempt of the new outage log in full again.
@@ -2803,6 +2897,7 @@ class MountControlIndi(BacklashCalibrationMixin):
             time.sleep(GOTO_TARGET_ACCEPT_POLL_SECONDS)
 
     def _current_plate_solve(self) -> Optional[tuple[float, float, Optional[float]]]:
+        self._guide_correction_observation = {}
         try:
             solution = self.shared_state.solution()
         except Exception:
@@ -2816,6 +2911,27 @@ class MountControlIndi(BacklashCalibrationMixin):
             pointing = solution.pointing.aligned.solve
             if pointing is None:
                 return None
+            # FailedSolve diagnostics describe a newer failed frame, while
+            # aligned.solve still belongs to last_solve_success. Never label
+            # that retained coordinate with the failed attempt's frame ID.
+            diagnostics = getattr(solution, "diagnostics", None)
+            matching_attempt = (
+                getattr(solution, "last_solve_attempt", None)
+                == solution.last_solve_success
+            )
+            self._guide_correction_observation = {
+                "exposure_end": solution.last_solve_success,
+                "frame_id": (
+                    getattr(diagnostics, "FrameId", None) if matching_attempt else None
+                ),
+                "solve_path": (
+                    getattr(diagnostics, "solve_path", None)
+                    if matching_attempt
+                    else None
+                ),
+                "ra": float(pointing.RA),
+                "dec": float(pointing.Dec),
+            }
             return float(pointing.RA), float(pointing.Dec), solution.last_solve_success
         except (AttributeError, TypeError, ValueError):
             logger.debug("Invalid PiFinder solve for GoTo refine", exc_info=True)
@@ -3070,8 +3186,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         if not enabled:
             self._guide_correction_enabled = False
             self._restore_fine_guide_rate()
-            if self._slew_rate_polluted:
-                self._schedule_slew_rate_reassert(0.0)
+            self._pending_guide_rate = None
             self._write_controller_status("connected", "Guide correction disabled")
             self._console("Guide corr\nOff")
             return True
@@ -3113,6 +3228,12 @@ class MountControlIndi(BacklashCalibrationMixin):
         return True
 
     def _check_guide_correction(self) -> None:
+        if self._pending_guide_rate is not None:
+            self._finish_guide_rate_request()
+        if self._pending_sync_goto is not None:
+            return
+        if time.monotonic() < self._guide_pulse_until:
+            return
         if not self._guide_correction_enabled or self._guide_correction_target is None:
             return
         if self._manual_motion_direction is not None:
@@ -3129,6 +3250,13 @@ class MountControlIndi(BacklashCalibrationMixin):
         current_ra, current_dec, solve_time = solved
         if solve_time is None or solve_time <= self._guide_correction_last_solve_time:
             return
+        # Being newer than the previous pulse does not make an old camera
+        # observation recent. Leave it unconsumed so a valid solve can resume.
+        solve_age = time.time() - solve_time
+        if not all(math.isfinite(v) for v in (current_ra, current_dec, solve_age)):
+            return
+        if not 0.0 <= solve_age <= GUIDE_CORRECTION_MAX_SOLVE_AGE_SECONDS:
+            return
 
         target_ra, target_dec = self._guide_correction_target
         separation = radec_separation_arcmin(
@@ -3137,10 +3265,9 @@ class MountControlIndi(BacklashCalibrationMixin):
             target_ra,
             target_dec,
         )
-        self._guide_correction_last_solve_time = solve_time
-        self._guide_correction_next_at = now + GUIDE_CORRECTION_INTERVAL_SECONDS
-
         if separation <= self._guide_correction_accuracy_arcmin:
+            self._guide_correction_last_solve_time = solve_time
+            self._guide_correction_next_at = now + GUIDE_CORRECTION_INTERVAL_SECONDS
             self._restore_fine_guide_rate()
             self._write_controller_status(
                 "guide_correction",
@@ -3153,7 +3280,10 @@ class MountControlIndi(BacklashCalibrationMixin):
         # computed from the axis error and guide rate; NOT a manual move, so it
         # does not show up as manual_motion in status).
         if self._guide_pulse_supported():
-            self._select_guide_rate_for_error(separation)
+            if not self._select_guide_rate_for_error(separation):
+                return
+            self._guide_correction_last_solve_time = solve_time
+            self._guide_correction_next_at = now + GUIDE_CORRECTION_INTERVAL_SECONDS
             self._apply_guide_pulse(
                 current_ra, current_dec, target_ra, target_dec, separation
             )
@@ -3170,6 +3300,11 @@ class MountControlIndi(BacklashCalibrationMixin):
         )
         if not direction:
             return
+
+        if not self._select_guide_rate_for_error(0.0):
+            return
+        self._guide_correction_last_solve_time = solve_time
+        self._guide_correction_next_at = now + GUIDE_CORRECTION_INTERVAL_SECONDS
 
         if self.manual_move(
             direction,
@@ -3223,68 +3358,113 @@ class MountControlIndi(BacklashCalibrationMixin):
             return driver
         return DEFAULT_GUIDE_RATE_X, DEFAULT_GUIDE_RATE_X
 
-    def _set_guide_rate(self, rate_x: float) -> bool:
+    def _set_guide_rate(self, rate_x: Any) -> bool:
         if self.client is None or self.device is None:
             return False
+        we, ns = rate_x if isinstance(rate_x, tuple) else (rate_x, rate_x)
         return self.client.set_number(
             self.device,
             "GUIDE_RATE",
-            {"GUIDE_RATE_WE": rate_x, "GUIDE_RATE_NS": rate_x},
+            {"GUIDE_RATE_WE": we, "GUIDE_RATE_NS": ns},
         )
 
-    def _select_guide_rate_for_error(self, separation_arcmin: float) -> None:
-        """Pick the guide rate for the coming pulse from the remaining error.
+    def _finish_guide_rate_request(self) -> Optional[bool]:
+        pending = self._pending_guide_rate
+        if pending is None:
+            return True
+        with self._sync_property_lock:
+            receipt = self._sync_property_receipts.get("GUIDE_RATE")
+        fresh = receipt is not None and receipt["sequence"] > pending["after_sequence"]
+        if fresh and receipt is not None and receipt["state"] == "ok":
+            values = receipt["values"]
+            try:
+                rates = (float(values["GUIDE_RATE_WE"]), float(values["GUIDE_RATE_NS"]))
+            except (KeyError, TypeError, ValueError):
+                rates = (float("nan"), float("nan"))
+            if all(
+                math.isfinite(v) and abs(v - pending["rate"]) <= 0.01 for v in rates
+            ):
+                self._confirmed_guide_rates = rates
+                self._guide_rate_needs_reassert = False
+                self._guide_rate_writable = True
+                self._pending_guide_rate = None
+                return True
+        if (
+            fresh and receipt is not None and receipt["state"] == "alert"
+        ) or time.monotonic() >= pending["deadline"]:
+            self._pending_guide_rate = None
+            self._guide_rate_writable = False
+            self._guide_rate_needs_reassert = True
+            self._write_controller_status(
+                "guide_rate_failed", "Guide speed not confirmed; pulse blocked"
+            )
+            return False
+        return None
 
-        Large recovery errors run at GUIDE_RATE_FAST_X so each capped pulse
-        covers twice the ground; once the error is inside the fine band the
-        rate drops back to GUIDE_RATE_FINE_X for precise final corrections.
-        A driver that rejects the GUIDE_RATE write keeps its own rate (the
-        pulse-duration math always reads the actual rate back), and no further
-        writes are attempted.
+    def _select_guide_rate_for_error(self, separation_arcmin: float) -> bool:
+        """Apply the guide profile and wait asynchronously for driver readback.
+
+        OnStepX uses one guide rate for both axes. A manual selector invalidates
+        the old guide readback, so it is re-applied before the next pulse.
         """
-        if self._guide_rate_writable is False:
-            return
-        fast_band_arcmin = (
+        if (
+            self._guide_rate_writable is False
+            or self._manual_motion_direction is not None
+        ):
+            return False
+        if self._finish_guide_rate_request() is not True:
+            return False
+        fast_band = (
             self._guide_correction_accuracy_arcmin * GUIDE_RATE_FAST_MIN_ERROR_MULTIPLE
         )
+        boosted = separation_arcmin > fast_band
         desired = (
-            GUIDE_RATE_FAST_X
-            if separation_arcmin > fast_band_arcmin
-            else GUIDE_RATE_FINE_X
+            max(self.guide_rate_we, GUIDE_RATE_FAST_X)
+            if boosted
+            else self.guide_rate_we
         )
-        current_we, current_ns = self._current_guide_rate_x()
-        if abs(current_we - desired) <= 0.01 and abs(current_ns - desired) <= 0.01:
-            self._guide_rate_boosted = desired == GUIDE_RATE_FAST_X
-            return
-        if self._set_guide_rate(desired):
-            self._guide_rate_writable = True
-            self._guide_rate_boosted = desired == GUIDE_RATE_FAST_X
-            self._slew_rate_polluted = True
-            logger.info(
-                "Guide rate set to %.2fx sidereal (error %.1f arcmin, "
-                "fast band > %.1f arcmin)",
-                desired,
-                separation_arcmin,
-                fast_band_arcmin,
-            )
-        else:
-            if self._guide_rate_writable is None:
-                logger.warning(
-                    "Driver rejected GUIDE_RATE write; keeping current guide rate"
-                )
+        if (
+            not self._guide_rate_needs_reassert
+            and self._confirmed_guide_rates is not None
+            and all(abs(v - desired) <= 0.01 for v in self._confirmed_guide_rates)
+        ):
+            self._guide_rate_boosted = boosted
+            return True
+        with self._sync_property_lock:
+            sequence = self._sync_property_sequence
+        self._pending_guide_rate = {
+            "rate": desired,
+            "after_sequence": sequence,
+            "deadline": time.monotonic() + 5.0,
+        }
+        self._guide_rate_needs_reassert = True
+        self._slew_rate_polluted = True
+        try:
+            accepted = self._set_guide_rate(desired)
+        except Exception:
+            logger.exception("Guide speed send failed")
+            accepted = False
+        if not accepted:
+            self._pending_guide_rate = None
             self._guide_rate_writable = False
+            self._write_controller_status(
+                "guide_rate_failed", "Guide speed unavailable; pulse blocked"
+            )
+            return False
+        self._guide_rate_boosted = boosted
+        logger.info(
+            "Guide speed requested %.2fx (saved fine %.2fx; error %.1f arcmin)",
+            desired,
+            self.guide_rate_we,
+            separation_arcmin,
+        )
+        return self._finish_guide_rate_request() is True
 
     def _restore_fine_guide_rate(self) -> None:
-        """Drop back to the fine guide rate after a fast-rate recovery."""
-        if not self._guide_rate_boosted:
-            return
+        """Select the saved fine profile for the next correction, without
+        changing an in-flight pulse or the user's current manual motion.
+        """
         self._guide_rate_boosted = False
-        if self._guide_rate_writable is False:
-            return
-        if self._set_guide_rate(GUIDE_RATE_FINE_X):
-            logger.info("Guide rate restored to %.2fx sidereal", GUIDE_RATE_FINE_X)
-            self._slew_rate_polluted = True
-            self._schedule_slew_rate_reassert(0.3)
 
     def _schedule_slew_rate_reassert(self, delay_seconds: float) -> None:
         """Queue a TELESCOPE_SLEW_RATE re-apply after a guide-rate write.
@@ -3294,6 +3474,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         pending deadlines wins so a fresh pulse extends the wait.
         """
         at = time.monotonic() + max(0.0, delay_seconds)
+        at = max(at, self._guide_pulse_until)
         if self._slew_rate_reassert_at is None or at > self._slew_rate_reassert_at:
             self._slew_rate_reassert_at = at
 
@@ -3302,15 +3483,31 @@ class MountControlIndi(BacklashCalibrationMixin):
             return
         if time.monotonic() < self._slew_rate_reassert_at:
             return
-        self._slew_rate_reassert_at = None
-        self._reassert_slew_rate()
+        if time.monotonic() < self._guide_pulse_until:
+            return
+        if self._manual_motion_origin == "guide_correction":
+            return
+        if self._reassert_slew_rate():
+            self._slew_rate_reassert_at = None
+        else:
+            self._slew_rate_reassert_at = time.monotonic() + 1.0
 
     def _reassert_slew_rate(self) -> bool:
-        if self.client is None or self.device is None:
-            return False
-        if not self.client.set_switch(
-            self.device, "TELESCOPE_SLEW_RATE", str(self.slew_rate)
-        ):
+        if self.client is not None and self.device is not None:
+            accepted = self.client.set_switch(
+                self.device, "TELESCOPE_SLEW_RATE", str(self.slew_rate)
+            )
+        else:
+            accepted = self._apply_indi_properties(
+                [self._indi_property_on(f"TELESCOPE_SLEW_RATE.{self.slew_rate}")],
+                "connected" if self.connected else "idle",
+                f"Manual speed {self.slew_rate}",
+                "slew_rate_failed",
+            )
+        self._guide_rate_needs_reassert = True
+        self._pending_guide_rate = None
+        self._confirmed_guide_rates = None
+        if not accepted:
             logger.debug("Slew rate %d re-assert failed", self.slew_rate)
             return False
         self._slew_rate_polluted = False
@@ -3331,9 +3528,45 @@ class MountControlIndi(BacklashCalibrationMixin):
         if self.client is None or self.device is None:
             return False
         prop_name, element = GUIDE_PULSE_ELEMENTS[direction]
-        return self.client.set_number(
+        sent_wall = time.time()
+        sent_monotonic = time.monotonic()
+        accepted = self.client.set_number(
             self.device, prop_name, {element: float(duration_ms)}
         )
+        returned_wall = time.time()
+        returned_monotonic = time.monotonic()
+        if accepted:
+            self._guide_pulse_until = max(
+                self._guide_pulse_until, returned_monotonic + duration_ms / 1000.0 + 0.5
+            )
+        # Append each axis command to the bounded application log, instead of
+        # relying on a status snapshot that the next axis/poll can overwrite.
+        # set_number acceptance is NOT confirmation of physical pulse ending.
+        logger.info(
+            "Guide pulse event %s",
+            json.dumps(
+                {
+                    "observation": self._guide_correction_observation,
+                    "target": self._guide_correction_target,
+                    "direction": direction,
+                    "duration_ms": duration_ms,
+                    "accepted": bool(accepted),
+                    "sent_wall": sent_wall,
+                    "sent_monotonic": sent_monotonic,
+                    "returned_wall": returned_wall,
+                    "returned_monotonic": returned_monotonic,
+                    "expected_end_wall": (
+                        returned_wall + duration_ms / 1000.0 if accepted else None
+                    ),
+                    "expected_end_monotonic": (
+                        returned_monotonic + duration_ms / 1000.0 if accepted else None
+                    ),
+                    "end_confirmed": False,
+                },
+                separators=(",", ":"),
+            ),
+        )
+        return accepted
 
     def _guide_pulse_inversions(self) -> tuple[bool, bool]:
         """Per-axis guide-pulse direction inversion (NS, WE) from config.
@@ -3365,7 +3598,9 @@ class MountControlIndi(BacklashCalibrationMixin):
         dec_delta_deg = target_dec - current_dec
         ra_arcsec = ra_delta_deg * 3600.0 * math.cos(math.radians(current_dec))
         dec_arcsec = dec_delta_deg * 3600.0
-        guide_we_x, guide_ns_x = self._current_guide_rate_x()
+        guide_we_x, guide_ns_x = (
+            self._confirmed_guide_rates or self._current_guide_rate_x()
+        )
         invert_ns, invert_we = self._guide_pulse_inversions()
         threshold_arcsec = max(0.5, self._guide_correction_accuracy_arcmin / 2.0) * 60.0
 
@@ -3388,12 +3623,8 @@ class MountControlIndi(BacklashCalibrationMixin):
                 pulses.append(f"{we_dir} {we_ms}ms")
                 max_pulse_ms = max(max_pulse_ms, we_ms)
 
-        # Put the user's manual-move speed back once the pulse window has
-        # passed (the GUIDE_RATE write for this cycle landed on the shared
-        # :R<n># move-rate selector). Scheduled even when no pulse fired,
-        # because the rate write alone already polluted the selector.
-        if self._slew_rate_polluted:
-            self._schedule_slew_rate_reassert(max_pulse_ms / 1000.0 + 0.5)
+        # Leave the guide selector in place between pulses. Manual motion
+        # re-applies its own stored rate on demand; no idle speed oscillation.
 
         if pulses:
             self._write_controller_status(
@@ -3409,6 +3640,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         dec_deg: float,
         sync_context: Optional[dict[str, Any]] = None,
     ) -> bool:
+        self._cancel_sync_goto("superseded by standalone sync")
         if not self.connect() or self.client is None or self.device is None:
             return False
 
@@ -3428,6 +3660,10 @@ class MountControlIndi(BacklashCalibrationMixin):
 
         self.client.set_switch(self.device, "ON_COORD_SET", "TRACK")
         self.client.set_switch(self.device, "TELESCOPE_TRACK_STATE", "TRACK_ON")
+        self._record_coordinate_sync(ra_deg, dec_deg, sync_context)
+        return True
+
+    def _record_coordinate_sync(self, ra_deg, dec_deg, sync_context=None) -> None:
         self._coordinate_sync = {
             "active": True,
             "synced": True,
@@ -3452,7 +3688,197 @@ class MountControlIndi(BacklashCalibrationMixin):
             (sync_context or {}).get("pointing_source", "unknown"),
         )
         self._console("INDI mount\nsynced")
+
+    def receive_sync_property(self, name, state, values, client_generation) -> None:
+        """Keep immutable snapshots of actual driver acknowledgements."""
+        if client_generation != self._client_generation:
+            return
+        if name not in {"ON_COORD_SET", "EQUATORIAL_EOD_COORD", "GUIDE_RATE"}:
+            return
+        with self._sync_property_lock:
+            self._sync_property_sequence += 1
+            self._sync_property_receipts[name] = {
+                "sequence": self._sync_property_sequence,
+                "state": state,
+                "values": dict(values),
+                "received_monotonic": time.monotonic(),
+            }
+
+    def _cancel_sync_goto(self, reason: str) -> None:
+        if self._pending_sync_goto is None:
+            return
+        self._pending_sync_goto = None
+        self._sync_goto_status = {
+            **(self._sync_goto_status or {}),
+            "state": "failed",
+            "reason": reason,
+        }
+        self._write_controller_status("sync_goto_failed", reason)
+        logger.warning("Verified sync+GoTo cancelled: %s", reason)
+
+    def _arm_sync_goto_stage(self, transaction, stage: str) -> None:
+        with self._sync_property_lock:
+            transaction["after_sequence"] = self._sync_property_sequence
+        transaction["stage"] = stage
+        transaction["deadline"] = time.monotonic() + SYNC_GOTO_STAGE_TIMEOUT_SECONDS
+        self._sync_goto_status = {
+            **(self._sync_goto_status or {}),
+            "state": stage,
+        }
+        self._write_controller_status("sync_goto_waiting", stage)
+
+    def begin_sync_and_goto(self, command: dict[str, Any]) -> bool:
+        """Verify SYNC mode, matching coordinate ACK, then SLEW mode.
+
+        Stages run in the normal event loop, so a queued stop can cancel the
+        pending move. Sending a property or reading its mutated local cache
+        never counts as successful alignment.
+        """
+        self._cancel_sync_goto("superseded by a new GoTo")
+        values = [float(command[k]) for k in ("sync_ra", "sync_dec", "ra", "dec")]
+        if not all(math.isfinite(v) for v in values) or any(
+            abs(values[i]) > 90.0 for i in (1, 3)
+        ):
+            raise ValueError("Invalid sync+GoTo coordinates")
+        if not self.connect() or self.client is None or self.device is None:
+            self._sync_goto_status = {
+                "request_id": command["request_id"],
+                "state": "failed",
+                "reason": "INDI connection unavailable",
+            }
+            self._write_controller_status("sync_goto_failed", "INDI unavailable")
+            return False
+        transaction = dict(command)
+        transaction.update(zip(("sync_ra", "sync_dec", "ra", "dec"), values))
+        transaction["generation"] = self._client_generation
+        self._pending_sync_goto = transaction
+        self._sync_goto_status = {
+            "request_id": command["request_id"],
+            "state": "starting",
+            "sync_ra": values[0] % 360.0,
+            "sync_dec": values[1],
+            "target_ra": values[2] % 360.0,
+            "target_dec": values[3],
+            "started_monotonic": time.monotonic(),
+        }
+        self._arm_sync_goto_stage(transaction, "waiting_sync_mode")
+        try:
+            requested = self.client.set_switch(self.device, "ON_COORD_SET", "SYNC")
+        except Exception as exc:
+            logger.exception("Could not request verified SYNC mode")
+            self._cancel_sync_goto(f"Could not request SYNC mode: {exc}")
+            return False
+        if not requested:
+            self._cancel_sync_goto("Could not request SYNC mode")
+            return False
         return True
+
+    def _check_pending_sync_goto(self) -> None:
+        try:
+            self._advance_pending_sync_goto()
+        except Exception as exc:
+            logger.exception("Verified sync+GoTo failed")
+            if self._pending_sync_goto is not None:
+                self._cancel_sync_goto(f"Sync verification failed: {exc}")
+            elif self._sync_goto_status is not None:
+                self._sync_goto_status = {
+                    **self._sync_goto_status,
+                    "state": "failed",
+                    "reason": str(exc),
+                }
+                self._write_controller_status("sync_goto_failed", str(exc))
+
+    def _advance_pending_sync_goto(self) -> None:
+        transaction = self._pending_sync_goto
+        if transaction is None:
+            return
+        if (
+            not self.connected
+            or self.client is None
+            or self.device is None
+            or transaction["generation"] != self._client_generation
+        ):
+            self._cancel_sync_goto("INDI connection changed during sync")
+            return
+        if time.monotonic() >= transaction["deadline"]:
+            self._cancel_sync_goto(f"Timeout: {transaction['stage']}")
+            return
+        stage = transaction["stage"]
+        name = (
+            "EQUATORIAL_EOD_COORD"
+            if stage == "waiting_sync_coordinates"
+            else "ON_COORD_SET"
+        )
+        with self._sync_property_lock:
+            receipt = self._sync_property_receipts.get(name)
+        if receipt is None or receipt["sequence"] <= transaction["after_sequence"]:
+            return
+        if receipt["state"] == "alert":
+            self._cancel_sync_goto(f"Driver rejected {stage}")
+            return
+        if receipt["state"] != "ok":
+            return
+        if stage == "waiting_sync_mode":
+            if not receipt["values"].get("SYNC"):
+                return
+            self._arm_sync_goto_stage(transaction, "waiting_sync_coordinates")
+            if not self.client.set_number(
+                self.device,
+                "EQUATORIAL_EOD_COORD",
+                {
+                    "RA": (transaction["sync_ra"] % 360.0) / 15.0,
+                    "DEC": transaction["sync_dec"],
+                },
+            ):
+                self._cancel_sync_goto("Could not send sync coordinates")
+            return
+        if stage == "waiting_sync_coordinates":
+            try:
+                ra = float(receipt["values"]["RA"]) * 15.0
+                dec = float(receipt["values"]["DEC"])
+            except (KeyError, TypeError, ValueError):
+                return
+            if not (math.isfinite(ra) and math.isfinite(dec) and abs(dec) <= 90.0):
+                return
+            error = radec_separation_arcmin(
+                ra, dec, transaction["sync_ra"], transaction["sync_dec"]
+            )
+            if error > SYNC_GOTO_COORD_TOLERANCE_ARCMIN:
+                return
+            self._record_coordinate_sync(
+                transaction["sync_ra"], transaction["sync_dec"], transaction
+            )
+            self._sync_goto_status = {
+                **(self._sync_goto_status or {}),
+                "verified_error_arcmin": error,
+                "verified_monotonic": receipt["received_monotonic"],
+            }
+            if not self.client.set_switch(
+                self.device, "TELESCOPE_TRACK_STATE", "TRACK_ON"
+            ):
+                self._cancel_sync_goto("Could not enable tracking after sync")
+                return
+            self._arm_sync_goto_stage(transaction, "waiting_slew_mode")
+            if not self.client.set_switch(self.device, "ON_COORD_SET", "SLEW"):
+                self._cancel_sync_goto("Could not request SLEW mode")
+            return
+        if not receipt["values"].get("SLEW"):
+            return
+        # Clear before goto_target so its normal supersession guard does not
+        # cancel this verified transaction. A failed GoTo remains terminal.
+        self._pending_sync_goto = None
+        sent_at = time.monotonic()
+        accepted = self.goto_target(transaction["ra"], transaction["dec"])
+        self._sync_goto_status = {
+            **(self._sync_goto_status or {}),
+            "state": "goto_sent" if accepted else "failed",
+            "reason": "" if accepted else "GoTo target rejected after verified sync",
+            "goto_sent_monotonic": sent_at,
+        }
+        self._write_controller_status(
+            "slewing" if accepted else "sync_goto_failed", "Verified sync+GoTo"
+        )
+        logger.info("Verified sync+GoTo: %s", self._sync_goto_status)
 
     def goto_target(
         self,
@@ -3461,6 +3887,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         refine_after_goto: bool = False,
         refine_accuracy_arcmin: Any = None,
     ) -> bool:
+        self._cancel_sync_goto("superseded by a direct GoTo")
         target_ra = ra_deg % 360.0
         if not self.connect() or self.client is None or self.device is None:
             return False
@@ -3518,6 +3945,7 @@ class MountControlIndi(BacklashCalibrationMixin):
         return True
 
     def stop_mount(self) -> bool:
+        self._cancel_sync_goto("stop requested")
         if not self._apply_indi_properties(
             [self._indi_property_on("TELESCOPE_ABORT_MOTION.ABORT")],
             "stopped",
@@ -3529,6 +3957,7 @@ class MountControlIndi(BacklashCalibrationMixin):
 
         self._clear_manual_motion_deadline()
         self._goto_motion = None
+        self._guide_pulse_until = 0.0
         logger.info("Mount stop command sent")
         self._console("INDI mount\nstopped")
         return True
@@ -3540,16 +3969,12 @@ class MountControlIndi(BacklashCalibrationMixin):
         reassert_slew_rate: bool = True,
         origin: str = "user",
     ) -> bool:
+        self._cancel_sync_goto("manual movement requested")
         direction = direction.lower()
         # A guide-rate write may have just dragged the shared :R<n># selector
         # down to 0.5x/1x; put the user's rate back before the move starts.
         # The guide-correction manual fallback opts out (it wants the slow
         # rate its nudge duration was computed for).
-        if reassert_slew_rate and (
-            self._slew_rate_polluted or self._slew_rate_reassert_at is not None
-        ):
-            self._slew_rate_reassert_at = None
-            self._reassert_slew_rate()
         motion_map = {
             "north": [self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH")],
             "south": [self._indi_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH")],
@@ -3575,6 +4000,18 @@ class MountControlIndi(BacklashCalibrationMixin):
         if direction not in motion_map:
             logger.warning("Unknown manual mount direction: %s", direction)
             return False
+
+        if reassert_slew_rate:
+            # Never switch the firmware's shared rate under an active pulse.
+            # Manual input takes over only after the abort request succeeds.
+            if time.monotonic() < self._guide_pulse_until and not self.stop_mount():
+                return False
+            if not self._reassert_slew_rate():
+                self._write_controller_status(
+                    "manual_failed", "Manual speed unavailable; movement blocked"
+                )
+                return False
+            self._slew_rate_reassert_at = None
 
         if not self._apply_indi_properties(
             motion_map[direction],
@@ -3630,29 +4067,52 @@ class MountControlIndi(BacklashCalibrationMixin):
                 return rate
         return None
 
+    def _load_motion_rates(self) -> None:
+        cfg = config.Config()
+        try:
+            rate = int(cfg.get_option("indi_manual_slew_rate", 5))
+            if 0 <= rate <= 9:
+                self.slew_rate = rate
+        except (TypeError, ValueError, OverflowError):
+            logger.warning("Invalid saved manual speed; using default")
+        try:
+            value = float(cfg.get_option("indi_pulse_guide_rate", GUIDE_RATE_FINE_X))
+            if value not in (0.25, 0.5, 1.0):
+                raise ValueError("Unsupported fine guide speed")
+            self.guide_rate_we = self.guide_rate_ns = value
+        except (TypeError, ValueError, OverflowError):
+            logger.warning("Invalid saved guide speed; using default")
+
     def refresh_slew_rate(self) -> int:
-        driver_rate = self._read_driver_slew_rate()
-        if driver_rate is not None:
-            self.slew_rate = driver_rate
-            self._write_controller_status(
-                "connected" if self.connected else "idle",
-                f"Slew rate {self.slew_rate}",
-            )
+        # A temporary driver selector is not a user preference. All PiFinder
+        # speed controls now update the stored manual profile through this process.
+        self._write_controller_status(
+            "connected" if self.connected else "idle",
+            f"Manual speed {self.slew_rate}",
+        )
         return self.slew_rate
 
     def set_slew_rate(self, rate: int) -> bool:
-        self.slew_rate = max(0, min(9, int(rate)))
-        # This write is the fresh authority on the shared rate selector.
-        self._slew_rate_reassert_at = None
-        self._slew_rate_polluted = False
-        if not self._apply_indi_properties(
-            [self._indi_property_on(f"TELESCOPE_SLEW_RATE.{self.slew_rate}")],
-            "connected" if self.connected else "idle",
-            f"Slew rate {self.slew_rate}",
-            "slew_rate_failed",
+        rate = max(0, min(9, int(rate)))
+        config.Config().set_options({"indi_manual_slew_rate": rate})
+        self.slew_rate = rate
+        # Save a change made during a pulse, then apply after its time window.
+        if (
+            time.monotonic() < self._guide_pulse_until
+            or self._manual_motion_origin == "guide_correction"
         ):
+            self._schedule_slew_rate_reassert(0.0)
+            self._write_controller_status(
+                "connected", f"Manual speed {rate} saved; waiting for guide motion"
+            )
+            return True
+        if not self._reassert_slew_rate():
             self._console("INDI speed\nfailed")
             return False
+        self._slew_rate_reassert_at = None
+        self._write_controller_status(
+            "connected" if self.connected else "idle", f"Manual speed {rate} saved"
+        )
         self._console(f"INDI speed\n{self.slew_rate}")
         return True
 
@@ -3755,61 +4215,26 @@ class MountControlIndi(BacklashCalibrationMixin):
 
     def set_guide_rate(self, rate: Any) -> bool:
         try:
-            guide_we, guide_ns = rate
-        except (TypeError, ValueError):
-            guide_we = guide_ns = rate
-
-        try:
-            guide_we = float(guide_we)
-            guide_ns = float(guide_ns)
+            guide_rate = float(rate)
+            if guide_rate not in (0.25, 0.5, 1.0):
+                raise ValueError("Fine guide speed must be 0.25, 0.5 or 1x sidereal")
         except (TypeError, ValueError):
             self._write_controller_status(
-                "guide_rate_failed",
-                f"Invalid guide rate {rate!r}",
+                "guide_rate_failed", f"Invalid guide rate {rate!r}"
             )
             return False
-
-        guide_we = max(0.0, min(240.0, guide_we))
-        guide_ns = max(0.0, min(240.0, guide_ns))
-        if not self._apply_indi_properties(
-            [
-                f"{self._indi_property_name('GUIDE_RATE.GUIDE_RATE_WE')}={guide_we:g}",
-                f"{self._indi_property_name('GUIDE_RATE.GUIDE_RATE_NS')}={guide_ns:g}",
-            ],
-            "connected" if self.connected else "idle",
-            f"Guide rate WE {guide_we:g} / NS {guide_ns:g}",
-            "guide_rate_failed",
-        ):
-            self._console("INDI guide\nfailed")
-            return False
-        deadline = time.monotonic() + 1.5
-        observed: Optional[tuple[float, float]] = None
-        while time.monotonic() < deadline:
-            observed = self._read_driver_guide_rate()
-            if observed is not None:
-                observed_we, observed_ns = observed
-                tolerance_we = max(0.05, abs(guide_we) * 0.02)
-                tolerance_ns = max(0.05, abs(guide_ns) * 0.02)
-                if (
-                    abs(observed_we - guide_we) <= tolerance_we
-                    and abs(observed_ns - guide_ns) <= tolerance_ns
-                ):
-                    self._console(f"INDI guide\n{guide_we:g}/{guide_ns:g}")
-                    return True
-            time.sleep(0.2)
-
-        observed_text = "not readable"
-        if observed is not None:
-            observed_text = f"WE {observed[0]:g} / NS {observed[1]:g}"
+        config.Config().set_options({"indi_pulse_guide_rate": guide_rate})
+        self.guide_rate_we = self.guide_rate_ns = guide_rate
+        self._guide_rate_needs_reassert = True
+        self._guide_rate_writable = None
+        self._pending_guide_rate = None
+        # Save only: applying here could change a held move or timed pulse.
         self._write_controller_status(
-            "guide_rate_failed",
-            (
-                f"Requested GUIDE_RATE WE {guide_we:g} / NS {guide_ns:g}, "
-                f"but driver reports {observed_text}"
-            ),
+            "connected" if self.connected else "idle",
+            f"Guide speed {guide_rate:g}x saved for next pulse",
         )
-        self._console("INDI guide\nmismatch")
-        return False
+        self._console(f"INDI guide\n{guide_rate:g}x")
+        return True
 
     def _read_tracking_enabled_from_properties(self) -> Optional[bool]:
         properties = sys_utils.get_indi_onstep_properties(
@@ -4655,6 +5080,8 @@ class MountControlIndi(BacklashCalibrationMixin):
                 bool(command.get("refine_after_goto", False)),
                 command.get("refine_accuracy_arcmin"),
             )
+        elif command_type == "sync_and_goto":
+            self.begin_sync_and_goto(command)
         elif command_type == "toggle_guide_correction":
             self.toggle_guide_correction(
                 command.get("enabled"),
@@ -4689,6 +5116,8 @@ class MountControlIndi(BacklashCalibrationMixin):
                 self.console_queue.put(("slew_rate_popup", self.slew_rate))
         elif command_type == "set_slew_rate":
             self.set_slew_rate(int(command.get("rate", self.slew_rate)))
+        elif command_type == "set_guide_rate":
+            self.set_guide_rate(command["rate"])
         elif command_type == "set_track_freq":
             self.set_track_frequency(
                 float(command["hz"]),
@@ -4779,11 +5208,14 @@ class MountControlIndi(BacklashCalibrationMixin):
                     timeout=self._manual_motion_queue_timeout()
                 )
                 running = self.handle_command(command)
+                if running:
+                    self._check_pending_sync_goto()
             except queue.Empty:
                 self._check_usb_serial_reinsert()
                 self._check_manual_motion_deadline()
                 self._publish_manual_motion_progress()
                 self._check_goto_motion()
+                self._check_pending_sync_goto()
                 self._check_pending_goto_refine()
                 self._check_guide_correction()
                 self._check_slew_rate_reassert()

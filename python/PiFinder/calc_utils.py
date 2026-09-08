@@ -394,6 +394,35 @@ class Skyfield_utils:
         ra, dec, _distance = a.radec(epoch=t)
         return ra._degrees, dec._degrees
 
+    def observed_altaz_to_radec(self, alt, az, dt, atmos=True):
+        """Invert radec_to_altaz back to ICRS, including its refraction model.
+
+        altaz_to_radec returns an apparent equator/equinox-of-date direction.
+        That is not the inverse of the ICRS -> observed atco13 conversion;
+        mixing the two introduces precession and refraction offsets.
+        """
+        if self._last_location is None:
+            raise RuntimeError("observed_altaz_to_radec: set_location() first")
+        lat, lon, altitude = self._last_location
+        ra, dec = erfa.atoc13(
+            "A",
+            math.radians(az),
+            math.radians(90.0 - alt),
+            2440587.5,
+            dt.timestamp() / 86400.0,
+            0.0,
+            math.radians(lon),
+            math.radians(lat),
+            altitude,
+            0.0,
+            0.0,
+            1010.0 if atmos else 0.0,
+            10.0,
+            0.5,
+            0.55,
+        )
+        return math.degrees(ra) % 360.0, math.degrees(dec)
+
     def radec_to_altaz(self, ra, dec, dt, atmos=True):
         """
         returns the apparent ALT/AZ of a specific RA/DEC at the given time.

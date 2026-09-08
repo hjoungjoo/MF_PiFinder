@@ -11,6 +11,21 @@ from PiFinder.calc_utils import Skyfield_utils, FastAltAz
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("alt", [10.0, 20.0, 30.0, 60.0, 85.0])
+@pytest.mark.parametrize("az", [0.0, 110.0, 240.0, 359.9])
+@pytest.mark.parametrize("atmos", [False, True])
+def test_observed_altaz_icrs_roundtrip(alt, az, atmos):
+    sf = calc_utils.sf_utils
+    sf.set_location(37.52704, 127.10936, 30.0)
+    dt = datetime.datetime(2026, 9, 8, 13, 33, tzinfo=datetime.timezone.utc)
+    ra, dec = sf.observed_altaz_to_radec(alt, az, dt, atmos=atmos)
+    actual_alt, actual_az = sf.radec_to_altaz(ra, dec, dt, atmos=atmos)
+    assert actual_alt == pytest.approx(alt, abs=0.1 / 3600)
+    az_error = (actual_az - az + 180.0) % 360.0 - 180.0
+    assert abs(az_error) < 0.1 / 3600
+
+
+@pytest.mark.unit
 def test_converters():
     assert calc_utils.ra_to_deg(10, 10, 50) == pytest.approx(152.70833, abs=0.00001)
     assert calc_utils.dec_to_deg(10, 10, 50) == pytest.approx(10.18056, abs=0.00001)

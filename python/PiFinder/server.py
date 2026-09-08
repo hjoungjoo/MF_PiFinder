@@ -1190,6 +1190,8 @@ class Server:
                 "server_host": cfg.get_option("mount_control_indi_host", "localhost"),
                 "server_port": int(cfg.get_option("mount_control_indi_port", 7624)),
                 "mount_type": cfg.get_option("mount_type", "Alt/Az"),
+                "manual_slew_rate": cfg.get_option("indi_manual_slew_rate", 5),
+                "pulse_guide_rate": cfg.get_option("indi_pulse_guide_rate", 0.5),
                 "skysafari_lx200_mount_code": cfg.get_option(
                     "skysafari_lx200_mount_code", "auto"
                 ),
@@ -1263,57 +1265,6 @@ class Server:
                     )
                     % {"driver": indi_cfg["device_name"] or _("unknown driver")}
                 )
-
-        web_motion_lock = threading.Lock()
-        web_motion_timer = {"timer": None, "token": 0}
-
-        def _cancel_web_motion_timer():
-            with web_motion_lock:
-                timer = web_motion_timer.get("timer")
-                web_motion_timer["timer"] = None
-                web_motion_timer["token"] += 1
-            if timer is not None:
-                timer.cancel()
-
-        def _abort_web_motion_if_current(token):
-            with web_motion_lock:
-                if token != web_motion_timer["token"]:
-                    return
-                web_motion_timer["timer"] = None
-
-            try:
-                indi_cfg = _indi_config_values()
-                _require_onstepx_driver(indi_cfg)
-                result = sys_utils.apply_indi_onstep_properties(
-                    [_onstep_property_on("TELESCOPE_ABORT_MOTION.ABORT", indi_cfg)],
-                    server_host=indi_cfg["server_host"],
-                    server_port=indi_cfg["server_port"],
-                )
-                if result.get("ok"):
-                    logger.warning("Web INDI manual motion lease expired; stop sent")
-                else:
-                    logger.warning(
-                        "Web INDI manual motion timeout stop failed: %s",
-                        result.get("stderr") or result.get("stdout"),
-                    )
-            except Exception:
-                logger.exception("Web INDI manual motion timeout stop failed")
-
-        def _schedule_web_motion_timer():
-            with web_motion_lock:
-                timer = web_motion_timer.get("timer")
-                if timer is not None:
-                    timer.cancel()
-                web_motion_timer["token"] += 1
-                token = web_motion_timer["token"]
-                timer = threading.Timer(
-                    WEB_MOTION_LEASE_SECONDS,
-                    _abort_web_motion_if_current,
-                    args=(token,),
-                )
-                timer.daemon = True
-                web_motion_timer["timer"] = timer
-                timer.start()
 
         def _clock_trusted_for_display():
             # A user-set manual time counts as trusted (it is exactly what
@@ -1602,7 +1553,7 @@ class Server:
             align_status = status.get("multipoint_align")
             return align_status if isinstance(align_status, dict) else {}
 
-        def _queue_multipoint_align_command(command):
+        def _queue_mount_command(command):
             if self.mountcontrol_queue is None:
                 raise RuntimeError(_("Mount-control process is not available"))
             self.mountcontrol_queue.put(command)
@@ -2171,90 +2122,63 @@ class Server:
                 rate = int(request.form.get("slew_rate") or "6")
                 if not 0 <= rate <= 9:
                     raise ValueError("Slew rate must be between 0 and 9")
+                _queue_mount_command({"type": "set_slew_rate", "rate": rate})
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                    return _apply_indi_action_json(
-                        [_onstep_property_on(f"TELESCOPE_SLEW_RATE.{rate}", indi_cfg)],
-                        f"Slew rate {rate} selected",
-                    )
-                return _apply_indi_action(
-                    [_onstep_property_on(f"TELESCOPE_SLEW_RATE.{rate}", indi_cfg)],
-                    _(f"Slew rate {rate} selected"),
-                )
+                    return _indi_json_response(message=f"Manual speed {rate} queued")
+                return _render_indi_page(_("Manual speed change queued"))
             except (RuntimeError, ValueError) as e:
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return _indi_json_response(ok=False, error=str(e))
                 return _render_indi_page(error_message=str(e))
+
+        @app.route("/indi/guide_rate", methods=["POST"])
+        @auth_required
+        def indi_guide_rate():
+            try:
+                _require_onstepx_driver(_indi_config_values())
+                rate = float(request.form.get("guide_rate", ""))
+                if rate not in (0.25, 0.5, 1.0):
+                    raise ValueError(
+                        "Fine guide speed must be 0.25, 0.5 or 1x sidereal"
+                    )
+                _queue_mount_command({"type": "set_guide_rate", "rate": rate})
+                return _indi_json_response(message="Pulse guide speed change queued")
+            except (RuntimeError, ValueError) as e:
+                return _indi_json_response(ok=False, error=str(e))
 
         @app.route("/indi/motion", methods=["POST"])
         @auth_required
         def indi_motion():
             direction = (request.form.get("direction") or "").strip().lower()
             keepalive = request.form.get("keepalive") in {"1", "true", "yes"}
-            indi_cfg = _indi_config_values()
-            motion_map = {
-                "north": _onstep_property_on(
-                    "TELESCOPE_MOTION_NS.MOTION_NORTH", indi_cfg
-                ),
-                "south": _onstep_property_on(
-                    "TELESCOPE_MOTION_NS.MOTION_SOUTH", indi_cfg
-                ),
-                "west": _onstep_property_on(
-                    "TELESCOPE_MOTION_WE.MOTION_EAST", indi_cfg
-                ),
-                "east": _onstep_property_on(
-                    "TELESCOPE_MOTION_WE.MOTION_WEST", indi_cfg
-                ),
-                "northeast": [
-                    _onstep_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH", indi_cfg),
-                    _onstep_property_on("TELESCOPE_MOTION_WE.MOTION_WEST", indi_cfg),
-                ],
-                "northwest": [
-                    _onstep_property_on("TELESCOPE_MOTION_NS.MOTION_NORTH", indi_cfg),
-                    _onstep_property_on("TELESCOPE_MOTION_WE.MOTION_EAST", indi_cfg),
-                ],
-                "southeast": [
-                    _onstep_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH", indi_cfg),
-                    _onstep_property_on("TELESCOPE_MOTION_WE.MOTION_WEST", indi_cfg),
-                ],
-                "southwest": [
-                    _onstep_property_on("TELESCOPE_MOTION_NS.MOTION_SOUTH", indi_cfg),
-                    _onstep_property_on("TELESCOPE_MOTION_WE.MOTION_EAST", indi_cfg),
-                ],
-                "stop": _onstep_property_on("TELESCOPE_ABORT_MOTION.ABORT", indi_cfg),
-            }
             try:
-                _require_onstepx_driver(indi_cfg)
-                if direction not in motion_map:
+                _require_onstepx_driver(_indi_config_values())
+                if direction not in {
+                    "north",
+                    "south",
+                    "east",
+                    "west",
+                    "northeast",
+                    "northwest",
+                    "southeast",
+                    "southwest",
+                    "stop",
+                }:
                     raise ValueError("Invalid motion command")
-                if keepalive:
-                    if direction == "stop":
-                        _cancel_web_motion_timer()
-                    else:
-                        _schedule_web_motion_timer()
-                    return _indi_json_response(message="Motion keepalive")
-
-                properties = motion_map[direction]
-                if isinstance(properties, str):
-                    properties = [properties]
-                result = sys_utils.apply_indi_onstep_properties(
-                    properties,
-                    server_host=indi_cfg["server_host"],
-                    server_port=indi_cfg["server_port"],
-                )
-                if not result.get("ok"):
-                    error = (
-                        result.get("stderr")
-                        or result.get("stdout")
-                        or "INDI command failed"
-                    )
-                    raise RuntimeError(error)
-                if direction != "stop":
-                    _schedule_web_motion_timer()
+                if direction == "stop":
+                    command = {"type": "stop_movement"}
                 else:
-                    _cancel_web_motion_timer()
+                    command = {
+                        "type": "manual_movement_keepalive"
+                        if keepalive
+                        else "manual_movement",
+                        "direction": direction,
+                        "lease_seconds": WEB_MOTION_LEASE_SECONDS,
+                    }
+                _queue_mount_command(command)
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                    return _indi_json_response(message="Motion command sent")
-                return _render_indi_page(_("Motion command sent"))
+                    return _indi_json_response(message="Motion command queued")
+                return _render_indi_page(_("Motion command queued"))
             except (RuntimeError, ValueError) as e:
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return _indi_json_response(ok=False, error=str(e))
@@ -2305,7 +2229,7 @@ class Server:
                     star_name = (request.form.get("align_star") or "").strip()
                     if mode == "manual" and not get_align_star(star_name):
                         raise ValueError(_("Select a valid alignment star"))
-                    _queue_multipoint_align_command(
+                    _queue_mount_command(
                         {
                             "type": "multipoint_align_start",
                             "mode": mode,
@@ -2322,7 +2246,7 @@ class Server:
                     star_name = (request.form.get("align_star") or "").strip()
                     if not get_align_star(star_name):
                         raise ValueError(_("Select a valid alignment star"))
-                    _queue_multipoint_align_command(
+                    _queue_mount_command(
                         {
                             "type": "multipoint_align_select_star",
                             "star_name": star_name,
@@ -2335,7 +2259,7 @@ class Server:
                     return _render_indi_page(message)
 
                 if action == "confirm":
-                    _queue_multipoint_align_command(
+                    _queue_mount_command(
                         {"type": "multipoint_align_confirm", "source": "web"}
                     )
                     message = _("Alignment point confirmed")
@@ -2344,7 +2268,7 @@ class Server:
                     return _render_indi_page(message)
 
                 if action == "cancel":
-                    _queue_multipoint_align_command({"type": "multipoint_align_cancel"})
+                    _queue_mount_command({"type": "multipoint_align_cancel"})
                     message = _("Multi-point alignment cancelled")
                     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                         return _indi_json_response(message=message)

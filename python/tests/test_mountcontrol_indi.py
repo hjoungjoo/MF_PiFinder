@@ -2,6 +2,9 @@ from __future__ import annotations
 import json
 import time
 from multiprocessing import Queue
+from types import SimpleNamespace
+
+import pytest
 
 from PiFinder import sys_utils
 from PiFinder import indi_backlash_calibration as ibc
@@ -11,6 +14,16 @@ from PiFinder.mountcontrol_indi import (
     radec_separation_arcmin,
     shortest_ra_delta_deg,
 )
+
+
+pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def isolated_motion_settings(monkeypatch, tmp_path):
+    monkeypatch.setattr(mci.config.utils, "data_dir", tmp_path)
+    monkeypatch.setattr(mci.config.utils, "runtime_dir", tmp_path)
+    monkeypatch.setattr(mci, "STATUS_FILE", tmp_path / "mount_control_status.json")
 
 
 class DummyMountControl(MountControlIndi):
@@ -147,6 +160,18 @@ class DummyConnectedMount(MountControlIndi):
         self.connected = True
         self.statuses = []
         self.accept_goto_target = True
+        self.auto_ack_guide = True
+
+    def _set_guide_rate(self, rate):
+        accepted = super()._set_guide_rate(rate)
+        if accepted and self.auto_ack_guide:
+            self.receive_sync_property(
+                "GUIDE_RATE",
+                "ok",
+                {"GUIDE_RATE_WE": rate, "GUIDE_RATE_NS": rate},
+                self._client_generation,
+            )
+        return accepted
 
     def _write_controller_status(self, state, message="", **extra):
         self.statuses.append((state, message, self._status_fields(state, **extra)))
@@ -178,6 +203,196 @@ class DummyIndiClient:
     def set_number(self, device, property_name, values):
         self.numbers.append((device.getDeviceName(), property_name, dict(values)))
         return True
+
+
+def _verified_goto_test_mount(monkeypatch):
+    mount = DummyConnectedMount()
+    mount.moves = []
+    monkeypatch.setattr(
+        mount, "goto_target", lambda ra, dec: mount.moves.append((ra, dec)) or True
+    )
+    command = {
+        "type": "sync_and_goto",
+        "request_id": "first",
+        "sync_ra": 132.0,
+        "sync_dec": 49.5,
+        "ra": 140.0,
+        "dec": 45.0,
+        "origin": "pifinder_goto",
+    }
+    return mount, command
+
+
+def _sync_ack(mount, name, values, state="ok", generation=None):
+    mount.receive_sync_property(
+        name,
+        state,
+        values,
+        mount._client_generation if generation is None else generation,
+    )
+    mount._check_pending_sync_goto()
+
+
+def test_sync_goto_requires_new_mode_coordinate_and_slew_ack(monkeypatch):
+    mount, command = _verified_goto_test_mount(monkeypatch)
+    # Previously cached successful values cannot satisfy this new request.
+    _sync_ack(mount, "ON_COORD_SET", {"SYNC": True})
+    _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 8.8, "DEC": 49.5})
+    assert mount.begin_sync_and_goto(command)
+    mount._check_pending_sync_goto()
+    assert mount.client.numbers == []
+    _sync_ack(mount, "ON_COORD_SET", {"SYNC": True}, state="busy")
+    _sync_ack(mount, "ON_COORD_SET", {"SLEW": True})
+    assert mount.client.numbers == []
+    _sync_ack(mount, "ON_COORD_SET", {"SYNC": True})
+    assert len(mount.client.numbers) == 1
+    assert mount.moves == []
+    _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 8.8, "DEC": 49.5}, state="busy")
+    assert mount._coordinate_sync is None
+    _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 1.0, "DEC": 49.5})
+    assert mount.moves == []
+    assert mount._coordinate_sync is None
+    _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 8.8, "DEC": 49.5})
+    assert mount._coordinate_sync["synced"] is True
+    assert mount._sync_goto_status["verified_error_arcmin"] < 0.001
+    assert mount.moves == []
+    _sync_ack(mount, "ON_COORD_SET", {"SLEW": True})
+    assert mount.moves == [(140.0, 45.0)]
+    assert mount._sync_goto_status["state"] == "goto_sent"
+    mount._check_pending_sync_goto()
+    assert len(mount.moves) == 1
+
+
+@pytest.mark.parametrize(
+    "failure", ["alert", "timeout", "disconnect", "stop", "manual", "exception"]
+)
+def test_pending_sync_failure_or_cancel_never_sends_target(monkeypatch, failure):
+    mount, command = _verified_goto_test_mount(monkeypatch)
+    assert mount.begin_sync_and_goto(command)
+    _sync_ack(mount, "ON_COORD_SET", {"SYNC": True})
+    if failure == "alert":
+        _sync_ack(
+            mount, "EQUATORIAL_EOD_COORD", {"RA": 8.8, "DEC": 49.5}, state="alert"
+        )
+    elif failure == "timeout":
+        mount._pending_sync_goto["deadline"] = 0.0
+        mount._check_pending_sync_goto()
+    elif failure == "disconnect":
+        mount.mark_disconnected("test")
+    elif failure in {"stop", "manual"}:
+        monkeypatch.setattr(mount, "_apply_indi_properties", lambda *args: True)
+        if failure == "stop":
+            mount.stop_mount()
+        else:
+            mount.manual_move("north")
+    else:
+        monkeypatch.setattr(
+            mount,
+            "_record_coordinate_sync",
+            lambda *args: (_ for _ in ()).throw(RuntimeError("test")),
+        )
+        _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 8.8, "DEC": 49.5})
+    assert mount._pending_sync_goto is None
+    assert mount._sync_goto_status["state"] == "failed"
+    _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 8.8, "DEC": 49.5})
+    _sync_ack(mount, "ON_COORD_SET", {"SLEW": True})
+    assert mount.moves == []
+
+
+def test_sync_goto_initial_send_exception_cancels_late_ack(monkeypatch):
+    mount, command = _verified_goto_test_mount(monkeypatch)
+
+    def failing_send(*args):
+        raise RuntimeError("send failed")
+
+    monkeypatch.setattr(mount.client, "set_switch", failing_send)
+    assert not mount.begin_sync_and_goto(command)
+    _sync_ack(mount, "ON_COORD_SET", {"SYNC": True})
+    _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 8.8, "DEC": 49.5})
+    _sync_ack(mount, "ON_COORD_SET", {"SLEW": True})
+    assert mount._pending_sync_goto is None
+    assert mount._sync_goto_status["state"] == "failed"
+    assert mount.moves == []
+
+
+def test_sync_goto_stop_after_coordinates_verified_cancels_move(monkeypatch):
+    mount, command = _verified_goto_test_mount(monkeypatch)
+    assert mount.begin_sync_and_goto(command)
+    _sync_ack(mount, "ON_COORD_SET", {"SYNC": True})
+    _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 8.8, "DEC": 49.5})
+    assert mount._pending_sync_goto["stage"] == "waiting_slew_mode"
+    monkeypatch.setattr(mount, "_apply_indi_properties", lambda *args: True)
+    mount.stop_mount()
+    _sync_ack(mount, "ON_COORD_SET", {"SLEW": True})
+    assert mount.moves == []
+    assert mount._sync_goto_status["state"] == "failed"
+
+
+def test_sync_goto_ignores_previous_connection_ack(monkeypatch):
+    mount, command = _verified_goto_test_mount(monkeypatch)
+    assert mount.begin_sync_and_goto(command)
+    _sync_ack(mount, "ON_COORD_SET", {"SYNC": True}, generation=-1)
+    assert mount.client.numbers == []
+
+
+def test_sync_goto_accepts_ra_wrap_within_readback_tolerance(monkeypatch):
+    mount, command = _verified_goto_test_mount(monkeypatch)
+    command.update(sync_ra=359.999, sync_dec=20.0)
+    assert mount.begin_sync_and_goto(command)
+    _sync_ack(mount, "ON_COORD_SET", {"SYNC": True})
+    _sync_ack(mount, "EQUATORIAL_EOD_COORD", {"RA": 0.00001, "DEC": 20.0})
+    assert mount._pending_sync_goto["stage"] == "waiting_slew_mode"
+
+
+@pytest.mark.skipif(mci.PyIndi is None, reason="requires installed INDI bindings")
+def test_real_indi_local_switch_mutation_is_not_a_driver_ack(monkeypatch):
+    indi = mci.PyIndi
+    receipts = []
+    owner = SimpleNamespace(
+        _indi_device_name=lambda: "LX200 OnStepX",
+        receive_sync_property=lambda *args: receipts.append(args),
+        receive_current_position=lambda *args: None,
+    )
+    client = mci.PiFinderIndiClient(owner, generation=7)
+    prop = indi.PropertySwitch(2)
+    prop.setDeviceName("LX200 OnStepX")
+    prop.setName("ON_COORD_SET")
+    prop.setState(indi.IPS_OK)
+    prop[0].setName("SYNC")
+    prop[1].setName("SLEW")
+    device = SimpleNamespace(getSwitch=lambda _: prop)
+    monkeypatch.setattr(client, "_wait_for_property", lambda *args: True)
+    monkeypatch.setattr(client, "sendNewSwitch", lambda _: None)
+    assert client.set_switch(device, "ON_COORD_SET", "SYNC")
+    assert receipts == []
+    client.updateProperty(prop)
+    assert receipts == [("ON_COORD_SET", "ok", {"SYNC": True, "SLEW": False}, 7)]
+    prop.setDeviceName("Other telescope")
+    client.updateProperty(prop)
+    assert len(receipts) == 1
+
+
+@pytest.mark.skipif(mci.PyIndi is None, reason="requires installed INDI bindings")
+def test_real_indi_number_callback_snapshots_values_and_state():
+    indi = mci.PyIndi
+    receipts = []
+    owner = SimpleNamespace(
+        _indi_device_name=lambda: "LX200 OnStepX",
+        receive_sync_property=lambda *args: receipts.append(args),
+        receive_current_position=lambda *args: None,
+    )
+    client = mci.PiFinderIndiClient(owner, generation=7)
+    prop = indi.PropertyNumber(2)
+    prop.setDeviceName("LX200 OnStepX")
+    prop.setName("EQUATORIAL_EOD_COORD")
+    prop.setState(indi.IPS_BUSY)
+    prop[0].setName("RA")
+    prop[0].setValue(8.8)
+    prop[1].setName("DEC")
+    prop[1].setValue(49.5)
+    client.updateProperty(prop)
+    prop[0].setValue(1.0)
+    assert receipts == [("EQUATORIAL_EOD_COORD", "busy", {"RA": 8.8, "DEC": 49.5}, 7)]
 
 
 def test_manual_motion_deadman_sends_stop_after_expired_lease():
@@ -1059,25 +1274,18 @@ def test_sync_location_time_sends_provisional_time_while_clock_untrusted(monkeyp
     assert "provisional" in statuses[-1][1]
 
 
-def test_guide_rate_write_reasserts_user_slew_rate_after_pulse(monkeypatch):
+def test_guide_cycles_leave_selector_until_manual_speed_requested(monkeypatch):
     mount = DummyConnectedMount()
     mount.slew_rate = 6
-    mount._pulse_guide_supported = True
     mount._guide_correction_accuracy_arcmin = 3.0
     monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (0.5, 0.5))
     monkeypatch.setattr(mount, "_guide_pulse_inversions", lambda: (False, False))
-    mount._slew_rate_polluted = True  # a GUIDE_RATE write happened this cycle
-
-    # 6 arcmin Dec error -> NS pulse goes out, restore is scheduled after it.
+    mount._slew_rate_polluted = True
     mount._apply_guide_pulse(297.0, 8.9, 297.0, 9.0, 6.0)
-    assert mount._slew_rate_reassert_at is not None
-
-    mount._slew_rate_reassert_at = time.monotonic() - 0.01
-    mount._check_slew_rate_reassert()
-
-    assert mount.client.switches[-1] == ("LX200 OnStep", "TELESCOPE_SLEW_RATE", "6")
-    assert mount._slew_rate_polluted is False
     assert mount._slew_rate_reassert_at is None
+    mount._check_slew_rate_reassert()
+    assert mount.client.switches == []
+    assert mount.slew_rate == 6
 
 
 def test_manual_move_reasserts_slew_rate_when_polluted():
@@ -2176,10 +2384,11 @@ def test_guide_correction_requires_a_target():
     assert not mount._guide_correction_enabled
 
 
-def test_guide_correction_pulses_toward_target_on_fresh_solve():
+def test_guide_correction_pulses_toward_target_on_fresh_solve(monkeypatch):
     solve_time = time.time()
     mount = DummyMountControl(DummySharedState(DummySolution(9.9, 20.0, solve_time)))
     mount._last_goto_target = (10.0, 20.0)
+    monkeypatch.setattr(mount, "_select_guide_rate_for_error", lambda error: True)
 
     assert mount.toggle_guide_correction(enabled=True, accuracy_arcmin=1.0)
     mount._guide_correction_next_at = time.monotonic() - 1.0
@@ -2199,6 +2408,63 @@ def test_guide_correction_does_not_pulse_inside_accuracy():
     mount._check_guide_correction()
 
     assert mount._manual_motion_direction is None
+
+
+@pytest.mark.parametrize("solve_time", [980.0, 1001.0, float("nan"), float("inf")])
+def test_guide_correction_rejects_old_or_invalid_solve_then_resumes(
+    monkeypatch, solve_time
+):
+    monkeypatch.setattr(mci.time, "time", lambda: 1000.0)
+    state = DummySharedState(DummySolution(9.9, 20.0, solve_time))
+    mount = DummyMountControl(state)
+    mount._last_goto_target = (10.0, 20.0)
+    monkeypatch.setattr(mount, "_select_guide_rate_for_error", lambda error: True)
+    assert mount.toggle_guide_correction(enabled=True, accuracy_arcmin=1.0)
+    mount._guide_correction_next_at = 0.0
+    mount._check_guide_correction()
+    assert mount._manual_motion_direction is None
+    assert mount._guide_correction_last_solve_time == 0.0
+
+    state._solution = DummySolution(9.9, 20.0, 999.0)
+    mount._check_guide_correction()
+    assert mount._manual_motion_direction == "east"
+    assert mount._guide_correction_last_solve_time == 999.0
+
+
+def test_pulse_event_preserves_each_axis_and_distinguishes_rejected_send(caplog):
+    mount = DummyConnectedMount()
+    mount._guide_correction_observation = {"frame_id": 42, "exposure_end": 1000.0}
+    mount._guide_correction_target = (10.0, 20.0)
+    with caplog.at_level("INFO", logger=mci.logger.name):
+        assert mount._send_guide_pulse("north", 2500)
+        mount.client.set_number = lambda *args: False
+        assert not mount._send_guide_pulse("west", 200)
+    events = [
+        json.loads(r.message.split("Guide pulse event ", 1)[1])
+        for r in caplog.records
+        if r.message.startswith("Guide pulse event ")
+    ]
+    assert [e["direction"] for e in events] == ["north", "west"]
+    assert events[0]["observation"]["frame_id"] == 42
+    assert events[0]["expected_end_monotonic"] == pytest.approx(
+        events[0]["returned_monotonic"] + 2.5
+    )
+    assert events[1]["expected_end_monotonic"] is None
+    assert all(e["end_confirmed"] is False for e in events)
+
+
+def test_retained_solve_is_not_labelled_with_newer_failed_frame():
+    solution = DummySolution(9.9, 20.0, 999.0)
+    solution.last_solve_attempt = 1000.0
+    solution.diagnostics = SimpleNamespace(FrameId=43, solve_path="cedar_512")
+    mount = DummyMountControl(DummySharedState(solution))
+    assert mount._current_plate_solve() == (9.9, 20.0, 999.0)
+    assert mount._guide_correction_observation["frame_id"] is None
+    assert mount._guide_correction_observation["solve_path"] is None
+
+    solution.last_solve_attempt = 999.0
+    assert mount._current_plate_solve() == (9.9, 20.0, 999.0)
+    assert mount._guide_correction_observation["frame_id"] == 43
 
 
 def test_guide_rate_boosts_to_fast_for_large_error(monkeypatch):
@@ -2254,6 +2520,8 @@ def test_guide_rate_drops_to_fine_inside_fast_band(monkeypatch):
 def test_guide_rate_not_rewritten_when_already_at_desired(monkeypatch):
     mount = DummyConnectedMount()
     mount._guide_correction_accuracy_arcmin = 6.0
+    mount._guide_rate_needs_reassert = False
+    mount._confirmed_guide_rates = (1.0, 1.0)
     monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (1.0, 1.0))
 
     mount._select_guide_rate_for_error(60.0)
@@ -2262,20 +2530,13 @@ def test_guide_rate_not_rewritten_when_already_at_desired(monkeypatch):
     assert mount._guide_rate_boosted
 
 
-def test_guide_rate_restored_to_fine_on_disable():
+def test_guide_disable_does_not_change_in_flight_pulse_speed():
     mount = DummyConnectedMount()
     mount._guide_rate_boosted = True
 
     assert mount.toggle_guide_correction(enabled=False)
 
-    assert mount.client.numbers[-1] == (
-        "LX200 OnStep",
-        "GUIDE_RATE",
-        {
-            "GUIDE_RATE_WE": mci.GUIDE_RATE_FINE_X,
-            "GUIDE_RATE_NS": mci.GUIDE_RATE_FINE_X,
-        },
-    )
+    assert mount.client.numbers == []
     assert not mount._guide_rate_boosted
 
 
@@ -2299,3 +2560,210 @@ def test_guide_rate_write_rejection_stops_future_attempts(monkeypatch):
     mount._restore_fine_guide_rate()
 
     assert attempts == []
+
+
+def test_manual_and_guide_profiles_survive_restart_independently():
+    mount = DummyMountControl()
+    assert mount.set_slew_rate(7)
+    assert mount.set_guide_rate(1.0)
+    restored = DummyMountControl()
+    assert (restored.slew_rate, restored.guide_rate_we, restored.guide_rate_ns) == (
+        7,
+        1.0,
+        1.0,
+    )
+    assert restored.set_slew_rate(6)
+    assert restored.set_guide_rate(0.5)
+    again = DummyMountControl()
+    assert (again.slew_rate, again.guide_rate_we, again.guide_rate_ns) == (6, 0.5, 0.5)
+
+
+def test_manual_then_guide_reasserts_even_when_guide_cache_matches(monkeypatch):
+    mount = DummyConnectedMount()
+    mount.slew_rate = 7
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (0.5, 0.5))
+    assert mount._select_guide_rate_for_error(0.0)
+    assert mount._slew_rate_polluted
+    assert mount._reassert_slew_rate()
+    assert mount._guide_rate_needs_reassert
+    assert mount._select_guide_rate_for_error(0.0)
+    assert len(mount.client.numbers) == 2
+    assert mount.client.switches[-1][-1] == "7"
+    assert mount.slew_rate == 7
+    # A second guide-only cycle may reuse the known selector.
+    assert mount._select_guide_rate_for_error(0.0)
+    assert len(mount.client.numbers) == 2
+
+
+def test_automatic_guide_boost_does_not_persist_over_fine_profile(monkeypatch):
+    mount = DummyConnectedMount()
+    assert mount.set_guide_rate(0.25)
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (0.25, 0.25))
+    assert mount._select_guide_rate_for_error(60.0)
+    assert mount.client.numbers[-1][2] == {"GUIDE_RATE_WE": 1.0, "GUIDE_RATE_NS": 1.0}
+    restored = DummyMountControl()
+    assert (restored.guide_rate_we, restored.guide_rate_ns) == (0.25, 0.25)
+
+
+def test_speed_refresh_ignores_temporary_driver_guide_selector(monkeypatch):
+    mount = DummyConnectedMount()
+    mount.slew_rate = 7
+    monkeypatch.setattr(mount, "_read_driver_slew_rate", lambda: 1)
+    assert mount.refresh_slew_rate() == 7
+    monkeypatch.setattr(mount, "_device_is_connected", lambda: True)
+    monkeypatch.setattr(mount, "_read_cached_current_position", lambda: None)
+    mount._last_status_heartbeat_at = 0.0
+    mount._write_status_heartbeat()
+    assert mount.slew_rate == 7
+
+
+def test_manual_speed_change_during_pulse_is_saved_and_deferred():
+    mount = DummyConnectedMount()
+    mount._guide_pulse_until = time.monotonic() + 2.5
+    assert mount.set_slew_rate(6)
+    assert mount.client.switches == []
+    assert DummyMountControl().slew_rate == 6
+    mount._check_slew_rate_reassert()
+    assert mount.client.switches == []
+    mount._guide_pulse_until = 0.0
+    mount._slew_rate_reassert_at = 0.0
+    mount._check_slew_rate_reassert()
+    assert mount.client.switches[-1][-1] == "6"
+
+
+def test_guide_setting_during_manual_move_only_saves():
+    mount = DummyConnectedMount()
+    mount._manual_motion_direction = "east"
+    mount._manual_motion_origin = "user"
+    assert mount.set_guide_rate(0.25)
+    assert mount.client.numbers == []
+    assert mount.client.switches == []
+    assert not mount._select_guide_rate_for_error(50.0)
+    assert DummyMountControl().guide_rate_we == 0.25
+
+
+@pytest.mark.parametrize("reject", ["none", "abort", "speed"])
+def test_manual_takeover_orders_abort_speed_then_motion(monkeypatch, reject):
+    mount = DummyConnectedMount()
+    mount._guide_pulse_until = time.monotonic() + 2.5
+    events = []
+
+    def apply(properties, *args):
+        is_abort = any("ABORT" in p for p in properties)
+        events.append("abort" if is_abort else "motion")
+        return not (reject == "abort" and is_abort)
+
+    def switch(*args):
+        events.append("speed")
+        return reject != "speed"
+
+    monkeypatch.setattr(mount, "_apply_indi_properties", apply)
+    monkeypatch.setattr(mount.client, "set_switch", switch)
+    monkeypatch.setattr(mount, "_publish_manual_motion_progress", lambda **kwargs: None)
+    assert mount.manual_move("east") is (reject == "none")
+    expected = {
+        "none": ["abort", "speed", "motion"],
+        "abort": ["abort"],
+        "speed": ["abort", "speed"],
+    }
+    assert events == expected[reject]
+
+
+@pytest.mark.parametrize("rate", [float("nan"), float("inf"), 0, -1, 241])
+def test_invalid_guide_settings_do_not_replace_saved_profile(rate):
+    mount = DummyMountControl()
+    assert mount.set_guide_rate(0.5)
+    assert not mount.set_guide_rate(rate)
+    assert DummyMountControl().guide_rate_we == 0.5
+
+
+def test_rejected_guide_rate_prevents_pulse(monkeypatch):
+    mount = DummyConnectedMount()
+    mount._guide_correction_enabled = True
+    mount._guide_correction_target = (10.0, 20.0)
+    monkeypatch.setattr(mount, "_current_plate_solve", lambda: (9.9, 20.0, time.time()))
+    monkeypatch.setattr(mount, "_guide_pulse_supported", lambda: True)
+    monkeypatch.setattr(mount, "_current_guide_rate_x", lambda: (0.5, 0.5))
+    monkeypatch.setattr(mount, "_set_guide_rate", lambda rate: False)
+    pulses = []
+    monkeypatch.setattr(mount, "_apply_guide_pulse", lambda *args: pulses.append(args))
+    mount._check_guide_correction()
+    assert pulses == []
+
+
+def test_pulse_waits_for_fresh_guide_readback_without_consuming_solve(monkeypatch):
+    mount = DummyConnectedMount()
+    mount.auto_ack_guide = False
+    mount._guide_correction_enabled = True
+    mount._guide_correction_target = (10.0, 20.0)
+    mount._guide_correction_accuracy_arcmin = 1.0
+    solve_time = time.time()
+    monkeypatch.setattr(mount, "_current_plate_solve", lambda: (9.9, 20.0, solve_time))
+    monkeypatch.setattr(mount, "_guide_pulse_supported", lambda: True)
+    pulses = []
+    monkeypatch.setattr(mount, "_apply_guide_pulse", lambda *args: pulses.append(args))
+    mount.receive_sync_property(
+        "GUIDE_RATE",
+        "ok",
+        {"GUIDE_RATE_WE": 1.0, "GUIDE_RATE_NS": 1.0},
+        mount._client_generation,
+    )
+    mount._check_guide_correction()
+    assert not pulses
+    assert mount._guide_correction_last_solve_time == 0.0
+    # A cached matching value and a busy acknowledgement cannot start motion.
+    mount._check_guide_correction()
+    mount.receive_sync_property(
+        "GUIDE_RATE",
+        "busy",
+        {"GUIDE_RATE_WE": 1.0, "GUIDE_RATE_NS": 1.0},
+        mount._client_generation,
+    )
+    mount._check_guide_correction()
+    assert not pulses
+    mount.receive_sync_property(
+        "GUIDE_RATE",
+        "ok",
+        {"GUIDE_RATE_WE": 1.0, "GUIDE_RATE_NS": 1.0},
+        mount._client_generation,
+    )
+    mount._check_guide_correction()
+    assert len(pulses) == 1
+    assert mount._guide_correction_last_solve_time == solve_time
+    mount._check_guide_correction()
+    assert len(pulses) == 1
+
+
+@pytest.mark.parametrize(
+    "failure", ["alert", "timeout", "mismatch", "disconnect", "manual"]
+)
+def test_guide_confirmation_failure_or_takeover_blocks_late_pulse(monkeypatch, failure):
+    mount = DummyConnectedMount()
+    mount.auto_ack_guide = False
+    assert not mount._select_guide_rate_for_error(0.0)
+    if failure in {"alert", "mismatch"}:
+        mount.receive_sync_property(
+            "GUIDE_RATE",
+            "alert" if failure == "alert" else "ok",
+            {"GUIDE_RATE_WE": 1.0, "GUIDE_RATE_NS": 1.0},
+            mount._client_generation,
+        )
+    if failure in {"timeout", "mismatch"}:
+        mount._pending_guide_rate["deadline"] = 0.0
+    if failure == "disconnect":
+        mount.mark_disconnected("test")
+    elif failure == "manual":
+        monkeypatch.setattr(mount, "_apply_indi_properties", lambda *args: True)
+        monkeypatch.setattr(
+            mount, "_publish_manual_motion_progress", lambda **kwargs: None
+        )
+        assert mount.manual_move("east")
+    else:
+        assert mount._finish_guide_rate_request() is False
+    mount.receive_sync_property(
+        "GUIDE_RATE",
+        "ok",
+        {"GUIDE_RATE_WE": 0.5, "GUIDE_RATE_NS": 0.5},
+        mount._client_generation,
+    )
+    assert not mount._select_guide_rate_for_error(0.0)

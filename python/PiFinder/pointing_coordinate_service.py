@@ -637,7 +637,9 @@ class PointingCoordinateService:
             location = ctx["location"]
             try:
                 sf_utils.set_location(location.lat, location.lon, location.altitude)
-                averaged_ra, averaged_dec = sf_utils.altaz_to_radec(
+                # Alt/Az samples came from ICRS -> observed radec_to_altaz.
+                # Use its inverse, not apparent RA/Dec of the current date.
+                averaged_ra, averaged_dec = sf_utils.observed_altaz_to_radec(
                     horizontal_center[0], horizontal_center[1], ctx["dt"]
                 )
                 averaged_ra %= 360.0

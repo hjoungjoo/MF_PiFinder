@@ -5986,3 +5986,12 @@ msgstr "완료"
 #, python-brace-format
 msgid "Solve {interval}"
 msgstr "솔빙 {interval}"
+
+msgid "Manual Slew Rate"
+msgstr "수동 이동 속도"
+
+msgid "Pulse Guide Rate"
+msgstr "펄스 가이드 속도"
+
+msgid "Saved for fine correction. Large errors use at least 1x sidereal."
+msgstr "미세 보정용으로 저장합니다. 오차가 크면 1배 항성시 속도로 보정합니다."

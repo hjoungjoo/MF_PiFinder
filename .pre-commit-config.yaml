@@ -6,6 +6,8 @@ repos:
     hooks:
       - id: nox
         files: ^.*\.py$
+        pass_filenames: false
+        require_serial: true
         args:
           - -f
           - python/noxfile.py

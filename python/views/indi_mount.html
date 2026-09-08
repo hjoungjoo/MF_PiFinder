@@ -281,10 +281,10 @@
         <div class="input-field col s8">
           <select name="slew_rate" id="slew_rate">
             {% for label in slew_rate_labels %}
-            <option value="{{ loop.index0 }}" {% if onstep_props.get(onstep_device ~ '.TELESCOPE_SLEW_RATE.' ~ loop.index0|string, '') == 'On' %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ loop.index0 }}" {% if manual_slew_rate|int == loop.index0 %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
-          <label class="active">{{ _('Slew Rate') }}</label>
+          <label class="active">{{ _('Manual Slew Rate') }}</label>
         </div>
         <div class="input-field col s4">
           <span id="indi_action_status" class="grey-text"></span>
@@ -296,6 +296,20 @@
         <span class="grey-text">{{ _('Move Direction (DIR)') }}</span>
       </div>
     </div>
+    <form id="pulse_guide_rate_form" class="row">
+      <div class="input-field col s8">
+        <select id="guide_rate">
+          {% for rate in [0.25, 0.5, 1.0] %}
+          <option value="{{ rate }}" {% if pulse_guide_rate|float == rate %}selected{% endif %}>{{ rate }}x</option>
+          {% endfor %}
+        </select>
+        <label class="active" for="guide_rate">{{ _('Pulse Guide Rate') }}</label>
+      </div>
+      <div class="input-field col s4">
+        <button type="submit" class="btn">{{ _('Save') }}</button>
+      </div>
+      <p class="col s12 grey-text">{{ _('Saved for fine correction. Large errors use at least 1x sidereal.') }}</p>
+    </form>
     <div class="row indi-motion-grid">
       <button type="button" data-direction="northwest" class="btn indi-motion-northwest" title="{{ _('Move up-left') }}" aria-label="{{ _('Move up-left') }}">&#8598;</button>
       <button type="button" data-direction="north" class="btn indi-motion-north" title="{{ _('Move up') }}" aria-label="{{ _('Move up') }}">&#8593;</button>
@@ -1182,14 +1196,10 @@ document.addEventListener('DOMContentLoaded', function() {
     setText('indi_home_state_value', translatedMountState(mountState.home_state));
     setText('indi_park_state_value', translatedMountState(mountState.park_state));
     setText('indi_raw_mount_status_value', textOrDash(mountState.raw_status));
-    if (slewRate) {
-      for (var rate = 0; rate <= 9; rate += 1) {
-        if (onstep[onstepKey('TELESCOPE_SLEW_RATE.' + rate)] === 'On') {
-          slewRate.value = String(rate);
-          M.FormSelect.init(slewRate);
-          break;
-        }
-      }
+    var storedManualRate = (payload.mount_control_status || {}).manual_slew_rate;
+    if (slewRate && storedManualRate !== undefined) {
+      slewRate.value = String(storedManualRate);
+      M.FormSelect.init(slewRate);
     }
     M.updateTextFields();
   }
@@ -1496,10 +1506,18 @@ document.addEventListener('DOMContentLoaded', function() {
     slewRate.addEventListener('change', function() {
       setActionStatus('{{ _("Setting") }}');
       postIndiAction('/indi/slew_rate', {slew_rate: slewRate.value})
-        .then(function() { setActionStatus('{{ _("Applied") }}'); })
+        .then(function() { setActionStatus('{{ _("Command sent") }}'); })
         .catch(function(error) { setActionStatus(error.message); });
     });
   }
+
+  document.getElementById('pulse_guide_rate_form').addEventListener('submit', function(event) {
+    event.preventDefault();
+    postIndiAction('/indi/guide_rate', {
+      guide_rate: document.getElementById('guide_rate').value
+    }).then(function() { setActionStatus('{{ _("Command sent") }}'); })
+      .catch(function(error) { setActionStatus(error.message); });
+  });
 
   document.querySelectorAll('[data-park-action]').forEach(function(button) {
     button.addEventListener('click', function(event) {

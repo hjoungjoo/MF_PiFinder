@@ -17,6 +17,9 @@ from PiFinder.pointing_coordinate_service import (
 )
 
 
+pytestmark = pytest.mark.unit
+
+
 class DummySolution:
     def __init__(
         self,
@@ -234,7 +237,7 @@ def test_solve_average_selects_horizontal_frame_for_fixed_camera(monkeypatch):
         lambda *_args: None,
     )
     monkeypatch.setattr(
-        "PiFinder.pointing_coordinate_service.sf_utils.altaz_to_radec",
+        "PiFinder.pointing_coordinate_service.sf_utils.observed_altaz_to_radec",
         lambda alt, az, _dt: (200.0 + az, 30.0 + alt),
     )
     imu = CoordinateSample.invalid(SOURCE_IMU, "test")
@@ -277,6 +280,29 @@ def test_solve_average_keeps_selected_frame_until_reset():
     )
 
     assert selected == "horizontal"
+
+
+def test_horizontal_solve_average_returns_to_original_icrs_frame():
+    from PiFinder.calc_utils import sf_utils
+
+    service = PointingCoordinateService()
+    dt = datetime.datetime(2026, 9, 8, 13, 33, tzinfo=datetime.timezone.utc)
+    location = SimpleNamespace(lat=37.52704, lon=127.10936, altitude=30.0)
+    service._fusion_context = {"dt": dt, "location": location}
+    service._solve_average_frame = "horizontal"
+    sf_utils.set_location(location.lat, location.lon, location.altitude)
+    imu = CoordinateSample.invalid(SOURCE_IMU, "test")
+    for index, delta in enumerate((-0.0002, -0.0001, 0.0, 0.0001, 0.0002)):
+        ra, dec = 13.2 + delta, 2.7533333333333334
+        alt, az = sf_utils.radec_to_altaz(ra, dec, dt)
+        averaged = service._stabilize_solved_sample(
+            _camera_sample(ra, dec, float(index), alt_deg=alt, az_deg=az), imu
+        )
+    # The former apparent-of-date inverse produced RA 13.5303, Dec 2.9211:
+    # about 22 arcmin despite a stationary, precise ICRS input.
+    assert averaged.metadata["stabilization_frame"] == "horizontal"
+    assert averaged.ra_deg == pytest.approx(13.2, abs=0.1 / 3600)
+    assert averaged.dec_deg == pytest.approx(2.7533333333333334, abs=0.1 / 3600)
 
 
 def test_unanchored_imu_solution_is_not_treated_as_trusted_pointing():

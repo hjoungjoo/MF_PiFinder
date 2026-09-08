@@ -258,7 +258,8 @@ def _output_dither(shape: tuple[int, int], amplitude: int) -> np.ndarray:
 
     if amplitude <= 0:
         return np.zeros(shape, dtype=np.float32)
-    yy, xx = np.indices(shape, dtype=np.int32)
+    yy = np.arange(shape[0], dtype=np.int32)[:, None]
+    xx = np.arange(shape[1], dtype=np.int32)[None, :]
     modulus = 2 * int(amplitude) + 1
     return ((xx * 17 + yy * 31) % modulus - amplitude).astype(np.float32)
 
@@ -352,9 +353,12 @@ def preprocess_star_evidence(
         background_local, rms_local = local_future.result()
         background_medium = medium_future.result()
         background_coarse = coarse_future.result()
-    background = np.median(
-        np.stack((background_local, background_medium, background_coarse)), axis=0
-    ).astype(np.float32)
+    # The median of exactly three maps needs only comparisons. Avoid stacking
+    # and partitioning three full sensor frames; preserve NaN propagation.
+    background = np.maximum(
+        np.minimum(background_local, background_medium),
+        np.minimum(np.maximum(background_local, background_medium), background_coarse),
+    )
 
     saturated, hard_mask = _extended_saturation_mask(
         arr, float(saturation_level), config
@@ -396,7 +400,7 @@ def preprocess_star_evidence(
         saturation_fraction=float(np.mean(saturated)),
         background_median=float(np.median(finite_background)),
         local_rms_median=float(np.median(finite_rms)),
-        local_rms_p90=float(np.percentile(finite_rms, 90.0)),
+        local_rms_p90=float(rms90),
         evidence_pixels=int(np.count_nonzero(evidence >= config.weak_evidence_sigma)),
         persistent_pixels=0,
     )
@@ -456,7 +460,6 @@ class MFStarOnlyAccumulator:
         del self._signals[: -self.config.temporal_frames]
         del self._evidence[: -self.config.temporal_frames]
 
-        signals = np.stack(self._signals).astype(np.float32)
         evidences = np.stack(self._evidence).astype(np.float32)
         capped = np.clip(evidences, 0.0, self.config.evidence_cap_sigma)
         support = np.clip(
@@ -465,7 +468,12 @@ class MFStarOnlyAccumulator:
         # Integrate supported point-source residuals instead of averaging
         # them.  A repeatedly visible faint star therefore gains strength
         # with time, whereas a one-frame glint remains permission-capped.
-        combined_signal = np.sum(signals * support, axis=0)
+        # Sum in temporal order, just like NumPy's reduction over axis 0.
+        # Materializing both the float32 signal stack and its weighted copy
+        # costs two full temporal windows, although only their sum is needed.
+        combined_signal = np.zeros(raw_frame.shape, dtype=np.float32)
+        for signal_frame, support_frame in zip(self._signals, support):
+            combined_signal += signal_frame.astype(np.float32) * support_frame
         evidence_sum = np.sum(capped, axis=0)
         persistence = np.count_nonzero(
             evidences >= self.config.weak_evidence_sigma, axis=0
@@ -489,7 +497,8 @@ class MFStarOnlyAccumulator:
         ).astype(np.float32)
         combined_signal *= permission
         detector_floor = float(self.config.output_pedestal_adu) + _output_dither(
-            combined_signal.shape, self.config.output_dither_adu
+            (int(combined_signal.shape[0]), int(combined_signal.shape[1])),
+            self.config.output_dither_adu,
         )
         output = np.clip(
             np.rint(combined_signal + detector_floor), 0, saturation_level
