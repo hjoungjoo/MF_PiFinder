@@ -254,6 +254,8 @@ class MenuManager:
         in all the required UI Module arguments + the
         item dict
         """
+        if self.stack:
+            self.stack[-1].covered()
         if item.get("state") is not None:
             self.stack[-1].inactive()
             self.stack.append(item["state"])
@@ -294,6 +296,8 @@ class MenuManager:
         if label in ["recent"]:
             for stack_index, ui_module in enumerate(self.stack):
                 if ui_module.item_definition.get("label", "") == label:
+                    for discarded in reversed(self.stack[stack_index + 1 :]):
+                        discarded.covered()
                     self.stack = self.stack[: stack_index + 1]
                     self.stack[-1].active()
                     return

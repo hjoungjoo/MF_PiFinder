@@ -70,6 +70,28 @@ _Avoid_: flip arrows, mirror arrows.
 
 ## Flagged ambiguities
 
+### Write-boundary validation (upstream #571, MF selective port)
+
+Measurements are floats. Browser feedback and server-side form validation
+share the limits in `equipment.py`; the API accepts either decimal separator.
+Names are required and limited to 64 characters; make is optional, also up to 64.
+
+| Measurement | Inclusive range |
+| --- | --- |
+| Telescope aperture | 1–2000 mm |
+| Telescope focal length | 1–20000 mm |
+| Telescope obstruction | 0–100%; blank defaults to 0 |
+| Eyepiece focal length | 0.1–100 mm |
+| Eyepiece AFOV | 1–180° |
+| Eyepiece field stop | 0–100 mm; blank defaults to 0 |
+
+Invalid submissions return their original values and an error without saving.
+DeepskyLog records with invalid measurements are skipped. Loading existing
+records stays permissive; no migration rewrites existing equipment. See
+[ADR 0033](../../adr/0033-equipment-measurements-are-validated-floats.md).
+
+### Terminology
+
 - **"Scope"** — avoid entirely. ADR 0001 established that "scope" is overloaded (telescope, eyepiece, finder, optical). Say **telescope** for the instrument and **active telescope** for the selected one.
 - **"Flip" vs "flop"** — flip = top-bottom (vertical) mirror; flop = left-right (horizontal) mirror. Never say "mirror" or "flip" without naming the axis.
 - **"Field of view"** — always qualify: **AFOV** is the eyepiece's; **TFOV** is what telescope + eyepiece actually show.

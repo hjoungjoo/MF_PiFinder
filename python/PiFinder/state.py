@@ -288,6 +288,7 @@ class SharedStateObj:
         }
         self.__solution: PointingEstimate = PointingEstimate()
         self.__sats = None
+        self.__gps_comms = None
         self.__imu = None
         self.__location: Location = Location()
         self.__sqm: SQM = SQM()
@@ -422,6 +423,13 @@ class SharedStateObj:
 
     def set_sats(self, v):
         self.__sats = v
+
+    def gps_comms(self):
+        """Last GPS event and main-process monotonic arrival time, or None."""
+        return self.__gps_comms
+
+    def set_gps_comms(self, v):
+        self.__gps_comms = v
 
     def imu(self):
         return self.__imu

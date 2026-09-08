@@ -389,6 +389,16 @@ On the chart the cross carries the object's designation, "M 57" for example.  On
 object drifts off the edge, an arrow at the rim points the way instead.  The cross stays
 bright even with DSO Display turned off.
 
+The center-object line at the bottom names the drawn marker nearest the middle of the
+chart. It shows the object's designation and first other catalog name, scrolling long
+text at your configured Text Scroll speed. Press **RIGHT** to open its details; UP/DOWN
+there walks through the on-screen markers in distance order. Long RIGHT keeps its
+existing shortcut to the most recently viewed object.
+
+Use Center Object under Settings > Chart to switch this line off (default: On).
+With the line off, or when there is no on-screen object or usable pointing, RIGHT does
+nothing. The line sits above the RA/DEC display when that display is enabled.
+
 How the chart is turned is up to you.  Choose Coordinate Sys. under Chart... in the
 :ref:`user_guide:settings menu`:
 

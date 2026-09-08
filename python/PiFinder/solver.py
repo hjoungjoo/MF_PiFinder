@@ -56,6 +56,7 @@ from PiFinder.optics import OpticalTrainResolver, build_optical_train
 from PiFinder.latest_frame_worker import LatestFrameWorker
 from PiFinder.preprocess_bias import PreprocessBiasTracker
 from PiFinder.solver_scheduling import SolverSchedulingPolicy
+from PiFinder.solver_capture import CaptureRecorder
 from PiFinder.sep_shadow import MAX_FRAME_AGE_S, WARM_MAP_PATH, SepShadowRunner
 from PiFinder.solve_acceptance import (
     SolveContinuityGate,
@@ -1287,7 +1288,7 @@ def _center_square_subset(centroids, frame_hw):
     return pts[keep]
 
 
-def _solve_center_first_remainder(stages):
+def _solve_center_first_remainder(stages, trace=None):
     """Run the remaining cascade in global centre-first order.
 
     Cedar centre is attempted earlier while SEP detection runs in parallel.
@@ -1297,7 +1298,16 @@ def _solve_center_first_remainder(stages):
     """
     last_solution = {}
     for solve_path, solve_stage in stages:
+        started_ns = time.monotonic_ns() if trace is not None else 0
         last_solution = solve_stage() or {}
+        if trace is not None:
+            trace.append(
+                {
+                    "path": solve_path,
+                    "elapsed_ms": (time.monotonic_ns() - started_ns) / 1e6,
+                    "quality_solved": last_solution.get("RA") is not None,
+                }
+            )
         if last_solution.get("RA") is not None:
             return last_solution, solve_path
     return last_solution, ""
@@ -1502,6 +1512,7 @@ def solver(
     # the camera type for crop geometry, which the camera process publishes
     # after startup -- so creation is retried in the loop until it works.
     _sep_cfg = config_mod.Config()
+    field_capture = CaptureRecorder("solver", _sep_cfg)
     sep_shadow = None
     sep_shadow_wanted = bool(
         _sep_cfg.get_option("solver_shadow_detect")
@@ -1670,6 +1681,7 @@ def solver(
                         )
 
                 state_utils.sleep_for_framerate(shared_state)
+                field_capture.poll()
 
                 # use the time the exposure started here to
                 # reject images started before the last solve
@@ -1693,6 +1705,7 @@ def solver(
                     continue
 
                 # Check if we should process this image
+                capture_input_ready_ns = time.monotonic_ns()
                 is_new_image = last_image_metadata["exposure_end"] > last_solve_attempt
 
                 if not is_new_image:
@@ -1734,6 +1747,7 @@ def solver(
                         field_width_degrees=radiometric_fov,
                     )
 
+                capture_token = None
                 try:
                     if solver_frame_entry is not None:
                         np_image = np.asarray(
@@ -1743,6 +1757,14 @@ def solver(
                         img = camera_image.copy()
                         img = img.convert(mode="L")
                         np_image = np.asarray(img, dtype=np.uint8)
+
+                    capture_token = field_capture.begin(last_image_metadata)
+                    capture_candidate = None
+                    capture_continuity = None
+                    capture_stages = [] if capture_token is not None else None
+                    capture_counts = {}
+                    preprocess_ms = 0.0
+                    preprocess_context = None
 
                     # Mark that we're attempting a solve - use image exposure_end timestamp.
                     # This is more accurate than wall clock and ties the attempt to the
@@ -2069,6 +2091,11 @@ def solver(
                     if used_fullframe and ff_center_solved:
                         solve_path = "cedar_center"
 
+                    capture_sep_started_ns = (
+                        time.monotonic_ns() if capture_token is not None else 0
+                    )
+                    capture_primary_extract_ms = t_extract
+
                     # SEP full-frame experiment: shadow-detect on every
                     # attempt; optionally rescue a failed production solve
                     # from the SEP centroids (sep_shadow module docstring).
@@ -2130,6 +2157,12 @@ def solver(
                                 len(sep_run.detection.centroids)
                             )
                         )
+
+                    capture_sep_wait_ms = (
+                        (time.monotonic_ns() - capture_sep_started_ns) / 1e6
+                        if capture_token is not None
+                        else 0.0
+                    )
 
                     # Tile recovery is intentionally placed after the
                     # existing centre-first attempt but before Cedar/SEP are
@@ -2401,7 +2434,8 @@ def solver(
                                 ("sep_center", _sep_center_stage),
                                 ("cedar_full", _cedar_full_stage),
                                 ("sep_full", _sep_full_stage),
-                            )
+                            ),
+                            trace=capture_stages,
                         )
                         if selected_path:
                             solve_path = selected_path
@@ -2717,6 +2751,21 @@ def solver(
                                     preprocessed_run.detection.centroids,
                                     preprocessed_run.frame_hw,
                                 )
+                                if capture_token is not None:
+                                    capture_counts.update(
+                                        {
+                                            "preprocessed_cedar_center": len(
+                                                preprocessed_cedar_center
+                                            ),
+                                            "preprocessed_cedar_full": len(
+                                                preprocessed_cedar
+                                            ),
+                                            "preprocessed_sep_center": len(
+                                                preprocessed_sep_center
+                                            ),
+                                            "preprocessed_sep_full": preprocessed_sep_count,
+                                        }
+                                    )
                                 preprocess_target_sky = (
                                     [[align_ra, align_dec]]
                                     if align_ra != 0 and align_dec != 0
@@ -2794,7 +2843,9 @@ def solver(
                                     )
                                 )
                                 preprocessed_solution, selected_path = (
-                                    _solve_center_first_remainder(preprocess_stages)
+                                    _solve_center_first_remainder(
+                                        preprocess_stages, trace=capture_stages
+                                    )
                                 )
                                 if selected_path:
                                     preprocessed_fast_trusted = True
@@ -3000,6 +3051,8 @@ def solver(
                     # preprocessing enabled, stationary fine jumps and raw
                     # fallback transitions are confirmed too; the allowance
                     # includes sidereal drift since the trusted frame.
+                    if capture_token is not None:
+                        capture_candidate = dict(solution or {})
                     if solution and solution.get("RA") is not None:
                         continuity = solve_continuity.evaluate(
                             solution,
@@ -3010,6 +3063,7 @@ def solver(
                                 solver_preprocess_enabled and not fast_raw_after_motion
                             ),
                         )
+                        capture_continuity = continuity
                         if continuity.accepted and continuity.reason in {
                             "confirmed_jump",
                             "confirmed_stationary_change",
@@ -3450,6 +3504,56 @@ def solver(
                             )
                         )
 
+                    field_capture.finish(
+                        capture_token,
+                        {
+                            "input_ready_monotonic_ns": capture_input_ready_ns,
+                            "queue_put_return_monotonic_ns": time.monotonic_ns(),
+                            "accepted": published_solution,
+                            "solve_path": solve_path,
+                            "candidate": capture_candidate,
+                            "continuity": capture_continuity,
+                            "raw_cascade": raw_solution_diagnostic,
+                            "raw_cascade_ms": raw_cascade_ms,
+                            "raw_extract_ms": capture_primary_extract_ms,
+                            "raw_sep_wait_ms": capture_sep_wait_ms,
+                            "stages": capture_stages,
+                            "candidate_counts": {
+                                "raw_cedar": len(centroids),
+                                "raw_cedar_center": cedar_center_count,
+                                "raw_sep": sep_count,
+                                **capture_counts,
+                            },
+                            "preprocess_detect_ms": preprocess_ms,
+                            "preprocess_frame_id": (
+                                preprocess_context["metadata"].get("frame_id")
+                                if preprocess_context is not None
+                                else last_image_metadata.get("frame_id")
+                            ),
+                            "preprocess_background": async_preprocess_mode_active,
+                            "scheduling": solve_scheduling.status(),
+                            "bias": preprocess_bias.status(),
+                            "generation": async_preprocess_generation,
+                            "frame_moving": frame_moving,
+                            "fast_raw_after_motion": fast_raw_after_motion,
+                            "target_pixel": target_pixel_key,
+                            "optics": {
+                                key: (cedar_ff_geometry or {}).get(key)
+                                for key in (
+                                    "rotation_deg",
+                                    "crop_width_px",
+                                    "base_fov_degrees",
+                                    "distortion_coefficients",
+                                )
+                            },
+                        }
+                        if capture_token is not None
+                        else {},
+                        raw_entry=solver_raw_entry,
+                        image=np_image,
+                    )
+                    capture_token = None
+
                     # Calibration runs on its own tetra3 instance. The normal
                     # pointing result above is never delayed by the fit; while
                     # one sample is running, intermediate frames are dropped
@@ -3643,6 +3747,10 @@ def solver(
                             ),
                         )
                 except Exception as e:
+                    field_capture.finish(
+                        capture_token,
+                        {"accepted": False, "exception": f"{type(e).__name__}: {e}"},
+                    )
                     logger.error(
                         f"Exception during solve attempt: {e.__class__.__name__}: {str(e)}"
                     )

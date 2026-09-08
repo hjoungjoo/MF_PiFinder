@@ -55,8 +55,8 @@ for round-tripping through `config.json`; the nested `Telescope` /
 | --- | --- | --- |
 | `make` | str | Manufacturer, free text. |
 | `name` | str | Model / instrument name. |
-| `aperture_mm` | int | Clear aperture in mm. |
-| `focal_length_mm` | int | Focal length in mm. Numerator of `calc_magnification()`. |
+| `aperture_mm` | float | Clear aperture in mm. |
+| `focal_length_mm` | float | Focal length in mm. Numerator of `calc_magnification()`. |
 | `obstruction_perc` | float | Central obstruction as a percentage (0 for a refractor). Informational; not used by the optics calcs here. |
 | `mount_type` | str | `"alt/az"` or `"equatorial"`. |
 | `flip_image` | bool | Top-to-bottom (vertical) mirror of the object image. See §6. |
@@ -74,7 +74,7 @@ the glossary's "Flagged ambiguities."
 | `make` | str | Manufacturer, free text. |
 | `name` | str | Model name. |
 | `focal_length_mm` | float | Focal length in mm. Denominator of `calc_magnification()`; also the eyepiece sort key. |
-| `afov` | int | Apparent field of view (AFOV) in degrees — a property of the eyepiece alone. |
+| `afov` | float | Apparent field of view (AFOV) in degrees — a property of the eyepiece alone. |
 | `field_stop` | float | Field-stop diameter in mm; default `0`. When non-zero it gives a more accurate TFOV (see §5). |
 
 `Eyepiece.__str__` renders as `"{focal_length_mm}mm {name}"`, which is the
@@ -122,6 +122,10 @@ always reads the repo-root `default_config.json` into
   very wrong"), Equipment is built empty: `Equipment(telescopes=[], eyepieces=[])`.
 - Otherwise the section is validated (§3.3) and
   `Equipment.from_dict(eq_config)` builds the object.
+- If decoding the equipment records raises `ValueError`, `TypeError`, or
+  `KeyError`, log the error and use the shipped defaults in memory. Do not
+  overwrite the saved section during load. This covers invalid measurements
+  from older forms; it is not a repair of arbitrary config structure.
 
 ### 3.2 When a save is actually triggered — the freeze nuance
 
@@ -350,6 +354,13 @@ config right away — but the on-device menus (built once at startup, §4.1)
 won't show added gear until the next reboot; the add handlers surface a
 "restart your PiFinder to use" message accordingly.
 
+Add/edit requests now validate names and measurements before saving; invalid
+submissions return the edit form with the typed values and an error instead
+of a success banner. Client-side rules use the same limits as the server.
+See [the validation ranges](equipment/CONTEXT.md#write-boundary-validation-upstream-571-mf-selective-port)
+and [ADR 0033](../adr/0033-equipment-measurements-are-validated-floats.md).
+Out-of-range record indices report an error instead of indexing blindly.
+
 ### 7.1 DeepskyLog import (`server.py:610`)
 
 `POST /equipment/import_from_deepskylog` takes a DeepskyLog username, then
@@ -364,6 +375,8 @@ eyepieces:
 - Eyepieces map `focalLength`, `apparentFOV` → `afov`, and `field_stop_mm`.
 - Each new record is appended only if not already present (dedup via
   `list.index(...)` raising `ValueError`), then `save_equipment()`.
+- Records with unreadable or out-of-range measurements are skipped and counted
+  in the result message; fractional optical measurements are not truncated.
 
 The list page's import modal warns the operation may replace existing gear;
 in the current handler new items are appended/deduped rather than wiped.

@@ -15,6 +15,46 @@ _NIXOS_URL = "https://example.invalid/pifinder-nixos.tar.zst"
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("hardware", ("headless", "headless176", "headless320"))
+@pytest.mark.parametrize("selection", ("Update", "Cancel"))
+def test_update_action_text_and_cursor_share_bottom_anchored_rows(hardware, selection):
+    import PiFinder.i18n  # noqa: F401
+
+    from PiFinder.displays import (
+        DisplayHeadless,
+        DisplayHeadless176,
+        DisplayHeadless320,
+    )
+    from PiFinder.ui.software import UISoftware
+
+    module = object.__new__(UISoftware)
+    module.display_class = {
+        "headless": DisplayHeadless,
+        "headless176": DisplayHeadless176,
+        "headless320": DisplayHeadless320,
+    }[hardware]()
+    module.fonts = module.display_class.fonts
+    module.colors = module.display_class.colors
+    module.clear_screen = MagicMock()
+    module.screen_update = MagicMock()
+    module.draw = MagicMock()
+    module._wifi_mode = "Client"
+    module._software_version = "m2.6.0"
+    module._release_version = "m2.6.1"
+    module._option_select = selection
+
+    module.update()
+
+    pitch = module.fonts.large.height
+    top = module.display_class.resY - 2 * pitch - 6
+    calls = module.draw.text.call_args_list
+    assert calls[-3].args[0] == (10, top)
+    assert calls[-2].args[0] == (10, top + pitch)
+    assert calls[-1].args[0] == (0, top if selection == "Update" else top + pitch)
+    assert module._go_for_update
+
+
+@pytest.mark.unit
 class TestUpdateNeeded:
     def test_newer_version_available(self):
         assert update_needed("2.3.0", "2.4.0") is True

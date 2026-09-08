@@ -39,6 +39,7 @@ import copy
 import logging
 import queue
 import time
+from PiFinder.solver_capture import CaptureRecorder
 from typing import Optional
 
 import numpy as np
@@ -83,6 +84,7 @@ def integrator(
     logger.debug("Starting Integrator")
 
     telemetry = None
+    field_capture = CaptureRecorder("integrator")
     try:
         cfg = config.Config()
         screen_direction = cfg.get_option("screen_direction")
@@ -104,6 +106,8 @@ def integrator(
 
         while True:
             state_utils.sleep_for_framerate(shared_state)
+            field_capture.poll()
+            capture_published_ns = None
 
             telemetry.poll_commands(command_queue)
 
@@ -157,6 +161,7 @@ def integrator(
                 # True and the last pointing visible; the IMU advance below
                 # progresses it when motion exceeds the deadband.
                 shared_state.set_solution(copy.deepcopy(estimate))
+                capture_published_ns = time.monotonic_ns()
 
             # 2. Pull the current IMU sample — from the replay stream when
             #    replaying — and record it. Recording happens before the
@@ -206,13 +211,38 @@ def integrator(
                 )
 
                 shared_state.set_solution(copy.deepcopy(estimate))
+                capture_published_ns = time.monotonic_ns()
                 last_published_time = estimate.estimate_time
+
+            if solve_result is not None and not telemetry.replaying:
+                capture_token = field_capture.begin(
+                    {
+                        "frame_id": solve_result.diagnostics.FrameId,
+                        "exposure_end": solve_result.last_solve_attempt,
+                    }
+                )
+                if capture_token is not None:
+                    field_capture.finish(
+                        capture_token,
+                        {
+                            "published": capture_published_ns is not None,
+                            "published_monotonic_ns": capture_published_ns,
+                            "successful_solve": isinstance(
+                                solve_result, SuccessfulSolve
+                            ),
+                            "pointing": estimate.pointing,
+                            "estimate_time": estimate.estimate_time,
+                            "last_solve_success": estimate.last_solve_success,
+                            "diagnostics": solve_result.diagnostics,
+                        },
+                    )
 
             telemetry.flush()
 
     except EOFError:
         logger.error("Main no longer running for integrator")
     finally:
+        field_capture.close()
         if telemetry is not None:
             telemetry.stop()
 

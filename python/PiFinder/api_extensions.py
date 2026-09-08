@@ -21,11 +21,12 @@ import logging
 import time
 from pathlib import Path
 
-from flask import request, session, Response
+from flask import request, session, Response, render_template
 from PIL import Image
 from PiFinder import utils
 from PiFinder import config
 from PiFinder import camera_controls
+from PiFinder import solver_capture
 from PiFinder.mf_livecam_tiles import (
     EXCLUDED_TILES_CONFIG_KEY,
     excluded_tile_ids,
@@ -239,6 +240,35 @@ def register_api_routes(app, server_instance, require_auth=False):
     # ───────────────────────────────────────────────
     # 1. Aggregated status endpoint (fetch everything at once)
     # ───────────────────────────────────────────────
+    @app.route("/solver-capture", endpoint="solver_capture_page")
+    @_auth_wrapper
+    def solver_capture_page():
+        return render_template("solver_capture.html")
+
+    @app.route(
+        "/api/solver-capture",
+        methods=["GET", "POST"],
+        endpoint="solver_capture_control",
+    )
+    @_auth_wrapper
+    def solver_capture_control():
+        if request.method == "GET":
+            return _json_response(solver_capture.capture_status())
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return _json_response({"error": "JSON object required"}, 400)
+        try:
+            return _json_response(
+                solver_capture.request_capture(
+                    payload.get("action"),
+                    payload,
+                )
+            )
+        except (ValueError, TypeError, OverflowError) as exc:
+            return _json_response({"error": str(exc)}, 400)
+        except OSError as exc:
+            return _json_response({"error": str(exc)}, 503)
+
     @app.route("/api/status")
     def api_status():
         try:

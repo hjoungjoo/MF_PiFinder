@@ -135,6 +135,10 @@ def sweep_frame_record(index, exp_us, driver_metadata, cropped_frame, bit_depth)
 class CameraInterface:
     """The CameraInterface interface."""
 
+    exposure_time: float
+    _focus_exposure_saved: Optional[dict] = None
+    _focus_exposure_token: Optional[str] = None
+
     _camera_started = False
     _save_next_to = None  # Filename to save next capture to (None = don't save)
     _auto_exposure_enabled = False
@@ -207,6 +211,78 @@ class CameraInterface:
 
     def initialize(self) -> None:
         pass
+
+    def _release_focus_exposure(self) -> None:
+        """Restore camera-owned runtime state without reselecting Auto Star.
+
+        Reselecting that regime resets gain to the profile and unlocks manual
+        gain. A Focus visit must preserve both the selected controller and
+        runtime-only gain, even when the UI's saved config is stale.
+        """
+        saved = getattr(self, "_focus_exposure_saved", None)
+        if saved is None:
+            return
+        self.set_camera_config(saved["exposure_time"], saved["gain"])
+        if saved["_native_ae_enabled"]:
+            self.set_native_ae(True)
+        for name, value in saved.items():
+            setattr(self, name, value)
+        self.reset_framewise_auto_star(gain_locked=(self._gain_mode == "manual"))
+        self._focus_exposure_saved = None
+        self._focus_exposure_token = None
+
+    def _handle_focus_exposure_command(self, command: str) -> bool:
+        """Handle token-scoped Focus holds; explicit camera controls take over.
+
+        All changes run in the camera process at the existing command boundary.
+        Config and the solver-driven controller instances are never rewritten.
+        """
+        if not command.startswith(("focus_begin:", "focus_set:", "focus_end:")):
+            if (
+                command.startswith(("set_exp", "set_gain", "set_ae_mode"))
+                or command in ("exp_up", "exp_dn", "exp_save", "stop")
+                or command.startswith("capture_exp_sweep")
+            ):
+                self._release_focus_exposure()
+            return False
+
+        kind, token, *values = command.split(":")
+        current = getattr(self, "_focus_exposure_token", None)
+        if kind == "focus_end":
+            if current == token:
+                self._release_focus_exposure()
+            return True
+        if kind == "focus_set" and current != token:
+            return True  # A delayed nudge must not reclaim another control.
+        exposure = int(values[0])
+        if exposure <= 0:
+            raise ValueError("Focus exposure must be positive")
+        if kind == "focus_begin":
+            if current == token:
+                return True
+            self._release_focus_exposure()
+            self._focus_exposure_saved = {
+                name: getattr(self, name)
+                for name in (
+                    "exposure_time",
+                    "gain",
+                    "_gain_mode",
+                    "_auto_exposure_enabled",
+                    "_native_ae_enabled",
+                    "_ae_controller_choice",
+                    "_auto_exposure_mode",
+                )
+            }
+            self._focus_exposure_token = token
+        self._auto_exposure_enabled = False
+        self._native_ae_enabled = False
+        try:
+            self.set_camera_config(exposure, self.gain)
+            self.exposure_time = exposure
+        except Exception:
+            self._release_focus_exposure()
+            raise
+        return True
 
     def capture(self) -> Image.Image:
         return Image.Image()
@@ -837,6 +913,8 @@ class CameraInterface:
                         logger.error(f"CameraInterface: Command error: {e}")
 
                     try:
+                        if self._handle_focus_exposure_command(command):
+                            continue
                         if command == "debug":
                             test_mode_on = not test_mode_on
 

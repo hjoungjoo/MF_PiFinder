@@ -250,6 +250,13 @@ class UIModule:
         """
         self._guide_stop_motion_if_active()
 
+    def covered(self):
+        """Optional cleanup when another screen covers or discards this one.
+
+        Unlike inactive(), this also runs for non-stateful menu pushes. Keep
+        the default inert: existing screens retain their lifecycle behavior.
+        """
+
     def help(self) -> Union[None, list[Image.Image]]:
         """
         Called when help is selected from the

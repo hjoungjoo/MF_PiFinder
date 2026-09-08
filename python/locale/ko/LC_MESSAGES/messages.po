@@ -5013,11 +5013,11 @@ msgstr "This action cannot be undone."
 
 #: views/locations.html:438 views/locations.html:772 views/locations.html:829
 msgid "This field is required"
-msgstr "This field is required"
+msgstr "필수 입력 항목입니다"
 
 #: views/locations.html:440
 msgid "Must be a valid number"
-msgstr "Must be a valid number"
+msgstr "올바른 숫자를 입력하세요"
 
 #: views/locations.html:444
 msgid "Must be between -90 and 90"
@@ -5953,6 +5953,90 @@ msgstr "시리얼 자동찾기"
 #: PiFinder/server.py
 msgid "OnStep serial port and communication-speed discovery started"
 msgstr "OnStep 시리얼 포트와 통신속도 자동찾기를 시작했습니다"
+
+#: PiFinder/server.py views/equipment_validation.html
+#, python-format
+msgid "%(field)s must be between %(minimum)s and %(maximum)s"
+msgstr "%(field)s 값은 %(minimum)s~%(maximum)s 범위여야 합니다"
+
+#: PiFinder/server.py views/equipment_validation.html
+#, python-format
+msgid "%(field)s must be %(maximum)s characters or fewer"
+msgstr "%(field)s 항목은 %(maximum)s자 이하여야 합니다"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "Focal length"
+msgstr "초점거리"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "Apparent field of view"
+msgstr "겉보기 시야각"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "Field stop"
+msgstr "필드 스톱"
+
+#: PiFinder/server.py views/equipment_validation.html
+#, python-format
+msgid "%s is not a valid mount type"
+msgstr "%s: 올바른 마운트 형식이 아닙니다"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "Instrument name"
+msgstr "장비 이름"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "Obstruction"
+msgstr "차폐율"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "Date and time must be YYYY-MM-DD h:m:s"
+msgstr "날짜와 시간은 YYYY-MM-DD h:m:s 형식이어야 합니다"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "No such instrument"
+msgstr "해당 장비가 없습니다"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "No such eyepiece"
+msgstr "해당 접안렌즈가 없습니다"
+
+#: PiFinder/server.py views/equipment_validation.html
+#, python-format
+msgid "%s entries were skipped because DeepskyLog had no usable values for them."
+msgstr "DeepskyLog의 값이 유효하지 않아 %s개 항목을 건너뛰었습니다."
+
+#: PiFinder/server.py views/equipment_validation.html
+#, python-format
+msgid "Could not save eyepiece: %s"
+msgstr "접안렌즈를 저장하지 못했습니다: %s"
+
+#: PiFinder/server.py views/equipment_validation.html
+#, python-format
+msgid "Could not save instrument: %s"
+msgstr "장비를 저장하지 못했습니다: %s"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "Leave at 0 if unknown"
+msgstr "모르면 0으로 두세요"
+
+#: PiFinder/server.py views/equipment_validation.html
+msgid "Leave at 0 for a refractor"
+msgstr "굴절망원경은 0으로 두세요"
+
+#: PiFinder/server.py views/equipment_validation.html
+#, python-format
+msgid "Must be between %(minimum)s and %(maximum)s"
+msgstr "%(minimum)s~%(maximum)s 범위여야 합니다"
+
+#: PiFinder/server.py views/equipment_validation.html
+#, python-format
+msgid "Must be %(maximum)s characters or fewer"
+msgstr "%(maximum)s자 이하여야 합니다"
+
+#: PiFinder/ui/menu_structure.py
+msgid "Center Object"
+msgstr "중앙 천체"
 
 #: PiFinder/ui/object_details.py
 msgid "Moving"

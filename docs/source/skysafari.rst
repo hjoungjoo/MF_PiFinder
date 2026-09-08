@@ -92,7 +92,7 @@ A few things are worth knowing about the connection today:
    the sleep timer (see :ref:`quick_start:adjusting brightness`).
 
 Stellarium Mobile Plus (MF fork)
--------------------------------
+--------------------------------
 
 Connect to the same network as the PiFinder and configure an LX200-compatible TCP
 telescope connection to ``pifinder.local`` (or its numeric IP), port **4030**. Only one
