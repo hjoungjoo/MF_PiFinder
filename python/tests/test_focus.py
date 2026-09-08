@@ -77,6 +77,57 @@ class TestHalfFluxDiameter:
 
 @pytest.mark.unit
 class TestDetectStars:
+    @pytest.mark.parametrize("center", [(32, 32), (256, 256), (475, 475)])
+    def test_finds_star_across_sky_gradient(self, center):
+        img = _gaussian_frame(3.0, amplitude=60.0, center=center, noise=2.0)
+        img += np.linspace(0, 140, img.shape[1], dtype=np.float32)[None, :]
+        original = img.copy()
+
+        result = focus.focus_hfd(img)
+
+        assert len(result.blobs) == 1
+        assert result.blobs[0].y == pytest.approx(center[0], abs=2)
+        assert result.blobs[0].x == pytest.approx(center[1], abs=2)
+        assert result.n_used == 1
+        assert result.median_hfd is not None
+        np.testing.assert_array_equal(img, original)
+
+    @pytest.mark.parametrize("sigma_k", [3.5, 5.0])
+    def test_sky_gradient_and_hot_pixels_do_not_become_stars(self, sigma_k):
+        img = _gaussian_frame(3.0, amplitude=0.0, noise=2.0)
+        img += np.linspace(0, 140, img.shape[1], dtype=np.float32)[None, :]
+        for y, x in ((64, 64), (256, 256), (450, 450)):
+            img[y, x] = 255
+
+        result = focus.focus_hfd(img, sigma_k=sigma_k)
+
+        assert result.blobs == ()
+        assert result.median_hfd is None
+
+    def test_broad_star_on_gradient_still_reports_too_defocused(self):
+        img = _gaussian_frame(40.0, amplitude=80.0, noise=2.0)
+        img += np.linspace(0, 140, img.shape[1], dtype=np.float32)[None, :]
+
+        result = focus.focus_hfd(img)
+
+        assert len(result.blobs) == 1
+        assert result.too_defocused
+        assert result.median_hfd is None
+
+    def test_stronger_star_outranks_brighter_sky(self):
+        img = _gaussian_frame(3.0, amplitude=80.0, center=(100, 100), noise=0)
+        img += _gaussian_frame(
+            3.0, amplitude=40.0, center=(400, 400), background=0, noise=0
+        )
+        img += np.linspace(0, 140, img.shape[1], dtype=np.float32)[None, :]
+
+        result = focus.focus_hfd(img, n=1)
+
+        assert len(result.blobs) == 2
+        assert result.blobs[0].x == pytest.approx(100, abs=2)
+        assert result.blobs[0].peak < result.blobs[1].peak
+        assert focus.detect_stars(img, n=1)[0].x == pytest.approx(100, abs=2)
+
     def test_finds_a_clear_star(self):
         img = _gaussian_frame(4.0, amplitude=180.0, background=20.0)
         blobs = focus.detect_stars(img)

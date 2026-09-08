@@ -25,6 +25,7 @@ from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy import ndimage
+from scipy.interpolate import interp1d
 from scipy.optimize import linear_sum_assignment
 
 
@@ -119,6 +120,54 @@ def _local_background(np_image: np.ndarray, cy: float, cx: float, extent: int) -
     return float(np.median(np_image))
 
 
+def _detection_threshold(img: np.ndarray, sigma_k: float) -> np.ndarray:
+    """Local sky/noise threshold for the smoothed detection image.
+
+    Large cells preserve broad defocused stars. Estimate noise after removing
+    the sky map so gradients and the raw Bayer pattern cannot swamp stars.
+    Measurement and display still use the unmodified raw frame.
+    """
+    height, width = img.shape
+    y_edges = np.linspace(0, height, max(1, height // 128) + 1, dtype=int)
+    x_edges = np.linspace(0, width, max(1, width // 128) + 1, dtype=int)
+    levels = np.empty((len(y_edges) - 1, len(x_edges) - 1), dtype=np.float32)
+    cells = [
+        (iy, ix, np.s_[y0:y1, x0:x1])
+        for iy, (y0, y1) in enumerate(zip(y_edges[:-1], y_edges[1:]))
+        for ix, (x0, x1) in enumerate(zip(x_edges[:-1], x_edges[1:]))
+    ]
+    for iy, ix, sl in cells:
+        levels[iy, ix] = np.median(img[sl])
+
+    centers = (
+        (y_edges[:-1] + y_edges[1:] - 1) / 2.0,
+        (x_edges[:-1] + x_edges[1:] - 1) / 2.0,
+    )
+
+    def interpolate(values):
+        # Separable interpolation avoids a full frame of coordinate pairs in
+        # the UI process, especially on the 980px native wide-lens path.
+        for axis, length in ((1, width), (0, height)):
+            if len(centers[axis]) > 1:
+                values = interp1d(
+                    centers[axis], values, axis=axis, fill_value="extrapolate"
+                )(np.arange(length))
+            else:
+                values = np.repeat(values, length, axis=axis)
+        return values.astype(np.float32)
+
+    # Extrapolate gradients to the frame boundary, but do not let a broad
+    # central star pull the estimated edge sky below the actual sky floor.
+    sky = np.maximum(interpolate(levels), np.percentile(img, 1))
+    residual = img - sky
+    noise = np.empty_like(levels)
+    for iy, ix, sl in cells:
+        offset, sigma = _estimate_background_noise(residual[sl])
+        levels[iy, ix] = offset
+        noise[iy, ix] = sigma
+    return sky + interpolate(levels) + sigma_k * np.maximum(interpolate(noise), 1.0)
+
+
 def _find_blobs(
     np_image: np.ndarray,
     *,
@@ -134,14 +183,14 @@ def _find_blobs(
     the peak of the brightest blob of any size, or None when nothing was detected.
     """
     img = np.asarray(np_image, dtype=np.float32)
-    background, sigma = _estimate_background_noise(img)
-    threshold = background + sigma_k * sigma
+    background = float(np.median(img))
 
     # Detect on a lightly smoothed copy so per-pixel noise does not fragment a
     # broad defocused blob into many spurious tiny "stars" at its threshold ring
     # (which would hide the too-defocused state). Measurement below still uses
     # the raw frame -- see ADR 0005.
     smoothed = ndimage.gaussian_filter(img, sigma=1.0)
+    threshold = _detection_threshold(smoothed, sigma_k)
     mask = smoothed > threshold
     labeled, n_labels = ndimage.label(mask)
     if n_labels == 0:
@@ -166,7 +215,7 @@ def _find_blobs(
         # Count pixels above threshold in the RAW frame (not the smoothed copy)
         # so a single-pixel hot pixel -- which smoothing spreads into a small
         # blob -- is still rejected as a one-pixel spike.
-        size_px = int(((patch > threshold) & region_mask).sum())
+        size_px = int(((patch > threshold[sl]) & region_mask).sum())
         if size_px < 2:
             continue
 
@@ -205,8 +254,10 @@ def _find_blobs(
         else:
             usable.append(blob)
 
-    usable.sort(key=lambda b: b.peak, reverse=True)
-    oversized.sort(key=lambda b: b.peak, reverse=True)
+    # Rank by signal above the local sky, so a bright sky region cannot fill
+    # the focus tiles ahead of a stronger star in a darker part of the frame.
+    usable.sort(key=lambda b: b.peak - b.background, reverse=True)
+    oversized.sort(key=lambda b: b.peak - b.background, reverse=True)
     return usable, oversized, background, brightest_peak
 
 
@@ -446,7 +497,11 @@ def focus_hfd(
         np_image, max_blob_px=max_blob_px, sigma_k=sigma_k
     )
     display_blobs = tuple(
-        sorted((*usable, *oversized), key=lambda blob: blob.peak, reverse=True)
+        sorted(
+            (*usable, *oversized),
+            key=lambda blob: blob.peak - blob.background,
+            reverse=True,
+        )
     )
 
     if not usable:

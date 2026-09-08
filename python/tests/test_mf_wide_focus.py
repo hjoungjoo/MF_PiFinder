@@ -43,6 +43,29 @@ def test_star_crop_stretch_is_display_only_and_reaches_full_contrast():
     assert stretched[0, 0] == 0
 
 
+def test_native_color_stars_survive_bayer_pattern_and_sky_gradient():
+    y, x = np.indices((980, 980))
+    raw = 1000.0 + x * 0.7 + y * 0.2
+    # The native color frame retains the Bayer lattice. Its large per-pixel
+    # variation is not the noise of the smoothed image used to detect stars.
+    raw += np.where((x + y) % 2, 350.0, -350.0)
+    raw += np.random.default_rng(13).normal(0, 12, raw.shape)
+    centers = ((120, 220), (460, 520), (760, 360))
+    for cy, cx in centers:
+        raw += 800 * np.exp(-((y - cy) ** 2 + (x - cx) ** 2) / (2 * 2.0**2))
+    native = mf_wide_focus.native_focus_frame(
+        raw.astype(np.uint16), bias_offset=238.0, bit_depth=12
+    )
+
+    result = focus.focus_hfd(native, sigma_k=mf_wide_focus.WIDE_FOCUS_SIGMA_K)
+
+    assert len(result.blobs) == len(centers)
+    assert result.n_used == len(centers)
+    assert result.median_hfd is not None
+    for cy, cx in centers:
+        assert any(np.hypot(blob.y - cy, blob.x - cx) < 2 for blob in result.blobs)
+
+
 def test_solver_centroids_scale_to_native_focus_coordinates():
     assert mf_wide_focus.scale_solver_centroids(
         [(256.0, 128.0)], native_hw=(980, 980)
