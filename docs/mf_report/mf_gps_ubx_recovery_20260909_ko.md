@@ -1,5 +1,7 @@
 # u-blox GPS 간헐적 식별 실패 — 장애 분석 및 자동 복구 개선 보고서
 
+[English report](mf_gps_ubx_recovery_20260909_en.md)
+
 | 항목 | 내용 |
 |---|---|
 | 보고서 ID | MF-GPS-20260909-01 |

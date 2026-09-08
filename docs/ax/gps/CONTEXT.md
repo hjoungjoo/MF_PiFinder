@@ -51,4 +51,5 @@ under `GPS.parser.recovery`, visible with the default logging configuration.
 UBX traffic resuming is distinct from obtaining a position fix.
 
 Incident evidence, tests and deployment results:
-[2026-09-09 report (Korean)](../../mf_report/mf_gps_ubx_recovery_20260909_ko.md).
+[2026-09-09 report (English)](../../mf_report/mf_gps_ubx_recovery_20260909_en.md)
+and [Korean](../../mf_report/mf_gps_ubx_recovery_20260909_ko.md).
